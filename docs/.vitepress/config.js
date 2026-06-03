@@ -3,6 +3,8 @@ import { defineConfig } from 'vitepress'
 export default defineConfig({
   title: 'DOJOJIN Docs',
   description: 'Engineering docs & project references',
+  lang: 'en-US',
+  cleanUrls: true,
   themeConfig: {
     nav: [
       { text: 'Projects', link: '/projects/' },
