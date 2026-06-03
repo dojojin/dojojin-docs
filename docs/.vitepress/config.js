@@ -17,7 +17,13 @@ export default defineConfig({
           text: 'Projects',
           items: [
             { text: 'Overview', link: '/projects/' },
-            { text: 'Vigil Platform', link: '/projects/vigil-platform' },
+            {
+              text: 'Vigil Platform',
+              items: [
+                { text: 'Platform', link: '/projects/vigil-platform' },
+                { text: 'Mobile App', link: '/projects/vigil-mobile' }
+              ]
+            },
             { text: 'AI OCR Pipeline', link: '/projects/ai-ocr-pipeline' }
           ]
         }
