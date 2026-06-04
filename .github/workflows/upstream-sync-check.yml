@@ -1,0 +1,230 @@
+name: Upstream Sync Check
+
+on:
+  schedule:
+    - cron: '0 8 * * 1'  # ทุกวันจันทร์ 08:00 UTC (15:00 Bangkok)
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run — report drift but do not open a PR'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  check-upstream:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - name: Configure SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: |
+            ${{ secrets.VIGIL_PLATFORM_DEPLOY_KEY }}
+            ${{ secrets.VIGIL_MOBILE_DEPLOY_KEY }}
+
+      - name: Add GitHub to known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+
+      - name: Checkout dojojin-docs
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install git-subtree
+        run: sudo apt-get install -y git-subtree
+
+      - name: Configure git identity
+        run: |
+          git config user.email "actions@github.com"
+          git config user.name "GitHub Actions"
+
+      - name: Detect vigil-platform drift
+        id: platform_drift
+        run: |
+          REMOTE_SHA=$(git ls-remote git@github.com:dojojin/vigil-platform.git HEAD | awk '{print $1}')
+          echo "Remote vigil-platform HEAD: $REMOTE_SHA"
+
+          LOCAL_SHA=$(git log --oneline --grep="Squashed '_upstream/vigil-platform/'" \
+            | head -1 | awk '{print $1}')
+
+          if [ -z "$LOCAL_SHA" ]; then
+            echo "No previous platform subtree commit found — treating as drifted."
+            echo "drifted=true" >> "$GITHUB_OUTPUT"
+            echo "remote_sha=$REMOTE_SHA" >> "$GITHUB_OUTPUT"
+            echo "local_sha=none" >> "$GITHUB_OUTPUT"
+          else
+            EMBEDDED_SHA=$(git show "$LOCAL_SHA" --format="%B" -s \
+              | grep "git-subtree-split:" | awk '{print $2}')
+            echo "Last synced vigil-platform commit: $EMBEDDED_SHA"
+            if [ "$REMOTE_SHA" != "$EMBEDDED_SHA" ]; then
+              echo "drifted=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "drifted=false" >> "$GITHUB_OUTPUT"
+            fi
+            echo "remote_sha=$REMOTE_SHA" >> "$GITHUB_OUTPUT"
+            echo "local_sha=$EMBEDDED_SHA" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Detect vigil-mobile drift
+        id: mobile_drift
+        run: |
+          REMOTE_SHA=$(git ls-remote git@github.com:dojojin/vigil-mobile.git HEAD | awk '{print $1}')
+          echo "Remote vigil-mobile HEAD: $REMOTE_SHA"
+
+          LOCAL_SHA=$(git log --oneline --grep="Squashed '_upstream/vigil-mobile/'" \
+            | head -1 | awk '{print $1}')
+
+          if [ -z "$LOCAL_SHA" ]; then
+            echo "No previous mobile subtree commit found — treating as drifted."
+            echo "drifted=true" >> "$GITHUB_OUTPUT"
+            echo "remote_sha=$REMOTE_SHA" >> "$GITHUB_OUTPUT"
+            echo "local_sha=none" >> "$GITHUB_OUTPUT"
+          else
+            EMBEDDED_SHA=$(git show "$LOCAL_SHA" --format="%B" -s \
+              | grep "git-subtree-split:" | awk '{print $2}')
+            echo "Last synced vigil-mobile commit: $EMBEDDED_SHA"
+            if [ "$REMOTE_SHA" != "$EMBEDDED_SHA" ]; then
+              echo "drifted=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "drifted=false" >> "$GITHUB_OUTPUT"
+            fi
+            echo "remote_sha=$REMOTE_SHA" >> "$GITHUB_OUTPUT"
+            echo "local_sha=$EMBEDDED_SHA" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Exit if no drift
+        if: |
+          steps.platform_drift.outputs.drifted == 'false' &&
+          steps.mobile_drift.outputs.drifted == 'false'
+        run: |
+          echo "No upstream changes detected. Nothing to do."
+
+      - name: Create sync branch
+        if: |
+          (steps.platform_drift.outputs.drifted == 'true' ||
+           steps.mobile_drift.outputs.drifted == 'true') &&
+          inputs.dry_run != true
+        run: |
+          BRANCH="upstream-sync/$(date +%Y-%m-%d)-${{ github.run_id }}"
+          PRE_SYNC_SHA=$(git rev-parse HEAD)
+          git checkout -b "$BRANCH"
+          echo "SYNC_BRANCH=$BRANCH" >> "$GITHUB_ENV"
+          echo "PRE_SYNC_SHA=$PRE_SYNC_SHA" >> "$GITHUB_ENV"
+
+      - name: Pull vigil-platform subtree
+        if: |
+          steps.platform_drift.outputs.drifted == 'true' &&
+          inputs.dry_run != true
+        run: |
+          git subtree pull \
+            --prefix _upstream/vigil-platform \
+            git@github.com:dojojin/vigil-platform.git \
+            main \
+            --squash \
+            -m "chore(upstream): pull vigil-platform $(date +%Y-%m-%d) [CI]"
+
+      - name: Pull vigil-mobile subtree
+        if: |
+          steps.mobile_drift.outputs.drifted == 'true' &&
+          inputs.dry_run != true
+        run: |
+          git subtree pull \
+            --prefix _upstream/vigil-mobile \
+            git@github.com:dojojin/vigil-mobile.git \
+            main \
+            --squash \
+            -m "chore(upstream): pull vigil-mobile $(date +%Y-%m-%d) [CI]"
+
+      - name: Generate diff summary
+        if: |
+          (steps.platform_drift.outputs.drifted == 'true' ||
+           steps.mobile_drift.outputs.drifted == 'true') &&
+          inputs.dry_run != true
+        id: diff_summary
+        run: |
+          {
+            echo 'body<<HEREDOC'
+            echo "## Upstream Sync — $(date +%Y-%m-%d)"
+            echo ''
+            echo 'This draft PR was opened automatically. **Do not merge without reviewing.**'
+            echo ''
+            echo '---'
+            echo ''
+            if [ "${{ steps.platform_drift.outputs.drifted }}" = "true" ]; then
+              echo '### vigil-platform changes'
+              echo ''
+              echo "Previously synced: \`${{ steps.platform_drift.outputs.local_sha }}\`"
+              echo "Current remote HEAD: \`${{ steps.platform_drift.outputs.remote_sha }}\`"
+              echo ''
+              echo '**Files changed:**'
+              echo '```'
+              git diff --stat "$PRE_SYNC_SHA" HEAD -- _upstream/vigil-platform/ 2>/dev/null | head -40 || true
+              echo '```'
+              echo ''
+            fi
+            if [ "${{ steps.mobile_drift.outputs.drifted }}" = "true" ]; then
+              echo '### vigil-mobile changes'
+              echo ''
+              echo "Previously synced: \`${{ steps.mobile_drift.outputs.local_sha }}\`"
+              echo "Current remote HEAD: \`${{ steps.mobile_drift.outputs.remote_sha }}\`"
+              echo ''
+              echo '**Files changed:**'
+              echo '```'
+              git diff --stat "$PRE_SYNC_SHA" HEAD -- _upstream/vigil-mobile/ 2>/dev/null | head -40 || true
+              echo '```'
+              echo ''
+            fi
+            echo '---'
+            echo ''
+            echo '## Next steps'
+            echo ''
+            echo "1. Pull branch locally: \`git fetch origin && git checkout $SYNC_BRANCH\`"
+            echo '2. Review diff: `git diff main -- _upstream/`'
+            echo '3. Follow `UPSTREAM-WORKFLOW.md`'
+            echo '4. Update public docs in `docs/projects/`'
+            echo '5. Remove draft status and merge'
+            echo '6. Run `bash deploy.sh` on the server'
+            echo ''
+            echo '**Never auto-merge. Deploy is always manual.**'
+            echo 'HEREDOC'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Push sync branch
+        if: |
+          (steps.platform_drift.outputs.drifted == 'true' ||
+           steps.mobile_drift.outputs.drifted == 'true') &&
+          inputs.dry_run != true
+        run: git push origin "$SYNC_BRANCH"
+
+      - name: Open draft PR
+        if: |
+          (steps.platform_drift.outputs.drifted == 'true' ||
+           steps.mobile_drift.outputs.drifted == 'true') &&
+          inputs.dry_run != true
+        run: |
+          gh pr create \
+            --title "upstream sync $(date +%Y-%m-%d) — review required" \
+            --body "${{ steps.diff_summary.outputs.body }}" \
+            --draft \
+            --base main \
+            --head "$SYNC_BRANCH" \
+            --label "upstream-sync"
+
+      - name: Dry run summary
+        if: inputs.dry_run == true
+        run: |
+          echo "=== DRY RUN — no PR opened ==="
+          echo "vigil-platform drifted: ${{ steps.platform_drift.outputs.drifted }}"
+          echo "  remote: ${{ steps.platform_drift.outputs.remote_sha }}"
+          echo "  local:  ${{ steps.platform_drift.outputs.local_sha }}"
+          echo "vigil-mobile drifted: ${{ steps.mobile_drift.outputs.drifted }}"
+          echo "  remote: ${{ steps.mobile_drift.outputs.remote_sha }}"
+          echo "  local:  ${{ steps.mobile_drift.outputs.local_sha }}"
