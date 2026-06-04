@@ -1,0 +1,16 @@
+node_modules/
+.expo/
+dist/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+web-build/
+.env
+.env.*
+
+# Claude Code per-machine override (ห้าม commit local permissions)
+.claude/settings.local.json
