@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>LINE API — Vigil Platform Live Docs</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="overlay"></div>
+<div class="layout">
+<nav class="nav" id="nav">
+</nav>
+
+<button id="ham">☰</button>
+
+<div class="main">
+<!-- SOURCE: docs/LOGIC_line-notifications.md · src/api-server.js /api/line/* | Update: LINE API behavior, quota, or imgbb flow changes -->
+<h1 class="ph">09 LINE API Integration (การใช้งาน LINE API)</h1>
+
+<h2>ภาพรวม</h2>
+<p>LINE Messaging API เป็นช่องทางหลักสำหรับแจ้งเตือนเหตุการณ์ไปยัง security operators และผู้บริหารในไทย ลูกค้าสามารถสมัครสมาชิก (subscribe) ผ่าน QR code ที่แดชบอร์ดเพื่อรับการแจ้งเตือน (alert) ส่วนตัว</p>
+
+<h2>ไหลของสถาปัตยกรรม</h2>
+
+<pre>Alert Rule Match (Event Detected)
+  ↓
+Check enabled LINE notification (if yes)
+  ↓
+Download snapshot from camera
+  ↓
+Generate alert payload (message + image)
+  ↓
+Prepare LINE Message API request
+  ↓
+Rate limiter check (10 msg/sec per channel)
+  ↓
+Call Line Push Message API
+  ↓
+Log result (success / retry / failed) → audit_logs
+</pre>
+
+<h2>รูปแบบข้อความ LINE</h2>
+
+<h3>การแจ้งเตือน (Alert Notification)</h3>
+<pre>
+From: @Vigil-Platform (Official Account)
+To: User / Group / Room
+Type: Push Message with Image
+
+Header: [ALERT] Motion Detected - North Gate
+Body:
+  Camera: North Gate (Camera 001)
+  Event Type: Motion
+  Time: 2026-06-03 14:23:45
+  Duration: 2.3 sec
+  Image: [Snapshot]
+
+Action: [View in Dashboard] button (deep link)
+</pre>
+
+<h3>สรุปประจำวัน (Daily Briefing - ไม่บังคับ)</h3>
+<pre>
+From: @Vigil-Platform
+To: Admin / Manager
+
+Title: Morning Briefing - June 3, 2026
+Content:
+  - Total events: 24
+  - High-risk alerts: 2
+  - Offline cameras: 0
+  - System uptime: 99.8%
+
+[View Full Report] button
+</pre>
+
+<h2>การตั้งค่า QR Code ด้วยตนเอง</h2>
+
+<p>ขั้นตอนการใช้งานของผู้ใช้ในแดชบอร์ด:</p>
+<ol>
+  <li>ไปที่ Settings (การตั้งค่า) → Notifications (การแจ้งเตือน)</li>
+  <li>คลิก "Subscribe to LINE alerts" (สมัครสมาชิก LINE alerts)</li>
+  <li>สแกน QR code ด้วยแอป LINE (เปิด Official Account friendship modal)</li>
+  <li>ยืนยันการเป็นเพื่อน (ระบบสร้าง webhook token ในพื้นหลัง)</li>
+  <li>แดชบอร์ดเปลี่ยนไปพร้อมข้อความสำเร็จ + "You're subscribed"</li>
+  <li>ระบบเริ่มส่งการแจ้งเตือนไปยัง LINE ID ของผู้ใช้</li>
+</ol>
+
+<h2>การตั้งค่า Webhook</h2>
+
+<h3>Backend Endpoint (จุดปลายทาง Backend)</h3>
+<p><code>POST /api/integrations/line/webhook</code></p>
+<ul>
+  <li>ยืนยัน X-Line-Signature header (HMAC-SHA256 ของ body)</li>
+  <li>แยกวิเคราะห์เหตุการณ์ (follow, unfollow, message, postback)</li>
+  <li>เก็บ/อัปเดตการสมัครสมาชิกผู้ใช้ในตาราง <code>line_subscriptions</code></li>
+  <li>ส่งตอบ 200 OK ไปยัง LINE server ภายใน 3 วินาที</li>
+</ul>
+
+<h3>เหตุการณ์ที่จัดการ</h3>
+<ul>
+  <li><code>follow:</code> ผู้ใช้เพิ่ม Official Account → สมัครสมาชิก alerts โดยอัตโนมัติ</li>
+  <li><code>unfollow:</code> ผู้ใช้ลบ Official Account → ทำเครื่องหมายว่าการสมัครไม่ใช้งาน</li>
+  <li><code>message:</code> ผู้ใช้ส่งข้อความ (เช่น "subscribe", "unsubscribe")</li>
+  <li><code>postback:</code> ผู้ใช้คลิกปุ่ม (เช่น "view dashboard")</li>
+</ul>
+
+<h2>โควต้าและการจำกัดอัตรา</h2>
+
+<h3>ขีดจำกัด LINE API</h3>
+<table>
+<thead>
+<tr>
+<th>ขีดจำกัด</th>
+<th>ประเภท</th>
+<th>การกระทำ</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1,000 ผู้ติดตามต่อวัน</td>
+<td>Soft (สามารถขอเพิ่มได้)</td>
+<td>ขอเพิ่มขีดจำกัดจาก LINE</td>
+</tr>
+<tr>
+<td>20 ข้อความ/วินาที ต่อ bot</td>
+<td>Hard (บังคับ)</td>
+<td>คิวและลองใหม่แบบ exponential backoff</td>
+</tr>
+<tr>
+<td>ขนาดภาพ ≤1 MB</td>
+<td>Hard (บังคับ)</td>
+<td>บีบอัดภาพให้ &lt;500 KB</td>
+</tr>
+<tr>
+<td>ความยาวข้อความ ≤1000 ตัวอักษร</td>
+<td>Hard (บังคับ)</td>
+<td>ตัดทอนหากจำเป็น</td>
+</tr>
+</tbody>
+</table>
+
+<h3>ขีดจำกัดอัตรา Vigil ภายใน</h3>
+<ul>
+  <li><strong>ต่อช่องทาง:</strong> สูงสุด 10 ข้อความ/วินาที (ต่ำกว่าขีดจำกัด 20 msg/sec ของ LINE)</li>
+  <li><strong>ต่อผู้ใช้:</strong> สูงสุด 100 alerts/ชั่วโมง (ป้องกันความเหนื่อยหน่ายจากการแจ้งเตือน)</li>
+  <li><strong>การจัดการการกระชาก:</strong> คิวไปที่ Redis และประมวลผลด้วย async worker</li>
+  <li><strong>การติดตามตรวจสอบ:</strong> ติดตามอัตราความสำเร็จในการส่ง แจ้งเตือนหากอัตราการหล่นนอก &gt;2%</li>
+</ul>
+
+<h2>การตั้งค่า</h2>
+
+<h3>ตัวแปรสภาพแวดล้อม (บังคับ)</h3>
+<pre>
+LINE_BOT_CHANNEL_ID=123456789...
+LINE_BOT_CHANNEL_SECRET=abcdef123456...
+LINE_BOT_ACCESS_TOKEN=<token>
+LINE_BOT_WEBHOOK_URL=https://dashboard.customer.com/api/integrations/line/webhook
+</pre>
+
+<h3>แผงการจัดการแดชบอร์ด</h3>
+<ul>
+  <li>ปุ่มทดสอบ webhook (ส่งการแจ้งเตือนตัวอย่าง)</li>
+  <li>ดูจำนวนการสมัครสมาชิก + การส่งล่าสุด</li>
+  <li>ปิด/เปิด LINE notifications ทั่วโลก</li>
+  <li>แก้ไขแม่แบบการแจ้งเตือน (ปรับแต่งข้อความ)</li>
+</ul>
+
+<h2>ข้อควรพิจารณาด้านความปลอดภัย</h2>
+
+<h3>การยืนยันลายเซ็น</h3>
+<p>ทุกคำขอ webhook ของ LINE มี header <code>X-Line-Signature</code>: HMAC-SHA256(body, secret)</p>
+<pre>
+1. Compute: signature = base64(HMAC-SHA256(req.body, LINE_BOT_CHANNEL_SECRET))
+2. Compare: signature == X-Line-Signature header
+3. If match: process request
+4. If not: reject (log + 400 Unauthorized)
+</pre>
+
+<h3>ความเป็นส่วนตัวของข้อมูล</h3>
+<ul>
+  <li><strong>ID ผู้ใช้:</strong> เก็บ LINE User ID (ไม่เปิดเผย ไม่สามารถย้อนกลับเป็น personal ID)</li>
+  <li><strong>ภาพ:</strong> รูปภาพสแนปชอตชั่วคราว (ลบหลังจาก 7 วัน)</li>
+  <li><strong>ข้อความ:</strong> ไม่บันทึกข้อความ (เก็บเฉพาะข้อเท็จจริงของการส่ง + สถานะ)</li>
+  <li><strong>เลิกใช้:</strong> ผู้ใช้สามารถยกเลิกติดตาม Official Account ได้ตลอดเวลา</li>
+</ul>
+
+<h2>การแก้ปัญหา</h2>
+
+<table>
+<thead>
+<tr>
+<th>ปัญหา</th>
+<th>สาเหตุหลัก</th>
+<th>วิธีแก้</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ไม่มีการแจ้งเตือน</td>
+<td>Token ไม่ถูกต้อง / webhook ไม่ทำงาน / rate limit</td>
+<td>ตรวจสอบความสำเร็จของ token ยืนยัน webhook URL เพิ่มจำนวน worker processes</td>
+</tr>
+<tr>
+<td>Webhook ตอบ 429</td>
+<td>ส่งข้อความ &gt;20 msg/sec ไปยัง LINE</td>
+<td>ลดความถี่ ใช้งาน queue + async worker</td>
+</tr>
+<tr>
+<td>ยืนยันลายเซ็นล้มเหลว</td>
+<td>channel secret ผิด ปัญหาเวลา</td>
+<td>ยืนยัน .env ตรวจสอบการซิงค์นาฬิการะบบ เปิดใช้งาน logging</td>
+</tr>
+<tr>
+<td>ไม่แสดงภาพ</td>
+<td>URL รูปภาพหมดอายุ / เข้าไม่ได้</td>
+<td>ตรวจสอบว่ารูปภาพยังอยู่ในดิสก์ ตรวจสอบเครือข่ายกล้อง</td>
+</tr>
+</tbody>
+</table>
+
+<div class="ibox">
+  <h4>การปรับปรุงในอนาคต (Ph.5+)</h4>
+  <p>ปุ่มเมนูที่หลากหลายใน LINE chat (เช่น "View Event", "Acknowledge", "Snooze 1hr") ซึ่งช่วยให้ operators สามารถตอบสนองต่อการแจ้งเตือนได้โดยตรงโดยไม่ต้องเปิดแดชบอร์ด</p>
+</div>
+
+<div class="ref">
+  <p><a href="08-mobile-app.html">← 08 Vigil Mobile App</a> | <a href="10-maps-api.html">10 Maps API →</a></p>
+</div>
+</div>
+</div>
+
+<script src="nav.js"></script>
+</body>
+</html>

@@ -1,0 +1,485 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Product Review: Vigil Platform</title>
+  <style>
+    :root {
+      --bg: #f4f0e8;
+      --paper: #fffaf0;
+      --ink: #1d2327;
+      --muted: #667085;
+      --line: #d7cdbb;
+      --accent: #0f766e;
+      --accent-dark: #134e4a;
+      --good: #166534;
+      --warn: #a16207;
+      --bad: #b42318;
+      --code: #12312d;
+      --shadow: 0 24px 70px rgba(40, 30, 16, 0.12);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at top left, rgba(15, 118, 110, 0.16), transparent 30rem),
+        linear-gradient(135deg, #f4f0e8 0%, #ebe2d1 100%);
+      color: var(--ink);
+      font-family: "Noto Sans Thai", "Tahoma", sans-serif;
+      line-height: 1.65;
+    }
+
+    .page {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 40px 22px 64px;
+    }
+
+    .hero {
+      background: linear-gradient(135deg, #fffaf0 0%, #f7efe0 62%, #e7f3ee 100%);
+      border: 1px solid rgba(19, 78, 74, 0.16);
+      border-radius: 28px;
+      padding: 42px;
+      box-shadow: var(--shadow);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      inset: auto -7rem -8rem auto;
+      width: 18rem;
+      height: 18rem;
+      border-radius: 50%;
+      background: rgba(15, 118, 110, 0.12);
+    }
+
+    .eyebrow {
+      color: var(--accent-dark);
+      font-size: 0.85rem;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      margin: 0 0 12px;
+    }
+
+    h1 {
+      font-size: clamp(2rem, 5vw, 4.4rem);
+      line-height: 1.08;
+      margin: 0 0 18px;
+      max-width: 860px;
+      letter-spacing: -0.045em;
+    }
+
+    .lead {
+      font-size: clamp(1rem, 2vw, 1.26rem);
+      color: #36413f;
+      max-width: 860px;
+      margin: 0;
+    }
+
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 24px;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    .pill {
+      border: 1px solid rgba(15, 118, 110, 0.2);
+      border-radius: 999px;
+      padding: 6px 12px;
+      background: rgba(255, 255, 255, 0.56);
+    }
+
+    section {
+      margin-top: 28px;
+      background: rgba(255, 250, 240, 0.86);
+      border: 1px solid rgba(86, 72, 48, 0.14);
+      border-radius: 22px;
+      padding: 28px;
+      box-shadow: 0 10px 36px rgba(40, 30, 16, 0.06);
+    }
+
+    h2 {
+      margin: 0 0 14px;
+      font-size: 1.55rem;
+      line-height: 1.25;
+      letter-spacing: -0.02em;
+    }
+
+    h3 {
+      margin: 26px 0 10px;
+      font-size: 1.12rem;
+      color: var(--accent-dark);
+    }
+
+    p {
+      margin: 0 0 14px;
+    }
+
+    blockquote {
+      margin: 18px 0;
+      padding: 18px 22px;
+      border-left: 5px solid var(--accent);
+      background: rgba(15, 118, 110, 0.08);
+      border-radius: 14px;
+      font-size: 1.08rem;
+      font-weight: 700;
+    }
+
+    .grid {
+      display: grid;
+      gap: 16px;
+    }
+
+    .grid.two {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .grid.three {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .card {
+      border: 1px solid rgba(86, 72, 48, 0.14);
+      border-radius: 18px;
+      padding: 18px;
+      background: rgba(255, 255, 255, 0.55);
+      min-width: 0;
+    }
+
+    .card strong {
+      color: var(--accent-dark);
+      display: block;
+      margin-bottom: 8px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 16px 0;
+      overflow: hidden;
+      border-radius: 14px;
+      font-size: 0.95rem;
+    }
+
+    th,
+    td {
+      text-align: left;
+      padding: 12px 13px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+    }
+
+    th {
+      color: #34403e;
+      background: rgba(15, 118, 110, 0.11);
+      font-weight: 800;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    code {
+      color: var(--code);
+      background: rgba(15, 118, 110, 0.09);
+      padding: 0.1em 0.38em;
+      border-radius: 6px;
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: 0.92em;
+    }
+
+    ul,
+    ol {
+      margin: 0 0 16px 1.3rem;
+      padding: 0;
+    }
+
+    li {
+      margin: 7px 0;
+    }
+
+    .score {
+      font-weight: 900;
+      color: var(--accent-dark);
+      white-space: nowrap;
+    }
+
+    .good {
+      color: var(--good);
+      font-weight: 800;
+    }
+
+    .warn {
+      color: var(--warn);
+      font-weight: 800;
+    }
+
+    .bad {
+      color: var(--bad);
+      font-weight: 800;
+    }
+
+    .note {
+      color: var(--muted);
+      font-size: 0.94rem;
+    }
+
+    .toc a,
+    .sources a {
+      color: var(--accent-dark);
+      font-weight: 700;
+      text-decoration: none;
+      border-bottom: 1px solid rgba(15, 118, 110, 0.3);
+    }
+
+    .toc a:hover,
+    .sources a:hover {
+      border-bottom-color: var(--accent-dark);
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      border-radius: 14px;
+    }
+
+    @media (max-width: 768px) {
+      .page {
+        padding: 20px 14px 44px;
+      }
+
+      .hero,
+      section {
+        padding: 22px;
+        border-radius: 20px;
+      }
+
+      .grid.two,
+      .grid.three {
+        grid-template-columns: 1fr;
+      }
+
+      th,
+      td {
+        min-width: 160px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="hero">
+      <p class="eyebrow">Product Review</p>
+      <h1>Vigil Platform: ระบบเด่นด้าน Security Operations ไม่ใช่ Full VMS Replacement</h1>
+      <p class="lead">วิเคราะห์ระบบจาก repo, runtime state, architecture docs และ benchmark กับระบบ CCTV/VMS/physical security platform ในตลาด</p>
+      <div class="meta">
+        <span class="pill">วันที่จัดทำ: 2026-06-03</span>
+        <span class="pill">สถานะ: Production pilot with live data</span>
+        <span class="pill">Scope: Product / Engineering / Market fit</span>
+      </div>
+    </header>
+
+    <section class="toc" id="toc">
+      <h2>สารบัญ</h2>
+      <div class="grid three">
+        <a href="#summary">Executive Summary</a>
+        <a href="#facts">Verified Facts</a>
+        <a href="#strengths">Strengths</a>
+        <a href="#weaknesses">Weaknesses</a>
+        <a href="#market">Market Comparison</a>
+        <a href="#roadmap">Recommended Roadmap</a>
+      </div>
+    </section>
+
+    <section id="summary">
+      <h2>Executive Summary</h2>
+      <p>Vigil Platform มีจุดแข็งชัดในฐานะ <strong>on-prem CCTV analytics / security operations platform สำหรับตลาดไทย</strong> โดยเฉพาะ LINE alert, Thai/English workflow, health/reporting, audit, PDPA/data ownership, white-label และ multi-vendor event ingestion</p>
+      <blockquote>Positioning ที่เหมาะ: Security Operations Add-on / Analytics Layer ที่ทำให้กล้องหรือ VMS เดิมฉลาดขึ้นและใช้งานจริงใน operation ไทยได้ดีขึ้น</blockquote>
+      <p>ไม่ควรวางตัวเป็น full enterprise VMS replacement ในระยะสั้น เพราะตลาดนั้นแข็งมากเรื่อง recording, timeline playback, evidence workflow, storage/failover, device ecosystem, access control และ support maturity</p>
+    </section>
+
+    <section id="facts">
+      <h2>Verified Facts</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Area</th><th>Fact</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Runtime topology</td><td>กล้อง Bosch/Hikvision/Dahua/ONVIF ส่งข้อมูลเข้า ingesters/media-recorder, PostgreSQL, Express/WebSocket, Vanilla JS dashboard และ Cloudflare Tunnel</td></tr>
+            <tr><td>Process state</td><td>PM2 services 5 ตัว online: <code>api-server</code>, <code>mqtt-subscriber</code>, <code>media-recorder</code>, <code>hikvision</code>, <code>dahua</code></td></tr>
+            <tr><td>Docker state</td><td><code>vigil-postgres</code> และ <code>vigil-emqx</code> running; EMQX bind localhost และ LAN IP ตาม security decision</td></tr>
+            <tr><td>Live data</td><td>DB มี <code>7 cameras</code>, <code>61,649 events</code>, <code>356 alert_logs</code>, <code>24 report_history</code>, <code>261 camera_status_log</code></td></tr>
+            <tr><td>Schema maturity</td><td>มี migration applied 40 ไฟล์ และ schema domains หลายชุด เช่น events, users/sessions/audit, alerts, reports, camera health, appearance/LPR</td></tr>
+            <tr><td>API surface</td><td><code>src/api-server.js</code> มีประมาณ 132 Express routes</td></tr>
+            <tr><td>Product lifecycle</td><td>มี <code>DECISIONS.md</code> ถึง decision #199 และ <code>GOTCHAS.md</code> ถึง gotcha #78 แปลว่ามี incident-driven hardening จริง</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="shape">
+      <h2>Current Product Shape</h2>
+      <p>ระบบปัจจุบันมีลักษณะเป็น platform มากกว่า dashboard ธรรมดา เพราะมี loop ครบตั้งแต่ camera event ingestion จนถึง alert, report, audit, health, license และ operations</p>
+      <div class="grid two">
+        <div class="card"><strong>Event-to-action loop</strong> Ingest, normalize, snapshot/clip, WebSocket, LINE alert, report history</div>
+        <div class="card"><strong>Operations loop</strong> PM2, health page, backup, retention, migrations, audit, service management</div>
+        <div class="card"><strong>Commercial loop</strong> License, EULA, white-label, hardware sizing, Thai/English docs</div>
+        <div class="card"><strong>Security loop</strong> Auth gates, media protection, audit logs, credential encryption, signed LINE webhook</div>
+      </div>
+    </section>
+
+    <section id="strengths">
+      <h2>Strengths</h2>
+      <h3>1. Market Fit สำหรับไทยชัดมาก</h3>
+      <p>LINE เป็นช่องทาง alert หลัก มี recipient onboarding, Thai/English UI/report, quiet hours, cooldown, quota visibility และ legal/PDPA posture สำหรับบริบทไทย</p>
+
+      <h3>2. On-prem และ PDPA/Data Ownership</h3>
+      <p>ระบบเก็บ event, snapshot, media และ credential ภายใน site เป็นหลัก เหมาะกับลูกค้าที่ไม่ต้องการส่ง video หรือ metadata ขึ้น cloud vendor</p>
+
+      <h3>3. Multi-vendor Event Ingestion ที่มีของจริง</h3>
+      <p>รองรับ Bosch MQTT, Hikvision ISAPI, Dahua CGI และ ONVIF monitor-only พร้อม vendor gotchas ที่มาจาก incident จริง</p>
+
+      <h3>4. Alert Workflow ครบกว่าระบบทั่วไปในตลาดไทย</h3>
+      <p>LINE subsystem ครอบคลุม rule matching, cooldown, quiet hours, recipient filtering, imgbb, alert logs, quota, pending recipients, block list, camera offline/recovery และ scheduled report delivery</p>
+
+      <h3>5. Reporting และ Health Monitoring ดีเกินระดับ Dashboard ทั่วไป</h3>
+      <p>มี analytics reports, scheduled reports, health report, report history, PNG/PDF paths, branding, uptime/offline sections และ storage/system warnings</p>
+
+      <h3>6. Operational Maturity</h3>
+      <p>มี PM2, Service Management UI, Dockerized PostgreSQL/EMQX, fail-fast migrations, backup scripts, retention jobs, health page, camera status logs และ audit logs</p>
+    </section>
+
+    <section id="weaknesses">
+      <h2>Weaknesses and Risks</h2>
+      <div class="grid two">
+        <div class="card"><strong>ยังไม่ใช่ Full VMS</strong> ยังไม่เทียบ enterprise VMS ใน recording/playback/evidence workflow/storage failover/deep device management</div>
+        <div class="card"><strong>Scale proof ยังจำกัด</strong> Runtime ที่ตรวจได้คือ 7 cameras / 61k events แม้ sizing doc วางไว้ถึง 3,000 cameras</div>
+        <div class="card"><strong>Vendor maintenance burden สูง</strong> Firmware/payload/auth/timing quirks เปลี่ยนได้และต้องมีคนดูแลต่อเนื่อง</div>
+        <div class="card"><strong>Codebase complexity</strong> <code>api-server.js</code> รับหลาย responsibility และ route จำนวนมาก</div>
+        <div class="card"><strong>Automated test/CI ยังไม่เด่น</strong> ยังควรเพิ่ม migration, route, security, alert-engine และ ingester replay tests</div>
+        <div class="card"><strong>Enterprise integration ยังไม่ครบ</strong> AD/SSO, SIEM, SMTP, webhook outbound, access control, case management ยังต้องเติม</div>
+      </div>
+    </section>
+
+    <section id="market">
+      <h2>Market Comparison</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>คู่เทียบ</th><th>เขาเด่นกว่า</th><th>Vigil เด่นกว่า</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Genetec Security Center</td><td>Unified physical security, access/intrusion ecosystem, enterprise scale</td><td>Thai/LINE workflow, on-prem custom, lower complexity for targeted alert/report use cases</td></tr>
+            <tr><td>Milestone XProtect</td><td>Open-platform VMS maturity, device support, playback/export ecosystem</td><td>LINE-first operations layer, Thai reports, lightweight customization</td></tr>
+            <tr><td>Axis Camera Station Pro</td><td>Axis-optimized VMS, recording/playback/search/export/redaction/access control</td><td>Multi-vendor event normalization, LINE recipient workflow, custom reports</td></tr>
+            <tr><td>HikCentral / Dahua DSS / Hanwha WAVE</td><td>First-party device integration, layouts, recording, playback, vendor support</td><td>Vendor-neutral overlay, local workflow customization, LINE/report/audit focus</td></tr>
+            <tr><td>Verkada / Avigilon Alta</td><td>Cloud UX, remote management, auto update, mobile/cloud operations</td><td>On-prem data ownership, use existing cameras, less cloud/hardware lock-in</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="scorecard">
+      <h2>Scorecard</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Category</th><th>Score</th><th>Rationale</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Thai operations fit</td><td class="score">9/10</td><td>LINE, Thai UI/report, workflow หน้างานชัดเจน</td></tr>
+            <tr><td>Event analytics platform</td><td class="score">8/10</td><td>Multi-vendor normalize + stats/report ดี</td></tr>
+            <tr><td>VMS core recording/playback</td><td class="score">5/10</td><td>มี clip/snapshot แต่ยังไม่ใช่ full VMS</td></tr>
+            <tr><td>Security/compliance posture</td><td class="score">7/10</td><td>Auth/audit/media-gating/credential encryption ดี แต่ควรมี security automation/test เพิ่ม</td></tr>
+            <tr><td>Enterprise scale proof</td><td class="score">5/10</td><td>มี sizing plan แต่ต้อง load test จริง</td></tr>
+            <tr><td>Maintainability</td><td class="score">6/10</td><td>Docs ดีมาก แต่ code monolith บางส่วนใหญ่</td></tr>
+            <tr><td>Commercialization</td><td class="score">7/10</td><td>License/EULA/white-label/sizing มีแล้ว แต่ installer/update/support path ต้องแข็งขึ้น</td></tr>
+            <tr><td>Market differentiation</td><td class="score">8/10</td><td>LINE-first + on-prem + Thai + source ownership แตกต่างชัด</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="roadmap">
+      <h2>Recommended Roadmap Priorities</h2>
+      <div class="grid two">
+        <div class="card">
+          <strong>Priority 1: Strengthen current winning position</strong>
+          <ul>
+            <li>Event ack/assign/comment</li>
+            <li>SOP per alert rule</li>
+            <li>Alert escalation if unacknowledged</li>
+            <li>Webhook outbound and SMTP</li>
+          </ul>
+        </div>
+        <div class="card">
+          <strong>Priority 2: Production hardening</strong>
+          <ul>
+            <li>Automated smoke test</li>
+            <li>Migration tests</li>
+            <li>Route/security regression tests</li>
+            <li>Off-host backup and restore drill</li>
+          </ul>
+        </div>
+        <div class="card">
+          <strong>Priority 3: Scale proof</strong>
+          <ul>
+            <li>Camera/event simulator</li>
+            <li>100/500/1,000 camera benchmark</li>
+            <li>WebSocket fanout benchmark</li>
+            <li>Clip capacity test</li>
+          </ul>
+        </div>
+        <div class="card">
+          <strong>Priority 4: Enterprise features</strong>
+          <ul>
+            <li>SSO/AD/LDAP</li>
+            <li>Multi-site management</li>
+            <li>SIEM/syslog integration</li>
+            <li>Formal API docs</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="business">
+      <h2>Business Implication</h2>
+      <p>Vigil Platform มีโอกาสชนะสูงใน niche ที่ชัด เช่น industrial sites, office buildings, retail, schools, Thai security operations teams และ existing CCTV deployments ที่ต้องการ smarter alerts/reports</p>
+      <blockquote>กลยุทธ์ที่เหมาะที่สุดคือ land-and-expand: เริ่มจาก LINE alerts + health/report overlay, ไม่ disrupt VMS เดิม, แล้วค่อยขยายไป event management, SOP, mobile และ multi-site</blockquote>
+    </section>
+
+    <section id="final">
+      <h2>Final Assessment</h2>
+      <p>Vigil Platform เป็นระบบที่ดีและมีตลาด ถ้าขายด้วย positioning ที่ถูกต้อง จุดแข็งที่สุดไม่ใช่การเป็น VMS แต่คือการแปลง video analytics event ให้กลายเป็น actionable security operations workflow สำหรับลูกค้าไทย</p>
+      <blockquote>Vigil ควรเป็นชั้น intelligence/workflow/reporting ที่นั่งบนกล้องและ VMS เดิม ไม่ใช่พยายามเป็น VMS enterprise ทั้งก้อนในระยะสั้น</blockquote>
+    </section>
+
+    <section class="sources" id="sources">
+      <h2>Sources Reviewed</h2>
+      <h3>Internal</h3>
+      <p class="note"><code>AGENTS.md</code>, <code>CLAUDE.md</code>, <code>ARCHITECTURE.md</code>, <code>DECISIONS.md</code>, <code>GOTCHAS.md</code>, <code>ROADMAP.md</code>, <code>SKILL.md</code>, <code>README.md</code>, <code>CHANGELOG.md</code>, <code>HARDWARE_SIZING_GUIDE.md</code>, <code>docs/LOGIC_*.md</code>, <code>src/package.json</code>, <code>src/api-server.js</code>, <code>db/init.sql</code>, <code>db/db_migration_*.sql</code>, PM2/Docker/PostgreSQL runtime checks</p>
+      <h3>External market references</h3>
+      <ul>
+        <li><a href="https://www.milestonesys.com/products/software/overview/">Milestone XProtect product overview</a></li>
+        <li><a href="https://www.genetec.com/products/unified-security/security-center">Genetec Security Center</a></li>
+        <li><a href="https://www.axis.com/en-us/products/axis-camera-station-pro">Axis Camera Station Pro</a></li>
+        <li><a href="https://www.avigilon.com/alta">Avigilon Alta</a></li>
+        <li><a href="https://www.verkada.com/en-US/command/">Verkada Command</a></li>
+        <li><a href="https://hanwhavisionamerica.com/wisenet-wave-vms/wisenet-wave-vms-features/">Hanwha WAVE VMS</a></li>
+        <li><a href="https://www.dahuasecurity.com/products/software/software-products/dss-professional">Dahua DSS Professional</a></li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>

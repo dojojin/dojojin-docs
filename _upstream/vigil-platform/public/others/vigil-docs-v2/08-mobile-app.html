@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Vigil Mobile App — Live Docs</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="overlay"></div>
+<div class="layout">
+<nav class="nav" id="nav">
+</nav>
+
+<button id="ham">☰</button>
+
+<div class="main">
+<!-- SOURCE: ROADMAP.md (mobile status) · github.com/dojojin/vigil-mobile | Update: mobile feature shipped or status changes -->
+<h1 class="ph">08 Vigil Mobile App (แอปพลิเคชัน Mobile)</h1>
+
+<h2>ภาพรวม</h2>
+<p>Vigil Mobile App เป็น native iOS + Android companion app สำหรับ security operators ให้ติดตามกล้องและแจ้งเตือนในมือ ขณะไม่อยู่ที่โต๊ะ</p>
+
+<div class="two">
+  <div class="card">
+    <h3>การพัฒนา</h3>
+    <ul>
+      <li><strong>Framework:</strong> React Native (Expo)</li>
+      <li><strong>ภาษา:</strong> JavaScript + TypeScript</li>
+      <li><strong>เวอร์ชัน:</strong> v1.4.0+ (parallel release กับ Vigil v1.4.0)</li>
+      <li><strong>Repository:</strong> <code>dojojin/vigil-mobile</code> (แยกจากแพลตฟอร์มหลัก)</li>
+      <li><strong>UI Score:</strong> 90/100 (WCAG AA compliant, responsive)</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>การจัดจำหน่าย</h3>
+    <ul>
+      <li><strong>iOS:</strong> App Store (TestFlight สำหรับการทดสอบภายใน)</li>
+      <li><strong>Android:</strong> Google Play Store (+ APK direct)</li>
+      <li><strong>Enterprise:</strong> MDM distribution ผ่าน Intune/MobileIron</li>
+      <li><strong>Custom:</strong> White-label build (แทนที่ชื่อแอป/icon/สี) ต่อ partner</li>
+    </ul>
+  </div>
+</div>
+
+<h2>คุณสมบัติหลัก — 5 Tabs</h2>
+
+<div class="feat-grid">
+  <div class="card">
+    <h3>1. Alerts Tab (แท็บแจ้งเตือน)</h3>
+    <p>Real-time stream ของ system alerts ส่งมาเป็น push notification</p>
+    <ul>
+      <li>Live alert list (ใหม่สุดก่อน)</li>
+      <li>Tap เพื่อไปดู → event detail + snapshot</li>
+      <li>Swipe เพื่อ acknowledge/dismiss</li>
+      <li>Filter ตาม camera หรือ alert type</li>
+      <li>Sound + vibration (สามารถปิดเสียงได้)</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>2. Events Tab (แท็บเหตุการณ์)</h3>
+    <p>ค้นดู events ทางประวัติศาสตร์ด้วย timeline</p>
+    <ul>
+      <li>Scrollable timeline (24h, 7d, 30d views)</li>
+      <li>Event cards: camera, type, time, snapshot</li>
+      <li>ค้นหาตาม camera + date range</li>
+      <li>Tap สำหรับรายละเอียดเต็ม + pre-alarm video</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>3. Map Tab (แท็บแผนที่)</h3>
+    <p>ตำแหน่งกล้องบน OpenLayers map</p>
+    <ul>
+      <li>Real-time camera markers (เขียว=online, แดง=offline)</li>
+      <li>Zoom/pan, clustering ที่ zoom ต่ำ</li>
+      <li>Tap marker → camera details + live snapshot</li>
+      <li>Heatmap toggle (optional, heat-dense zones)</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>4. Settings Tab (แท็บการตั้งค่า)</h3>
+    <p>ตั้งค่าแอป + config ระบบ</p>
+    <ul>
+      <li><strong>Custom Server URL:</strong> ชี้ไปยัง deploy ของลูกค้า (ไม่ hardcoded)</li>
+      <li><strong>Username/Password:</strong> basic auth + device fingerprint</li>
+      <li><strong>Push notification toggle</strong></li>
+      <li><strong>ภาษา:</strong> TH / EN</li>
+      <li><strong>Logout</strong></li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>5. Profile Tab (แท็บโปรไฟล์)</h3>
+    <p>ข้อมูลผู้ใช้ + biometric login</p>
+    <ul>
+      <li>Display name + role (operator, viewer, etc.)</li>
+      <li><strong>Biometric auth:</strong> Face ID (iOS), Fingerprint (Android)</li>
+      <li>Last login time</li>
+      <li>เกี่ยวกับ + version info</li>
+    </ul>
+  </div>
+</div>
+
+<h2>การพิสูจน์ตัวตน & ความปลอดภัย</h2>
+
+<h3>Flow (การไหลของข้อมูล)</h3>
+<pre>1. ผู้ใช้ใส่ custom server URL (เช่น https://vigil.customer.com)
+2. ใส่ username + password
+3. Backend ตรวจสอบ ส่งคืน JWT token + device fingerprint (hardware ID + app sig)
+4. แอปเก็บ token ใน encrypted AsyncStorage
+5. เมื่อเริ่มแอปใหม่: ตรวจสอบ token expiry + device fingerprint match
+   → ถ้าถูก: auto-login (แสดง biometric prompt ถ้าเปิดใช้)
+   → ถ้าไม่ถูก: force re-login
+6. Biometric (Face ID / Fingerprint) unlock เท่านั้น (extra layer ไม่ใช่ replacement)
+</pre>
+
+<h3>การจัดการ Token</h3>
+<ul>
+  <li><strong>Access token:</strong> หมดอายุ 15 นาที + refresh token</li>
+  <li><strong>Refresh token:</strong> 7 วัน เก็บแบบ encrypted</li>
+  <li><strong>Device fingerprint:</strong> ป้องกัน token ที่ถูกขโมยจากการใช้บน device อื่น</li>
+  <li><strong>Logout:</strong> revoke token บน backend ล้าง AsyncStorage</li>
+</ul>
+
+<h2>Push Notifications (แจ้งเตือน Push)</h2>
+
+<h3>การนำไปใช้</h3>
+<ul>
+  <li><strong>บริการ:</strong> Firebase Cloud Messaging (FCM, Android) + Apple Push Notification (APNs, iOS)</li>
+  <li><strong>Trigger:</strong> Backend ส่ง push เมื่อ alert rule ถูกทำให้ทำงาน (ผ่าน LINE API integration หรือ direct FCM API)</li>
+  <li><strong>Payload:</strong> alert_id, camera_name, event_type, timestamp, snapshot_url</li>
+  <li><strong>พฤติกรรม:</strong> tap notification → ไปยัง alert detail ใน Alerts tab</li>
+</ul>
+
+<h3>สิทธิ์การเข้าถึง</h3>
+<ul>
+  <li><strong>iOS:</strong> ขออนุญาต notification เมื่อเปิดใช้ครั้งแรก (ผู้ใช้สามารถเพิกถอนใน Settings)</li>
+  <li><strong>Android:</strong> Manifest permission + runtime permission (Android 13+)</li>
+</ul>
+
+<h2>Offline Resilience (ความยืดหยุ่นแบบออฟไลน์)</h2>
+
+<ul>
+  <li><strong>ไม่มี network:</strong> แสดง cached data (ได้นาน 24 ชั่วโมง) + "offline" badge</li>
+  <li><strong>Network กลับมา:</strong> auto-sync alerts + events</li>
+  <li><strong>Push ขณะออฟไลน์:</strong> deliver เมื่อเชื่อมต่อใหม่ (FCM จัดการ retries)</li>
+  <li><strong>Stale token:</strong> ถ้าไม่มี network 7 วัน force logout ขณะเชื่อมต่อใหม่ (security + ป้องกัน stale auth)</li>
+</ul>
+
+<h2>ประสิทธิภาพและเมตริก</h2>
+
+<table>
+<thead>
+<tr>
+<th>เมตริก</th>
+<th>เป้าหมาย</th>
+<th>ทำได้แล้ว (v1.5.1)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ขนาดแอป</td>
+<td>&lt;50 MB</td>
+<td>45 MB (iOS), 48 MB (Android)</td>
+</tr>
+<tr>
+<td>เวลาโหลดครั้งแรก</td>
+<td>&lt;3s</td>
+<td>2.2s (WiFi), 3.8s (4G)</td>
+</tr>
+<tr>
+<td>Alert notification delay (จาก backend fire ไปยัง user notification)</td>
+<td>&lt;5s</td>
+<td>1–3s (FCM delivery)</td>
+</tr>
+<tr>
+<td>การใช้หน่วยความจำ</td>
+<td>&lt;150 MB</td>
+<td>120 MB (idle)</td>
+</tr>
+<tr>
+<td>การใช้แบตเตอรี่ (8 ชั่วโมง idle มี push เปิดใช้)</td>
+<td>&lt;5%</td>
+<td>3% (optimized location services ปิด)</td>
+</tr>
+</tbody>
+</table>
+
+<h2>เครื่องที่รองรับ</h2>
+
+<table>
+<thead>
+<tr>
+<th>แพลตฟอร์ม</th>
+<th>เวอร์ชั่นต่ำสุด</th>
+<th>เครื่องอุปกรณ์</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>iOS</strong></td>
+<td>iOS 14.0+</td>
+<td>iPhone 11+, iPad (6th gen+)</td>
+</tr>
+<tr>
+<td><strong>Android</strong></td>
+<td>Android 11+ (API 30)</td>
+<td>Samsung, Xiaomi, Oppo, Vivo, OnePlus (ทั้งหมด major)</td>
+</tr>
+</tbody>
+</table>
+
+<h2>Internationalization (การจัดการหลายภาษา)</h2>
+
+<ul>
+  <li><strong>ภาษา:</strong> Thai (th_TH), English (en_US)</li>
+  <li><strong>ค่าเริ่มต้น:</strong> จับคู่กับ device locale สามารถ override ใน Settings</li>
+  <li><strong>สตริง:</strong> เก็บไว้ใน `locales/` JSON files (ไม่ hardcoded)</li>
+  <li><strong>อนาคต:</strong> Vietnamese, Indonesian, Malay (Ph.5)</li>
+</ul>
+
+<div class="sbox">
+  <h4>Roadmap (หลัง v1.5.1)</h4>
+  <ul>
+    <li><strong>Ph.5 (Q3 2026):</strong> Multi-language (VI, ID, MS), QR code login, dark mode</li>
+    <li><strong>Ph.6 (Q4 2026):</strong> Offline event search, advanced filters, analytics mini-charts</li>
+  </ul>
+</div>
+
+<div class="ref">
+  <p><a href="07-competitive.html">← 07 Architecture Decisions</a> | <a href="09-line-api.html">09 LINE API →</a></p>
+</div>
+</div>
+</div>
+
+<script src="nav.js"></script>
+</body>
+</html>

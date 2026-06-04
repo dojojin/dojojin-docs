@@ -1,0 +1,164 @@
+# ============================================================
+# Dependencies
+# ============================================================
+node_modules/
+package-lock.json
+!src/package-lock.json
+yarn.lock
+
+# ============================================================
+# Environment & Secrets — NEVER commit these
+# ============================================================
+.env
+.env.local
+.env.*.local
+src/.env
+src/.env.local
+
+# ============================================================
+# Camera config — มี IP, username, password
+# ============================================================
+cameras-config.json
+cameras-config.json.bak*
+cameras-config.backup-*.json
+camera-groups.json
+alert-rules.json
+line-config.json
+map-areas.json
+
+# ============================================================
+# Snapshots — รูป CCTV จริง (sensitive + ขนาดใหญ่)
+# ============================================================
+snapshots/
+*.jpg
+*.jpeg
+*.png
+*.gif
+# Allow logos/icons in dashboard
+!dashboard/assets/*.png
+
+# ============================================================
+# Phase 6 — Media (pre-alarm video clips)
+# ============================================================
+# media-spike/  — Phase 6.0 dead-end FTP spike output
+# media-buffer/ — Phase 6.1 rolling RTSP segment buffer (transient)
+# media/        — Phase 6.1 saved per-event clips (sensitive CCTV footage)
+media-spike/
+media-buffer/
+media/
+*.mp4
+*.h264
+*.mkv
+*.ts
+!dashboard/assets/*.jpg
+
+# Phase 7.3 — generated report PDFs (auto-created at boot; contents are
+# per-deployment artefacts, may contain event data)
+reports/
+
+# ============================================================
+# License keys & issued licenses — NEVER commit these
+# ============================================================
+# Private key — if this leaks, every license ever issued is forgeable.
+# Stored OUTSIDE this repo by convention (~/Documents/dojojin-keys/), but
+# add wildcards as belt-and-braces in case someone drops a .pem here.
+*-private.pem
+*-private.key
+license-private*
+# Ledger + per-customer issued licence copies (kept by us for renewal/
+# audit; the customer gets the JWT string by email, not the file).
+licenses-issued/
+# Public key copy from setup-keys.sh — fine to keep but doesn't need to
+# be tracked (the value is hard-coded in src/license.js for runtime).
+license-public.pem
+# scripts/keygen/ standalone install — when running the keygen from a
+# laptop OUTSIDE the main dashboard repo, `npm install` creates this
+# folder locally. We don't track it (each operator's machine reinstalls).
+scripts/keygen/node_modules/
+scripts/keygen/package-lock.json
+
+# ============================================================
+# Database / Docker volumes
+# ============================================================
+postgres-data/
+mosquitto-data/
+mosquitto-log/
+*.sql.bak
+# pg_dump output (sensitive — events + user hashes). The backups/
+# folder itself is checked in via backups/.gitkeep so the dir
+# exists on first run; only the dump + log artefacts are excluded.
+backups/*.dump
+backups/*.log
+backups/*.tar.gz
+
+# ============================================================
+# OS files
+# ============================================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ============================================================
+# Editor / IDE
+# ============================================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+
+# ============================================================
+# Logs & Debug output
+# ============================================================
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+mqtt_raw.txt
+mqtt_full.txt
+debug.log
+
+# ============================================================
+# Build / Cache
+# ============================================================
+dist/
+build/
+.cache/
+tmp/
+temp/
+
+# ============================================================
+# Backup files
+# ============================================================
+*.bak
+*.backup
+*.orig
+*~
+
+# Single-instance lock files (src/singleton.js — runtime PID files)
+src/.run/
+
+# ============================================================
+# Claude Code — local overrides
+# ============================================================
+# .claude/settings.json (project default — model: opusplan) IS tracked.
+# Only the per-machine override + accumulated permission grants stay out.
+.claude/settings.local.json
+
+# One-off: vss.html dropped into public/others/ — kept local only, not part
+# of the deployed product (other public/others/ files ARE tracked).
+public/others/vss.html
+
+# ============================================================
+# BoxBox plugin — generated diagram intermediates
+# ============================================================
+# scan.json / graph-*.json are regenerated by the plugin on demand.
+# Final HTML outputs (boxbox-{th,en}.html in public/others/) ARE tracked.
+.boxbox/

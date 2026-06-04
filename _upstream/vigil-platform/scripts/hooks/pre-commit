@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# pre-commit: scan staged content for known token / secret patterns
+#
+# Install:
+#   cp scripts/hooks/pre-commit .git/hooks/pre-commit
+#   chmod +x .git/hooks/pre-commit
+#
+# False positive? bypass with: git commit --no-verify
+# Decision: DECISIONS.md #170 · SEC-012
+
+# Patterns: Mapbox public/secret, AWS access key, GitHub PAT, Slack bot/user token
+PATTERNS='pk\.eyJ|sk\.eyJ|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9_]{36}|xoxb-[0-9]+-|xoxp-[0-9]+-'
+
+# Scan only file types where secrets realistically end up.
+# .md / .txt are excluded — they commonly contain example tokens in code snippets.
+SCAN_EXTS='\.(js|ts|json|sh|sql|env|py|rb|go|yaml|yml|toml)$'
+
+STAGED=$(git diff --cached --name-only --diff-filter=ACM 2>/dev/null) || exit 0
+[ -z "$STAGED" ] && exit 0
+
+FOUND=0
+while IFS= read -r file; do
+  # skip files whose extension is not in the scan list
+  echo "$file" | grep -qE "${SCAN_EXTS}" || continue
+  # grep -Eo prints only the matching token (not the full line) — avoids logging the full secret
+  HITS=$(git show ":${file}" 2>/dev/null | grep -Eon "${PATTERNS}" | head -3 || true)
+  if [ -n "$HITS" ]; then
+    echo "[pre-commit] SECRET PATTERN in staged file: ${file}"
+    echo "$HITS"
+    FOUND=1
+  fi
+done <<< "$STAGED"
+
+if [ "$FOUND" -eq 1 ]; then
+  echo ""
+  echo "[pre-commit] Commit aborted — remove or move the secret to .env before committing."
+  echo "[pre-commit] False positive? Use: git commit --no-verify"
+  exit 1
+fi
+
+exit 0

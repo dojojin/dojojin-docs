@@ -1,0 +1,35 @@
+{
+  "name": "src",
+  "version": "1.0.0",
+  "main": "mqtt-subscriber.js",
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "jose": "^6.2.3",
+    "mqtt": "^5.15.1",
+    "multer": "^2.1.1",
+    "pg": "^8.20.0",
+    "puppeteer": "^24.43.1",
+    "qrcode": "^1.5.4",
+    "sharp": "^0.34.5",
+    "ws": "^8.20.0"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  },
+  "scripts": {
+    "subscriber": "NODE_NO_WARNINGS=1 node mqtt-subscriber.js",
+    "api": "NODE_NO_WARNINGS=1 node api-server.js",
+    "media-recorder": "NODE_NO_WARNINGS=1 node media-recorder.js",
+    "hikvision": "NODE_NO_WARNINGS=1 node ingesters/hikvision-isapi.js",
+    "dahua": "NODE_NO_WARNINGS=1 node ingesters/dahua-cgi.js",
+    "simulator": "node simulator.js",
+    "migrate": "NODE_NO_WARNINGS=1 node migrate.js",
+    "backup": "../scripts/backup.sh",
+    "restore": "../scripts/restore.sh",
+    "start:all": "echo 'Stack is managed by PM2. Use: ../scripts/services.sh start  OR  pm2 start ../ecosystem.config.js'",
+    "start:full": "echo 'Stack is managed by PM2. Use: ../scripts/services.sh start  OR  pm2 start ../ecosystem.config.js'"
+  }
+}

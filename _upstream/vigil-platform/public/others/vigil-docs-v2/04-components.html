@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>องค์ประกอบระบบ — Vigil Platform Live Docs</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="overlay"></div>
+<div class="layout">
+<nav class="nav" id="nav">
+</nav>
+
+<button id="ham">☰</button>
+
+<div class="main">
+<!-- SOURCE: ARCHITECTURE.md · src/api-server.js (RBAC roles) · cameras-config.json | Update: new vendor, new service, RBAC role added -->
+<h1 class="ph">04 องค์ประกอบระบบ</h1>
+
+<h2>ภาพรวมสถาปัตยกรรม (Architecture Overview)</h2>
+<p>Vigil Platform ประกอบด้วย 4 ชั้นหลัก: <strong>Ingestion</strong> (รับเหตุการณ์จากกล้อง), <strong>Backend API</strong> (ประมวลผล แจ้งเตือน สถิติ), <strong>Database</strong> (เก็บข้อมูล), และ <strong>Frontend</strong> (dashboard + mobile app)</p>
+
+<div class="feat-grid">
+  <div class="card">
+    <h3>ชั้น Frontend</h3>
+    <p><strong>Dashboard (Vanilla JS + Chart.js + OpenLayers)</strong></p>
+    <ul>
+      <li>Live dashboard: กล้อง เหตุการณ์ การแจ้งเตือน</li>
+      <li>Executive Summary: บรรยายสรุปตอนเช้า KPI</li>
+      <li>Analytics: กราฟเส้นเวลา แนวโน้ม</li>
+      <li>Settings: การตั้งค่ากล้อง กฎ ผู้ใช้</li>
+      <li>Map page: OpenLayers + CartoDB</li>
+      <li>Appearances: ค้นหา + กราฟวิเคราะห์</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>ชั้น Ingestion</h3>
+    <p><strong>Ingesters เฉพาะเจาะจงตามเวนเดอร์ (Node.js)</strong></p>
+    <ul>
+      <li>Bosch: MQTT listener (ONVIF Profile M)</li>
+      <li>Hikvision: ISAPI HTTP endpoint</li>
+      <li>Dahua: HTTP CGI listener</li>
+      <li>ตรวจสอบและปกติของเหตุการณ์</li>
+      <li>ดาวน์โหลดสื่อ (สแนปช็อต บทตัดกล้อง)</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>Backend API</h3>
+    <p><strong>Express.js REST API</strong></p>
+    <ul>
+      <li>ค้นหาเหตุการณ์ เส้นเวลา สถิติ</li>
+      <li>เอนจิน Alert rule</li>
+      <li>ส่งการแจ้งเตือน LINE</li>
+      <li>สร้างรายงาน (PNG วิเคราะห์)</li>
+      <li>ยืนยันตัวตนผู้ใช้ (JWT + session)</li>
+      <li>RBAC (admin viewer auditor)</li>
+      <li>Health check endpoint</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>ฐานข้อมูล</h3>
+    <p><strong>PostgreSQL (20+ ตาราง)</strong></p>
+    <ul>
+      <li><code>events</code> — บันทึกเหตุการณ์หลัก</li>
+      <li><code>cameras</code> — การตั้งค่ากล้อง</li>
+      <li><code>alert_rules</code>, <code>alert_logs</code></li>
+      <li><code>appearances</code> — คุณลักษณะของบุคคล</li>
+      <li><code>users</code>, <code>audit_logs</code></li>
+      <li>นโยบายการเก็บรักษา (การลบโดยอัตโนมัติ)</li>
+      <li>Indexes + partition ตามวันที่</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>ที่เก็บสื่อ</h3>
+    <p><strong>Local filesystem + S3/NAS เพิ่มเติม</strong></p>
+    <ul>
+      <li><code>snapshots/</code> — รูปภาพเหตุการณ์</li>
+      <li><code>faces/</code> — บทตัดใบหน้า Hikvision</li>
+      <li><code>videos/</code> — คลิปก่อน alarm (Profile C)</li>
+      <li>Retention: ตั้งค่าได้แต่ละประเภท</li>
+      <li>Cleanup: ลบไฟล์เก่าโดยอัตโนมัติ</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>บริการสนับสนุน</h3>
+    <ul>
+      <li><strong>EMQX</strong> (สำหรับ Bosch MQTT)</li>
+      <li><strong>Redis</strong> (session cache real-time pub/sub)</li>
+      <li><strong>PM2</strong> (จัดการ process รีสตาร์ทอัตโนมัติ)</li>
+      <li><strong>Cloudflare Tunnel</strong> (reverse proxy)</li>
+      <li><strong>LINE API</strong> (bot webhook)</li>
+      <li><strong>Puppeteer</strong> (health report PDF/PNG)</li>
+    </ul>
+  </div>
+</div>
+
+<h2>ลำดับการไหลของข้อมูล</h2>
+
+<h3>รับเหตุการณ์ (Real-time)</h3>
+<pre>กล้อง → [Bosch MQTT | Hik ISAPI | Dahua HTTP] → Ingester Node.js
+        → ตรวจสอบ + ดาวน์โหลด snapshot/บทตัดใบหน้า
+        → INSERT INTO ตารางเหตุการณ์
+        → เผยแพร่ไปยังช่อง Redis (real-time)
+        → ทำให้กฎ alert ทำงาน (ถ้าตรงกัน)
+        → ส่งการแจ้งเตือน LINE (ถ้าเปิดใช้)
+        → Return 200 OK</pre>
+
+<h3>Frontend Real-time (WebSocket)</h3>
+<pre>Frontend → การเชื่อมต่อ WS → Backend
+         → [สมัครสมาชิกช่อง alert]
+         → Backend เผยแพร่ alert ใหม่ผ่าน Redis
+         → WS ส่งไปยังไคลเอนต์ทั้งหมดที่เชื่อมต่อ
+         → UI อัปเดต (บัตรเหตุการณ์ใหม่ เสียง toast)</pre>
+
+<h3>สร้างรายงาน</h3>
+<pre>ผู้ใช้คลิก "สร้างรายงานสุขภาพ"
+         → Backend สร้าง SVG template (_svgSafeText ลบ emoji)
+         → Sharp (librsvg) render SVG → PNG (ไม่มี emoji = ไม่ abort)
+         → ส่งลิงก์ดาวน์โหลด
+         → PNG หมดอายุหลังจาก 24 ชั่วโมง (cleanup job)
+หมายเหตุ: รายงาน PDF วิเคราะห์ใช้ Puppeteer — path แยกต่างหาก</pre>
+
+<h2>เทคโนโลยีสแต็ก</h2>
+
+<table>
+<thead>
+<tr>
+<th>ชั้น</th>
+<th>เทคโนโลยี</th>
+<th>เวอร์ชัน</th>
+<th>เหตุผล</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Frontend</strong></td>
+<td>Vanilla JavaScript</td>
+<td>ES6+</td>
+<td>ไม่มี framework overhead bundle ขนาดเล็ก ควบคุมโดยตรง</td>
+</tr>
+<tr>
+<td></td>
+<td>Chart.js</td>
+<td>4.x</td>
+<td>ใช้พื้นที่เล็ก ดีสำหรับอัปเดต real-time</td>
+</tr>
+<tr>
+<td></td>
+<td>OpenLayers</td>
+<td>9.2.4</td>
+<td>ไลบรารีแผนที่ที่ทรงพลัง CartoDB integration open-source</td>
+</tr>
+<tr>
+<td><strong>Backend</strong></td>
+<td>Node.js</td>
+<td>20.x</td>
+<td>JavaScript ทั่วไป เร็ว event-driven</td>
+</tr>
+<tr>
+<td></td>
+<td>Express.js</td>
+<td>4.x</td>
+<td>Framework เบา overhead น้อย</td>
+</tr>
+<tr>
+<td><strong>Database</strong></td>
+<td>PostgreSQL</td>
+<td>14+</td>
+<td>ACID JSON support window functions partitioning</td>
+</tr>
+<tr>
+<td></td>
+<td>Redis</td>
+<td>7.x</td>
+<td>In-memory cache pub/sub สำหรับเหตุการณ์ real-time</td>
+</tr>
+<tr>
+<td><strong>Media</strong></td>
+<td>Local filesystem / S3-compatible</td>
+<td>-</td>
+<td>ต้นทุนต่ำ นโยบายการเก็บรักษาง่าย พร้อม backup นอกไซต์</td>
+</tr>
+<tr>
+<td><strong>Process Mgmt</strong></td>
+<td>PM2</td>
+<td>5.x</td>
+<td>รีสตาร์ทอัตโนมัติ clustering monitoring logrotate</td>
+</tr>
+<tr>
+<td><strong>Report Render</strong></td>
+<td>Puppeteer + Sharp</td>
+<td>Latest</td>
+<td>SVG → PNG (ไม่มีปัญหา emoji) PDF เชื่อถือได้</td>
+</tr>
+<tr>
+<td><strong>Mobile</strong></td>
+<td>React Native (Expo)</td>
+<td>Latest</td>
+<td>iOS + Android จากโค้ดตัวเดียว native performance</td>
+</tr>
+</tbody>
+</table>
+
+<h2>ไฟล์การตั้งค่าหลัก</h2>
+
+<table>
+<thead>
+<tr>
+<th>ไฟล์</th>
+<th>วัตถุประสงค์</th>
+<th>ตัวอย่าง</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>system_settings</code> (ตาราง DB)</td>
+<td>การตั้งค่าระบบ (theme ภาษา วันการเก็บรักษา token LINE)</td>
+<td>จัดการผ่าน admin dashboard หน้า Settings</td>
+</tr>
+<tr>
+<td><code>cameras-config.json</code></td>
+<td>รายชื่อกล้อง + auth credentials (เข้ารหัส AES-256-GCM at rest)</td>
+<td>URL กล้อง Bosch Hikvision Dahua + credentials ที่เข้ารหัส</td>
+</tr>
+<tr>
+<td><code>.env</code></td>
+<td>ตัวแปร environment (secrets URL DB ports)</td>
+<td><code>DATABASE_URL, LINE_BOT_TOKEN, JWT_SECRET</code></td>
+</tr>
+<tr>
+<td><code>ecosystem.config.js</code></td>
+<td>การตั้งค่า PM2 process</td>
+<td>Worker count memory limit restart policy</td>
+</tr>
+<tr>
+<td><code>db/init.sql</code></td>
+<td>การเริ่มต้นฐานข้อมูล (ติดตั้งใหม่)</td>
+<td>CREATE TABLE + initial schema</td>
+</tr>
+<tr>
+<td><code>db/db_migration_*.sql</code></td>
+<td>Migration schema แบบเพิ่มเติม</td>
+<td>ใช้ at startup ถ้ายังไม่ทำ</td>
+</tr>
+</tbody>
+</table>
+
+<h2>ลำดับการยืนยันตัวตนและการอนุญาต</h2>
+
+<pre style="font-size:12px">
+1. เข้าสู่ระบบผู้ใช้ (username + password)
+   → Backend ตรวจสอบ credentials (bcrypt)
+   → สร้าง JWT token (httpOnly cookie)
+   → สร้าง refresh token ด้วย (Redis)
+
+2. ทุกการร้องขอ API
+   → ไคลเอนต์ส่ง JWT ผ่าน httpOnly cookie (ไม่ใช่ header)
+   → Middleware ตรวจสอบลายเซ็น + ความเท่า expiry
+   → แยก user ID + role (admin/viewer/auditor)
+   → ตรวจสอบสิทธิ์สำหรับ endpoint
+
+3. การเข้าถึงแบบ role-based (RBAC)
+   → admin: เข้าถึงเต็มที่
+   → viewer: dashboard read-only
+   → auditor: read-only + reports/export
+
+4. Audit log
+   → ทุก action ที่สำคัญบันทึกในตาราง audit_logs
+   → User ID action timestamp IP address
+</pre>
+
+<h2>ตัวเลือกการ Deploy</h2>
+
+<div class="three">
+  <div class="card">
+    <h3>ตัวเลือก A: Docker</h3>
+    <p><code>docker-compose up</code> — stack all-in-one</p>
+    <ul>
+      <li>Frontend (nginx)</li>
+      <li>API (Node.js)</li>
+      <li>PostgreSQL</li>
+      <li>Redis</li>
+      <li>EMQX (optional)</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>ตัวเลือก B: VM + PM2</h3>
+    <p>Ubuntu/Debian + Node.js โดยตรง</p>
+    <ul>
+      <li>Systemd service สำหรับ PM2</li>
+      <li>Nginx reverse proxy</li>
+      <li>PostgreSQL จัดการแยก</li>
+      <li>Redis จัดการแยก</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>ตัวเลือก C: Kubernetes</h3>
+    <p>Helm chart (Roadmap)</p>
+    <ul>
+      <li>Pod replicas</li>
+      <li>StatefulSet (DB)</li>
+      <li>Service mesh optional</li>
+      <li>Auto-scaling พร้อม</li>
+    </ul>
+  </div>
+</div>
+
+<div class="ref">
+  <p><a href="03-benefits.html">← 03 4P · SWOT · จุดเด่น</a> | <a href="05-security.html">05 Security Audit →</a></p>
+</div>
+</div>
+</div>
+
+<script src="nav.js"></script>
+</body>
+</html>

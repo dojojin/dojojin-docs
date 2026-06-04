@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Architecture Decisions — Vigil Platform Live Docs</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="overlay"></div>
+<div class="layout">
+<nav class="nav" id="nav">
+</nav>
+
+<button id="ham">☰</button>
+
+<div class="main">
+<!-- SOURCE: DECISIONS.md (#1 Vanilla JS, #5 raw SQL, #112 EMQX, #143 OpenLayers etc.) | Update: major stack decision changed -->
+<h1 class="ph">07 Architecture Decisions (การออกแบบสถาปัตยกรรม)</h1>
+
+<h2>ทำไมต้อง Self-hosted ไม่ใช่ SaaS Cloud?</h2>
+
+<div class="two">
+  <div class="card">
+    <h3>ข้อดีของ Self-hosted</h3>
+    <ul>
+      <li><strong>Data sovereignty:</strong> ข้อมูลในประเทศไทย PDPA compliant</li>
+      <li><strong>Lower TCO:</strong> ซื้อครั้งเดียว + Maintenance Agreement รายปี ≠ ค่าบิล cloud รายเดือนตลอด</li>
+      <li><strong>No vendor lock-in:</strong> ลูกค้าเป็นเจ้าของข้อมูล + infrastructure</li>
+      <li><strong>Customization:</strong> ลูกค้า + System Integrator ขยายแก้ไขได้เอง</li>
+      <li><strong>Privacy:</strong> ข้อมูลอยู่บน premise ลูกค้าเท่านั้น</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>ข้อเสียของ Self-hosted</h3>
+    <ul>
+      <li><strong>Deployment complexity:</strong> ลูกค้าต้องมี IT team</li>
+      <li><strong>No managed service:</strong> ลูกค้าเป็นเจ้าของ monitoring, backup, updates</li>
+      <li><strong>Scaling DIY:</strong> ถ้าเพิ่มกล้องต้องเพิ่ม hardware เอง</li>
+      <li><strong>Support cost:</strong> System Integrator ต้อง train + support ลูกค้า</li>
+      <li><strong>Churn:</strong> ลูกค้าจำหน่ายเครื่องและเลิกจ่าย Maintenance Agreement</li>
+    </ul>
+  </div>
+</div>
+
+<h2>ตัดสินใจสำคัญเกี่ยวกับ Tech Stack</h2>
+
+<div class="card">
+  <h3>Vanilla JavaScript (ไม่ใช่ React/Vue/Svelte)</h3>
+  <p><strong>เหตุผล:</strong> Dashboard ไม่ซับซ้อน เพียง CRUD + real-time updates ด้วย WebSocket — ค่าใช้จ่าย React ไม่ชดใช้</p>
+  <ul>
+    <li>Bundle size: ~50KB (เทียบกับ ~100KB+ React + dependencies)</li>
+    <li>ไม่ต้องมี build step (webpack, babel)</li>
+    <li>ควบคุม DOM โดยตรง (performance-critical map page)</li>
+    <li>Easier onboarding สำหรับ System Integrator ที่ติดตามโค้ด</li>
+  </ul>
+  <p><strong>Trade-off:</strong> ไม่มี component reuse, manual state management</p>
+</div>
+
+<div class="card">
+  <h3>Raw SQL (ไม่ใช่ ORM)</h3>
+  <p><strong>เหตุผล:</strong> Queries ซับซ้อน (window functions, partitions, time-series) — ORM ทำให้ยากขึ้น</p>
+  <ul>
+    <li>ควบคุม query optimization อย่างเต็มที่</li>
+    <li>Explicit explain plans + index tuning</li>
+    <li>Migration flexibility (raw SQL idempotent scripts)</li>
+    <li>Dependencies น้อยกว่า (Prisma, Drizzle = large dependency graph)</li>
+  </ul>
+  <p><strong>Trade-off:</strong> manual parameterization, more testing</p>
+</div>
+
+<div class="card">
+  <h3>Express.js (ไม่ใช่ NestJS/Fastify)</h3>
+  <p><strong>เหตุผล:</strong> Lightweight, proven, no hidden magic, easy debugging</p>
+  <ul>
+    <li>Middleware ecosystem ครบครัน (passport, cors, helmet)</li>
+    <li>Minimal overhead เทียบกับ Fastify (ไม่ latency-critical)</li>
+    <li>NestJS = over-engineered สำหรับ CRUD API นี้</li>
+  </ul>
+  <p><strong>Trade-off:</strong> ไม่มี built-in TypeScript, manual setup</p>
+</div>
+
+<div class="card">
+  <h3>OpenLayers (ไม่ใช่ Mapbox/Leaflet)</h3>
+  <p><strong>เหตุผล:</strong> Powerful, open-source, multi-projection support, ไม่ต้อง commercial token</p>
+  <ul>
+    <li>CartoDB + OSM tiles (ฟรี, ไม่ต้อง auth)</li>
+    <li>Native clustering + heatmap</li>
+    <li>Leaflet ง่ายเกินไป Mapbox แพงและ proprietary</li>
+  </ul>
+  <p><strong>Trade-off:</strong> steeper learning curve, larger bundle</p>
+</div>
+
+<div class="card">
+  <h3>EMQX (ไม่ใช่ Mosquitto)</h3>
+  <p><strong>เหตุผล:</strong> Bosch MQTT → ต้องการ scalability clustering + auth</p>
+  <ul>
+    <li>Clustering support (multi-node HA)</li>
+    <li>Better memory management + throughput</li>
+    <li>Mosquitto ใช้ได้สำหรับ single-broker small scale</li>
+  </ul>
+  <p><strong>Trade-off:</strong> added complexity, learning curve</p>
+</div>
+
+<div class="card">
+  <h3>PostgreSQL (ไม่ใช่ MySQL)</h3>
+  <p><strong>เหตุผล:</strong> Advanced features (JSON, window functions, LATERAL JOIN)</p>
+  <ul>
+    <li>JSON native type สำหรับ IVA metadata</li>
+    <li>Window functions สำหรับ analytics</li>
+    <li>Partitioning by date เหมาะกับข้อมูลขนาดใหญ่</li>
+    <li>ACID ที่เข้มแข็งขึ้น</li>
+  </ul>
+  <p><strong>Trade-off:</strong> heavy นิดหน่อยกว่า MySQL, config มากขึ้น</p>
+</div>
+
+<div class="card">
+  <h3>Puppeteer + Sharp (ไม่ใช่ Puppeteer อย่างเดียว)</h3>
+  <p><strong>เหตุผล:</strong> Health Report PNG rendering ต้อง SVG + ไม่มีปัญหา emoji</p>
+  <ul>
+    <li>Sharp = fast image processing (C++ binding)</li>
+    <li>Puppeteer + librsvg abort บน emoji → Sharp แก้ปัญหา</li>
+    <li>ดีกว่า Wkhtmltopdf (deprecated) หรือ headless Chrome (memory heavy)</li>
+  </ul>
+  <p><strong>Trade-off:</strong> 2 dependencies, extra config</p>
+</div>
+
+<h2>Deployment Architecture: ทำไมต้อง Docker + PM2?</h2>
+
+<table>
+<thead>
+<tr>
+<th>ตัวเลือก</th>
+<th>ข้อดี</th>
+<th>ข้อเสีย</th>
+<th>ตัวเลือกของ Vigil</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Docker Compose</strong></td>
+<td>+ Reproducible, all-in-one, easy first-time setup</td>
+<td>- Container orchestration DIY, ไม่มี HA out-of-box</td>
+<td>✅ Primary (dev + small prod)</td>
+</tr>
+<tr>
+<td><strong>Kubernetes</strong></td>
+<td>+ Auto-scaling, HA, industry standard</td>
+<td>- Overkill สำหรับ single-server, learning curve</td>
+<td>⏳ Roadmap Ph.6 (สำหรับลูกค้ากำลังใหญ่)</td>
+</tr>
+<tr>
+<td><strong>PM2 on VM</strong></td>
+<td>+ Lightweight, auto-restart, clustering บน single server</td>
+<td>- ไม่มี container isolation, manual setup</td>
+<td>✅ Secondary (bare-metal, existing VM)</td>
+</tr>
+<tr>
+<td><strong>systemd เท่านั้น</strong></td>
+<td>+ Native, ไม่ต้องเครื่องมือเพิ่มเติม</td>
+<td>- ไม่มี process clustering, limited features</td>
+<td>❌ ไม่เลือก (PM2 better UX)</td>
+</tr>
+</tbody>
+</table>
+
+<h2>ทำไมต้องสองภาษา (TH + EN)?</h2>
+
+<ul>
+  <li><strong>ตลาด:</strong> ประเทศไทยเป็นตัวจริง ASEAN เป็นตัวรอง → ภาษาอังกฤษเพื่อขยายในระดับภูมิภาค</li>
+  <li><strong>ผู้ปฏิบัติการ:</strong> พนักงาน hotel/industrial = ไทย, บริหารองค์กร = ภาษาอังกฤษผสมกัน</li>
+  <li><strong>รายงาน:</strong> Customer-facing (ไทย) + corporate report (ตัวเลือกภาษาอังกฤษ)</li>
+  <li><strong>การบำรุงรักษา:</strong> i18n dictionary ใน `dashboard/i18n.js` (2 blocks: `th` + `en`) — ไม่ใช้ gettext (ง่ายกว่าสำหรับทีม)</li>
+</ul>
+
+<h2>ทำไมต้อง Mobile App (React Native)?</h2>
+
+<ul>
+  <li><strong>ผู้ปฏิบัติการต้องการ mobile alerts:</strong> พนักงาน security เดินตรวจสอบไม่ได้นั่งอยู่ที่โต๊ะ</li>
+  <li><strong>iOS + Android จาก codebase เดียว:</strong> เร็วขึ้นในการนำสินค้าออกสู่ตลาด</li>
+  <li><strong>React Native vs Flutter:</strong> Ecosystem ที่ใหญ่กว่า ค้นหาวิศวกรได้ง่ายขึ้น JavaScript background ช่วยในการ onboard ทีม</li>
+  <li><strong>Push notifications + Biometric:</strong> Native capabilities สำคัญสำหรับ security use case</li>
+</ul>
+
+<h2>ปรัชญาการออกแบบ: หลักการสิทธิด้อยที่สุด</h2>
+
+<p>Security by default ไม่ใช่ "เปิดแล้วมาล็อก":</p>
+<ul>
+  <li>Ports ปิดตามค่าเริ่มต้น whitelist IPs ที่ชัดเจน</li>
+  <li>Database user สิทธิน้อยสุด (ไม่มี DROP TABLE)</li>
+  <li>Docker ทำงาน non-root</li>
+  <li>RBAC: viewer = read-only, operator = edit own scope, admin = full</li>
+  <li>API endpoints ต้องการการพิสูจน์ตัวตน (ไม่มี public endpoints ยกเว้น health check)</li>
+</ul>
+
+<div class="ibox">
+  <h4>Trade-offs อย่างต่อเนื่อง: ความเร็วกับ Maintainability</h4>
+  <p>Vigil เริ่มต้น lean: Vanilla JS, raw SQL, direct Node.js สิ่งนี้ช่วยให้ MVP ได้เร็ว (v1.0–1.2) ตอนนี้ที่ v1.5, codebase กำลังโตขึ้น → ต้องการ refactor tooling (TypeScript มาใน Ph.6) โดยไม่ทำให้ deployments หัก Strategy: backwards-compatible migrations, feature flags สำหรับ breaking changes</p>
+</div>
+
+<div class="ref">
+  <p><a href="06-bugs-fixed.html">← 06 บั๊กที่แก้แล้ว</a> | <a href="08-mobile-app.html">08 Vigil Mobile App →</a></p>
+</div>
+</div>
+</div>
+
+<script src="nav.js"></script>
+</body>
+</html>

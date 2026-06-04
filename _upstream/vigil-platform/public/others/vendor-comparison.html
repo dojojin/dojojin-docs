@@ -1,0 +1,1688 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vigil Platform — Camera Vendor Comparison (Bosch / Hikvision / Dahua)</title>
+<style>
+  :root {
+    --bg:        #0a0e1a;
+    --panel:     #111827;
+    --panel2:    #1a2236;
+    --border:    #1e2d45;
+    --accent:    #5b8def;
+    --accent2:   #3a6fd8;
+    --text:      #e2e8f0;
+    --dim:       #94a3b8;
+    --green:     #22c55e;
+    --amber:     #f59e0b;
+    --red:       #ef4444;
+    --bosch:     #009ee3;
+    --hik:       #e8000b;
+    --dahua:     #ff6600;
+    --radius:    8px;
+    --gap:       1.5rem;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', 'Noto Sans Thai', system-ui, sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+    padding: 2rem 1rem 4rem;
+  }
+
+  .page-wrap {
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  /* ── Header ── */
+  .page-header {
+    text-align: center;
+    margin-bottom: 2.5rem;
+    padding-bottom: 1.5rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .page-header h1 {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: var(--accent);
+    margin-bottom: .4rem;
+  }
+  .page-header .subtitle {
+    color: var(--dim);
+    font-size: .875rem;
+  }
+  .badge-row {
+    display: flex;
+    gap: .5rem;
+    justify-content: center;
+    margin-top: .75rem;
+    flex-wrap: wrap;
+  }
+  .badge {
+    padding: .2rem .75rem;
+    border-radius: 999px;
+    font-size: .75rem;
+    font-weight: 600;
+    letter-spacing: .03em;
+  }
+  .badge-bosch { background: #003a6640; color: var(--bosch); border: 1px solid var(--bosch); }
+  .badge-hik   { background: #6600001a; color: var(--hik);   border: 1px solid var(--hik);   }
+  .badge-dahua { background: #6622001a; color: var(--dahua); border: 1px solid var(--dahua); }
+
+  /* ── Section ── */
+  .section {
+    margin-bottom: 2.5rem;
+  }
+  .section-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--accent);
+    margin-bottom: 1rem;
+    padding-bottom: .4rem;
+    border-bottom: 2px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+  }
+  .section-title svg { flex-shrink: 0; }
+
+  /* ── Summary table ── */
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--gap);
+    margin-bottom: var(--gap);
+  }
+  @media (max-width: 768px) {
+    .summary-grid { grid-template-columns: 1fr; }
+  }
+
+  .vendor-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .vendor-header {
+    padding: .75rem 1rem;
+    font-weight: 700;
+    font-size: 1rem;
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+  }
+  .vendor-header.bosch { background: #003a6640; color: var(--bosch); border-bottom: 2px solid var(--bosch); }
+  .vendor-header.hik   { background: #6600001a; color: var(--hik);   border-bottom: 2px solid var(--hik);   }
+  .vendor-header.dahua { background: #6622001a; color: var(--dahua); border-bottom: 2px solid var(--dahua); }
+
+  .vendor-body { padding: 1rem; }
+
+  .kv-list { list-style: none; }
+  .kv-list li {
+    display: grid;
+    grid-template-columns: 110px 1fr;
+    gap: .4rem;
+    padding: .3rem 0;
+    border-bottom: 1px solid var(--border);
+    font-size: .8rem;
+  }
+  .kv-list li:last-child { border-bottom: none; }
+  .kv-key { color: var(--dim); }
+  .kv-val { color: var(--text); font-weight: 500; word-break: break-word; }
+  .kv-val.mono { font-family: monospace; font-size: .75rem; color: #93c5fd; }
+
+  /* ── Flow diagram ── */
+  .flow-section {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.25rem;
+    margin-bottom: var(--gap);
+  }
+  .flow-section h3 {
+    font-size: .9rem;
+    font-weight: 700;
+    margin-bottom: 1rem;
+    color: var(--accent);
+  }
+  .flow-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 0;
+    flex-wrap: wrap;
+  }
+  .flow-box {
+    background: var(--panel2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: .55rem .8rem;
+    font-size: .78rem;
+    line-height: 1.4;
+    min-width: 110px;
+    text-align: center;
+    position: relative;
+  }
+  .flow-box .label {
+    font-weight: 700;
+    color: var(--text);
+    display: block;
+  }
+  .flow-box .sub {
+    color: var(--dim);
+    font-size: .7rem;
+    display: block;
+    margin-top: .15rem;
+  }
+  .flow-arrow {
+    display: flex;
+    align-items: center;
+    padding: 0 .35rem;
+    color: var(--dim);
+    font-size: 1.1rem;
+    align-self: center;
+  }
+  .flow-arrow .proto {
+    font-size: .65rem;
+    color: var(--accent);
+    writing-mode: horizontal-tb;
+    position: absolute;
+    top: -1.2rem;
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
+    font-weight: 600;
+  }
+  .flow-arrow-wrap {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: .5rem 0;
+  }
+  .arrow-label {
+    font-size: .65rem;
+    color: var(--accent);
+    white-space: nowrap;
+    margin-bottom: .1rem;
+  }
+  .arrow-char { color: var(--dim); font-size: 1.2rem; }
+
+  .col-bosch { border-left: 3px solid var(--bosch) !important; }
+  .col-hik   { border-left: 3px solid var(--hik)   !important; }
+  .col-dahua { border-left: 3px solid var(--dahua) !important; }
+
+  /* ── Big compare table ── */
+  .compare-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: .8rem;
+    background: var(--panel);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .compare-table th, .compare-table td {
+    padding: .65rem .9rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  .compare-table th {
+    background: var(--panel2);
+    font-weight: 700;
+    color: var(--dim);
+    font-size: .75rem;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+  }
+  .compare-table th.h-bosch { color: var(--bosch); }
+  .compare-table th.h-hik   { color: var(--hik);   }
+  .compare-table th.h-dahua { color: var(--dahua); }
+  .compare-table tr:last-child td { border-bottom: none; }
+  .compare-table td:first-child { color: var(--dim); font-weight: 600; white-space: nowrap; }
+  .compare-table code {
+    font-family: monospace;
+    font-size: .72rem;
+    background: rgba(255,255,255,.06);
+    padding: .1rem .3rem;
+    border-radius: 3px;
+    color: #93c5fd;
+  }
+  tr.row-alt { background: rgba(255,255,255,.02); }
+
+  /* ── Snapshot timeline ── */
+  .snap-chain {
+    display: flex;
+    flex-direction: column;
+    gap: .4rem;
+  }
+  .snap-step {
+    display: flex;
+    align-items: flex-start;
+    gap: .6rem;
+    background: var(--panel2);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: .5rem .75rem;
+    font-size: .78rem;
+  }
+  .snap-step.primary   { border-left: 3px solid var(--green); }
+  .snap-step.secondary { border-left: 3px solid var(--amber); }
+  .snap-step.fallback  { border-left: 3px solid var(--red);   }
+  .snap-step.upgrade   { border-left: 3px solid var(--accent); }
+  .snap-num {
+    font-weight: 800;
+    font-size: .85rem;
+    min-width: 1.4rem;
+    color: var(--dim);
+  }
+  .snap-desc .title { font-weight: 700; color: var(--text); }
+  .snap-desc .detail { color: var(--dim); margin-top: .1rem; }
+
+  /* ── Network table ── */
+  .net-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: .8rem;
+    background: var(--panel);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .net-table th, .net-table td {
+    padding: .6rem .9rem;
+    border-bottom: 1px solid var(--border);
+    text-align: center;
+  }
+  .net-table th {
+    background: var(--panel2);
+    color: var(--dim);
+    font-size: .72rem;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+  }
+  .net-table td:first-child { text-align: left; font-weight: 600; color: var(--dim); }
+  .net-table tr:last-child td { border-bottom: none; }
+  .net-low  { color: var(--green); font-weight: 600; }
+  .net-mid  { color: var(--amber); font-weight: 600; }
+  .net-high { color: var(--red);   font-weight: 600; }
+  .net-note { font-size: .7rem; color: var(--dim); margin-top: .15rem; }
+  row.alt { background: rgba(255,255,255,.02); }
+
+  /* ── Info boxes ── */
+  .info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 1rem;
+  }
+  .info-box {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1rem;
+  }
+  .info-box h4 {
+    font-size: .85rem;
+    font-weight: 700;
+    margin-bottom: .6rem;
+    color: var(--accent);
+  }
+  .info-box ul { padding-left: 1.1rem; }
+  .info-box ul li {
+    color: var(--dim);
+    font-size: .78rem;
+    line-height: 1.6;
+    margin-bottom: .2rem;
+  }
+  .info-box ul li strong { color: var(--text); }
+
+  /* ── Chip ── */
+  .chip {
+    display: inline-block;
+    padding: .1rem .5rem;
+    border-radius: 999px;
+    font-size: .7rem;
+    font-weight: 700;
+    margin: .1rem .05rem;
+  }
+  .chip-green  { background: #16a34a20; color: var(--green); border: 1px solid #22c55e50; }
+  .chip-amber  { background: #d9770620; color: var(--amber); border: 1px solid #f59e0b50; }
+  .chip-red    { background: #ef444420; color: var(--red);   border: 1px solid #ef444450; }
+  .chip-blue   { background: #3b82f620; color: #93c5fd;      border: 1px solid #3b82f650; }
+
+  /* ── Footer ── */
+  .page-footer {
+    margin-top: 3rem;
+    text-align: center;
+    color: var(--dim);
+    font-size: .72rem;
+    border-top: 1px solid var(--border);
+    padding-top: 1rem;
+  }
+
+  /* ── Responsive ── */
+  @media (max-width: 768px) {
+    .flow-row { flex-direction: column; align-items: flex-start; }
+    .flow-arrow { transform: rotate(90deg); }
+    .info-grid { grid-template-columns: 1fr; }
+    body { padding: 1rem .5rem 3rem; }
+  }
+</style>
+</head>
+<body>
+<div class="page-wrap">
+
+<!-- ── Header ─────────────────────────────────────────────── -->
+<div class="page-header">
+  <h1>Camera Vendor Integration — End-to-End Flow</h1>
+  <p class="subtitle">Vigil Platform · Internal Technical Reference · สรุปกระบวนการต้นทางถึงปลายทาง</p>
+  <div class="badge-row">
+    <span class="badge badge-bosch">Bosch BVMS / FlexiDome</span>
+    <span class="badge badge-hik">Hikvision Smart Camera</span>
+    <span class="badge badge-dahua">Dahua VCA Camera</span>
+  </div>
+</div>
+
+<!-- ── Section 1: Quick Compare ───────────────────────────── -->
+<div class="section">
+  <div class="section-title">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+    Quick Comparison — 3 ยี่ห้อ
+  </div>
+
+  <div class="summary-grid">
+
+    <!-- Bosch -->
+    <div class="vendor-card">
+      <div class="vendor-header bosch">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+        Bosch BVMS / IVA
+      </div>
+      <div class="vendor-body">
+        <ul class="kv-list">
+          <li><span class="kv-key">Protocol</span><span class="kv-val">ONVIF Profile M → MQTT</span></li>
+          <li><span class="kv-key">Transport</span><span class="kv-val">MQTT publish (กล้อง → Broker)</span></li>
+          <li><span class="kv-key">Broker</span><span class="kv-val mono">EMQX (local) TCP 1883</span></li>
+          <li><span class="kv-key">Topic pattern</span><span class="kv-val mono">{cam_id}/onvif-ej/RuleEngine/#</span></li>
+          <li><span class="kv-key">Auth (event)</span><span class="kv-val">MQTT username/password (EMQX built-in DB)</span></li>
+          <li><span class="kv-key">Auth (snap)</span><span class="kv-val">HTTP Basic</span></li>
+          <li><span class="kv-key">Snapshot</span><span class="kv-val">MQTT embedded (base64) → HTTP fallback</span></li>
+          <li><span class="kv-key">Process</span><span class="kv-val mono">mqtt-subscriber.js</span></li>
+          <li><span class="kv-key">Analytics UI</span><span class="kv-val">Bosch Configuration Manager (CM)</span></li>
+          <li><span class="kv-key">Heartbeat</span><span class="kv-val">ทุก MQTT message (incl. MotionAlarm)</span></li>
+          <li><span class="kv-key">RTSP needed?</span><span class="kv-val"><span class="chip chip-green">ไม่ต้องการ</span></span></li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Hikvision -->
+    <div class="vendor-card">
+      <div class="vendor-header hik">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+        Hikvision ISAPI
+      </div>
+      <div class="vendor-body">
+        <ul class="kv-list">
+          <li><span class="kv-key">Protocol</span><span class="kv-val">ISAPI Alert Stream (HTTP long-poll)</span></li>
+          <li><span class="kv-key">Transport</span><span class="kv-val">HTTP multipart/mixed (Server→Dashboard PULL)</span></li>
+          <li><span class="kv-key">Endpoint</span><span class="kv-val mono">/ISAPI/Event/notification/alertStream</span></li>
+          <li><span class="kv-key">Auth (event)</span><span class="kv-val">HTTP Digest (MD5, RFC 2617)</span></li>
+          <li><span class="kv-key">Auth (snap)</span><span class="kv-val">HTTP Digest (2-step handshake)</span></li>
+          <li><span class="kv-key">Snapshot</span><span class="kv-val">HTTP ISAPI Streaming channel picture</span></li>
+          <li><span class="kv-key">Process</span><span class="kv-val mono">hikvision-isapi.js</span></li>
+          <li><span class="kv-key">Analytics UI</span><span class="kv-val">Hikvision Web GUI / iVMS-4200</span></li>
+          <li><span class="kv-key">Heartbeat</span><span class="kv-val">videoloss ทุก ~10s (อัพเดท last_seen)</span></li>
+          <li><span class="kv-key">RTSP needed?</span><span class="kv-val"><span class="chip chip-green">ไม่ต้องการ</span></span></li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Dahua -->
+    <div class="vendor-card">
+      <div class="vendor-header dahua">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+        Dahua CGI
+      </div>
+      <div class="vendor-body">
+        <ul class="kv-list">
+          <li><span class="kv-key">Protocol</span><span class="kv-val">CGI Event Manager (HTTP long-poll)</span></li>
+          <li><span class="kv-key">Transport</span><span class="kv-val">HTTP multipart/x-mixed-replace (Server→Dashboard PULL)</span></li>
+          <li><span class="kv-key">Endpoint</span><span class="kv-val mono">/cgi-bin/eventManager.cgi?action=attach</span></li>
+          <li><span class="kv-key">Auth (event)</span><span class="kv-val">HTTP Digest (nonce cached ลด round-trip)</span></li>
+          <li><span class="kv-key">Auth (snap)</span><span class="kv-val">HTTP Digest (cached)</span></li>
+          <li><span class="kv-key">Snapshot</span><span class="kv-val">snapManager → RTSP buffer frame → CGI live fallback</span></li>
+          <li><span class="kv-key">Process</span><span class="kv-val mono">dahua-cgi.js</span></li>
+          <li><span class="kv-key">Analytics UI</span><span class="kv-val">Dahua Web GUI / DSS / SmartPSS</span></li>
+          <li><span class="kv-key">Heartbeat</span><span class="kv-val">ทุก CGI chunk (incl. text Heartbeat)</span></li>
+          <li><span class="kv-key">RTSP needed?</span><span class="kv-val"><span class="chip chip-amber">ต้องการ สำหรับ clip buffer</span></span></li>
+        </ul>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ── Section 2: End-to-End Flow ─────────────────────────── -->
+<div class="section">
+  <div class="section-title">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="5 12 12 5 19 12"/><polyline points="5 19 12 12 19 19"/></svg>
+    กระบวนการ End-to-End : กล้อง → Database → Dashboard
+  </div>
+
+  <!-- Bosch Flow -->
+  <div class="flow-section">
+    <h3 style="color: var(--bosch);">Bosch — MQTT Flow (ONVIF Profile M)</h3>
+    <div class="flow-row">
+      <div class="flow-box col-bosch">
+        <span class="label">Bosch Camera</span>
+        <span class="sub">IVA Pro / FlexiDome 8100i</span>
+      </div>
+      <div class="flow-arrow-wrap">
+        <span class="arrow-label">ONVIF Profile M<br>MQTT publish</span>
+        <span class="arrow-char">→</span>
+      </div>
+      <div class="flow-box col-bosch">
+        <span class="label">EMQX Broker</span>
+        <span class="sub">TCP 1883 · local server</span>
+      </div>
+      <div class="flow-arrow-wrap">
+        <span class="arrow-label">subscribe<br>+/onvif-ej/#</span>
+        <span class="arrow-char">→</span>
+      </div>
+      <div class="flow-box col-bosch">
+        <span class="label">mqtt-subscriber.js</span>
+        <span class="sub">parse JSON payload<br>extract event + snapshot</span>
+      </div>
+      <div class="flow-arrow-wrap">
+        <span class="arrow-label">HTTP Basic GET<br>snap.jpg?VCAOverlay=1</span>
+        <span class="arrow-char">↔</span>
+      </div>
+      <div class="flow-box col-bosch">
+        <span class="label">Camera IP</span>
+        <span class="sub">HTTP snapshot pull<br>(fallback / overlay)</span>
+      </div>
+    </div>
+    <div class="flow-row" style="margin-top:.75rem">
+      <div class="flow-box" style="background:transparent;border:none;min-width:0;padding:0"></div>
+      <div style="flex:1"></div>
+      <div class="flow-box col-bosch" style="min-width:160px">
+        <span class="label">mqtt-subscriber.js</span>
+        <span class="sub">INSERT events + UPDATE snapshot + alertEngine</span>
+      </div>
+      <div class="flow-arrow-wrap">
+        <span class="arrow-label">pg_notify<br>new_event</span>
+        <span class="arrow-char">→</span>
+      </div>
+      <div class="flow-box col-bosch">
+        <span class="label">PostgreSQL</span>
+        <span class="sub">events table<br>cameras table</span>
+      </div>
+      <div class="flow-arrow-wrap">
+        <span class="arrow-label">LISTEN WebSocket<br>broadcast</span>
+        <span class="arrow-char">→</span>
+      </div>
+      <div class="flow-box col-bosch">
+        <span class="label">Dashboard</span>
+        <span class="sub">Live feed · Map<br>Stats · Alerts</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Hikvision Flow -->
+  <div class="flow-section">
+    <h3 style="color: var(--hik);">Hikvision — ISAPI Alert Stream Flow</h3>
+    <div class="flow-row">
+      <div class="flow-box col-hik">
+        <span class="label">Hikvision Camera</span>
+        <span class="sub">Smart Camera / NVR</span>
+      </div>
+      <div class="flow-arrow-wrap">
+        <span class="arrow-label">HTTP Digest GET<br>(long-lived stream)</span>
+        <span class="arrow-char">←</span>
+      </div>
+      <div class="flow-box col-hik">
+        <span class="label">hikvision-isapi.js</span>
+        <span class="sub">connects to camera<br>/ISAPI/Event/notification/alertStream</span>
+      </div>
+      <div class="flow-arrow-wrap">
+        <span class="arrow-label">push XML event<br>multipart/mixed</span>
+        <span class="arrow-char">←</span>
+      </div>
+      <div class="flow-box col-hik">
+        <span class="label">Camera</span>
+        <span class="sub">pushes XML parts<br>+ JPEG parts (Face)</span>
+      </div>
+      <div class="flow-arrow-wrap">
+        <span class="arrow-label">snapshot GET<br>ISAPI Streaming</span>
+        <span class="arrow-char">↔</span>
+      </div>
+      <div class="flow-box col-hik">
+        <span class="label">Camera IP</span>
+        <span class="sub">/ISAPI/Streaming/<br>channels/10{N}/picture</span>
+      </div>
+    </div>
+    <div class="flow-row" style="margin-top:.75rem">
+      <div style="flex:1"></div>
+      <div class="flow-box col-hik" style="min-width:170px">
+        <span class="label">hikvision-isapi.js</span>
+        <span class="sub">INSERT events + save JPEG + alertEngine</span>
+      </div>
+      <div class="flow-arrow-wrap">
+        <span class="arrow-label">pg_notify<br>new_event</span>
+        <span class="arrow-char">→</span>
+      </div>
+      <div class="flow-box col-hik">
+        <span class="label">PostgreSQL</span>
+        <span class="sub">events table</span>
+      </div>
+      <div class="flow-arrow-wrap">
+        <span class="arrow-label">WebSocket</span>
+        <span class="arrow-char">→</span>
+      </div>
+      <div class="flow-box col-hik">
+        <span class="label">Dashboard</span>
+        <span class="sub">Live feed · Map<br>Stats · Alerts</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dahua Flow -->
+  <div class="flow-section">
+    <h3 style="color: var(--dahua);">Dahua — CGI Event Manager Flow</h3>
+    <div class="flow-row">
+      <div class="flow-box col-dahua">
+        <span class="label">Dahua Camera</span>
+        <span class="sub">IPC / NVR (VCA)</span>
+      </div>
+      <div class="flow-arrow-wrap">
+        <span class="arrow-label">HTTP Digest GET<br>(long-lived stream)</span>
+        <span class="arrow-char">←</span>
+      </div>
+      <div class="flow-box col-dahua">
+        <span class="label">dahua-cgi.js</span>
+        <span class="sub">eventManager.cgi<br>+ snapManager.cgi</span>
+      </div>
+      <div class="flow-arrow-wrap">
+        <span class="arrow-label">push text lines<br>+ JPEG (snap)</span>
+        <span class="arrow-char">←</span>
+      </div>
+      <div class="flow-box col-dahua">
+        <span class="label">Camera</span>
+        <span class="sub">Code=CrossLine...<br>action=Start</span>
+      </div>
+      <div class="flow-arrow-wrap">
+        <span class="arrow-label">RTSP stream<br>media-recorder</span>
+        <span class="arrow-char">←</span>
+      </div>
+      <div class="flow-box col-dahua">
+        <span class="label">media-recorder</span>
+        <span class="sub">rolling clip buffer<br>1s .ts segments (ffmpeg)</span>
+      </div>
+    </div>
+    <div class="flow-row" style="margin-top:.75rem">
+      <div style="flex:1"></div>
+      <div class="flow-box col-dahua" style="min-width:170px">
+        <span class="label">dahua-cgi.js</span>
+        <span class="sub">INSERT + snapshot scoring<br>+ clip resolver + alertEngine</span>
+      </div>
+      <div class="flow-arrow-wrap">
+        <span class="arrow-label">pg_notify<br>new_event</span>
+        <span class="arrow-char">→</span>
+      </div>
+      <div class="flow-box col-dahua">
+        <span class="label">PostgreSQL</span>
+        <span class="sub">events table</span>
+      </div>
+      <div class="flow-arrow-wrap">
+        <span class="arrow-label">WebSocket</span>
+        <span class="arrow-char">→</span>
+      </div>
+      <div class="flow-box col-dahua">
+        <span class="label">Dashboard</span>
+        <span class="sub">Live feed · Map<br>Stats · Alerts</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Section 3: Adding Camera ───────────────────────────── -->
+<div class="section">
+  <div class="section-title">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+    เมื่อ Added กล้องเข้าระบบ — สิ่งที่เกิดขึ้น
+  </div>
+
+  <table class="compare-table">
+    <thead>
+      <tr>
+        <th style="width:18%">ขั้นตอน</th>
+        <th class="h-bosch">Bosch</th>
+        <th class="h-hik">Hikvision</th>
+        <th class="h-dahua">Dahua</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>1. บันทึก config</td>
+        <td>เพิ่ม entry ใน <code>cameras-config.json</code> (vendor: "bosch") + INSERT ใน <code>cameras</code> table</td>
+        <td>เพิ่ม entry ใน <code>cameras-config.json</code> (vendor: "hikvision") + INSERT ใน <code>cameras</code> table</td>
+        <td>เพิ่ม entry ใน <code>cameras-config.json</code> (vendor: "dahua") + INSERT ใน <code>cameras</code> table</td>
+      </tr>
+      <tr class="row-alt">
+        <td>2. Hot-reload</td>
+        <td><code>fs.watch</code> ตรวจ config เปลี่ยน → <code>mqtt-subscriber.js</code> reload <code>cameraMap</code> ทันที (ไม่ restart)</td>
+        <td><code>fs.watch</code> → <code>hikvision-isapi.js</code> เรียก <code>syncCameras()</code> → เปิด connection ใหม่อัตโนมัติ</td>
+        <td><code>fs.watch</code> → <code>dahua-cgi.js</code> เรียก <code>syncCameras()</code> → เปิด eventManager + snapManager</td>
+      </tr>
+      <tr>
+        <td>3. EMQX credential</td>
+        <td>Auto-provision ผ่าน <code>_emqxProvisionCamera()</code> — สร้าง user ใน EMQX, เขียน <code>mqtt_username/password</code> กลับ → กล้อง Bosch ต้องตั้ง MQTT client ให้ publish ไปที่ EMQX</td>
+        <td>ไม่เกี่ยว (ไม่ใช้ MQTT)</td>
+        <td>ไม่เกี่ยว (ไม่ใช้ MQTT)</td>
+      </tr>
+      <tr class="row-alt">
+        <td>4. First heartbeat</td>
+        <td>รอกล้อง publish MQTT message แรก → <code>last_seen_at</code> อัพเดท → Dashboard แสดง Online</td>
+        <td>ISAPI alertStream connected → videoloss XML part แรก → <code>last_seen_at</code> อัพเดท</td>
+        <td>eventManager connected → Heartbeat text line แรก → <code>last_seen_at</code> อัพเดท</td>
+      </tr>
+      <tr>
+        <td>5. ตรวจสอบ config</td>
+        <td>ดู EMQX Provisioning status ใน Dashboard › Settings › Cameras</td>
+        <td>ดู camera status บน Dashboard หรือ log ของ <code>hikvision-isapi.js</code></td>
+        <td>ดู camera status หรือ log <code>dahua-cgi.js</code></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ── Section 4: Analytics Setup ─────────────────────────── -->
+<div class="section">
+  <div class="section-title">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+    หลังจาก Set Analytics — Event ที่รองรับ
+  </div>
+
+  <table class="compare-table">
+    <thead>
+      <tr>
+        <th style="width:18%">Event Type</th>
+        <th class="h-bosch">Bosch (IVA)</th>
+        <th class="h-hik">Hikvision (Smart Event)</th>
+        <th class="h-dahua">Dahua (VCA / IVS)</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Line Crossing</td>
+        <td><span class="chip chip-green">✓</span> <code>LineDetector/Crossed</code></td>
+        <td><span class="chip chip-green">✓</span> <code>linedetection</code></td>
+        <td><span class="chip chip-green">✓</span> <code>CrossLineDetection</code></td>
+      </tr>
+      <tr class="row-alt">
+        <td>Field Intrusion</td>
+        <td><span class="chip chip-green">✓</span> <code>FieldDetector/ObjectsInside</code></td>
+        <td><span class="chip chip-green">✓</span> <code>fielddetection</code></td>
+        <td><span class="chip chip-green">✓</span> <code>CrossRegionDetection</code></td>
+      </tr>
+      <tr>
+        <td>Region Enter/Exit</td>
+        <td><span class="chip chip-green">✓</span> IVA rule-based</td>
+        <td><span class="chip chip-green">✓</span> <code>regionEntrance / regionExiting</code></td>
+        <td><span class="chip chip-amber">ใช้ CrossRegion</span></td>
+      </tr>
+      <tr class="row-alt">
+        <td>Object Left / Taken</td>
+        <td><span class="chip chip-green">✓</span> IVA rule-based</td>
+        <td><span class="chip chip-green">✓</span> <code>unattendedBaggage / attendedBaggage</code></td>
+        <td><span class="chip chip-green">✓</span> <code>LeftDetection / TakenAwayDetection</code></td>
+      </tr>
+      <tr>
+        <td>Smart Motion</td>
+        <td><span class="chip chip-amber">MotionAlarm (ignored)</span></td>
+        <td><span class="chip chip-amber">ไม่มี mapping ตรง</span></td>
+        <td><span class="chip chip-green">✓</span> <code>SmartMotionHuman / SmartMotionVehicle</code></td>
+      </tr>
+      <tr class="row-alt">
+        <td>Face Capture</td>
+        <td><span class="chip chip-amber">ขึ้นกับ module</span></td>
+        <td><span class="chip chip-green">✓</span> <code>faceSnap / facedetection</code> (JSON + JPEG)</td>
+        <td><span class="chip chip-red">ตั้งใจไม่รองรับ</span> (Face Detect เท่านั้น — ไม่ใช่ Face Capture)</td>
+      </tr>
+      <tr>
+        <td>LPR (License Plate)</td>
+        <td><span class="chip chip-green">✓</span> <code>Recognition/LicensePlate</code></td>
+        <td><span class="chip chip-amber">ขึ้นกับ model</span></td>
+        <td><span class="chip chip-amber">ขึ้นกับ model</span></td>
+      </tr>
+      <tr class="row-alt">
+        <td>Video Loss</td>
+        <td><span class="chip chip-green">✓</span> <code>VideoSource/Loss</code></td>
+        <td><span class="chip chip-green">✓</span> videoloss (heartbeat ด้วย)</td>
+        <td><span class="chip chip-green">✓</span> Heartbeat text</td>
+      </tr>
+      <tr>
+        <td>Analytics UI</td>
+        <td>Bosch Configuration Manager (CM) — IVA rule editor, zone drawing</td>
+        <td>Hikvision Web GUI หรือ iVMS-4200 — Smart Event settings</td>
+        <td>Dahua Web GUI หรือ DSS/SmartPSS — Smart Plan → IVS → Rule config</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ── Section 5: Snapshot ────────────────────────────────── -->
+<div class="section">
+  <div class="section-title">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="15" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/><circle cx="12" cy="14" r="3"/></svg>
+    การรับ Snapshot — แต่ละยี่ห้อทำงานอย่างไร
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:1rem;">
+
+    <!-- Bosch snapshot -->
+    <div style="background:var(--panel);border:1px solid var(--border);border-top:3px solid var(--bosch);border-radius:var(--radius);padding:1rem;">
+      <h4 style="color:var(--bosch);margin-bottom:.75rem;font-size:.85rem;">Bosch — 2 วิธีตามลำดับ</h4>
+      <div class="snap-chain">
+        <div class="snap-step primary">
+          <span class="snap-num">1</span>
+          <div class="snap-desc">
+            <div class="title">MQTT Embedded (base64)</div>
+            <div class="detail">payload <code>Appearance.Image</code> = base64 JPEG อยู่ใน MQTT message เลย — ไม่ต้อง pull เพิ่ม · IVA Pro FW 9.x ส่งมาในทุก event ที่มี object detection · บันทึก <em>ก่อน</em> HTTP snap เสมอ</div>
+          </div>
+        </div>
+        <div class="snap-step secondary">
+          <span class="snap-num">2</span>
+          <div class="snap-desc">
+            <div class="title">HTTP Snapshot Pull (fallback + VCA overlay)</div>
+            <div class="detail">ถ้าไม่มี MQTT base64 → <code>GET http://{ip}/snap.jpg?VCAOverlay=1</code> (Basic auth) · VCAOverlay=1 ให้กล้อง burn bounding box ไว้บน JPEG · ดึงเฉพาะ event ที่ "เข้า" (ไม่ดึงตอน leave) · ไม่ดึง Aggregation event</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Hikvision snapshot -->
+    <div style="background:var(--panel);border:1px solid var(--border);border-top:3px solid var(--hik);border-radius:var(--radius);padding:1rem;">
+      <h4 style="color:var(--hik);margin-bottom:.75rem;font-size:.85rem;">Hikvision — 1 วิธีหลัก + Face พิเศษ</h4>
+      <div class="snap-chain">
+        <div class="snap-step primary">
+          <span class="snap-num">1</span>
+          <div class="snap-desc">
+            <div class="title">ISAPI Streaming Channel Picture</div>
+            <div class="detail"><code>GET /ISAPI/Streaming/channels/10{N}/picture</code> (Digest auth, 2-step) · N = <code>snapshot_stream</code> config (default 1 = main stream) · pull หลัง event arrive ทันที</div>
+          </div>
+        </div>
+        <div class="snap-step upgrade">
+          <span class="snap-num">★</span>
+          <div class="snap-desc">
+            <div class="title">Face Capture — multipart synchronization</div>
+            <div class="detail">faceCapture ส่งมา 3 part: JSON event → face crop JPEG → background JPEG · ingester รอ crop + background พร้อมกัน (pending map + 8s timeout) แล้วค่อย INSERT · ได้ทั้ง face crop (gallery) + full frame (modal)</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Dahua snapshot -->
+    <div style="background:var(--panel);border:1px solid var(--border);border-top:3px solid var(--dahua);border-radius:var(--radius);padding:1rem;">
+      <h4 style="color:var(--dahua);margin-bottom:.75rem;font-size:.85rem;">Dahua — 4 ชั้น (ซับซ้อนที่สุด)</h4>
+      <div class="snap-chain">
+        <div class="snap-step primary">
+          <span class="snap-num">1</span>
+          <div class="snap-desc">
+            <div class="title">snapManager event JPEG</div>
+            <div class="detail"><code>/cgi-bin/snapManager.cgi?action=attachFileProc</code> — กล้องส่ง JPEG มาพร้อม event ผ่าน stream คู่ขนาน (Digest auth) · รอ 1,200ms ก่อน fallback</div>
+          </div>
+        </div>
+        <div class="snap-step secondary">
+          <span class="snap-num">2</span>
+          <div class="snap-desc">
+            <div class="title">RTSP Clip Buffer Frame (burst scoring)</div>
+            <div class="detail">สแกน <code>media-buffer/{cam}/</code> หา .ts segment รอบ event time → ffmpeg extract หลาย frame → score ด้วย object detection area std + motion diff → เลือก frame ที่ดีที่สุด</div>
+          </div>
+        </div>
+        <div class="snap-step fallback">
+          <span class="snap-num">3</span>
+          <div class="snap-desc">
+            <div class="title">CGI Live Snapshot (fallback ช้า)</div>
+            <div class="detail"><code>GET /cgi-bin/snapshot.cgi?channel=1</code> — ดึง live frame ณ เวลาที่ query (ช้ากว่า event เกิดขึ้นจริงแล้ว) · ทำ mark ว่า low_confidence</div>
+          </div>
+        </div>
+        <div class="snap-step upgrade">
+          <span class="snap-num">↑</span>
+          <div class="snap-desc">
+            <div class="title">Clip Resolver (post-hoc upgrade)</div>
+            <div class="detail">หลัง media-recorder บันทึก clip เสร็จ → <code>pg_notify clip_done</code> → dahua-cgi.js รับ → re-score จาก full clip → replace snapshot ถ้าดีกว่า · ช่วย low_confidence / missing snap</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ── Section 6: Stream ───────────────────────────────────── -->
+<div class="section">
+  <div class="section-title">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.15 13a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.06 2h3a2 2 0 0 1 2 1.72c.12.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L7.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.58 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+    การรับ Stream — Protocol / Auth / Config
+  </div>
+
+  <table class="compare-table">
+    <thead>
+      <tr>
+        <th style="width:18%">หัวข้อ</th>
+        <th class="h-bosch">Bosch</th>
+        <th class="h-hik">Hikvision</th>
+        <th class="h-dahua">Dahua</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Event stream protocol</td>
+        <td>MQTT (TCP persistent) · กล้อง publish → Broker → subscriber</td>
+        <td>HTTP long-poll (TCP persistent) · server เปิด connection ไปหากล้อง</td>
+        <td>HTTP long-poll (TCP persistent) · server เปิด connection ไปหากล้อง</td>
+      </tr>
+      <tr class="row-alt">
+        <td>Direction</td>
+        <td>Camera <strong>PUSH</strong> ไปที่ EMQX Broker</td>
+        <td>Server <strong>PULL</strong> จากกล้อง (เปิด connection ค้างไว้)</td>
+        <td>Server <strong>PULL</strong> จากกล้อง (เปิด connection ค้างไว้)</td>
+      </tr>
+      <tr>
+        <td>Authentication (event)</td>
+        <td>MQTT username/password (EMQX built-in DB, per-camera)</td>
+        <td>HTTP Digest MD5 (RFC 2617) · challenge-response 2 step</td>
+        <td>HTTP Digest MD5 · nonce cached per camera ลด round-trip</td>
+      </tr>
+      <tr class="row-alt">
+        <td>Reconnect policy</td>
+        <td>MQTT library auto-reconnect (5s period)</td>
+        <td>scheduleReconnect 5s delay หลัง stream drop</td>
+        <td>scheduleReconnect 5s delay (แยก event + snap stream)</td>
+      </tr>
+      <tr>
+        <td>Format ที่รับ</td>
+        <td>JSON (ONVIF Profile M JSON encoding)</td>
+        <td>multipart/mixed (XML part + optional JPEG part สำหรับ face)</td>
+        <td>multipart/x-mixed-replace (text lines + optional JPEG จาก snapManager)</td>
+      </tr>
+      <tr class="row-alt">
+        <td>Retained message</td>
+        <td>Skip retained flag — กัน re-insert เหตุการณ์เก่า</td>
+        <td>ไม่มี concept (HTTP)</td>
+        <td>ไม่มี concept (HTTP)</td>
+      </tr>
+      <tr>
+        <td>Hot-reload config</td>
+        <td>reload cameraMap ทันที (ไม่ restart process)</td>
+        <td>diff old/new cameras → stop removed, connect new/changed</td>
+        <td>diff old/new cameras → stop removed, connect new/changed + _snapDisabled.delete()</td>
+      </tr>
+      <tr class="row-alt">
+        <td>RTSP stream</td>
+        <td>ไม่ใช้</td>
+        <td>ไม่ใช้</td>
+        <td>media-recorder เปิด RTSP (main stream) เก็บ rolling buffer 1s segments · ต้องมี ffmpeg บนเครื่อง server</td>
+      </tr>
+      <tr>
+        <td>Bosch ONVIF topics ที่ subscribe</td>
+        <td><code>+/onvif-ej/RuleEngine/#</code><br><code>+/onvif-ej/VideoSource/#</code><br><code>+/onvif-ej/Device/#</code><br><code>+/onvif-ej/RecordingConfig/#</code></td>
+        <td>N/A</td>
+        <td>N/A</td>
+      </tr>
+      <tr class="row-alt">
+        <td>Event codes ที่ request</td>
+        <td>ผ่าน topic wildcard (#) — filter ใน code</td>
+        <td>รับทุก type ผ่าน alertStream · filter ใน HIK_EVENT_MAP</td>
+        <td>explicit codes=[CrossLine,CrossRegion,...,All] ใน URL query string</td>
+      </tr>
+      <tr>
+        <td>Dedup logic</td>
+        <td>ไม่มี explicit dedup (MQTT deliver once)</td>
+        <td>3s window per camera+eventType (กัน active re-post)</td>
+        <td>3s window per camera+code (กัน Start re-post)</td>
+      </tr>
+      <tr class="row-alt">
+        <td>Bosch SD Card poll</td>
+        <td>ONVIF Profile G GetRecordingSummary ทุก 30s → <code>sd_status / recording_data_until</code></td>
+        <td>ไม่มี (ขึ้นกับ model)</td>
+        <td>ไม่มี (ขึ้นกับ model)</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ── Section 7: Network ─────────────────────────────────── -->
+<div class="section">
+  <div class="section-title">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+    Network Utilization — ประมาณการต่อกล้อง (Estimated)
+  </div>
+
+  <p style="color:var(--dim);font-size:.78rem;margin-bottom:1rem;">ตัวเลขเป็นค่าประมาณ · ขึ้นกับ firmware, scene complexity, event frequency และ JPEG quality settings</p>
+
+  <!-- Idle / Event stream -->
+  <div style="margin-bottom:1rem;">
+    <p style="font-size:.8rem;font-weight:700;color:var(--text);margin-bottom:.5rem;">A. Event Stream (Idle — ระหว่างที่ไม่มี event)</p>
+    <table class="net-table">
+      <thead>
+        <tr>
+          <th style="text-align:left">ยี่ห้อ</th>
+          <th>Bandwidth (idle)</th>
+          <th>หมายเหตุ</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Bosch</td>
+          <td class="net-low">&lt; 1 kbps</td>
+          <td style="text-align:left;font-size:.75rem;">MQTT keepalive packet เท่านั้น · ไม่มี continuous stream</td>
+        </tr>
+        <tr>
+          <td>Hikvision</td>
+          <td class="net-low">&lt; 2 kbps</td>
+          <td style="text-align:left;font-size:.75rem;">videoloss heartbeat ~200 bytes ทุก 10s · TCP connection ค้างไว้</td>
+        </tr>
+        <tr>
+          <td>Dahua</td>
+          <td class="net-low">&lt; 1 kbps</td>
+          <td style="text-align:left;font-size:.75rem;">text Heartbeat ทุก 30s · TCP connection ค้างไว้</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Snapshot per event -->
+  <div style="margin-bottom:1rem;">
+    <p style="font-size:.8rem;font-weight:700;color:var(--text);margin-bottom:.5rem;">B. Snapshot ต่อ Event (one-shot, เกิดขึ้นเมื่อมี event เท่านั้น)</p>
+    <table class="net-table">
+      <thead>
+        <tr>
+          <th style="text-align:left">ความละเอียด</th>
+          <th class="h-bosch">Bosch<br><span style="font-weight:400;font-size:.7rem;">(MQTT base64 / HTTP snap)</span></th>
+          <th class="h-hik">Hikvision<br><span style="font-weight:400;font-size:.7rem;">(ISAPI picture)</span></th>
+          <th class="h-dahua">Dahua<br><span style="font-weight:400;font-size:.7rem;">(snapManager / CGI)</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>2MP (1920×1080)</td>
+          <td class="net-low">150–400 KB / event</td>
+          <td class="net-low">150–400 KB / event</td>
+          <td class="net-low">150–400 KB / event</td>
+        </tr>
+        <tr>
+          <td>5MP (2560×1944)</td>
+          <td class="net-mid">400 KB–1.5 MB / event</td>
+          <td class="net-mid">400 KB–1.5 MB / event</td>
+          <td class="net-mid">400 KB–1.5 MB / event</td>
+        </tr>
+        <tr>
+          <td>8MP (3840×2160)</td>
+          <td class="net-high">1–4 MB / event</td>
+          <td class="net-high">1–3 MB / event</td>
+          <td class="net-high">1–3 MB / event</td>
+        </tr>
+        <tr>
+          <td colspan="4" style="font-size:.7rem;color:var(--dim);text-align:left;">
+            * Bosch HTTP snap ไม่ใส่ JpegSize → ดึง native resolution เต็ม (Bosch 8100i = 3840×2160) · Hikvision/Dahua ขึ้นกับ camera settings<br>
+            * Bosch ส่งทั้ง MQTT base64 (first) + HTTP pull (second ถ้า MQTT ไม่มี) ดังนั้นถ้ากล้อง embed snapshot ใน MQTT ก็ไม่มี HTTP traffic เพิ่ม
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- RTSP continuous (Dahua only) -->
+  <div style="margin-bottom:1rem;">
+    <p style="font-size:.8rem;font-weight:700;color:var(--text);margin-bottom:.5rem;">C. RTSP Continuous Stream — Dahua เท่านั้น (สำหรับ Clip Buffer)</p>
+    <table class="net-table">
+      <thead>
+        <tr>
+          <th style="text-align:left">ความละเอียด</th>
+          <th>H.265 (แนะนำ)</th>
+          <th>H.264</th>
+          <th>หมายเหตุ</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>2MP · 12 fps</td>
+          <td class="net-low">0.8–2 Mbps</td>
+          <td class="net-mid">1.5–4 Mbps</td>
+          <td style="text-align:left;font-size:.75rem;">media-recorder ดึง main stream ตลอดเวลา</td>
+        </tr>
+        <tr>
+          <td>5MP · 12 fps</td>
+          <td class="net-mid">2–4 Mbps</td>
+          <td class="net-high">4–8 Mbps</td>
+          <td style="text-align:left;font-size:.75rem;">สูงตาม resolution · แนะนำ sub-stream ถ้า bandwidth จำกัด</td>
+        </tr>
+        <tr>
+          <td>8MP · 12 fps</td>
+          <td class="net-high">4–8 Mbps</td>
+          <td class="net-high">8–16 Mbps</td>
+          <td style="text-align:left;font-size:.75rem;">สูงมาก · พิจารณา sub-stream หรือ disable clip capture</td>
+        </tr>
+        <tr>
+          <td colspan="4" style="font-size:.7rem;color:var(--dim);text-align:left;">
+            * ถ้าปิด clip capture (<code>cameras.enable_clip_capture = false</code>) → ไม่มี RTSP traffic · Dahua จะใช้ CGI live snapshot fallback แทน<br>
+            * Bosch / Hikvision ไม่มี RTSP traffic เลย
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Summary per camera -->
+  <div>
+    <p style="font-size:.8rem;font-weight:700;color:var(--text);margin-bottom:.5rem;">D. สรุป Total Network ต่อกล้อง 1 ตัว (ที่ 2MP, H.265)</p>
+    <table class="net-table">
+      <thead>
+        <tr>
+          <th style="text-align:left">ยี่ห้อ</th>
+          <th>Idle</th>
+          <th>เมื่อมี event (snapshot)</th>
+          <th>Continuous (RTSP)</th>
+          <th>Total ประมาณ</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="color:var(--bosch);font-weight:700;">Bosch</td>
+          <td class="net-low">~0</td>
+          <td class="net-low">150–400 KB/event</td>
+          <td class="net-low">ไม่มี</td>
+          <td class="net-low">ต่ำมาก (event-driven)</td>
+        </tr>
+        <tr>
+          <td style="color:var(--hik);font-weight:700;">Hikvision</td>
+          <td class="net-low">~0</td>
+          <td class="net-low">150–400 KB/event</td>
+          <td class="net-low">ไม่มี</td>
+          <td class="net-low">ต่ำมาก (event-driven)</td>
+        </tr>
+        <tr>
+          <td style="color:var(--dahua);font-weight:700;">Dahua (clip on)</td>
+          <td class="net-low">~0</td>
+          <td class="net-low">150–400 KB/event</td>
+          <td class="net-mid">~1 Mbps (H.265 2MP)</td>
+          <td class="net-mid">ปานกลาง (~1 Mbps ต่อกล้อง)</td>
+        </tr>
+        <tr>
+          <td style="color:var(--dahua);font-weight:700;">Dahua (clip off)</td>
+          <td class="net-low">~0</td>
+          <td class="net-mid">150–400 KB + late CGI grab</td>
+          <td class="net-low">ไม่มี</td>
+          <td class="net-low">ต่ำ (event-driven แต่ snap ช้า)</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ── Section 8: Things to Know ─────────────────────────── -->
+<div class="section">
+  <div class="section-title">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+    สิ่งที่ควรรู้ — ข้อควรระวัง & ลักษณะพิเศษ
+  </div>
+
+  <div class="info-grid">
+
+    <div class="info-box">
+      <h4>Bosch — สิ่งที่ต้องทำฝั่งกล้อง</h4>
+      <ul>
+        <li>ต้อง configure Bosch camera ให้ publish MQTT ไปที่ EMQX (IP:1883) ด้วย <strong>credentials ที่ได้จาก Auto-provision</strong></li>
+        <li>IVA rules ต้องตั้งใน <strong>Bosch Configuration Manager (CM)</strong> — ถ้าไม่ตั้ง rule = ไม่มี RuleEngine event มา</li>
+        <li>ถ้าไม่ทำ <strong>Camera Calibration + Object Calibration</strong> ใน CM → ไม่มี object_class / likelihood / speed / GPS ใน event (แต่ event ยังมาปกติ)</li>
+        <li>IVA Pro FW 9.x ส่ง snapshot embed ใน MQTT · FW เก่าอาจไม่มี → ระบบ fallback ไป HTTP pull เอง</li>
+        <li><strong>MotionAlarm</strong> ถูก filter ออกโดยตั้งใจ (too noisy) — ไม่บันทึกใน events table</li>
+      </ul>
+    </div>
+
+    <div class="info-box">
+      <h4>Hikvision — ข้อควรรู้</h4>
+      <ul>
+        <li>ต้องเปิด <strong>Smart Event</strong> ใน Hikvision Web GUI ก่อน — ถ้าปิด = alertStream ไม่มี event ส่งมา</li>
+        <li>Firmware บางรุ่นปิด alertStream ไว้ → เปิดได้ที่ Configuration > Network > Advanced Settings > Integration Protocol</li>
+        <li><strong>Digest auth</strong> — Hikvision ปฏิเสธ Basic auth โดย default · ingester ทำ 2-step handshake อัตโนมัติ</li>
+        <li>Face Capture ซับซ้อน — ต้องรอทั้ง face crop + background JPEG (8s timeout) ก่อน INSERT · event อาจ delay 1-8s</li>
+        <li><strong>videoloss</strong> event ทุก ~10s ใช้เป็น heartbeat อัพเดท last_seen_at — ถ้า alertStream ขาด กล้องจะเป็น offline ใน dashboard</li>
+        <li>Reconnect auto 5s เมื่อ stream หลุด · ไม่ต้อง restart process</li>
+      </ul>
+    </div>
+
+    <div class="info-box">
+      <h4>Dahua — ข้อควรรู้</h4>
+      <ul>
+        <li>ต้องเปิด <strong>Smart Plan → IVS</strong> ใน Dahua Web GUI ก่อน · กำหนด Rule type + zone drawing</li>
+        <li><strong>Face Detection ≠ Face Capture</strong> — Dahua Face Detection เป็นแค่ bounding box ระดับ SD ไม่ใช่ face analytics จริง → ระบบตั้งใจไม่รองรับ</li>
+        <li>snapManager อาจไม่รองรับในบาง model/firmware → ingester auto-fallback เป็น RTSP buffer โดยไม่ error</li>
+        <li>Timezone ของ Dahua: <code>data.UTC</code> คือ LOCAL time ส่งมาเป็น unix timestamp → ingester หัก offset ทั้งชั่วโมงออก เพื่อ normalize เป็น server time</li>
+        <li>Clip resolver ทำงาน <strong>หลัง</strong> clip capture เสร็จ → snapshot ของ event อาจ update ใหม่อีกครั้งหลัง ~10-30s</li>
+        <li>ถ้า ffmpeg ไม่ได้ติดตั้งบน server → RTSP buffer ไม่ทำงาน → ตกไปใช้ CGI live (snap ช้า)</li>
+      </ul>
+    </div>
+
+    <div class="info-box">
+      <h4>ทั้ง 3 ยี่ห้อ — Pipeline ร่วมกัน</h4>
+      <ul>
+        <li>ทุก event เข้า <strong>alert-engine</strong> เหมือนกัน → rule matching, cooldown, quiet hours, LINE notification</li>
+        <li><code>pg_notify('new_event', id)</code> → api-server LISTEN → WebSocket broadcast → Dashboard real-time update</li>
+        <li><code>pg_notify('event_for_clip', ...)</code> → media-recorder ตัดสินใจ capture clip ตาม <code>cameras.enable_clip_capture</code></li>
+        <li>Snapshot บันทึกไว้ที่ <code>snapshots/</code> folder · ชื่อไฟล์ = <code>{camera_id}_{event_id}_{timestamp}.jpg</code></li>
+        <li><strong>Dedup:</strong> Bosch ไม่มี (MQTT deliver once), Hikvision/Dahua มี 3s window ต่อ camera+event type</li>
+        <li>กล้องทุกยี่ห้อ update <code>cameras.last_seen_at</code> ทุกครั้งที่รับ message/heartbeat → ใช้ตรวจ online/offline</li>
+      </ul>
+    </div>
+
+    <div class="info-box">
+      <h4>Config Fields — cameras-config.json</h4>
+      <ul>
+        <li><strong>ทั่วไป (ทุกยี่ห้อ):</strong> camera_id, camera_name, vendor, ip_address, username, password, latitude, longitude, location, notes</li>
+        <li><strong>Bosch เพิ่มเติม:</strong> mqtt_username, mqtt_password (auto-provisioned), http_port</li>
+        <li><strong>Hikvision เพิ่มเติม:</strong> http_port, snapshot_stream (channel number, default 1)</li>
+        <li><strong>Dahua เพิ่มเติม:</strong> http_port, snapshot_path, dahua_transport, dahua_event_snapshot (bool), dahua_snapshot_lookback_ms, dahua_server_frame_offsets_ms (array)</li>
+        <li>Config reload เป็น hot-reload ไม่ต้อง restart process เมื่อแก้ config</li>
+      </ul>
+    </div>
+
+    <div class="info-box">
+      <h4>Network Planning สำหรับ 50 กล้อง (ตัวอย่าง 2MP)</h4>
+      <ul>
+        <li><strong>Bosch 50 ตัว:</strong> ~0 Mbps idle + burst เมื่อมี event (เล็กน้อย)</li>
+        <li><strong>Hikvision 50 ตัว:</strong> ~0 Mbps idle + burst เมื่อมี event (เล็กน้อย)</li>
+        <li><strong>Dahua 50 ตัว (clip on, H.265):</strong> ~50 Mbps continuous (50 × ~1 Mbps)</li>
+        <li><strong>แนะนำ:</strong> ถ้า network จำกัด ให้ปิด clip capture ใน Dahua หรือใช้ sub-stream RTSP + limit bitrate ที่กล้อง</li>
+        <li><strong>Server disk:</strong> clip buffer ใช้ disk ด้วย (~10-20 GB ต่อ 10 กล้อง/ชั่วโมง ที่ H.265 2MP)</li>
+      </ul>
+    </div>
+
+  </div>
+</div>
+
+<!-- ── Section 9: System Diagram ──────────────────────────── -->
+<div class="section">
+  <div class="section-title">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="6" height="4" rx="1"/><rect x="9" y="3" width="6" height="4" rx="1"/><rect x="16" y="3" width="6" height="4" rx="1"/><rect x="5" y="17" width="6" height="4" rx="1"/><rect x="13" y="17" width="6" height="4" rx="1"/><line x1="5" y1="7" x2="5" y2="12"/><line x1="12" y1="7" x2="12" y2="12"/><line x1="19" y1="7" x2="19" y2="12"/><line x1="5" y1="12" x2="19" y2="12"/><line x1="8" y1="17" x2="8" y2="12"/><line x1="16" y1="17" x2="16" y2="12"/></svg>
+    System Architecture Diagram — แต่ละยี่ห้อ
+  </div>
+
+  <style>
+    /* ── Diagram styles ── */
+    .diagram-wrap {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+      overflow-x: auto;
+    }
+    .diagram-title {
+      font-size: .9rem;
+      font-weight: 700;
+      margin-bottom: 1.25rem;
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+    }
+    .diagram-title .dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    /* SVG diagram container */
+    .diagram-svg-wrap {
+      min-width: 700px;
+    }
+    .diagram-svg-wrap svg text { font-family: 'Segoe UI', system-ui, sans-serif; }
+
+    /* Component box shared styles */
+    .dbox { rx: 8; ry: 8; }
+
+    /* Legend */
+    .legend {
+      display: flex;
+      gap: 1.5rem;
+      margin-top: 1rem;
+      flex-wrap: wrap;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: .4rem;
+      font-size: .72rem;
+      color: var(--dim);
+    }
+    .legend-line {
+      width: 28px;
+      height: 2px;
+      border-radius: 1px;
+    }
+    .legend-line.dashed {
+      background: repeating-linear-gradient(90deg, currentColor 0, currentColor 4px, transparent 4px, transparent 8px);
+    }
+  </style>
+
+  <!-- Bosch Diagram -->
+  <div class="diagram-wrap">
+    <div class="diagram-title">
+      <span class="dot" style="background:var(--bosch)"></span>
+      <span style="color:var(--bosch)">Bosch BVMS / FlexiDome IVA</span>
+      <span style="color:var(--dim);font-size:.75rem;margin-left:.5rem;">— MQTT + ONVIF Profile M</span>
+    </div>
+    <div class="diagram-svg-wrap">
+    <svg viewBox="0 0 860 320" width="100%" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="arr-b" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto">
+          <polygon points="0 0, 8 3, 0 6" fill="#009ee3" opacity=".8"/>
+        </marker>
+        <marker id="arr-b2" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto">
+          <polygon points="0 0, 8 3, 0 6" fill="#64748b" opacity=".8"/>
+        </marker>
+        <marker id="arr-bg" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto">
+          <polygon points="0 0, 8 3, 0 6" fill="#22c55e" opacity=".8"/>
+        </marker>
+      </defs>
+
+      <!-- ══ Row 1: Camera side ══ -->
+
+      <!-- Camera -->
+      <rect x="10" y="30" width="140" height="80" rx="8" fill="#003a6640" stroke="#009ee3" stroke-width="1.5"/>
+      <text x="80" y="58" text-anchor="middle" fill="#009ee3" font-size="12" font-weight="700">Bosch Camera</text>
+      <text x="80" y="76" text-anchor="middle" fill="#94a3b8" font-size="10">FlexiDome 8100i / 3100i</text>
+      <text x="80" y="92" text-anchor="middle" fill="#94a3b8" font-size="10">IVA Pro + ONVIF Profile M</text>
+
+      <!-- Arrow: Camera → EMQX -->
+      <line x1="150" y1="70" x2="215" y2="70" stroke="#009ee3" stroke-width="1.5" marker-end="url(#arr-b)"/>
+      <text x="182" y="62" text-anchor="middle" fill="#009ee3" font-size="9" font-weight="600">MQTT publish</text>
+      <text x="182" y="82" text-anchor="middle" fill="#64748b" font-size="9">TCP 1883</text>
+
+      <!-- EMQX -->
+      <rect x="215" y="30" width="130" height="80" rx="8" fill="#1a2236" stroke="#1e2d45" stroke-width="1.5"/>
+      <text x="280" y="58" text-anchor="middle" fill="#e2e8f0" font-size="12" font-weight="700">EMQX Broker</text>
+      <text x="280" y="76" text-anchor="middle" fill="#94a3b8" font-size="10">Local server · TCP 1883</text>
+      <text x="280" y="92" text-anchor="middle" fill="#94a3b8" font-size="10">Auth: per-camera user</text>
+
+      <!-- Arrow: EMQX → mqtt-subscriber -->
+      <line x1="345" y1="70" x2="410" y2="70" stroke="#009ee3" stroke-width="1.5" marker-end="url(#arr-b)"/>
+      <text x="378" y="62" text-anchor="middle" fill="#009ee3" font-size="9" font-weight="600">subscribe</text>
+      <text x="378" y="82" text-anchor="middle" fill="#64748b" font-size="9">+/onvif-ej/#</text>
+
+      <!-- mqtt-subscriber -->
+      <rect x="410" y="14" width="155" height="112" rx="8" fill="#0a1628" stroke="#009ee3" stroke-width="2"/>
+      <text x="487" y="38" text-anchor="middle" fill="#009ee3" font-size="11" font-weight="700">mqtt-subscriber.js</text>
+      <line x1="420" y1="44" x2="555" y2="44" stroke="#1e2d45" stroke-width="1"/>
+      <text x="487" y="60" text-anchor="middle" fill="#94a3b8" font-size="9">parse JSON (ONVIF Profile M)</text>
+      <text x="487" y="74" text-anchor="middle" fill="#94a3b8" font-size="9">extract event_type / rule_name</text>
+      <text x="487" y="88" text-anchor="middle" fill="#94a3b8" font-size="9">extract MQTT base64 snapshot</text>
+      <text x="487" y="102" text-anchor="middle" fill="#94a3b8" font-size="9">filter: skip retained, ignore list</text>
+      <text x="487" y="116" text-anchor="middle" fill="#94a3b8" font-size="9">HTTP snap fallback if no b64</text>
+
+      <!-- HTTP snapshot arrow (bidirectional) -->
+      <line x1="487" y1="126" x2="487" y2="178" stroke="#64748b" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arr-b2)"/>
+      <text x="510" y="155" text-anchor="start" fill="#64748b" font-size="9">HTTP Basic</text>
+      <text x="510" y="167" text-anchor="start" fill="#64748b" font-size="9">snap.jpg?VCAOverlay=1</text>
+
+      <!-- Camera HTTP (snapshot source) -->
+      <rect x="410" y="178" width="155" height="50" rx="6" fill="#1a2236" stroke="#1e2d45" stroke-width="1"/>
+      <text x="487" y="198" text-anchor="middle" fill="#e2e8f0" font-size="10" font-weight="700">Camera HTTP</text>
+      <text x="487" y="213" text-anchor="middle" fill="#94a3b8" font-size="9">native JPEG (no size cap)</text>
+      <text x="487" y="225" text-anchor="middle" fill="#94a3b8" font-size="9">port 80 · Basic auth</text>
+
+      <!-- Arrow: subscriber → alert-engine -->
+      <line x1="565" y1="70" x2="620" y2="70" stroke="#22c55e" stroke-width="1.5" marker-end="url(#arr-bg)"/>
+      <text x="592" y="62" text-anchor="middle" fill="#22c55e" font-size="9" font-weight="600">onEvent()</text>
+      <text x="592" y="82" text-anchor="middle" fill="#64748b" font-size="9">fire &amp; forget</text>
+
+      <!-- alert-engine -->
+      <rect x="620" y="30" width="120" height="80" rx="8" fill="#1a2236" stroke="#1e2d45" stroke-width="1.5"/>
+      <text x="680" y="54" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="700">alert-engine</text>
+      <text x="680" y="70" text-anchor="middle" fill="#94a3b8" font-size="9">rule matching</text>
+      <text x="680" y="84" text-anchor="middle" fill="#94a3b8" font-size="9">cooldown · quiet hrs</text>
+      <text x="680" y="98" text-anchor="middle" fill="#94a3b8" font-size="9">LINE notification</text>
+
+      <!-- ══ Row 2: DB ══ -->
+
+      <!-- Arrow: subscriber → DB (INSERT) -->
+      <line x1="487" y1="126" x2="710" y2="240" stroke="#009ee3" stroke-width="1.5" marker-end="url(#arr-b)" stroke-dasharray="5,3"/>
+      <text x="640" y="175" text-anchor="middle" fill="#009ee3" font-size="9" font-weight="600">INSERT events</text>
+      <text x="640" y="187" text-anchor="middle" fill="#64748b" font-size="9">+ pg_notify new_event</text>
+
+      <!-- PostgreSQL -->
+      <rect x="620" y="240" width="160" height="70" rx="8" fill="#1a2236" stroke="#22c55e" stroke-width="1.5"/>
+      <text x="700" y="263" text-anchor="middle" fill="#22c55e" font-size="11" font-weight="700">PostgreSQL</text>
+      <text x="700" y="279" text-anchor="middle" fill="#94a3b8" font-size="9">events · cameras</text>
+      <text x="700" y="293" text-anchor="middle" fill="#94a3b8" font-size="9">report_history · audit_log</text>
+      <text x="700" y="307" text-anchor="middle" fill="#94a3b8" font-size="9">+ LISTEN/NOTIFY channel</text>
+
+      <!-- snapshots folder -->
+      <rect x="350" y="248" width="130" height="54" rx="6" fill="#1a2236" stroke="#1e2d45" stroke-width="1"/>
+      <text x="415" y="269" text-anchor="middle" fill="#e2e8f0" font-size="10" font-weight="700">snapshots/</text>
+      <text x="415" y="284" text-anchor="middle" fill="#94a3b8" font-size="9">{cam}_{id}_{ts}.jpg</text>
+      <text x="415" y="296" text-anchor="middle" fill="#94a3b8" font-size="9">MQTT b64 → HTTP pull</text>
+
+      <!-- Arrow: subscriber → snapshots -->
+      <line x1="460" y1="178" x2="430" y2="248" stroke="#64748b" stroke-width="1.2" marker-end="url(#arr-b2)"/>
+      <text x="440" y="220" text-anchor="middle" fill="#64748b" font-size="9">save JPEG</text>
+
+      <!-- ══ api-server + Dashboard ══ -->
+
+      <!-- api-server -->
+      <rect x="10" y="240" width="160" height="70" rx="8" fill="#1a2236" stroke="#1e2d45" stroke-width="1.5"/>
+      <text x="90" y="263" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="700">api-server.js</text>
+      <text x="90" y="279" text-anchor="middle" fill="#94a3b8" font-size="9">LISTEN new_event</text>
+      <text x="90" y="293" text-anchor="middle" fill="#94a3b8" font-size="9">REST API + WebSocket</text>
+      <text x="90" y="307" text-anchor="middle" fill="#94a3b8" font-size="9">auth · stats · reports</text>
+
+      <!-- Arrow: DB → api-server (NOTIFY) -->
+      <line x1="620" y1="275" x2="170" y2="275" stroke="#22c55e" stroke-width="1.5" marker-end="url(#arr-bg)"/>
+      <text x="395" y="270" text-anchor="middle" fill="#22c55e" font-size="9" font-weight="600">pg_notify → LISTEN → WS broadcast</text>
+
+      <!-- Dashboard -->
+      <rect x="10" y="150" width="120" height="70" rx="8" fill="#0a1628" stroke="#5b8def" stroke-width="2"/>
+      <text x="70" y="172" text-anchor="middle" fill="#5b8def" font-size="11" font-weight="700">Dashboard</text>
+      <text x="70" y="188" text-anchor="middle" fill="#94a3b8" font-size="9">Live Events · Map</text>
+      <text x="70" y="202" text-anchor="middle" fill="#94a3b8" font-size="9">Stats · Alerts history</text>
+      <text x="70" y="216" text-anchor="middle" fill="#94a3b8" font-size="9">Health · Reports</text>
+
+      <!-- Arrow: api-server → Dashboard (WebSocket) -->
+      <line x1="90" y1="240" x2="90" y2="220" stroke="#5b8def" stroke-width="1.5" marker-end="url(#arr-b)"/>
+      <text x="110" y="232" text-anchor="start" fill="#5b8def" font-size="9" font-weight="600">WebSocket</text>
+    </svg>
+    </div>
+    <div class="legend">
+      <div class="legend-item"><div class="legend-line" style="background:var(--bosch);height:2px"></div> MQTT event stream</div>
+      <div class="legend-item"><div class="legend-line dashed" style="color:var(--dim);height:2px;background:var(--dim)"></div> HTTP snapshot pull (fallback)</div>
+      <div class="legend-item"><div class="legend-line" style="background:var(--green);height:2px"></div> pg_notify / alert pipeline</div>
+      <div class="legend-item"><div class="legend-line" style="background:var(--accent);height:2px"></div> WebSocket push to browser</div>
+    </div>
+  </div>
+
+  <!-- Hikvision Diagram -->
+  <div class="diagram-wrap">
+    <div class="diagram-title">
+      <span class="dot" style="background:var(--hik)"></span>
+      <span style="color:var(--hik)">Hikvision Smart Camera</span>
+      <span style="color:var(--dim);font-size:.75rem;margin-left:.5rem;">— ISAPI Alert Stream (HTTP long-poll)</span>
+    </div>
+    <div class="diagram-svg-wrap">
+    <svg viewBox="0 0 860 310" width="100%" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="arr-h" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto">
+          <polygon points="0 0, 8 3, 0 6" fill="#e8000b" opacity=".8"/>
+        </marker>
+        <marker id="arr-h2" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto">
+          <polygon points="0 0, 8 3, 0 6" fill="#64748b" opacity=".8"/>
+        </marker>
+        <marker id="arr-hg" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto">
+          <polygon points="0 0, 8 3, 0 6" fill="#22c55e" opacity=".8"/>
+        </marker>
+        <marker id="arr-ha" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto-start-reverse">
+          <polygon points="0 0, 8 3, 0 6" fill="#e8000b" opacity=".8"/>
+        </marker>
+      </defs>
+
+      <!-- Camera -->
+      <rect x="10" y="30" width="140" height="90" rx="8" fill="#6600001a" stroke="#e8000b" stroke-width="1.5"/>
+      <text x="80" y="57" text-anchor="middle" fill="#e8000b" font-size="12" font-weight="700">Hikvision Camera</text>
+      <text x="80" y="73" text-anchor="middle" fill="#94a3b8" font-size="10">Smart Event enabled</text>
+      <text x="80" y="87" text-anchor="middle" fill="#94a3b8" font-size="10">Configure: Web GUI</text>
+      <text x="80" y="101" text-anchor="middle" fill="#94a3b8" font-size="10">or iVMS-4200</text>
+
+      <!-- Double arrow: ISAPI long-poll -->
+      <line x1="150" y1="65" x2="240" y2="65" stroke="#e8000b" stroke-width="1.5" marker-end="url(#arr-h)" marker-start="url(#arr-ha)"/>
+      <text x="195" y="57" text-anchor="middle" fill="#e8000b" font-size="9" font-weight="600">ISAPI GET (Digest)</text>
+      <text x="195" y="77" text-anchor="middle" fill="#64748b" font-size="9">TCP persistent conn</text>
+
+      <!-- ISAPI stream label -->
+      <rect x="240" y="10" width="175" height="28" rx="4" fill="#6600001a" stroke="#e8000b44" stroke-width="1"/>
+      <text x="327" y="28" text-anchor="middle" fill="#e8000b" font-size="9" font-weight="600">/ISAPI/Event/notification/alertStream</text>
+
+      <!-- hikvision-isapi.js -->
+      <rect x="240" y="14" width="175" height="106" rx="8" fill="#0a1628" stroke="#e8000b" stroke-width="2"/>
+      <text x="327" y="38" text-anchor="middle" fill="#e8000b" font-size="11" font-weight="700">hikvision-isapi.js</text>
+      <line x1="250" y1="44" x2="405" y2="44" stroke="#1e2d45" stroke-width="1"/>
+      <text x="327" y="60" text-anchor="middle" fill="#94a3b8" font-size="9">process multipart/mixed stream</text>
+      <text x="327" y="74" text-anchor="middle" fill="#94a3b8" font-size="9">parse XML → HIK_EVENT_MAP</text>
+      <text x="327" y="88" text-anchor="middle" fill="#94a3b8" font-size="9">dedup 3s per cam+type</text>
+      <text x="327" y="102" text-anchor="middle" fill="#94a3b8" font-size="9">Face: wait crop+bg (8s)</text>
+      <text x="327" y="116" text-anchor="middle" fill="#94a3b8" font-size="9">reconnect 5s on drop</text>
+
+      <!-- ISAPI Snapshot pull -->
+      <line x1="327" y1="120" x2="327" y2="178" stroke="#e8000b" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arr-h)"/>
+      <text x="355" y="152" text-anchor="start" fill="#e8000b" font-size="9">Digest GET</text>
+      <text x="355" y="164" text-anchor="start" fill="#64748b" font-size="9">/ISAPI/Streaming/channels/10{N}/picture</text>
+
+      <!-- Camera snapshot source -->
+      <rect x="240" y="178" width="175" height="50" rx="6" fill="#1a2236" stroke="#1e2d45" stroke-width="1"/>
+      <text x="327" y="198" text-anchor="middle" fill="#e2e8f0" font-size="10" font-weight="700">Camera ISAPI Snapshot</text>
+      <text x="327" y="213" text-anchor="middle" fill="#94a3b8" font-size="9">stream channel N (default=1=main)</text>
+      <text x="327" y="225" text-anchor="middle" fill="#94a3b8" font-size="9">Face Capture: crop + full frame JPEG</text>
+
+      <!-- Arrow → alert-engine -->
+      <line x1="415" y1="70" x2="475" y2="70" stroke="#22c55e" stroke-width="1.5" marker-end="url(#arr-hg)"/>
+      <text x="445" y="62" text-anchor="middle" fill="#22c55e" font-size="9">onEvent()</text>
+
+      <!-- alert-engine -->
+      <rect x="475" y="30" width="120" height="80" rx="8" fill="#1a2236" stroke="#1e2d45" stroke-width="1.5"/>
+      <text x="535" y="54" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="700">alert-engine</text>
+      <text x="535" y="70" text-anchor="middle" fill="#94a3b8" font-size="9">rule match</text>
+      <text x="535" y="84" text-anchor="middle" fill="#94a3b8" font-size="9">cooldown</text>
+      <text x="535" y="98" text-anchor="middle" fill="#94a3b8" font-size="9">LINE push</text>
+
+      <!-- Snapshots folder -->
+      <rect x="475" y="178" width="130" height="50" rx="6" fill="#1a2236" stroke="#1e2d45" stroke-width="1"/>
+      <text x="540" y="198" text-anchor="middle" fill="#e2e8f0" font-size="10" font-weight="700">snapshots/</text>
+      <text x="540" y="213" text-anchor="middle" fill="#94a3b8" font-size="9">{cam}_{id}_{ts}.jpg</text>
+      <text x="540" y="225" text-anchor="middle" fill="#94a3b8" font-size="9">face_full_{id}.jpg (Face)</text>
+
+      <line x1="415" y1="198" x2="475" y2="198" stroke="#64748b" stroke-width="1.2" marker-end="url(#arr-h2)"/>
+      <text x="445" y="192" text-anchor="middle" fill="#64748b" font-size="9">save JPEG</text>
+
+      <!-- INSERT → DB -->
+      <line x1="415" y1="90" x2="640" y2="240" stroke="#e8000b" stroke-width="1.5" marker-end="url(#arr-h)" stroke-dasharray="5,3"/>
+      <text x="565" y="165" text-anchor="middle" fill="#e8000b" font-size="9">INSERT events</text>
+      <text x="565" y="177" text-anchor="middle" fill="#64748b" font-size="9">+ pg_notify</text>
+
+      <!-- PostgreSQL -->
+      <rect x="615" y="240" width="155" height="60" rx="8" fill="#1a2236" stroke="#22c55e" stroke-width="1.5"/>
+      <text x="692" y="263" text-anchor="middle" fill="#22c55e" font-size="11" font-weight="700">PostgreSQL</text>
+      <text x="692" y="279" text-anchor="middle" fill="#94a3b8" font-size="9">events · cameras</text>
+      <text x="692" y="293" text-anchor="middle" fill="#94a3b8" font-size="9">LISTEN/NOTIFY</text>
+
+      <!-- api-server -->
+      <rect x="10" y="240" width="155" height="60" rx="8" fill="#1a2236" stroke="#1e2d45" stroke-width="1.5"/>
+      <text x="87" y="263" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="700">api-server.js</text>
+      <text x="87" y="279" text-anchor="middle" fill="#94a3b8" font-size="9">LISTEN + REST + WS</text>
+      <text x="87" y="293" text-anchor="middle" fill="#94a3b8" font-size="9">auth · stats · reports</text>
+
+      <line x1="615" y1="270" x2="165" y2="270" stroke="#22c55e" stroke-width="1.5" marker-end="url(#arr-hg)"/>
+      <text x="390" y="264" text-anchor="middle" fill="#22c55e" font-size="9" font-weight="600">pg_notify → LISTEN → WS broadcast</text>
+
+      <!-- Dashboard -->
+      <rect x="10" y="155" width="120" height="70" rx="8" fill="#0a1628" stroke="#5b8def" stroke-width="2"/>
+      <text x="70" y="177" text-anchor="middle" fill="#5b8def" font-size="11" font-weight="700">Dashboard</text>
+      <text x="70" y="193" text-anchor="middle" fill="#94a3b8" font-size="9">Live Events · Map</text>
+      <text x="70" y="207" text-anchor="middle" fill="#94a3b8" font-size="9">Stats · Face Gallery</text>
+      <text x="70" y="221" text-anchor="middle" fill="#94a3b8" font-size="9">Alerts · Reports</text>
+
+      <line x1="87" y1="240" x2="80" y2="225" stroke="#5b8def" stroke-width="1.5" marker-end="url(#arr-h)"/>
+      <text x="110" y="235" text-anchor="start" fill="#5b8def" font-size="9">WebSocket</text>
+    </svg>
+    </div>
+    <div class="legend">
+      <div class="legend-item"><div class="legend-line" style="background:var(--hik);height:2px"></div> ISAPI event stream (long-lived TCP)</div>
+      <div class="legend-item"><div class="legend-line dashed" style="color:var(--hik);height:2px;background:var(--hik)"></div> ISAPI snapshot pull (per event)</div>
+      <div class="legend-item"><div class="legend-line" style="background:var(--green);height:2px"></div> pg_notify / alert pipeline</div>
+    </div>
+  </div>
+
+  <!-- Dahua Diagram -->
+  <div class="diagram-wrap">
+    <div class="diagram-title">
+      <span class="dot" style="background:var(--dahua)"></span>
+      <span style="color:var(--dahua)">Dahua VCA Camera</span>
+      <span style="color:var(--dim);font-size:.75rem;margin-left:.5rem;">— CGI Event Manager + RTSP Clip Buffer (ซับซ้อนที่สุด)</span>
+    </div>
+    <div class="diagram-svg-wrap">
+    <svg viewBox="0 0 900 380" width="100%" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="arr-d" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto">
+          <polygon points="0 0, 8 3, 0 6" fill="#ff6600" opacity=".8"/>
+        </marker>
+        <marker id="arr-d2" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto">
+          <polygon points="0 0, 8 3, 0 6" fill="#64748b" opacity=".8"/>
+        </marker>
+        <marker id="arr-dg" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto">
+          <polygon points="0 0, 8 3, 0 6" fill="#22c55e" opacity=".8"/>
+        </marker>
+        <marker id="arr-da" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto-start-reverse">
+          <polygon points="0 0, 8 3, 0 6" fill="#ff6600" opacity=".8"/>
+        </marker>
+        <marker id="arr-drtsp" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto-start-reverse">
+          <polygon points="0 0, 8 3, 0 6" fill="#f59e0b" opacity=".8"/>
+        </marker>
+      </defs>
+
+      <!-- Camera -->
+      <rect x="10" y="50" width="140" height="110" rx="8" fill="#6622001a" stroke="#ff6600" stroke-width="1.5"/>
+      <text x="80" y="76" text-anchor="middle" fill="#ff6600" font-size="12" font-weight="700">Dahua Camera</text>
+      <text x="80" y="92" text-anchor="middle" fill="#94a3b8" font-size="10">VCA / IVS enabled</text>
+      <text x="80" y="106" text-anchor="middle" fill="#94a3b8" font-size="10">Smart Plan → IVS Rule</text>
+      <text x="80" y="120" text-anchor="middle" fill="#94a3b8" font-size="10">Web GUI / DSS</text>
+      <text x="80" y="134" text-anchor="middle" fill="#94a3b8" font-size="10">+ RTSP main stream</text>
+      <text x="80" y="148" text-anchor="middle" fill="#94a3b8" font-size="10">(12 fps for clip buffer)</text>
+
+      <!-- eventManager arrow -->
+      <line x1="150" y1="80" x2="225" y2="80" stroke="#ff6600" stroke-width="1.5" marker-end="url(#arr-d)" marker-start="url(#arr-da)"/>
+      <text x="187" y="70" text-anchor="middle" fill="#ff6600" font-size="9" font-weight="600">CGI GET (Digest)</text>
+      <text x="187" y="93" text-anchor="middle" fill="#64748b" font-size="8">eventManager.cgi</text>
+
+      <!-- dahua-cgi.js -->
+      <rect x="225" y="14" width="165" height="130" rx="8" fill="#0a1628" stroke="#ff6600" stroke-width="2"/>
+      <text x="307" y="36" text-anchor="middle" fill="#ff6600" font-size="11" font-weight="700">dahua-cgi.js</text>
+      <line x1="235" y1="42" x2="380" y2="42" stroke="#1e2d45" stroke-width="1"/>
+      <text x="307" y="57" text-anchor="middle" fill="#94a3b8" font-size="9">eventManager stream</text>
+      <text x="307" y="70" text-anchor="middle" fill="#94a3b8" font-size="9">Code=CrossLine... action=Start</text>
+      <text x="307" y="83" text-anchor="middle" fill="#94a3b8" font-size="9">snapManager stream (parallel)</text>
+      <text x="307" y="96" text-anchor="middle" fill="#94a3b8" font-size="9">dedup 3s · Digest nonce cache</text>
+      <text x="307" y="109" text-anchor="middle" fill="#94a3b8" font-size="9">4-layer snapshot pipeline</text>
+      <text x="307" y="122" text-anchor="middle" fill="#94a3b8" font-size="9">LISTEN clip_done notify</text>
+      <text x="307" y="135" text-anchor="middle" fill="#94a3b8" font-size="9">reconnect 5s on drop</text>
+
+      <!-- snapManager arrow -->
+      <line x1="150" y1="115" x2="225" y2="115" stroke="#ff6600" stroke-width="1" stroke-dasharray="3,3" marker-end="url(#arr-d)"/>
+      <text x="187" y="108" text-anchor="middle" fill="#ff6600" font-size="8">snapManager.cgi</text>
+      <text x="187" y="127" text-anchor="middle" fill="#64748b" font-size="8">event JPEG</text>
+
+      <!-- RTSP stream -->
+      <line x1="150" y1="145" x2="500" y2="250" stroke="#f59e0b" stroke-width="2" marker-end="url(#arr-d)" marker-start="url(#arr-drtsp)"/>
+      <text x="330" y="208" text-anchor="middle" fill="#f59e0b" font-size="9" font-weight="600">RTSP main stream · 12fps</text>
+      <text x="330" y="220" text-anchor="middle" fill="#64748b" font-size="8">continuous · H.265/H.264</text>
+
+      <!-- media-recorder -->
+      <rect x="500" y="240" width="155" height="80" rx="8" fill="#1a2236" stroke="#f59e0b" stroke-width="1.5"/>
+      <text x="577" y="262" text-anchor="middle" fill="#f59e0b" font-size="11" font-weight="700">media-recorder</text>
+      <text x="577" y="278" text-anchor="middle" fill="#94a3b8" font-size="9">ffmpeg → 1s .ts segments</text>
+      <text x="577" y="292" text-anchor="middle" fill="#94a3b8" font-size="9">media-buffer/{cam}/</text>
+      <text x="577" y="306" text-anchor="middle" fill="#94a3b8" font-size="9">pg_notify clip_done on finish</text>
+
+      <!-- Clip buffer -->
+      <rect x="500" y="340" width="155" height="30" rx="6" fill="#1a2236" stroke="#1e2d45" stroke-width="1"/>
+      <text x="577" y="360" text-anchor="middle" fill="#94a3b8" font-size="9">media-buffer/{cam}/*.ts</text>
+      <line x1="577" y1="320" x2="577" y2="340" stroke="#64748b" stroke-width="1.2" marker-end="url(#arr-d2)"/>
+
+      <!-- dahua reads clip buffer -->
+      <line x1="500" y1="280" x2="390" y2="200" stroke="#f59e0b" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arr-d)"/>
+      <text x="455" y="238" text-anchor="middle" fill="#f59e0b" font-size="8">RTSP burst scoring</text>
+      <text x="455" y="248" text-anchor="middle" fill="#64748b" font-size="8">ffmpeg frame extract</text>
+
+      <!-- clip_done NOTIFY back to dahua -->
+      <line x1="500" y1="300" x2="390" y2="144" stroke="#22c55e" stroke-width="1" stroke-dasharray="3,3" marker-end="url(#arr-d)"/>
+      <text x="440" y="225" text-anchor="middle" fill="#22c55e" font-size="8">clip_done notify</text>
+      <text x="440" y="235" text-anchor="middle" fill="#64748b" font-size="8">→ re-score clip snapshot</text>
+
+      <!-- Snapshot chain boxes -->
+      <rect x="390" y="144" width="108" height="78" rx="6" fill="#1a2236" stroke="#ff6600" stroke-width="1"/>
+      <text x="444" y="160" text-anchor="middle" fill="#ff6600" font-size="9" font-weight="700">Snapshot Chain</text>
+      <text x="444" y="174" text-anchor="middle" fill="#22c55e" font-size="8">1. snapManager JPEG</text>
+      <text x="444" y="186" text-anchor="middle" fill="#f59e0b" font-size="8">2. RTSP buffer frame</text>
+      <text x="444" y="198" text-anchor="middle" fill="#ef4444" font-size="8">3. CGI live grab</text>
+      <text x="444" y="210" text-anchor="middle" fill="#5b8def" font-size="8">↑ clip resolver upgrade</text>
+
+      <line x1="390" y1="183" x2="390" y2="144" stroke="#ff6600" stroke-width="1" marker-end="url(#arr-d)"/>
+      <line x1="390" y1="183" x2="390" y2="222" stroke="#ff6600" stroke-width="1" stroke-dasharray="3,2"/>
+
+      <!-- snapshots/ folder -->
+      <rect x="390" y="222" width="108" height="40" rx="5" fill="#1a2236" stroke="#1e2d45" stroke-width="1"/>
+      <text x="444" y="238" text-anchor="middle" fill="#e2e8f0" font-size="9" font-weight="700">snapshots/</text>
+      <text x="444" y="252" text-anchor="middle" fill="#94a3b8" font-size="8">{cam}_{id}_{ts}.jpg</text>
+
+      <!-- alert-engine -->
+      <rect x="225" y="154" width="120" height="60" rx="8" fill="#1a2236" stroke="#1e2d45" stroke-width="1.5"/>
+      <text x="285" y="175" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="700">alert-engine</text>
+      <text x="285" y="191" text-anchor="middle" fill="#94a3b8" font-size="9">rule · cooldown</text>
+      <text x="285" y="205" text-anchor="middle" fill="#94a3b8" font-size="9">LINE notify</text>
+
+      <line x1="390" y1="79" x2="345" y2="154" stroke="#22c55e" stroke-width="1.5" marker-end="url(#arr-dg)"/>
+      <text x="365" y="118" text-anchor="middle" fill="#22c55e" font-size="8">onEvent()</text>
+
+      <!-- INSERT → DB -->
+      <line x1="390" y1="79" x2="680" y2="290" stroke="#ff6600" stroke-width="1.5" marker-end="url(#arr-d)" stroke-dasharray="5,3"/>
+      <text x="590" y="180" text-anchor="middle" fill="#ff6600" font-size="9">INSERT events</text>
+      <text x="590" y="192" text-anchor="middle" fill="#64748b" font-size="9">+ pg_notify new_event</text>
+
+      <!-- PostgreSQL -->
+      <rect x="680" y="290" width="150" height="60" rx="8" fill="#1a2236" stroke="#22c55e" stroke-width="1.5"/>
+      <text x="755" y="313" text-anchor="middle" fill="#22c55e" font-size="11" font-weight="700">PostgreSQL</text>
+      <text x="755" y="329" text-anchor="middle" fill="#94a3b8" font-size="9">events · cameras</text>
+      <text x="755" y="343" text-anchor="middle" fill="#94a3b8" font-size="9">LISTEN/NOTIFY</text>
+
+      <!-- api-server -->
+      <rect x="10" y="290" width="155" height="60" rx="8" fill="#1a2236" stroke="#1e2d45" stroke-width="1.5"/>
+      <text x="87" y="313" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="700">api-server.js</text>
+      <text x="87" y="329" text-anchor="middle" fill="#94a3b8" font-size="9">LISTEN + REST + WS</text>
+      <text x="87" y="343" text-anchor="middle" fill="#94a3b8" font-size="9">auth · stats · reports</text>
+
+      <line x1="680" y1="320" x2="165" y2="320" stroke="#22c55e" stroke-width="1.5" marker-end="url(#arr-dg)"/>
+      <text x="423" y="314" text-anchor="middle" fill="#22c55e" font-size="9" font-weight="600">pg_notify → LISTEN → WS broadcast</text>
+
+      <!-- Dashboard -->
+      <rect x="10" y="205" width="120" height="70" rx="8" fill="#0a1628" stroke="#5b8def" stroke-width="2"/>
+      <text x="70" y="226" text-anchor="middle" fill="#5b8def" font-size="11" font-weight="700">Dashboard</text>
+      <text x="70" y="242" text-anchor="middle" fill="#94a3b8" font-size="9">Live Events · Map</text>
+      <text x="70" y="256" text-anchor="middle" fill="#94a3b8" font-size="9">Stats · Alerts history</text>
+      <text x="70" y="270" text-anchor="middle" fill="#94a3b8" font-size="9">Clip viewer</text>
+
+      <line x1="87" y1="290" x2="75" y2="275" stroke="#5b8def" stroke-width="1.5" marker-end="url(#arr-d)"/>
+      <text x="115" y="285" text-anchor="start" fill="#5b8def" font-size="9">WebSocket</text>
+    </svg>
+    </div>
+    <div class="legend">
+      <div class="legend-item"><div class="legend-line" style="background:var(--dahua);height:2px"></div> CGI event stream (long-lived TCP)</div>
+      <div class="legend-item"><div class="legend-line" style="background:var(--amber);height:2px"></div> RTSP continuous stream (clip buffer)</div>
+      <div class="legend-item"><div class="legend-line dashed" style="color:var(--dahua);height:2px;background:var(--dahua)"></div> snapManager + CGI snapshot (per event)</div>
+      <div class="legend-item"><div class="legend-line" style="background:var(--green);height:2px"></div> pg_notify / alert pipeline</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ── Footer ──────────────────────────────────────────────── -->
+<div class="page-footer">
+  Vigil Platform · Internal Technical Reference · Generated 2026-05-29<br>
+  สำหรับใช้ภายในทีมเท่านั้น · ข้อมูลอ้างอิงจาก source code จริง (mqtt-subscriber.js · hikvision-isapi.js · dahua-cgi.js)
+</div>
+
+</div>
+</body>
+</html>

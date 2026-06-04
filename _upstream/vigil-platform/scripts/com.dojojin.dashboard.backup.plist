@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+============================================================
+  DojoJin Tech Dashboard — Daily Postgres Backup (launchd)
+============================================================
+  Install:
+    cp scripts/com.dojojin.dashboard.backup.plist ~/Library/LaunchAgents/
+    launchctl load -w ~/Library/LaunchAgents/com.dojojin.dashboard.backup.plist
+
+  Verify:
+    launchctl list | grep com.dojojin.dashboard.backup
+    tail -f /Users/dojojin/vigil-platform/backups/backup.log
+
+  Uninstall:
+    launchctl unload -w ~/Library/LaunchAgents/com.dojojin.dashboard.backup.plist
+    rm ~/Library/LaunchAgents/com.dojojin.dashboard.backup.plist
+
+  Schedule: every day at 03:00 local time.
+  StartCalendarInterval fires once when the system is awake at the
+  given time; if the Mac is asleep at 03:00 the run is queued and
+  fires on next wake (launchd default behaviour).
+============================================================
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.dojojin.dashboard.backup</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/dojojin/vigil-platform/scripts/backup.sh</string>
+  </array>
+
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>3</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/Users/dojojin/vigil-platform/backups/backup.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/dojojin/vigil-platform/backups/backup.log</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <false/>
+</dict>
+</plist>

@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<title>Report Print</title>
+<!--
+  Phase 7.3 — standalone report render target for Puppeteer.
+  Renders the EXACT same layout as the interactive Reports page by
+  loading the shared report-template.js. The scheduler's renderReportImage
+  (report-renderer.js) opens this page with the internal service token
+  injected as an HTTP header, so the /api/stats fetches below
+  authenticate without the token ever being exposed to page JS.
+  Not meant for human navigation — it's auth-gated like any dashboard asset.
+-->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="/i18n.js"></script>
+<script src="/report-template.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 28px; width: 820px; background: #fff;
+         color: #1a202c; font-family: 'Sarabun','Segoe UI',sans-serif; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+(async () => {
+  const p = new URLSearchParams(location.search);
+  const from    = p.get('from');
+  const to      = p.get('to');
+  const title   = p.get('title') || I18N.t('rep.summaryTitle');
+  const label   = p.get('label') || '';
+  const cameras = p.get('cameras') || '';   // CSV; empty = all
+  let q = `from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+  if (cameras) q += `&cameras=${encodeURIComponent(cameras)}`;
+
+  const get = async (path) => {
+    try { const r = await fetch(path); return r.ok ? await r.json() : null; }
+    catch { return null; }
+  };
+
+  const [cats, tl, brk, ppl, veh, heat, top, quiet, branding] = await Promise.all([
+    get(`/api/stats/categories?${q}`),
+    get(`/api/stats/timeline-by-category?${q}`),
+    get(`/api/stats/breakdown-v2?${q}`),
+    get(`/api/stats/per-camera-counts?kind=people&${q}`),
+    get(`/api/stats/per-camera-counts?kind=vehicle&${q}`),
+    get(`/api/stats/heatmap?${q}`),
+    get(`/api/stats/top-rules?${q}&limit=10`),
+    get(`/api/stats/quiet-cameras?since_hours=24`),
+    get(`/api/branding`),
+  ]);
+
+  const reportData = { range: { label }, title, cats, tl, brk, ppl, veh, heat, top, quiet };
+  // /api/branding already returns { name, tagline, logo_url, primary_color }
+  // in the exact shape report-template.js expects — pass through directly.
+  // (An earlier version read non-existent branding.brand_* fields here,
+  // so every field fell to the default — that's why the logo disappeared
+  // from the PDF.)
+  const brand = branding || {};
+
+  document.getElementById('root').innerHTML = ReportTemplate.buildReportHtml(reportData, brand);
+  const t = ReportTemplate.computeTrendPoints(reportData);
+  if (t.points.length) ReportTemplate.renderReportTrendChart('reportTrendChart', t.points, t.trunc);
+
+  // Wait for every <img> in the rendered report (logo, future thumbnails)
+  // to finish loading — page.pdf/screenshot snapshots whatever's there,
+  // so an unloaded image would render blank.
+  await Promise.all([...document.querySelectorAll('#root img')].map(img =>
+    img.complete && img.naturalWidth > 0
+      ? null
+      : new Promise(resolve => { img.onload = img.onerror = resolve; })
+  ));
+  // Then a brief settle for Chart.js (animation:false → two frames is enough).
+  await new Promise(r => setTimeout(r, 200));
+  window.__reportReady = true;
+})().catch(e => {
+  document.getElementById('root').innerHTML =
+    '<p style="color:#c00;padding:40px">report render failed: ' + (e && e.message) + '</p>';
+  window.__reportReady = true;   // unblock Puppeteer so it captures the error
+});
+</script>
+</body>
+</html>

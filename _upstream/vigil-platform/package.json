@@ -1,0 +1,15 @@
+{
+  "name": "vigil-platform",
+  "version": "1.0.0",
+  "description": "> **CCTV Analytics & Management Suite** — Real-time video analytics dashboard powered by Bosch BVMS, MQTT events, and intelligent rule engine.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "UNLICENSED"
+}

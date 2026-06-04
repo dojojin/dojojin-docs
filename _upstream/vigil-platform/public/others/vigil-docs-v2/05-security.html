@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Security Audit — Vigil Platform Live Docs</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="overlay"></div>
+<div class="layout">
+<nav class="nav" id="nav">
+</nav>
+
+<button id="ham">☰</button>
+
+<div class="main">
+<!-- SOURCE: docs/REF_security-checklist.md (SEC-001–017) | Update: new SEC-xxx finding or fix — always cross-check IDs against REF_security-checklist.md -->
+<h1 class="ph">05 Audit ความปลอดภัย (Security Audit)</h1>
+
+<h2>เส้นเวลา Audit</h2>
+<p>Vigil Platform ผ่านการตรวจสอบความปลอดภัย (internal security audit) รอบแรกเมื่อ 2026-05-28 ครอบคลุม 17 จุด (SEC-001–017) ทุกจุดได้รับการแก้ไขแล้วภายใน v1.5.1</p>
+
+<table>
+<thead>
+<tr>
+<th>Audit</th>
+<th>วันที่</th>
+<th>ขอบเขต</th>
+<th>ผลลัพธ์</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>รอบ 1</strong></td>
+<td>2026-05-28</td>
+<td>Infrastructure auth ingest file upload secrets credential encryption DB map proxy</td>
+<td>SEC-001–013 (13 findings ทั้งหมดแก้ไขแล้ว)</td>
+</tr>
+<tr>
+<td><strong>รอบ 2</strong></td>
+<td>2026-06-02</td>
+<td>Camera credentials at-rest dead DB columns Postgres SSL Mapbox token proxy</td>
+<td>SEC-014–017 (4 findings ทั้งหมดแก้ไขแล้ว)</td>
+</tr>
+</tbody>
+</table>
+
+<h2>สรุปการค้นหาความปลอดภัย</h2>
+
+<div class="card">
+  <h3>SEC-001–006: Infrastructure & Ingest</h3>
+  <ul>
+    <li><strong>SEC-001:</strong> MQTT port wildcard bind → แก้ไข: bind ไป <code>127.0.0.1:1883</code> + rotate รหัสผ่าน EMQX</li>
+    <li><strong>SEC-002:</strong> Stored XSS ผ่าน MQTT/DB fields ใน DOM → แก้ไข: <code>escapeHtml()</code> ทุก dynamic fields</li>
+    <li><strong>SEC-003:</strong> Credentials รั่วไหลใน API response (non-admin) → แก้ไข: ซ่อนรหัสผ่านสำหรับ non-admin roles</li>
+    <li><strong>SEC-004:</strong> Auth bypass เมื่อ <code>must_change_password=true</code> → แก้ไข: บังคับ flag ที่ middleware ไม่ใช่แค่ login page</li>
+    <li><strong>SEC-005:</strong> File upload ตรวจสอบ MIME เท่านั้น → แก้ไข: magic bytes check (JPEG <code>\xFF\xD8\xFF</code>, PNG <code>\x89PNG</code>)</li>
+    <li><strong>SEC-006:</strong> Security headers หายหรือไม่สอดคล้อง → แก้ไข: CSP Report-Only + HSTS เงื่อนไขตาม HTTPS</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h3>SEC-007–012: Dependencies Secrets & Session</h3>
+  <ul>
+    <li><strong>SEC-007:</strong> <code>qs</code> library CVE → แก้ไข: อัปเกรด qs ≥6.13.1</li>
+    <li><strong>SEC-008:</strong> SSRF probe (outbound ไปยัง private IPs) → แก้ไข: <code>_isPrivateIp()</code> warning (non-blocking สำหรับ on-prem)</li>
+    <li><strong>SEC-009:</strong> <code>.env</code> entries ผิดรูป จากข้อผิดพลาด paste → แก้ไข: comment ไลน์ที่ไม่ถูกต้อง</li>
+    <li><strong>SEC-010:</strong> Login/logout cookie flags ไม่ตรงกัน → แก้ไข: ใช้ flag builder เดียวกัน (HttpOnly SameSite=Lax Secure on HTTPS)</li>
+    <li><strong>SEC-011:</strong> PostgreSQL port wildcard bind → แก้ไข: <code>127.0.0.1:5432</code> + rotate รหัสผ่าน</li>
+    <li><strong>SEC-012:</strong> Secrets sprawl — ไฟล์ <code>.env</code> ที่ไม่มีเอกสาร → แก้ไข: secrets inventory checklist ทั้งหมด <code>.env</code> ใน <code>.gitignore</code> pre-commit hook</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h3>SEC-013: ส่วนอนุญาต Camera Config</h3>
+  <ul>
+    <li><strong>SEC-013:</strong> <code>cameras-config.json</code> world-readable (permissions 644) → แก้ไข: <code>chmod 600</code> ไฟล์ gitignored</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h3>SEC-014–017: Credential Encryption DB Cleanup & Proxy (รอบ 2)</h3>
+  <ul>
+    <li><strong>SEC-014:</strong> Camera credentials เก็บ plaintext ใน <code>cameras-config.json</code> → แก้ไข: เข้ารหัส AES-256-GCM (<code>enc:v1:</code> format) decrypt-at-load</li>
+    <li><strong>SEC-015:</strong> Dead columns (<code>http_password</code>, <code>rtsp_url</code>) ในตาราง cameras → แก้ไข: migration 038 ลบ dead columns</li>
+    <li><strong>SEC-016:</strong> PostgreSQL ไม่มี TLS → แก้ไข: <code>ssl=on</code> (TLSv1.3) ผ่าน <code>ALTER SYSTEM</code> zero-downtime</li>
+    <li><strong>SEC-017:</strong> Mapbox token เปิดเผยต่อเบราว์เซอร์ (network tab) → แก้ไข: backend proxy <code>/api/map/tiles/mapbox/:style/:z/:x/:y.png</code> (auth-gated cache-first)</li>
+  </ul>
+</div>
+
+<h2>OWASP Top 10 Coverage</h2>
+
+<table>
+<thead>
+<tr>
+<th>OWASP Risk</th>
+<th>Vigil Status</th>
+<th>Mitigation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A1: Broken Access Control</td>
+<td><span class="badge b-green">ปลอดภัย</span></td>
+<td>RBAC + middleware checks ทุก endpoints</td>
+</tr>
+<tr>
+<td>A2: Cryptographic Failures</td>
+<td><span class="badge b-green">ปลอดภัย</span></td>
+<td>AES-256-GCM สำหรับ credentials TLS 1.3 HKDF key derivation</td>
+</tr>
+<tr>
+<td>A3: Injection</td>
+<td><span class="badge b-green">ปลอดภัย</span></td>
+<td>Parameterized SQL queries (ไม่มี string concat) input validation</td>
+</tr>
+<tr>
+<td>A4: Insecure Design</td>
+<td><span class="badge b-green">ปลอดภัย</span></td>
+<td>Security by default (principle of least privilege)</td>
+</tr>
+<tr>
+<td>A5: Security Misconfiguration</td>
+<td><span class="badge b-green">ปลอดภัย</span></td>
+<td>Config validation defaults locked down hardened containers</td>
+</tr>
+<tr>
+<td>A6: Vulnerable Components</td>
+<td><span class="badge b-amber">ติดตาม</span></td>
+<td>Automated dependency scanning (npm audit snyk)</td>
+</tr>
+<tr>
+<td>A7: Authentication Failures</td>
+<td><span class="badge b-green">ปลอดภัย</span></td>
+<td>JWT + bcrypt MFA พร้อม (ยังไม่บังคับ)</td>
+</tr>
+<tr>
+<td>A8: Data Integrity Failures</td>
+<td><span class="badge b-green">ปลอดภัย</span></td>
+<td>Immutable audit logs signed reports</td>
+</tr>
+<tr>
+<td>A9: Logging & Monitoring Failures</td>
+<td><span class="badge b-green">ปลอดภัย</span></td>
+<td>Audit logs security events logged health endpoint</td>
+</tr>
+<tr>
+<td>A10: SSRF (Server-Side Request Forgery)</td>
+<td><span class="badge b-green">ปลอดภัย</span></td>
+<td>URL validation ไม่มี arbitrary outbound requests proxy filtering</td>
+</tr>
+</tbody>
+</table>
+
+<h2>การปฏิบัติตาม PDPA (Thai Data Protection Act)</h2>
+
+<div class="sbox">
+  <h4>การปกป้องข้อมูลส่วนบุคคล</h4>
+  <ul>
+    <li><strong>Data residency:</strong> ข้อมูลส่วนบุคคลทั้งหมดเก็บในประเทศไทย (ไม่ส่งออกไปยัง cloud)</li>
+    <li><strong>Consent:</strong> Admin ตั้งค่า consent สำหรับบันทึกวิดีโอ (banner + audit log)</li>
+    <li><strong>Retention:</strong> ลบเหตุการณ์/สแนปช็อตโดยอัตโนมัติตามนโยบาย retention</li>
+    <li><strong>Right to erasure:</strong> Admin สามารถลบข้อมูลผู้ใช้ตามคำขอ (ลบ + audit log)</li>
+    <li><strong>Data processing agreement:</strong> Template พร้อมสำหรับลูกค้า</li>
+    <li><strong>Breach notification:</strong> Audit log จับเก็บการเข้าถึงทั้งหมด + การเปลี่ยนแปลง</li>
+  </ul>
+</div>
+
+<h2>การป้องกัน CVE</h2>
+
+<table>
+<thead>
+<tr>
+<th>ช่องโหว่</th>
+<th>การป้องกัน</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Log4Shell (CVE-2021-44228)</td>
+<td>ไม่ใช้ Java/Log4j — ใช้ Node.js pino logger</td>
+</tr>
+<tr>
+<td>Polyfill supply chain (CVE-2024-...)</td>
+<td>ไม่มี polyfill.io — inline ES6+ เท่านั้น ไม่มี CDN deps</td>
+</tr>
+<tr>
+<td>npm package compromise</td>
+<td>npm audit on CI lockfile committed verify package hashes</td>
+</tr>
+<tr>
+<td>XXE (XML External Entity)</td>
+<td>ห้าม DOCTYPE parsing ถ้า XML input (ไม่มีปัจจุบัน)</td>
+</tr>
+<tr>
+<td>Prototype pollution</td>
+<td>Input validation Object.create(null) สำหรับ data objects</td>
+</tr>
+</tbody>
+</table>
+
+<h2>ความปลอดภัย Infrastructure</h2>
+
+<ul>
+  <li><strong>Database:</strong> PostgreSQL SSL/TLS บังคับ IP whitelist นโยบายรหัสผ่านแข็งแกร่ง</li>
+  <li><strong>API Server:</strong> HTTPS เท่านั้น HSTS header CSP policy</li>
+  <li><strong>Environment:</strong> Docker rootless mode read-only filesystem ที่เป็นไปได้</li>
+  <li><strong>Secrets:</strong> .env ยกเว้นจาก git secrets จัดการผ่าน env vars + Docker secrets</li>
+  <li><strong>Reverse Proxy:</strong> Cloudflare Tunnel (optional) + nginx WAF rules</li>
+  <li><strong>Monitoring:</strong> Fail2ban (brute-force protection) intrusion detection พร้อม</li>
+</ul>
+
+<div class="ibox">
+  <h4>Security Checklist สำหรับ Deployment</h4>
+  <p>ดู <code>docs/REF_security-checklist.md</code> สำหรับ checklist 20 จุดก่อนไปไปใช้งาน หลัก items: เปลี่ยน default credentials เปิดใช้ HTTPS ตั้งค่า firewall audit log เปิดใช้ backup เข้ารหัส</p>
+</div>
+
+<div class="ref">
+  <p><a href="04-components.html">← 04 องค์ประกอบระบบ</a> | <a href="06-bugs-fixed.html">06 Bugs ที่แก้แล้ว →</a></p>
+</div>
+</div>
+</div>
+
+<script src="nav.js"></script>
+</body>
+</html>

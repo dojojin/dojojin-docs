@@ -1,0 +1,102 @@
+/* ============================================================
+ * DojoJin Tech Dashboard — Air Datepicker Vigil Dark Theme
+ * Maps --adp-* variables to design-system semantic tokens.
+ * Scope: only .air-datepicker selectors.
+ * ============================================================ */
+.air-datepicker {
+  --adp-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    Helvetica, Arial, sans-serif;
+  --adp-font-size: 13px;
+  --adp-width: 252px;
+
+  /* Surfaces */
+  --adp-background-color:        var(--surface-overlay);
+  --adp-background-color-hover:  rgba(91, 141, 239, 0.10);
+  --adp-background-color-active: rgba(91, 141, 239, 0.18);
+
+  /* Text */
+  --adp-color:                   var(--text-primary);
+  --adp-color-secondary:         var(--text-secondary);
+  --adp-color-other-month:       var(--muted);
+  --adp-color-other-month-hover: var(--text-secondary);
+  --adp-color-disabled:          var(--muted);
+  --adp-color-disabled-in-range: var(--muted);
+
+  /* Accent */
+  --adp-accent-color:                           var(--accent);
+  --adp-color-current-date:                     var(--accent);
+  --adp-cell-background-color-selected:         var(--accent);
+  --adp-cell-background-color-selected-hover:   var(--accent-muted);
+  --adp-background-color-selected-other-month:  var(--accent-muted);
+  --adp-background-color-selected-other-month-focused: var(--accent);
+
+  /* In-range highlight */
+  --adp-background-color-in-range:              rgba(91, 141, 239, 0.12);
+  --adp-background-color-in-range-focused:      rgba(91, 141, 239, 0.22);
+  --adp-cell-background-color-in-range:         rgba(91, 141, 239, 0.12);
+  --adp-cell-background-color-in-range-hover:   rgba(91, 141, 239, 0.22);
+  --adp-cell-border-color-in-range:             var(--accent);
+
+  /* Borders */
+  --adp-border-color:        var(--border-hairline);
+  --adp-border-color-inner:  var(--border-hairline);
+  --adp-border-color-inline: var(--border-hairline);
+  --adp-border-radius: 6px;
+  --adp-cell-border-radius: 4px;
+
+  /* Nav */
+  --adp-nav-arrow-color:     var(--text-secondary);
+  --adp-nav-color-secondary: var(--text-secondary);
+
+  /* Day-name header: use accent instead of orange default */
+  --adp-day-name-color:       var(--accent);
+  --adp-day-name-color-hover: var(--text-primary);
+
+  /* Time picker track */
+  --adp-time-track-color:       var(--border-hairline);
+  --adp-time-track-color-hover: var(--text-secondary);
+
+  /* Buttons inside picker */
+  --adp-btn-color:       var(--accent);
+  --adp-btn-color-hover: var(--text-primary);
+  --adp-btn-background-color-hover:  rgba(91, 141, 239, 0.10);
+  --adp-btn-background-color-active: rgba(91, 141, 239, 0.18);
+}
+
+/* Selected cell: white text on --accent has ~3.6:1; explicit override */
+.air-datepicker-cell.-selected- {
+  color: #fff;
+}
+
+/* Border/shadow on the popup panel */
+.air-datepicker {
+  border: 1px solid var(--border-hairline);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+html[data-theme="light"] .air-datepicker {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+
+/* Time slider thumb — match accent */
+.air-datepicker-time--row input[type=range]::-webkit-slider-thumb {
+  background: var(--surface-overlay);
+  border-color: var(--accent);
+}
+.air-datepicker-time--row input[type=range]::-moz-range-thumb {
+  background: var(--surface-overlay);
+  border-color: var(--accent);
+}
+.air-datepicker-time--row input[type=range]:focus::-webkit-slider-thumb {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.air-datepicker-time--row input[type=range]:focus::-moz-range-thumb {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+/* Pointer arrow: match popup bg */
+.air-datepicker--pointer:after {
+  background: var(--surface-overlay);
+  border-color: var(--border-hairline);
+}

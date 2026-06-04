@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Maps API — Vigil Platform Live Docs</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="overlay"></div>
+<div class="layout">
+<nav class="nav" id="nav">
+</nav>
+
+<button id="ham">☰</button>
+
+<div class="main">
+<!-- SOURCE: docs/LOGIC_map-features.md · dashboard/dashboard.js (ol@ version) | Update: map library change, new tile provider, new map feature -->
+<h1 class="ph">10 Maps API (API แผนที่)</h1>
+
+<h2>เทคโนโลยี: OpenLayers 9.2.4 (ไม่ใช่ Mapbox)</h2>
+
+<p><strong>แก้ไข: เอกสารนี้เคยระบุ Mapbox ซึ่งไม่ถูกต้อง</strong> Vigil ใช้ <strong>OpenLayers</strong> สำหรับหน้าแผนที่ โดยใช้ CartoDB เป็นผู้ให้บริการไทล์ OpenLayers มีประสิทธิภาพ เป็นโอเพนซอร์ส และไม่ต้องใช้ token การค้นหาเชิงพาณิชย์ หรือการอนุมัติ</p>
+
+<h2>คุณสมบัติแผนที่</h2>
+
+<div class="feat-grid">
+  <div class="card">
+    <h3>เครื่องหมายกล้อง</h3>
+    <ul>
+      <li>กล้องแต่ละตัว = เครื่องหมายบนแผนที่ (lat/lng จากการตั้งค่า)</li>
+      <li>การเข้ารหัสสีตามสถานะ: เขียว (ออนไลน์) แดง (ออฟไลน์) เหลือง (คำเตือน)</li>
+      <li>คลิกเครื่องหมาย → รายละเอียดกล้อง + รูปภาพสด + เหตุการณ์ล่าสุด</li>
+      <li>ลากเครื่องหมายเพื่ออัปเดตตำแหน่งกล้อง</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>การจัดกลุ่ม</h3>
+    <ul>
+      <li>ที่ระดับซูมต่ำ (&lt;15): จัดกลุ่มเครื่องหมาย (เช่น "42 cameras" ในวงกลม)</li>
+      <li>ซูมเข้า → กลุ่มแตกออกเป็นกลุ่มย่อย</li>
+      <li>ลดความรก ภาพสำหรับการปรับใช้ขนาดใหญ่ (100+ cameras)</li>
+      <li>การจัดกลุ่มอัตโนมัติเมื่อข้อมูลเปลี่ยนแปลง</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>แผนที่ความร้อน</h3>
+    <ul>
+      <li>สลับมุมมอง: ความหนาแน่นของเหตุการณ์ต่อภูมิภาค (24 ชั่วโมงล่าสุด)</li>
+      <li>พื้นที่ร้อนแสดงบริเวณที่มีข้อกังวลด้านความปลอดภัย (จุดร้อนของการเคลื่อนไหว บริเวณที่อาจจะมีการบุกรุก)</li>
+      <li>ลำดับสี: น้ำเงิน (ต่ำ) → แดง (กิจกรรมสูง)</li>
+      <li>อัปเดตแบบเรียลไทม์เมื่อมีเหตุการณ์ใหม่</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>Live Pulse (พัลส์สด)</h3>
+    <ul>
+      <li>เมื่อเหตุการณ์เกิดขึ้น: พัลส์แอนิเมชันขยายจากเครื่องหมาย (v1.5.0+)</li>
+      <li>ข้อมูลย่อมูลทางสายตา: "การกระทำเกิดขึ้นที่นี่เดี๋ยวนี้"</li>
+      <li>ระยะเวลาพัลส์: 3 วินาทีแล้วค่อยๆ หายไป</li>
+      <li>สามารถแก้ไขได้ (ผู้ใช้สามารถปิดได้เพื่อประสิทธิภาพ)</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>ผู้ให้บริการไทล์</h3>
+    <ul>
+      <li><strong>หลัก:</strong> CartoDB Positron (สะอาด มีการระบุแหล่งที่มา)</li>
+      <li><strong>ทางเลือก:</strong> CartoDB Voyager (รายละเอียด ไม่ยุ่งยาก)</li>
+      <li><strong>OSM:</strong> OpenStreetMap (สำรอง ฟรี)</li>
+      <li><strong>ดาวเทียม:</strong> Mapbox Satellite (ไม่บังคับ ต้องใช้ token, v1.5.1+)</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>ตัวควบคุม</h3>
+    <ul>
+      <li>ปุ่มซูมเข้า/ออก (+ เลื่อนวงล้อม)</li>
+      <li>รีเซ็ตมุมมอง (จุดศูนย์กลาง + ซูมเริ่มต้น)</li>
+      <li>สลับแผนที่ความร้อน</li>
+      <li>สลับมุมมองดาวเทียม</li>
+      <li>ตัวเปลี่ยนเลเยอร์ (หากเปิดใช้งานผู้ให้บริการหลายราย)</li>
+    </ul>
+  </div>
+</div>
+
+<h2>การรวม WebSocket แบบเรียลไทม์</h2>
+
+<p>เมื่อเหตุการณ์เกิดขึ้นในระบบ:</p>
+<pre>
+1. Backend publishes to Redis: { type: 'event', camera_id: 3, lat: 13.7, lng: 100.5, event_type: 'motion' }
+2. WS server broadcasts to all connected map page clients
+3. Frontend receives:
+   - Add pulse animation at (lat, lng)
+   - Update marker color (if camera was offline)
+   - Increment heatmap count at position
+4. Pulse fades after 3s (CSS animation)
+5. Heatmap updates in real-time
+</pre>
+
+<h2>Tile Proxy และความปลอดภัย (v1.5.1)</h2>
+
+<p>ไทล์ Mapbox ต้องมี authentication token เพื่อป้องกันการรั่วไหลของ token ให้กับไคลเอ็นต์:</p>
+
+<ul>
+  <li><strong>เดิม (v1.5.0):</strong> Mapbox token ในโค้ด frontend → เปิดเผยในแท็บเครือข่าย</li>
+  <li><strong>ใหม่ (v1.5.1):</strong> Backend proxy endpoint <code>/api/tiles/mapbox/:z/:x/:y.png</code></li>
+  <li>การไหลของคำขอ: Frontend → Backend → Mapbox API → PNG bytes → Frontend</li>
+  <li>ขีดจำกัดอัตรา: 100 tiles/นาที ต่อ IP (ป้องกันการใช้ผิด)</li>
+  <li>การแคช: Redis cache ไทล์เป็นเวลา 7 วัน (ลดคำขอ Mapbox)</li>
+</ul>
+
+<h2>การจัดการตำแหน่งกล้อง</h2>
+
+<h3>ไหลของ UI</h3>
+<ol>
+  <li>ผู้ดูแลระบบไปที่ Settings (การตั้งค่า) → Cameras (กล้อง)</li>
+  <li>ขยายการตั้งค่ากล้อง คลิกปุ่ม "Set Location" (ตั้งตำแหน่ง)</li>
+  <li>เปิด Map modal ผู้ใช้คลิกเพื่อวางเครื่องหมาย</li>
+  <li>ยืนยัน → บันทึก lat/lng ลงตาราง cameras</li>
+  <li>หน้าแผนที่รีเฟรชทันที (WebSocket update)</li>
+</ol>
+
+<h3>นำเข้าจากอุปกรณ์ GPS</h3>
+<p>(Roadmap Ph.5) — อนุญาตให้อัปโหลด CSV ที่มีพิกัด GPS เพื่อตั้งค่าตำแหน่งกล้องแบบกลุ่ม</p>
+
+<h2>การเพิ่มประสิทธิภาพประสิทธิการ</h2>
+
+<table>
+<thead>
+<tr>
+<th>การเพิ่มประสิทธิภาพ</th>
+<th>ผลกระทบ</th>
+<th>สถานะ</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Tile caching (Redis)</td>
+<td>ลดคำขอ Mapbox 80%</td>
+<td>v1.5.1</td>
+</tr>
+<tr>
+<td>Clustering library (fast-cluster)</td>
+<td>50+ กลุ่มกล้องใน <100ms</td>
+<td>v1.4.0</td>
+</tr>
+<tr>
+<td>WebSocket debounce (pulse events)</td>
+<td>ข้ามพัลส์ที่ซ้ำกันภายใน 500ms</td>
+<td>v1.5.0</td>
+</tr>
+<tr>
+<td>Heatmap grid size optimization</td>
+<td>Heatmap render <1s แม้มีเหตุการณ์ 10,000+ เหตุการณ์</td>
+<td>v1.5.1</td>
+</tr>
+<tr>
+<td>Lazy load map (เฉพาะเมื่อแท็บมองเห็นได้)</td>
+<td>ลด JS eval จนกว่าผู้ใช้จะนำทางไปยังแผนที่</td>
+<td>v1.4.5</td>
+</tr>
+</tbody>
+</table>
+
+<h2>แผนที่มือถือ (Responsive)</h2>
+
+<ul>
+  <li><strong>≤768px:</strong> แผนที่เต็มจอ (ไม่มี sidebar ควบคุมที่ด้านบน)</li>
+  <li><strong>แตะเครื่องหมาย:</strong> เลื่อนแผ่นด้านล่างขึ้นพร้อมรายละเอียดกล้อง + รูปภาพสด</li>
+  <li><strong>Pinch zoom:</strong> รองรับ native touch gesture</li>
+  <li><strong>Responsive tiles:</strong> โหลดความละเอียดสูงบนหน้าจอ high-DPI</li>
+</ul>
+
+<h2>แผนงานในอนาคต</h2>
+
+<table>
+<thead>
+<tr>
+<th>คุณสมบัติ</th>
+<th>ระยะ</th>
+<th>คำอธิบาย</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Geofencing</td>
+<td>Ph.5</td>
+<td>วาดโซนบนแผนที่ แจ้งเตือนหากบุคคล/ยานพาหนะเข้า/ออก</td>
+</tr>
+<tr>
+<td>Path history (ประวัติเส้นทาง)</td>
+<td>Ph.5</td>
+<td>แสดงการติดตามบุคคลข้ามมุมมองกล้องหลายแห่ง</td>
+</tr>
+<tr>
+<td>Camera grouping overlay</td>
+<td>Ph.6</td>
+<td>กล่องกลุ่มภาพ (เช่น polygon "North Building")</td>
+</tr>
+<tr>
+<td>Multi-map support (รองรับแผนที่หลายแบบ)</td>
+<td>Ph.6</td>
+<td>ลูกค้ามีหลายตำแหน่ง = แผนที่แยก</td>
+</tr>
+</tbody>
+</table>
+
+<div class="ibox">
+  <h4>การแก้ปัญหาแผนที่</h4>
+  <p>หากแผนที่ว่าง: (1) ตรวจสอบ browser console เพื่อหาข้อผิดพลาด, (2) ยืนยันว่าเซิร์ฟเวอร์ไทล์สามารถเข้าถึงได้, (3) ยืนยัน lat/lng ของกล้องในฐานข้อมูล (ไม่เป็น null), (4) ล้างแคช + โหลดซ้ำ</p>
+</div>
+
+<div class="ref">
+  <p><a href="09-line-api.html">← 09 LINE API</a> | <a href="11-company-view.html">11 มุมมององค์กร →</a></p>
+</div>
+</div>
+</div>
+
+<script src="nav.js"></script>
+</body>
+</html>

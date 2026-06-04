@@ -1,0 +1,71 @@
+# docker-compose.yml
+# project identity — containers, volumes, and network use vigil-* / vigil_* names.
+name: vigil-platform
+
+services:
+  # ──────────────────────────────────────
+  # PostgreSQL Database
+  # ──────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: vigil-postgres
+    environment:
+      POSTGRES_DB: vigil_platform
+      POSTGRES_USER: vigil_sql
+      # SEC-011: password moved to .env (gitignored) — never hardcode in compose
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}"
+    ports:
+      # SEC-011: bind localhost only — apps on same host connect fine,
+      # external LAN/WAN cannot reach port 5432 directly
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vigil_sql -d vigil_platform"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ──────────────────────────────────────
+  # EMQX MQTT Broker (replaced Mosquitto 2.0 — was strict-rejecting
+  # Bosch FW 6.x/7.x IVA Basic MQTT packets as "malformed".
+  # EMQX 5.x is more lenient with MQTT 3.1 spec edge cases that
+  # older Bosch firmware emits.)
+  # ──────────────────────────────────────
+  emqx:
+    image: emqx/emqx:5.8
+    container_name: vigil-emqx
+    ports:
+      # SEC-001 Phase 2: dual-bind — localhost for mqtt-subscriber.js (same host),
+      # LAN IP for Bosch cameras. WS (8083) removed — nothing uses it externally.
+      - "127.0.0.1:1883:1883"      # MQTT — subscriber (localhost)
+      - "192.168.10.31:1883:1883"  # MQTT — Bosch cameras (LAN)
+      - "127.0.0.1:18083:18083"    # Dashboard UI — localhost only (never expose)
+    environment:
+      # SEC-001 Phase 2: AUTHN on — all clients must present credentials.
+      # Run scripts/emqx-provision.js once after container restart to create users.
+      EMQX_LISTENERS__TCP__DEFAULT__ENABLE_AUTHN: "true"
+      EMQX_LISTENERS__WS__DEFAULT__ENABLE_AUTHN: "false"
+      # Disable EMQX's cluster autoheal/clustering (single-node deployment)
+      EMQX_NODE__NAME: "emqx@127.0.0.1"
+      EMQX_CLUSTER__DISCOVERY_STRATEGY: "manual"
+      # SEC-001: override default admin/public password on first start
+      EMQX_DASHBOARD__DEFAULT_PASSWORD: "${EMQX_DASHBOARD_PASSWORD:?EMQX_DASHBOARD_PASSWORD must be set in .env}"
+    volumes:
+      - emqx_data:/opt/emqx/data
+      - emqx_log:/opt/emqx/log
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    name: vigil_postgres_data
+  emqx_data:
+    name: vigil_emqx_data
+  emqx_log:
+    name: vigil_emqx_log
+
+networks:
+  default:
+    name: vigil_default

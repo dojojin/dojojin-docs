@@ -1,0 +1,2 @@
+# Daily pg_dump output lands here.
+# .dump and .log files are gitignored — see ../.gitignore.
