@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>สิ่งที่ทำได้ — Vigil Platform Live Docs</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="overlay"></div>
+<div class="layout">
+<nav class="nav" id="nav">
+</nav>
+
+<button id="ham">☰</button>
+
+<div class="main">
+<!-- SOURCE: CHANGELOG.md (shipped) · ROADMAP.md (planned) | Update: new feature shipped or roadmap shift -->
+<h1 class="ph">02 สิ่งที่ทำได้</h1>
+
+<h2>Feature Matrix — 14 หมวดหลัก</h2>
+<p style="font-size:13px;color:var(--dim);margin-bottom:1rem">ฟีเจอร์ที่ใช้งานได้จริงขึ้นกับ <strong>Deployment Profile</strong> ที่เลือก: <strong>A</strong> (สถิติ+แจ้งเตือน), <strong>B</strong> (A + snapshot), <strong>C</strong> (ครบทุกอย่าง รวม pre-alarm video) — ดูรายละเอียดใน <a href="12-scale-up.html">12 Scale Up</a></p>
+<table>
+<thead>
+<tr>
+<th>หมวด</th>
+<th>ฟีเจอร์</th>
+<th>Version</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td rowspan="4"><strong>รับ Event<br>หลายยี่ห้อ</strong></td>
+<td>Bosch BVMS — รับ event ผ่าน MQTT (ONVIF Profile M)</td>
+<td>v1.2.0</td>
+<td><span class="badge b-green">ใช้งานได้</span></td>
+</tr>
+<tr>
+<td>Hikvision — รับ event ผ่าน ISAPI HTTP</td>
+<td>v1.2.0</td>
+<td><span class="badge b-green">ใช้งานได้</span></td>
+</tr>
+<tr>
+<td>Dahua — รับ event ผ่าน HTTP CGI</td>
+<td>v1.2.0</td>
+<td><span class="badge b-green">ใช้งานได้</span></td>
+</tr>
+<tr>
+<td>ONVIF generic — กล้องยี่ห้ออื่น (Roadmap Ph.4)</td>
+<td>Roadmap</td>
+<td><span class="badge b-amber">Ph.4</span></td>
+</tr>
+<tr>
+<td rowspan="3"><strong>ดูกล้อง<br>สด</strong></td>
+<td>หน้าจอกล้อง real-time (15+ ตัว/หน้า มี pagination)</td>
+<td>v1.2.0</td>
+<td><span class="badge b-green">ใช้งานได้</span></td>
+</tr>
+<tr>
+<td>ปรับความถี่ snapshot ได้ (5–60 วินาที)</td>
+<td>v1.2.0</td>
+<td><span class="badge b-green">ใช้งานได้</span></td>
+</tr>
+<tr>
+<td>ติดตาม uptime % ต่อกล้อง (probe อัตโนมัติ)</td>
+<td>v1.3.0</td>
+<td><span class="badge b-green">ใช้งานได้</span></td>
+</tr>
+<tr>
+<td rowspan="4"><strong>วิเคราะห์<br>Event</strong></td>
+<td>กฎแจ้งเตือน (motion, tamper, network, กำหนดเอง)</td>
+<td>v1.2.0</td>
+<td><span class="badge b-green">ใช้งานได้</span></td>
+</tr>
+<tr>
+<td>ดู event ตาม timeline + drill-down รายละเอียด</td>
+<td>v1.2.0</td>
+<td><span class="badge b-green">ใช้งานได้</span></td>
+</tr>
+<tr>
+<td>กรอง/ค้นหา event ตามกล้อง, ประเภท, ช่วงเวลา</td>
+<td>v1.2.0</td>
+<td><span class="badge b-green">ใช้งานได้</span></td>
+</tr>
+<tr>
+<td>ดึงคลิป pre-alarm video (±buffer วินาที) — <strong>Profile C</strong></td>
+<td>v1.3.0</td>
+<td><span class="badge b-green">ใช้งานได้</span></td>
+</tr>
+<tr>
+<td rowspan="2"><strong>ใบหน้า<br>(Face Capture)</strong></td>
+<td>ดึง face crop จาก Hikvision Face Capture camera (stream multipart JPEG) — บันทึก local disk ใน <code>snapshots/</code>; แสดงใน gallery พร้อม background image (เฉพาะ Hikvision ที่รองรับ Face Capture class เท่านั้น)</td>
+<td>v1.3.0</td>
+<td><span class="badge b-green">ใช้งานได้</span></td>
+</tr>
+<tr>
+<td>Face Recognition AI — pgvector + InsightFace (Roadmap Ph.5)</td>
+<td>Roadmap</td>
+<td><span class="badge b-amber">Ph.5</span></td>
+</tr>
+<tr>
+<td rowspan="3"><strong>แจ้งเตือน<br>LINE</strong></td>
+<td>ส่งหา user / group / room ผ่าน LINE API พร้อมภาพ</td>
+<td>v1.2.0</td>
+<td><span class="badge b-green">ใช้งานได้</span></td>
+</tr>
+<tr>
+<td>ผู้ใช้ scan QR เพื่อ subscribe รับแจ้งเตือน (webhook)</td>
+<td>v1.3.0</td>
+<td><span class="badge b-green">ใช้งานได้</span></td>
+</tr>
+<tr>
+<td>ข้อความพร้อม snapshot + รายละเอียด event ทั้ง TH/EN</td>
+<td>v1.2.0</td>
+<td><span class="badge b-green">ใช้งานได้</span></td>
+</tr>
+<tr>
+<td rowspan="4"><strong>Analytics<br>Dashboard</strong></td>
+<td>Security Morning Briefing (KPI เช้า, trend, alerts)</td>
+<td>v1.4.0</td>
+<td><span class="badge b-green">ใช้งานได้</span></td>
+</tr>
+<tr>
+<td>กราฟ event ต่อกล้อง (timeline รายชั่วโมง/วัน)</td>
+<td>v1.3.0</td>
+<td><span class="badge b-green">ใช้งานได้</span></td>
+</tr>
+<tr>
+<td>สัดส่วน uptime % ต่อกล้อง</td>
+<td>v1.4.0</td>
+<td><span class="badge b-green">ใช้งานได้</span></td>
+</tr>
+<tr>
+<td>KPI กำหนดเองผ่าน SQL (Roadmap)</td>
+<td>Roadmap</td>
+<td><span class="badge b-amber">Ph.5</span></td>
+</tr>
+<tr>
+<td rowspan="3"><strong>รายงาน</strong></td>
+<td>Health Report (PNG ภาษาไทย/อังกฤษ, SVG+sharp)</td>
+<td>v1.4.0</td>
+<td><span class="badge b-green">ใช้งานได้</span></td>
+</tr>
+<tr>
+<td>Analytics Report (Event summary, trend, per-camera stats)</td>
+<td>v1.4.0</td>
+<td><span class="badge b-green">ใช้งานได้</span></td>
+</tr>
+<tr>
+<td>Email / LINE auto-delivery (scheduled daily/weekly)</td>
+<td>v1.4.5</td>
+<td><span class="badge b-green">ใช้งานได้</span></td>
+</tr>
+<tr>
+<td rowspan="3"><strong>License &<br>RBAC</strong></td>
+<td>License system (Ed25519 JWT, hardware fingerprint)</td>
+<td>v1.3.0</td>
+<td><span class="badge b-green">ใช้งานได้</span></td>
+</tr>
+<tr>
+<td>Role-based access control (admin, operator, viewer, report_viewer)</td>
+<td>v1.3.0</td>
+<td><span class="badge b-green">ใช้งานได้</span></td>
+</tr>
+<tr>
+<td>Audit log (login, action, role change, camera edit)</td>
+<td>v1.4.0</td>
+<td><span class="badge b-green">ใช้งานได้</span></td>
+</tr>
+<tr>
+<td rowspan="2"><strong>Light Mode &<br>Theme</strong></td>
+<td>Light/Dark mode toggle (all UI, 2 color palettes)</td>
+<td>v1.5.1</td>
+<td><span class="badge b-green">ใช้งานได้</span></td>
+</tr>
+<tr>
+<td>White-label branding (logo, name, colors ปรับได้)</td>
+<td>v1.3.0</td>
+<td><span class="badge b-green">ใช้งานได้</span></td>
+</tr>
+<tr>
+<td rowspan="2"><strong>Mobile App<br>(iOS + Android)</strong></td>
+<td>Native React Native app — 5 tabs (Alerts, Events, Live Map, Settings, Profile)</td>
+<td>v1.4.0</td>
+<td><span class="badge b-green">ใช้งานได้</span></td>
+</tr>
+<tr>
+<td>Push notifications, biometric auth, custom server URL, i18n (TH/EN)</td>
+<td>v1.4.0</td>
+<td><span class="badge b-green">ใช้งานได้</span></td>
+</tr>
+<tr>
+<td rowspan="3"><strong>Map & Live<br>Locations</strong></td>
+<td>OpenLayers map with CartoDB tiles, camera markers, clustering</td>
+<td>v1.3.0</td>
+<td><span class="badge b-green">ใช้งานได้</span></td>
+</tr>
+<tr>
+<td>Heatmap (event density per zone)</td>
+<td>v1.4.0</td>
+<td><span class="badge b-green">ใช้งานได้</span></td>
+</tr>
+<tr>
+<td>Live pulse (real-time event markers on map)</td>
+<td>v1.5.0</td>
+<td><span class="badge b-green">ใช้งานได้</span></td>
+</tr>
+<tr>
+<td rowspan="3"><strong>Camera Pause &<br>Maintenance</strong></td>
+<td>Per-camera manual pause button (stops event ingest + recording)</td>
+<td>v1.5.1</td>
+<td><span class="badge b-green">ใช้งานได้</span></td>
+</tr>
+<tr>
+<td>Paused indicator in camera list + health report</td>
+<td>v1.5.1</td>
+<td><span class="badge b-green">ใช้งานได้</span></td>
+</tr>
+<tr>
+<td>Auto-resume on schedule (Roadmap Ph.5)</td>
+<td>Roadmap</td>
+<td><span class="badge b-amber">Ph.5</span></td>
+</tr>
+<tr>
+<td rowspan="4"><strong>Appearances<br>Analytics</strong></td>
+<td>Forensic search by gender, top/bottom color, hair length</td>
+<td>v1.5.1</td>
+<td><span class="badge b-green">ใช้งานได้</span></td>
+</tr>
+<tr>
+<td>Search by glasses, helmet, bag category, vehicle type</td>
+<td>v1.5.1</td>
+<td><span class="badge b-green">ใช้งานได้</span></td>
+</tr>
+<tr>
+<td>Behavioral analytics charts (gender, clothing, hair distribution)</td>
+<td>v1.5.1</td>
+<td><span class="badge b-green">ใช้งานได้</span></td>
+</tr>
+<tr>
+<td>Appearance retention setting (default 30 days, max 730)</td>
+<td>v1.5.1</td>
+<td><span class="badge b-green">ใช้งานได้</span></td>
+</tr>
+</tbody>
+</table>
+
+<h2>Deployment Profile Summary</h2>
+<div class="three">
+  <div class="card">
+    <h3>Profile A</h3>
+    <p><strong>Events + Rules</strong></p>
+    <p>Single server, 10–50 cameras, events only (no snapshots), analytics dashboard, alerts</p>
+    <ul>
+      <li>Bosch/Hik/Dahua ingest</li>
+      <li>Timeline view</li>
+      <li>LINE alerts</li>
+      <li>Health Report</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Profile B</h3>
+    <p><strong>A + Snapshots</strong></p>
+    <p>Single server + storage, 50–500 cameras, with snapshot caching, pre-alarm video ±10s</p>
+    <ul>
+      <li>Everything in A</li>
+      <li>Snapshot gallery</li>
+      <li>Pre-alarm video</li>
+      <li>Face capture (Hik)</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Profile C</h3>
+    <p><strong>Full Recording</strong></p>
+    <p>2-tier or HA deployment, 500–3,000 cameras, complete video recording, clustering</p>
+    <ul>
+      <li>Everything in B</li>
+      <li>Full video record</li>
+      <li>Appearances search</li>
+      <li>Advanced analytics</li>
+    </ul>
+  </div>
+</div>
+
+<h2>Roadmap (Planned Features)</h2>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Target Phase</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ONVIF Generic Ingester</td>
+<td>Ph.4 (Q3 2026)</td>
+<td>Design in progress</td>
+</tr>
+<tr>
+<td>Face Recognition AI (pgvector + InsightFace)</td>
+<td>Ph.5 (Q4 2026)</td>
+<td>Hardware+DB schema planned</td>
+</tr>
+<tr>
+<td>Vehicle Detection (plate, color, type)</td>
+<td>Ph.5 (Q4 2026)</td>
+<td>Backlog</td>
+</tr>
+<tr>
+<td>Occupancy / People Counting (crowdedness alert)</td>
+<td>Ph.5 (Q4 2026)</td>
+<td>Backlog</td>
+</tr>
+<tr>
+<td>BI Dashboard Integration (Tableau, Power BI)</td>
+<td>Ph.6 (2027)</td>
+<td>Backlog</td>
+</tr>
+<tr>
+<td>Geofencing / Zone Rules</td>
+<td>Ph.6 (2027)</td>
+<td>Backlog</td>
+</tr>
+</tbody>
+</table>
+
+<div class="sbox">
+  <h4>Note: Fixed-feature SaaS vs. This Platform</h4>
+  <p>Vigil ไม่ใช่ SaaS รูปแบบ "เลือกจากเมนู" แต่เป็น self-hosted platform ที่ลูกค้าและ SI ขยายได้เอง ฟีเจอร์ขึ้นกับ deployment profile (A/B/C) ที่เลือก + hardware resources + ข้อมูลของลูกค้า ไม่มี subscription tier จำกัด feature</p>
+</div>
+
+<div class="ref">
+  <p><a href="01-purpose.html">← 01 จุดประสงค์โครงการ</a> | <a href="03-benefits.html">03 4P · SWOT · จุดเด่น →</a></p>
+</div>
+</div>
+</div>
+
+<script src="nav.js"></script>
+</body>
+</html>
