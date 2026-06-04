@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>จุดประสงค์โครงการ — Vigil Platform Live Docs</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="overlay"></div>
+<div class="layout">
+<nav class="nav" id="nav">
+</nav>
+
+<button id="ham">☰</button>
+
+<div class="main">
+<!-- SOURCE: CLAUDE.md §Project Purpose | Update: project mission or target-market change -->
+<h1 class="ph">01 จุดประสงค์โครงการ</h1>
+
+<h2>ทำไมถึงชื่อ "Vigil Platform"</h2>
+
+<div class="vigil-hero">
+  <span class="word">Vigil</span>
+  <span class="meaning">/ ˈvɪdʒ.ɪl / — <em>n.</em> การเฝ้าระวัง · การตื่นตัวตลอดคืน · ยามเฝ้า</span>
+  <p class="sub">ในภาษาอังกฤษ "vigil" หมายถึงช่วงเวลาที่ต้องตื่นตัว เฝ้าดูโดยไม่หลับ — ตรงกับสิ่งที่ระบบนี้ทำ: <strong>เฝ้าระวัง 24 ชั่วโมงต่อวัน 7 วันต่อสัปดาห์ ไม่มีวันหยุด</strong> รับ event จากกล้องทุกยี่ห้อ วิเคราะห์ แจ้งเตือน และบันทึกโดยอัตโนมัติ ไม่ต้องพึ่งคนเฝ้าตลอดเวลา</p>
+</div>
+
+<p>ชื่อเดิมของ platform นี้คือ <code>bosch-mqtt-dashboard</code> — ตั้งตามยี่ห้อกล้องที่รองรับ ณ ตอนเริ่มต้น เมื่อ platform พัฒนาเป็น multi-vendor รองรับ Bosch, Hikvision, Dahua และ ONVIF ทั่วไป การใช้ชื่อผูกกับ vendor เดียวกลายเป็นปัญหาสำหรับการ white-label และการขยายตลาด จึงเปลี่ยนชื่อเป็น <strong>Vigil Platform</strong> ใน v1.5.0 — ชื่อที่ vendor-neutral, ตลาดระดับ enterprise เข้าใจได้ทันที และสะท้อน mission ของระบบอย่างตรงไปตรงมา</p>
+
+<h2>ปัญหาที่ต้องแก้ไข</h2>
+<p>ตลาด CCTV ในไทยและเอเชียตะวันออกเฉียงใต้ยังพึ่งพาสถาปัตยกรรมที่ขาดความยืดหยุ่นในหลายด้าน:</p>
+<ul>
+  <li><strong>Bosch IVA Pro + Cloud:</strong> ตรวจจับ event ได้ดี แต่บังคับให้ส่งข้อมูลผ่าน Bosch cloud ซึ่งมีค่าใช้จ่ายรายเดือนที่ไม่มีเพดาน และล็อกข้อมูลไว้กับ vendor</li>
+  <li><strong>ไม่รองรับ LINE:</strong> ลูกค้าไทยคาดหวัง LINE notification เป็นมาตรฐาน แต่ Bosch ไม่มีการรองรับ native</li>
+  <li><strong>PDPA:</strong> ข้อมูล event และภาพวิดีโอถูกเก็บบน server ต่างประเทศ — compliance risk สำหรับองค์กรไทย</li>
+  <li><strong>ไม่มี source code ownership:</strong> ลูกค้าต้องพึ่ง vendor ทุกอย่าง ปรับแต่งระบบเองไม่ได้</li>
+  <li><strong>White-label ไม่ได้:</strong> Bosch ไม่อนุญาตให้ SI หรือ reseller ขายต่อด้วยแบรนด์ของตัวเอง</li>
+  <li><strong>Multi-vendor ไม่ได้:</strong> dashboard ของ vendor แต่ละรายดูได้เฉพาะกล้องยี่ห้อตัวเอง — ไม่มีที่เดียวสำหรับกล้องผสมยี่ห้อ</li>
+</ul>
+
+<h2>วิธีแก้ไข</h2>
+<p><strong>Vigil Platform</strong> คือระบบ CCTV analytics แบบ self-hosted ที่ออกแบบมาตอบปัญหาข้างต้นโดยตรง:</p>
+<div class="two">
+  <div class="card">
+    <h3>สำหรับลูกค้า</h3>
+    <ul>
+      <li><strong>ไม่มี vendor lock-in</strong> — ข้อมูลและ infrastructure อยู่บน server ของลูกค้า 100%</li>
+      <li><strong>LINE notification</strong> พร้อมภาพ snapshot ส่งถึงแชท/กลุ่มที่กำหนด</li>
+      <li><strong>ไม่มีค่ารายเดือน cloud</strong> — จ่ายครั้งเดียว + MA รายปี</li>
+      <li><strong>PDPA compliant by design</strong> — เก็บข้อมูลในไทย ลบอัตโนมัติตามนโยบาย</li>
+      <li><strong>Source code ownership</strong> — ปรับแต่งได้ภายใต้ใบอนุญาต</li>
+      <li><strong>Multi-vendor CCTV</strong> — Bosch, Hikvision, Dahua, ONVIF บน dashboard เดียว</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>สำหรับ Partners และ Resellers</h3>
+    <ul>
+      <li><strong>White-label ready</strong> — โลโก้ สี ชื่อ brand ปรับได้ต่อลูกค้า</li>
+      <li><strong>Margin สูงกว่า SaaS rental</strong> — รายได้แบบ one-time + MA รายปี</li>
+      <li><strong>MA = recurring income</strong> — support และ patch ต่อเนื่อง</li>
+      <li><strong>ยืดหยุ่นในการเจรจาราคา</strong> — ไม่มี fixed tier บังคับ</li>
+      <li><strong>Branding control</strong> — ลูกค้าปลายทางเห็นแบรนด์ SI ไม่ใช่ "Vigil"</li>
+    </ul>
+  </div>
+</div>
+
+<h2>สิ่งที่ทำได้ — ภาพรวม</h2>
+<p>Vigil Platform ครอบคลุม 6 กลุ่มหลักที่ทำงานร่วมกัน ดูรายละเอียด feature matrix เต็มได้ที่ <a href="02-capabilities.html">02 สิ่งที่ทำได้</a></p>
+
+<div class="feat-grid">
+  <div class="card">
+    <h3>รับ Event หลายยี่ห้อ</h3>
+    <p>Dashboard เดียว รองรับ 4 ระบบกล้องพร้อมกัน ผ่าน ingester สถาปัตยกรรมแยก — alert engine, stats, reports และ UI ไม่มีโค้ดเฉพาะ vendor เลย</p>
+    <ul style="font-size:12px;padding-left:1.25rem">
+      <li><strong>Bosch</strong> — MQTT (ONVIF Profile M), IVA Pro / IVA Basic</li>
+      <li><strong>Hikvision</strong> — ISAPI Alert Stream: Smart Events + Face Capture</li>
+      <li><strong>Dahua</strong> — HTTP CGI: Smart Events, IPC Event Manager</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>LINE Alerts</h3>
+    <p>ส่ง notification ไปยัง user, group, room ผ่าน LINE Official Account + Bot API — รวมภาพ snapshot, event detail, timestamp, camera name ทั้งสองภาษา (TH/EN)</p>
+  </div>
+  <div class="card">
+    <h3>Mobile App (iOS/Android)</h3>
+    <p>Native React Native companion app — real-time alerts, event list, live map, push notifications, biometric auth, custom server URL</p>
+  </div>
+  <div class="card">
+    <h3>Analytics & Reports</h3>
+    <p>Executive Summary dashboard (KPI, trends), Health Report (SVG+PNG), timeline analysis, uptime tracking, custom SQL queries</p>
+  </div>
+  <div class="card">
+    <h3>Smart Map</h3>
+    <p>OpenLayers map với CartoDB tiles, clustering, heatmap, camera location markers, live pulse, geofencing (roadmap)</p>
+  </div>
+  <div class="card">
+    <h3>Appearances Analytics</h3>
+    <p>Forensic search และ behavioral analytics — ค้นหาตามเพศ, สีเสื้อ, สีผม, glasses, helmet, bag type; retention 30 วันตามค่าเริ่มต้น</p>
+  </div>
+</div>
+
+<h2>ตลาดเป้าหมาย</h2>
+<p>Vigil Platform ออกแบบสำหรับ enterprise customers ในเอเชีย โดยเน้น:</p>
+<ul>
+  <li><strong>โรงแรม / Resort:</strong> Multiple building, high guest traffic, security + marketing value</li>
+  <li><strong>โรงพยาบาล:</strong> 24/7 operations, PDPA sensitive data, multi-department access</li>
+  <li><strong>โรงเรียน / มหาวิทยาลัย:</strong> Campus coverage, student safety, PDPA compliance</li>
+  <li><strong>Manufacturing / Warehouse:</strong> 100–3,000 cameras, real-time alerts, theft prevention, production monitoring</li>
+  <li><strong>Retail & Shopping Mall:</strong> People counting, behavioral analytics, dwell time, occupancy tracking</li>
+  <li><strong>Government / Semi-Government:</strong> Data sovereignty (PDPA), white-label, custom integration</li>
+</ul>
+
+<h2>ประเมินค่า</h2>
+<table>
+<thead>
+<tr>
+<th>Profile</th>
+<th>Scale (Cameras)</th>
+<th>Deployment</th>
+<th>Key Features</th>
+<th>MA (Estimated)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>A</strong></td>
+<td>10–50</td>
+<td>Single server (VM/Docker)</td>
+<td>Event ingest, rules, LINE alerts, dashboard</td>
+<td>20–30K THB/yr</td>
+</tr>
+<tr>
+<td><strong>B</strong></td>
+<td>50–500</td>
+<td>Single server + snapshot storage</td>
+<td>A + snapshot cache, pre-alarm video (±10s)</td>
+<td>30–50K THB/yr</td>
+</tr>
+<tr>
+<td><strong>C</strong></td>
+<td>500–3,000</td>
+<td>2-tier (API + MediaService) or HA</td>
+<td>A+B + full video recording, clustering</td>
+<td>50–100K THB/yr</td>
+</tr>
+</tbody>
+</table>
+
+<div class="ibox">
+  <h4>วิสัยทัศน์ระยะยาว</h4>
+  <p>Vigil Platform ตั้งมุ่งหมายให้เป็น open-source CCTV analytics platform ที่ครอบคลุมมากที่สุดในเอเชีย โดยอนุญาต SI, reseller, enterprise customers ปรับแต่งและขยายตามความต้องการ นอกจากนี้ยังวางแผนเพิ่มเติม Face Recognition AI (pgvector + InsightFace), vehicle detection, occupancy analytics, BI dashboard integration ในช่วง 6–12 เดือนข้างหน้า</p>
+</div>
+
+<div class="ref">
+  <p><a href="index.html">← กลับสู่สารบัญ</a> | <a href="02-capabilities.html">02 สิ่งที่ทำได้ →</a></p>
+</div>
+</div>
+</div>
+
+<script src="nav.js"></script>
+</body>
+</html>

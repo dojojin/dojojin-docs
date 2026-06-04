@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Scale Up — Vigil Platform Live Docs</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="overlay"></div>
+<div class="layout">
+<nav class="nav" id="nav">
+</nav>
+
+<button id="ham">☰</button>
+
+<div class="main">
+<!-- SOURCE: HARDWARE_SIZING_GUIDE.md (G1–G5 specs, camera ranges, server configs) | Update: G-tier camera range or server spec changes — always cross-check HARDWARE_SIZING_GUIDE.md -->
+<h1 class="ph">12 กลยุทธ์การขยายสเกล</h1>
+
+<h2>ชั้นการตั้งค่าฮาร์ดแวร์ (G1–G5)</h2>
+
+<p>Vigil Platform ออกแบบให้สามารถขยายสเกลได้เชิงเส้นตามจำนวนกล้องและความเข้มข้นของเหตุการณ์</p>
+
+<table>
+<thead>
+<tr>
+<th>ชั้น</th>
+<th>จำนวนกล้อง</th>
+<th>เหตุการณ์/วัน (ทั่วไป)</th>
+<th>พื้นที่เก็บข้อมูล (Snap+Clip 30 วัน)</th>
+<th>คอนฟิกเซิร์ฟเวอร์</th>
+<th>การปรับใช้</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>G1 Starter</strong></td>
+<td>≤100</td>
+<td>20,000</td>
+<td>~600 GB</td>
+<td>i5-13500 (14C) / 24 GB RAM</td>
+<td>Docker Compose all-in-one (1 เซิร์ฟเวอร์)</td>
+</tr>
+<tr>
+<td><strong>G2 Standard</strong></td>
+<td>100–500</td>
+<td>100,000</td>
+<td>~3.5 TB</td>
+<td>Xeon E-2486 (8C) / 48 GB RAM</td>
+<td>Docker Compose + NAS (1–2 เซิร์ฟเวอร์)</td>
+</tr>
+<tr>
+<td><strong>G3 Pro</strong></td>
+<td>500–1,000</td>
+<td>200,000</td>
+<td>~7 TB</td>
+<td>Xeon Silver 4416+ / 96+128 GB</td>
+<td>App + DB แยกเครื่อง (2–3 เซิร์ฟเวอร์)</td>
+</tr>
+<tr>
+<td><strong>G4 Enterprise</strong></td>
+<td>1,000–2,000</td>
+<td>400,000</td>
+<td>~15 TB</td>
+<td>Xeon Gold 6338 / 128+ GB (~11 nodes)</td>
+<td>HA cluster (API ×2, DB Patroni, MinIO)</td>
+</tr>
+<tr>
+<td><strong>G5 Datacenter</strong></td>
+<td>2,000–3,000</td>
+<td>600,000</td>
+<td>~25 TB</td>
+<td>Xeon Platinum / 384 GB (~32+ nodes)</td>
+<td>Multi-zone Kubernetes (Ph.6+)</td>
+</tr>
+</tbody>
+</table>
+<p><em>พื้นที่เก็บข้อมูลรวม snapshot 30 วัน + pre-alarm clip 30 วัน (อัตราส่วน clip 30%) เหตุการณ์/วัน = สถานการณ์มาตรฐาน 200 เหตุการณ์/กล้อง/วัน</em></p>
+
+<h2>รูปแบบการปรับใช้</h2>
+
+<h3>G1–G2: Single-Server Docker (Profile A–B)</h3>
+<pre>
+[อินเทอร์เน็ต] → [Cloudflare Tunnel] → [Single VM]
+                                    ├─ Frontend (nginx)
+                                    ├─ API (Node.js PM2 ×2 workers)
+                                    ├─ PostgreSQL
+                                    ├─ Redis
+                                    └─ Media storage (/mnt/snapshots NAS)
+</pre>
+<ul>
+  <li><strong>ข้อดี:</strong> ง่าย คุ้มค่า backup ง่าย</li>
+  <li><strong>ข้อเสีย:</strong> จุดล้มเหลว single point of failure ไม่สามารถ horizontal scale ได้</li>
+</ul>
+
+<h3>G3–G4: 2-Tier + Replication (Profile B–C)</h3>
+<pre>
+[อินเทอร์เน็ต] → [Load Balancer (nginx)] → [API VM 1, 2, ...]
+                                          ↓
+                                      [PostgreSQL Primary]
+                                          ↓
+                                      [PostgreSQL Replica]
+                                          ↓
+                                      [NAS (snapshots, videos)]
+</pre>
+<ul>
+  <li><strong>ข้อดี:</strong> HA, horizontal API scaling, read replica DB queries</li>
+  <li><strong>ข้อเสีย:</strong> ซับซ้อนมากขึ้น พิจารณา replication lag</li>
+</ul>
+
+<h3>G5: Kubernetes (Future Ph.6+)</h3>
+<pre>
+[Ingress] → [Service: API pods × 3–5 (auto-scaling)] → [StatefulSet: PostgreSQL]
+                                                        → [PVC: storage (snapshots)]
+</pre>
+<ul>
+  <li><strong>ข้อดี:</strong> True auto-scaling, self-healing, multi-zone ready</li>
+  <li><strong>ข้อเสีย:</strong> ต้องมีความเชี่ยวชาญ K8s ภาระการจัดการปฏิบัติการสูงขึ้น</li>
+</ul>
+
+<h2>กลยุทธ์การขยายฐานข้อมูล</h2>
+
+<h3>การเพิ่มประสิทธิภาพคำค้นหา (G1–G4)</h3>
+<ul>
+  <li><strong>การสร้างดัชนี:</strong> (camera_id, event_time, event_type) สำหรับ event queries</li>
+  <li><strong>การแบ่งพาร์ติชัน:</strong> ตารางเหตุการณ์ตามเดือน (ลบ partition เดิมโดยอัตโนมัติ)</li>
+  <li><strong>Materialized views:</strong> pre-aggregate hourly stats เพื่อหลีกเลี่ยง full table scans</li>
+  <li><strong>Read replica:</strong> นำ analytics queries ไปยัง replica (ไม่มี lock contention บน primary)</li>
+</ul>
+
+<h3>นโยบายการเก็บรักษาข้อมูล</h3>
+<table>
+<thead>
+<tr>
+<th>ประเภทข้อมูล</th>
+<th>TTL ค่าเริ่มต้น</th>
+<th>TTL สูงสุด</th>
+<th>สามารถปรับแต่ง</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>เหตุการณ์ (ทุกประเภท)</td>
+<td>90 วัน</td>
+<td>730 วัน (2 ปี)</td>
+<td>ใช่ (admin setting)</td>
+</tr>
+<tr>
+<td>Snapshots</td>
+<td>30 วัน</td>
+<td>180 วัน</td>
+<td>ใช่</td>
+</tr>
+<tr>
+<td>Appearances metadata</td>
+<td>30 วัน</td>
+<td>730 วัน</td>
+<td>ใช่</td>
+</tr>
+<tr>
+<td>Face crops (Hikvision)</td>
+<td>30 วัน</td>
+<td>180 วัน</td>
+<td>ใช่</td>
+</tr>
+<tr>
+<td>Video clips (pre-alarm)</td>
+<td>14 วัน</td>
+<td>90 วัน</td>
+<td>ใช่</td>
+</tr>
+<tr>
+<td>Audit logs</td>
+<td>365 วัน</td>
+<td>2190 วัน (6 ปี)</td>
+<td>จำกัด (legal hold)</td>
+</tr>
+</tbody>
+</table>
+
+<h2>Benchmarks ประสิทธิภาพ</h2>
+
+<table>
+<thead>
+<tr>
+<th>เมตริก</th>
+<th>G1</th>
+<th>G2</th>
+<th>G3</th>
+<th>G4</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Event ingest latency (p99)</strong></td>
+<td>100ms</td>
+<td>50ms</td>
+<td>20ms</td>
+<td>10ms</td>
+</tr>
+<tr>
+<td><strong>Dashboard load (p95)</strong></td>
+<td>800ms</td>
+<td>400ms</td>
+<td>200ms</td>
+<td>100ms</td>
+</tr>
+<tr>
+<td><strong>Report generation (100 events)</strong></td>
+<td>15s</td>
+<td>8s</td>
+<td>3s</td>
+<td>1s</td>
+</tr>
+<tr>
+<td><strong>Uptime (99th percentile)</strong></td>
+<td>98%</td>
+<td>99.5%</td>
+<td>99.9%</td>
+<td>99.99%</td>
+</tr>
+</tbody>
+</table>
+
+<h2>แผนปฏิบัติการ</h2>
+
+<h3>Ph.1: ปัจจุบัน (v1.5.1)</h3>
+<ul>
+  <li>Docker Compose + PM2 single server (G1–G2)</li>
+  <li>การสำรองข้อมูลรายวันอัตโนมัติ (snapshots ไปยัง NAS)</li>
+  <li>Manual failover (restore from backup)</li>
+</ul>
+
+<h3>Ph.2 (Q3 2026)</h3>
+<ul>
+  <li>2-tier deployment guide (API + DB separation)</li>
+  <li>PostgreSQL replication setup (primary + standby)</li>
+  <li>Automated failover with systemd watch</li>
+</ul>
+
+<h3>Ph.3 (Q4 2026)</h3>
+<ul>
+  <li>Kubernetes Helm chart (beta)</li>
+  <li>Managed service option (Vigil as a Service)</li>
+</ul>
+
+<h2>เส้นทางการย้ายข้อมูล (อัปเกรดลูกค้า)</h2>
+
+<p><strong>ลูกค้าเริ่มต้น G1 (50 กล้อง) → เติบโตเป็น G3 (500 กล้อง)</strong></p>
+
+<pre>
+ขั้นตอนที่ 1: ประเมินการเติบโต (ไทม์ไลน์ เหตุการณ์ที่คาดว่าจะเกิด/ชั่วโมง)
+ขั้นตอนที่ 2: วางแผน infrastructure ใหม่ (G3 ต้อง separate DB server + load balancer)
+ขั้นตอนที่ 3: Backup ระบบ G1 ปัจจุบัน (snapshot full DB)
+ขั้นตอนที่ 4: Spin up G3 infrastructure
+ขั้นตอนที่ 5: Restore DB → ตรวจสอบความเสมือนสมต้องของข้อมูล
+ขั้นตอนที่ 6: Switchover DNS (old IP → new load balancer IP)
+ขั้นตอนที่ 7: Monitor 48 ชั่วโมง ทำความสะอาดฮาร์ดแวร์เดิม
+เวลาหยุดทำงานที่คาดว่าจะเกิด: 0–5 นาที (ถ้าใช้ DNS TTL 60 วินาที)
+</pre>
+
+<h2>ขยายสเกลเกิน 3,000 กล้อง</h2>
+
+<p>สำหรับลูกค้าที่มี 3,000+ กล้องหรือ >30K เหตุการณ์/ชั่วโมง:</p>
+
+<ul>
+  <li><strong>Multi-region:</strong> Split deployment ตามภูมิศาสตร์ (Bangkok office + branch office = separate Vigil instances, federated dashboard)</li>
+  <li><strong>Sharding:</strong> Database sharding by camera_id (advanced requires application changes)</li>
+  <li><strong>Event streaming:</strong> Kafka for async event processing (Ph.6+)</li>
+  <li><strong>BI warehouse:</strong> Sync PostgreSQL → BigQuery / Snowflake สำหรับ long-term analytics</li>
+</ul>
+
+<div class="ibox">
+  <h4>ต้นทุนของการขยายสเกล</h4>
+  <p><strong>G1 (≤100 กล้อง):</strong> Upfront ~60–80K THB | <strong>G2 (500):</strong> ~200–260K | <strong>G3 (1K):</strong> ~900K–1.1M | <strong>G4 (2K):</strong> ~3.5–4.3M | <strong>G5 (3K):</strong> ~12–15.5M บาท ต่อเนื่อง MA Bronze 12%/ปี ต่อ Upfront สำหรับ G5 Kubernetes ต้องการ DevOps engineer เต็มเวลาหรือ managed K8s (EKS, GKE)</p>
+</div>
+
+<div class="ref">
+  <p><a href="11-company-view.html">← 11 มุมมององค์กร</a> | <a href="13-procurement-tor.html">13 TOR ภาครัฐ →</a></p>
+</div>
+</div>
+</div>
+
+<script src="nav.js"></script>
+</body>
+</html>

@@ -1,0 +1,96 @@
+═══════════════════════════════════════════════════════════════════
+                    PROPRIETARY SOFTWARE LICENSE
+═══════════════════════════════════════════════════════════════════
+
+                      DojoJin Tech Dashboard
+                  CCTV Analytics & Management Suite
+
+                Copyright © 2025-2026 Prakasit Rochanavipart
+                              (Dojo-mAn)
+                          All Rights Reserved.
+
+═══════════════════════════════════════════════════════════════════
+
+1. OWNERSHIP
+
+   This software, including all source code, documentation, designs,
+   databases, configurations, assets, and any related materials
+   (collectively, the "Software"), is the exclusive intellectual
+   property of Prakasit Rochanavipart ("the Author").
+
+2. RESTRICTIONS
+
+   No part of this Software may be reproduced, distributed,
+   transmitted, modified, reverse-engineered, decompiled, or used
+   to create derivative works in any form or by any means —
+   electronic, mechanical, photocopying, recording, or otherwise —
+   without the prior express written permission of the Author.
+
+   This includes but is not limited to:
+   • Copying any portion of the source code
+   • Redistributing compiled or source forms
+   • Hosting the Software on any public or commercial platform
+   • Selling, sublicensing, or transferring the Software
+   • Removing or altering copyright notices, attribution, or
+     branding within the Software
+
+3. AUTHORIZED USE
+
+   Use of this Software is permitted only by individuals or
+   organizations who have obtained explicit written authorization
+   from the Author. Authorized use is governed by the terms of a
+   separate written agreement between the Author and the user.
+
+4. NO WARRANTY
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+   EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+   OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+   NONINFRINGEMENT.
+
+   IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY CLAIM, DAMAGES,
+   OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR
+   OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION WITH THE
+   SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+5. THIRD-PARTY COMPONENTS
+
+   This Software incorporates certain third-party open-source
+   components, each governed by its own respective license
+   (Node.js, Express, PostgreSQL, OpenLayers, Chart.js, etc.).
+   The proprietary terms above apply only to the original code,
+   designs, and configurations created by the Author.
+
+6. END USER LICENSE AGREEMENT (EULA)
+
+   The terms in this LICENSE file are a SUMMARY only. The complete
+   and legally binding terms governing use of the Software are set
+   out in the End User License Agreement available in Thai at:
+
+       docs/EULA-th.md
+
+   The Thai EULA is the authoritative version. In any conflict
+   between this English summary and the Thai EULA, the Thai EULA
+   prevails.
+
+   By installing, activating a License Key for, or using the
+   Software in any form, the user acknowledges that they have
+   read, understood, and accepted the Thai EULA in its entirety.
+
+7. CONTACT
+
+   For licensing inquiries, permission requests, or commercial use:
+
+       Prakasit Rochanavipart (Dojo-mAn)
+       Email:   prakasit@dojojin.tech
+       Web:     https://dojojin.tech/
+       Handle:  dojojin
+
+═══════════════════════════════════════════════════════════════════
+       Unauthorized use of this Software will be prosecuted
+              to the fullest extent of applicable law.
+
+       Governed by the Thai Copyright Act B.E. 2537 and the Thai
+       Computer Crime Act B.E. 2550 (as amended), with penalties
+       per the EULA — not less than ten (10) times the license fee.
+═══════════════════════════════════════════════════════════════════

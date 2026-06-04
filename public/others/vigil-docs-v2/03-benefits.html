@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>4P · SWOT · จุดเด่น — Vigil Platform Live Docs</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="overlay"></div>
+<div class="layout">
+<nav class="nav" id="nav">
+</nav>
+
+<button id="ham">☰</button>
+
+<div class="main">
+<!-- SOURCE: CLAUDE.md §Notes for AI (4P/SWOT) | Update: positioning or competitive stance change -->
+<h1 class="ph">03 4P · SWOT · จุดเด่น</h1>
+
+<h2>4P Analysis (Product, Price, Place, Promotion)</h2>
+
+<div class="card">
+  <h3>Product (สินค้า)</h3>
+  <p><strong>Vigil Platform</strong> — Self-hosted CCTV Analytics ที่เอาใจใส่:</p>
+  <ul>
+    <li>Multi-vendor support (Bosch, Hikvision, Dahua, ONVIF)</li>
+    <li>Real-time LINE alerts with snapshot</li>
+    <li>Security Morning Briefing (Executive Summary) dashboard</li>
+    <li>Health Report (PNG report ภาษาไทย/อังกฤษ)</li>
+    <li>Mobile app (iOS + Android, React Native)</li>
+    <li>Appearances Analytics (forensic search, behavioral analytics)</li>
+    <li>Smart map (OpenLayers, CartoDB tiles)</li>
+    <li>Bilingual UI (TH/EN)</li>
+    <li>PDPA compliant, data sovereignty (local storage)</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h3>Price (ราคา)</h3>
+  <p><strong>Business Model:</strong> One-time license + annual maintenance</p>
+  <ul>
+    <li><strong>Profile A (10–50 cameras):</strong> ~50–80K THB (one-time) + 20–30K THB/year MA</li>
+    <li><strong>Profile B (50–500 cameras):</strong> ~100–150K THB + 30–50K THB/year MA</li>
+    <li><strong>Profile C (500–3,000 cameras):</strong> ~200–400K THB + 50–100K THB/year MA</li>
+    <li><strong>Add-on:</strong> Customization, Face Recognition (Ph.5+), integration, SLA support</li>
+  </ul>
+  <p style="margin-top:0.75rem"><strong>vs. SaaS:</strong> Vigil = lower TCO ที่มีความเสถียรสูง + no monthly recurring fixed cost + data ownership</p>
+</div>
+
+<div class="card">
+  <h3>Place (ช่องทางจัดจำหน่าย)</h3>
+  <ul>
+    <li><strong>Direct B2B:</strong> Large enterprise (hotel, hospital, manufacturing, government)</li>
+    <li><strong>Channel:</strong> System Integrator (SI), CCTV distributors, Bosch reseller network</li>
+    <li><strong>White-label:</strong> SI rebrand → ลูกค้าปลายทางเห็นแบรนด์ SI เท่านั้น</li>
+    <li><strong>Geographic:</strong> Thailand, Southeast Asia, eventually Asia-Pacific</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h3>Promotion (การส่งเสริม)</h3>
+  <ul>
+    <li>Live Docs + case study (บริษัทสหภาพที่ใช้ Vigil แล้ว)</li>
+    <li>Free trial / POC (Proof of Concept) deployment ที่ลูกค้า</li>
+    <li>Training + certification program สำหรับ SI/partners</li>
+    <li>Roadshow / webinar ตลาด industrial, retail, government</li>
+    <li>GitHub + open-source positioning (when applicable)</li>
+  </ul>
+</div>
+
+<h2>SWOT Analysis</h2>
+
+<div class="two">
+  <div class="card">
+    <h3>Strengths (จุดแข็ง)</h3>
+    <ul>
+      <li><strong>Multi-vendor agnostic</strong> — รองรับ 3+ ยี่ห้อได้ code-level ไม่ hardcoded</li>
+      <li><strong>Data sovereignty</strong> — ไทยที่หลัก, PDPA-ready, no vendor lock-in</li>
+      <li><strong>Real LINE integration</strong> — ตลาดไทย expectation</li>
+      <li><strong>Mobile app</strong> — iOS + Android, native performance, biometric auth</li>
+      <li><strong>Proven security audit</strong> — SEC-001–017 passed, OWASP coverage</li>
+      <li><strong>White-label ready</strong> — SI margin control, branding flexibility</li>
+      <li><strong>Source code ownership</strong> — differentiate vs SaaS lock-in</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>Weaknesses (จุดอ่อน)</h3>
+    <ul>
+      <li><strong>Not SaaS</strong> — deployment complexity, IT skill requirement สูง</li>
+      <li><strong>Early market</strong> — brand awareness ต่ำเทียบ Bosch/Hikvision cloud</li>
+      <li><strong>Manual deployment</strong> — no managed service option yet (Roadmap Ph.6+)</li>
+      <li><strong>Limited ONVIF</strong> — Phase 4 feature, not available in v1.5</li>
+      <li><strong>Face Recognition</strong> — not yet released (Ph.5)</li>
+      <li><strong>Small engineering team</strong> — rapid feature release ช้าเทียบ cloud products</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>Opportunities (โอกาส)</h3>
+    <ul>
+      <li><strong>Government procurement</strong> — PDPA + data sovereignty = key requirement</li>
+      <li><strong>Regional expansion</strong> — ASEAN market (Vietnam, Indonesia, Philippines)</li>
+      <li><strong>IoT integration</strong> — smart building, occupancy, access control</li>
+      <li><strong>Face Recognition boom</strong> — Ph.5 will unlock forensic/behavioral use cases</li>
+      <li><strong>AI+video analytics</strong> — vehicle detection, crowd counting (Roadmap)</li>
+      <li><strong>Channel partner network</strong> — franchise SI model</li>
+      <li><strong>BI integration</strong> — Tableau, Power BI partnership (Ph.6+)</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>Threats (ภัยคุกคาม)</h3>
+    <ul>
+      <li><strong>Bosch cloud pricing competitive</strong> — aggressive discount can kill margin</li>
+      <li><strong>Cloud providers (AWS, Azure, GCP)</strong> — partner with camera vendors</li>
+      <li><strong>Open-source competitors</strong> — ZoneMinder, Shinobi (small but growing)</li>
+      <li><strong>Hikvision bundled cloud</strong> — free/cheap cloud option from camera vendor</li>
+      <li><strong>Talent retention</strong> — startup salary vs product company</li>
+      <li><strong>Regulatory uncertainty</strong> — PDPA enforcement changes, data law evolution</li>
+    </ul>
+  </div>
+</div>
+
+<h2>Key Differentiators (จุดเด่นกว่าคู่แข่ง)</h2>
+
+<table>
+<thead>
+<tr>
+<th>Attribute</th>
+<th>Vigil</th>
+<th>Bosch Cloud</th>
+<th>Hikvision Cloud</th>
+<th>Open-Source (Shinobi)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Multi-vendor</strong></td>
+<td>✅ Yes (Bosch, Hik, Dahua)</td>
+<td>❌ Bosch only</td>
+<td>❌ Hikvision only</td>
+<td>✅ Generic</td>
+</tr>
+<tr>
+<td><strong>Data Sovereignty</strong></td>
+<td>✅ Local (PDPA-ready)</td>
+<td>❌ Bosch servers (EU/cloud)</td>
+<td>❌ Hikvision servers (CN/cloud)</td>
+<td>✅ Local</td>
+</tr>
+<tr>
+<td><strong>LINE Integration</strong></td>
+<td>✅ Native + snapshot</td>
+<td>❌ Email only</td>
+<td>⚠️ Limited</td>
+<td>❌ None</td>
+</tr>
+<tr>
+<td><strong>Mobile App</strong></td>
+<td>✅ Native iOS/Android</td>
+<td>✅ Web mobile</td>
+<td>✅ App</td>
+<td>❌ None</td>
+</tr>
+<tr>
+<td><strong>Bilingual UI</strong></td>
+<td>✅ TH/EN (full)</td>
+<td>⚠️ EN only</td>
+<td>✅ Multiple</td>
+<td>❌ EN only</td>
+</tr>
+<tr>
+<td><strong>White-label</strong></td>
+<td>✅ Yes</td>
+<td>❌ No</td>
+<td>❌ No</td>
+<td>✅ Yes</td>
+</tr>
+<tr>
+<td><strong>Security Audit</strong></td>
+<td>✅ SEC-001–017</td>
+<td>✅ Enterprise (proprietary)</td>
+<td>⚠️ Limited public</td>
+<td>⚠️ Community-driven</td>
+</tr>
+<tr>
+<td><strong>Maintenance Cost</strong></td>
+<td>20–100K THB/yr</td>
+<td>Unlimited % of cloud</td>
+<td>Unlimited % of cloud</td>
+<td>Free (self-maintain)</td>
+</tr>
+<tr>
+<td><strong>Support</strong></td>
+<td>Dedicated team</td>
+<td>Vendor support</td>
+<td>Vendor support</td>
+<td>Community forum</td>
+</tr>
+</tbody>
+</table>
+
+<div class="ibox">
+  <h4>Positioning Statement</h4>
+  <p>Vigil Platform คือ self-hosted CCTV analytics platform สำหรับ enterprise ที่ต้องการ <strong>data sovereignty</strong>, <strong>multi-vendor flexibility</strong>, <strong>LINE alerts</strong>, และ <strong>white-label branding</strong> โดยไม่ต้องพึ่งพา vendor cloud ที่เสียค่าใช้จ่ายสูงหรือล็อกข้อมูลไว้ต่างประเทศ</p>
+</div>
+
+<div class="ref">
+  <p><a href="02-capabilities.html">← 02 สิ่งที่ทำได้</a> | <a href="04-components.html">04 องค์ประกอบระบบ →</a></p>
+</div>
+</div>
+</div>
+
+<script src="nav.js"></script>
+</body>
+</html>

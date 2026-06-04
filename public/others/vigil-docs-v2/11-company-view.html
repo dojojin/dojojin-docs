@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>มุมมององค์กร — Vigil Platform Live Docs</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="overlay"></div>
+<div class="layout">
+<nav class="nav" id="nav">
+</nav>
+
+<button id="ham">☰</button>
+
+<div class="main">
+<!-- SOURCE: CLAUDE.md §Project Purpose · HARDWARE_SIZING_GUIDE.md §Commercial | Update: commercial positioning or pricing tier change -->
+<h1 class="ph">11 Company View (มุมมององค์กร)</h1>
+
+<h2>รูปแบบเชิงพาณิชย์</h2>
+
+<div class="card">
+  <h3>ซื้อครั้งเดียว + การดูแลรักษาประจำปี</h3>
+  <ul>
+    <li><strong>ค่าใบอนุญาต:</strong> ขึ้นอยู่กับจำนวนกล้อง + คุณสมบัติ (Profile A/B/C)</li>
+    <li><strong>Maintenance Agreement (MA):</strong> 20–25% ของค่าใบอนุญาต ต่อปี</li>
+    <li><strong>สิ่งที่รวมใน MA:</strong> การอัปเดตซอฟต์แวร์ แพตช์ความปลอดภัย บริการอีเมลรองรับ 5 วัน/สัปดาห์ เอกสารออนไลน์</li>
+    <li><strong>สิ่งที่ไม่รวม:</strong> การพัฒนาคุณสมบัติที่กำหนดเอง (SOW แยก) การรองรับบนไซต์ (ค่าพิเศษ)</li>
+  </ul>
+</div>
+
+<h2>รูปแบบรายได้สำหรับ Channel Partners (SI, Resellers)</h2>
+
+<div class="two">
+  <div class="card">
+    <h3>โครงสร้าง Margin</h3>
+    <ul>
+      <li><strong>SI/Reseller margin ต่อใบอนุญาต:</strong> 30–40% (เทียบกับ SaaS 10–15%)</li>
+      <li><strong>MA passthrough:</strong> SI เก็บ 25–30%, Vigil เก็บ 70–75%</li>
+      <li><strong>เหตุผล:</strong> SI รับภาระค่าสนับสนุน + ความเสี่ยงของลูกค้า ได้ margin ปีแรกที่เป็นธรรม แต่รายการซ้ำถูก Vigil-driven</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>รายได้ที่คาดหวังสำหรับ SI</h3>
+    <p><strong>การติดตั้ง 100 กล้องของลูกค้า:</strong></p>
+    <ul>
+      <li>ใบอนุญาต: 150K THB (SI margin: 45K)</li>
+      <li>การติดตั้ง + การฝึกอบรม: 20–50K THB (รายได้ SI)</li>
+      <li>ส่วนแบ่ง MA ปีที่ 1: 30K THB × 30% = 9K THB (SI)</li>
+      <li>ปี 2–5 MA: 9K THB/ปี (รายได้ซ้ำ)</li>
+      <li>รวมปีที่ 1: 74K THB | ปี 2–5: 9K THB/ปี แต่ละปี</li>
+    </ul>
+  </div>
+</div>
+
+<h2>ราคาตามโปรไฟล์ (ประมาณการ)</h2>
+
+<table>
+<thead>
+<tr>
+<th>โปรไฟล์</th>
+<th>จำนวนกล้อง</th>
+<th>ใบอนุญาต (ราคาลูกค้า)</th>
+<th>MA/ปี</th>
+<th>TCO 5 ปี</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>A</strong></td>
+<td>10–50</td>
+<td>50–80K THB</td>
+<td>15K THB</td>
+<td>125–155K THB</td>
+</tr>
+<tr>
+<td><strong>B</strong></td>
+<td>50–500</td>
+<td>100–200K THB</td>
+<td>25–40K THB</td>
+<td>225–360K THB</td>
+</tr>
+<tr>
+<td><strong>C</strong></td>
+<td>500–3,000</td>
+<td>300–600K THB</td>
+<td>60–120K THB</td>
+<td>600–1,200K THB</td>
+</tr>
+</tbody>
+</table>
+
+<h2>กลยุทธ์การขายและข้อคัดค้านของลูกค้า</h2>
+
+<div class="card">
+  <h3>ข้อคัดค้านทั่วไปและการตอบสนอง</h3>
+  <ul>
+    <li><strong>"ทำไมไม่ใช้ Bosch cloud?"</strong> → TCO ต่ำกว่า ข้อมูลอยู่เฉพาะที่ (PDPA) LINE alerts อนาคตหลายเวนเดอร์</li>
+    <li><strong>"จะเกิดอะไรขึ้นหากเราปิดตัวลง?"</strong> → ซอร์สโค้ดอยู่ในการควบคุมของลูกค้า (ตัวเลือก open-source ในอนาคต) รองรับชุมชน</li>
+    <li><strong>"ปรับใช้นานแค่ไหน?"</strong> → โปรไฟล์ A: 2–3 วัน | โปรไฟล์ B: 1–2 สัปดาห์ | โปรไฟล์ C: 2–4 สัปดาห์ (ขึ้นอยู่กับการตั้งค่าเครือข่าย/storage)</li>
+    <li><strong>"เราต้องมีทีม IT หรือไม่?"</strong> → ต่ำสุด: ความรู้พื้นฐาน Docker ops SI จัดการส่วนใหญ่ บริการที่จัดการได้ (Ph.6+)</li>
+    <li><strong>"SLA การสนับสนุน?"</strong> → ตอบสนอง 24 ชั่วโมง วันธุรกิจ (MA) สำหรับ SLA 24/7 แพคเกจการสนับสนุนที่กำหนดเอง</li>
+  </ul>
+</div>
+
+<h2>การคำนวณ ROI สำหรับลูกค้า</h2>
+
+<div class="two">
+  <div class="card">
+    <h3>การประหยัดค่าใช้จ่ายเทียบกับ Bosch Cloud</h3>
+    <p><strong>100 กล้อง ขอบเขต 5 ปี:</strong></p>
+    <ul>
+      <li><strong>Bosch Cloud:</strong> ใบอนุญาต 80K + cloud 100K/ปี = 580K THB</li>
+      <li><strong>Vigil:</strong> ใบอนุญาต 150K + MA 30K/ปี = 300K THB</li>
+      <li><strong>การประหยัด:</strong> 280K THB (น้อยกว่า 48%)</li>
+      <li><strong>บวกกับ:</strong> Data sovereignty ไม่มี vendor lock-in</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>ประโยชน์การปฏิบัติการ</h3>
+    <ul>
+      <li><strong>เวลาตอบสนอง:</strong> แจ้งเตือนให้ operator ≤3s (เทียบกับอีเมล 5–10 นาที จาก Bosch)</li>
+      <li><strong>ดั้งเดิม LINE:</strong> ช่องทางการแจ้งเตือนที่ชอบในประเทศไทย</li>
+      <li><strong>หลายเวนเดอร์:</strong> ไม่ต้องซื้ออินฟราสตรัคเจอร์ใหม่เมื่อสลับแบรนด์</li>
+      <li><strong>การวิเคราะห์:</strong> ค้นหาซอกหลืบ (Appearances) ข้อมูลพฤติกรรม (Ph.5+)</li>
+    </ul>
+  </div>
+</div>
+
+<h2>โปรไฟล์ลูกค้าทั่วไป</h2>
+
+<table>
+<thead>
+<tr>
+<th>ส่วนตัด</th>
+<th>ขนาด</th>
+<th>งบประมาณ</th>
+<th>เวลาตัดสินใจ</th>
+<th>ความต้องการหลัก</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Hospitality</strong><br>(โรงแรม รีสอร์ต)</td>
+<td>200–500 กล้อง</td>
+<td>300–500K</td>
+<td>3–6 เดือน</td>
+<td>LINE alerts แดชบอร์ด ops ความปลอดภัยของแขก</td>
+</tr>
+<tr>
+<td><strong>Manufacturing</strong><br>(โรงงาน คลังสินค้า)</td>
+<td>50–200 กล้อง</td>
+<td>150–300K</td>
+<td>2–4 เดือน</td>
+<td>การเคลื่อนไหวแบบเรียลไทม์ ป้องกันการลักขโมย ข้อมูลเฉพาะที่</td>
+</tr>
+<tr>
+<td><strong>Healthcare</strong><br>(โรงพยาบาล คลินิก)</td>
+<td>100–300 กล้อง</td>
+<td>200–400K</td>
+<td>4–8 เดือน (อนุมัตินานกว่า)</td>
+<td>ความเป็นไปตาม PDPA ความเป็นส่วนตัวของผู้ป่วย audit trail</td>
+</tr>
+<tr>
+<td><strong>Retail</strong><br>(ห้างสรรพสินค้า สาขา)</td>
+<td>300–1,000 กล้อง</td>
+<td>400–800K</td>
+<td>2–3 เดือน</td>
+<td>การนับจำนวนคน dwell time การวิเคราะห์พฤติกรรม</td>
+</tr>
+<tr>
+<td><strong>Government</strong><br>(กระทรวง ตำรวจ)</td>
+<td>100–500 กล้อง</td>
+<td>250–500K</td>
+<td>6–12 เดือน (จัดซื้อจัดจ้าง)</td>
+<td>Data sovereignty PDPA white-label การปฏิบัติตาม TOR</td>
+</tr>
+</tbody>
+</table>
+
+<h2>กลยุทธ์การเข้าสู่ตลาด</h2>
+
+<h3>ระยะ 1: โดยตรง (ตอนนี้)</h3>
+<ul>
+  <li>ลูกค้าเป้าหมายในระบบนิเวศไฮเทคแบงคอก</li>
+  <li>การปรับใช้ POC (ฟรี) สำหรับลูกค้าอ้างอิง</li>
+  <li>การตลาดกรณีศึกษา (โรงแรม + เรื่องสำเร็จการผลิต)</li>
+</ul>
+
+<h3>ระยะ 2: SI Channel (Q3 2026)</h3>
+<ul>
+  <li>รับสมัครระบบ integrators 3–5 คน (แบงคอก ภูเก็ต เชียงใหม่)</li>
+  <li>โปรแกรมการฝึกอบรม + การรับรอง (bootcamp 2 วัน)</li>
+  <li>การสนับสนุนการขายทางเทคนิค (วิศวกรรมก่อนขาย)</li>
+  <li>การตลาด Co-marketing (SI กรณีศึกษา เหตุการณ์ร่วม)</li>
+</ul>
+
+<h3>ระยะ 3: การขยายตัวภูมิภาค (Q4 2026+)</h3>
+<ul>
+  <li>คู่ค้าเวียดนาม อินโดนีเซีย ฟิลิปปินส์</li>
+  <li>การแปลเป็นภาษาท้องถิ่น: i18n (VI, ID, MS) การชำระเงินท้องถิ่น การสนับสนุนท้องถิ่น</li>
+</ul>
+
+<h2>การติดตั้งและการเข้าเบิก</h2>
+
+<h3>ไทม์ไลน์โครงการทั่วไป</h3>
+<pre>
+สัปดาห์ 1: ความต้องการ → ลงนามใน SOW → เตรียมโครงสร้างพื้นฐาน (VM/Docker host พร้อม)
+สัปดาห์ 2: ปรับใช้แพลตฟอร์ม → กำหนดค่ากล้อง (Bosch MQTT setup, Hik/Dahua credentials)
+สัปดาห์ 3: การทดสอบ + การฝึกอบรมผู้ใช้ → walkthroughs ผู้ดูแลระบบ + operator
+สัปดาห์ 4: Go-live + shadowing 1 สัปดาห์ (SI บนไซต์หรือระยะไกล)
+สัปดาห์ 5–12: feedback loop, performance tuning, knowledge transfer ให้ customer IT
+</pre>
+
+<h3>การมอบหมายให้ลูกค้า</h3>
+<ul>
+  <li>เอกสาร (wiki + บทช่วยสอนวิดีโอ)</li>
+  <li>Playbook ผู้ดูแลระบบ (ops ประจำวัน backup อัปเดต)</li>
+  <li>ติดต่อการสนับสนุน + ระบบตั๋ว</li>
+  <li>การทบทวนธุรกิจรายไตรมาส (KPI การใช้งาน การจัดตำแหน่งแผนงาน)</li>
+</ul>
+
+<div class="ibox">
+  <h4>อนาคต: ตัวเลือกบริการที่จัดการ (Ph.6)</h4>
+  <p>สำหรับลูกค้าที่ไม่มีทรัพยากร IT ให้บริการตัวเลือก cloud-hosted (Vigil as a Service) ซึ่งเราจัดการโครงสร้างพื้นฐาน + การสนับสนุน 24/7 Margin ที่สูงขึ้น ลูกค้าไม่รับกระแทก แต่ต้องใช้สถาปัตยกรรม multi-tenant + การปรับขนาดการปฏิบัติตาม</p>
+</div>
+
+<div class="ref">
+  <p><a href="10-maps-api.html">← 10 Maps API</a> | <a href="12-scale-up.html">12 Scale Up →</a></p>
+</div>
+</div>
+</div>
+
+<script src="nav.js"></script>
+</body>
+</html>

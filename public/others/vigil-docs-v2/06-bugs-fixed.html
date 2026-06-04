@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Bugs ที่แก้แล้ว — Vigil Platform Live Docs</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="overlay"></div>
+<div class="layout">
+<nav class="nav" id="nav">
+</nav>
+
+<button id="ham">☰</button>
+
+<div class="main">
+<!-- SOURCE: GOTCHAS.md · CHANGELOG.md | Update: major bug class resolved; GOTCHAS# here are display refs, not internal GOTCHAS.md numbers -->
+<h1 class="ph">06 บั๊กที่แก้แล้ว</h1>
+
+<p>ระบบจริงต้องเผชิญกับ edge case ที่ซับซ้อน รวมถึง heisenbug ที่เกี่ยวข้องกับพฤติกรรม browser, caching, timing issues และ vendor-specific protocol quirks Vigil ได้ผ่านการทดสอบมาหลายรอบและเก็บบทเรียนไว้เป็น GOTCHAS.md ในโค้ด베ส</p>
+
+<h2>บั๊กหลักตามหมวดหมู่</h2>
+
+<div class="card">
+  <h3>MQTT และ Event Ingestion</h3>
+  <ul>
+    <li><strong>#33/#112 — EMQX broker swap:</strong> สูญหาย Bosch MQTT events ขณะ broker failover เหตุ: subscription เก่าในไลบรารี client แก้ไข: ใช้ retry + reconnect logic พร้อม exponential backoff + ยืนยันลำดับข้อมูล</li>
+    <li><strong>#39/#41 — Dahua CGI poll race:</strong> event ซ้ำกันเมื่อ Dahua ส่ง event ID เดียวกันในการ poll ครั้งต่อไป แก้ไข: ติดตาม last_event_id ต่อกล้องและละเว้นถ้าเห็นแล้วภายในเวลา 60 วินาที</li>
+    <li><strong>#40 — Hikvision face crop stream hang:</strong> Multipart JPEG stream ของการจับภาพใบหน้าไม่ปิดในบางเวอร์ชัน firmware แก้ไข: หมดเวลาหลัง 5 นาที + บังคับ reconnect</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h3>ฐานข้อมูลและประสิทธิภาพ</h3>
+  <ul>
+    <li><strong>#15 — N+1 query ใน event timeline:</strong> event 10,000 รายการ × 1 query ต่อกล้อง = 10,001 queries เหตุ: ขาด LEFT JOIN แก้ไข: รวมจำนวน event ต่อกล้องในคำค้นหาเดียว</li>
+    <li><strong>#22 — Partition bloat:</strong> Event rows 500 ล้านรายการไม่มีการแบ่ง partition แก้ไข: เพิ่มการแบ่ง partition รายเดือน + auto-truncate partition เก่า</li>
+    <li><strong>#45 — Full table scan ใน analytics:</strong> รายงาน 7 วันใช้เวลา 5 นาทีในการสร้าง แก้ไข: เพิ่ม indexes บน (camera_id, event_time, event_type)</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h3>Frontend และ Browser</h3>
+  <ul>
+    <li><strong>#26/#108 — License fingerprint บน iPad:</strong> Hardware fingerprint เปลี่ยนหลังจาก reboot (Safari ITP + cached script) เหตุ: localStorage ถูกลบโดย ITP แก้ไข: triple-layer auth (JWT + sessionStorage + IP whitelist)</li>
+    <li><strong>#29/#30/#31 — Mobile responsive collapse:</strong> Dashboard พังบน iPad (768px breakpoint หายไป) เหตุ: ความกว้างที่กำหนดในแบบ CSS แก้ไข: flex grid + media queries อย่างเคร่งครัด ≤768px</li>
+    <li><strong>#42 — i18n string ถูกตัด:</strong> ข้อความภาษาไทยในการ์ดหลุดออกนอกเนื้อที่บน desktop เหตุ: font-family ไม่มี Noto Sans Thai แก้ไข: ใช้ -apple-system stack กับ Noto Sans Thai เป็นอันดับแรก</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h3>WebSocket และ Real-time</h3>
+  <ul>
+    <li><strong>#53 — WS connection leak ในหน้า map:</strong> 100+ WS ที่เชื่อมต่อกับเซิร์ฟเวอร์เดียวกันหน่วยความจำเพิ่มขึ้น เหตุ: ไม่มีการทำความสะอาดเมื่อปิดหน้า แก้ไข: ws.close() ที่ชัดเจนใน beforeunload</li>
+    <li><strong>#54 — Heartbeat หายไป:</strong> WS ถูกทำเครื่องหมายว่า "online" แต่ client ไม่เคยเชื่อมต่อจริงๆ เหตุ: ไม่มี ping/pong frame แก้ไข: ใช้ heartbeat 30 วินาที + ประกาศเสียหากไม่มี pong</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h3>Caching และข้อมูลเก่า</h3>
+  <ul>
+    <li><strong>#50/#67 — Cloudflare cache stale JS:</strong> ผู้ใช้ได้รับ dashboard.js เก่านาน 24 ชั่วโมงหลังจาก deploy เหตุ: อายุ cache ของ Cloudflare นานเกินไปและไม่มี cache-bust header แก้ไข: เพิ่ม Content-Hash ในชื่อไฟล์ + ตั้ง Cache-Control: public, max-age=3600</li>
+    <li><strong>#51 — Redis TTL ไม่ถูกนำมาใช้:</strong> Session ไม่เคยหมดอายุ เหตุ: EXPIRE command ไม่ได้ตั้งค่าเมื่อสร้างคีย์ แก้ไข: pipeline SET + EXPIRE ร่วมกัน</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h3>Media และการอัปโหลดไฟล์</h3>
+  <ul>
+    <li><strong>#25/#25a — SVG emoji crash ใน Health Report:</strong> Puppeteer render SVG+emoji template librsvg abort เมื่อไม่มี emoji fallback font เหตุ: emoji ไม่ถูกลบออกจาก SVG แก้ไข: ใช้ _svgSafeText() เพื่อลบ emoji ก่อน render</li>
+    <li><strong>#60 — Snapshot cleanup ไม่ทำงาน:</strong> Snapshot เก่าสะสมตลอดไป เหตุ: ปิดใช้งาน cron job โดยไม่ตั้งใจ แก้ไข: เปิดใช้งานอีกครั้ง + เพิ่มการแจ้งเตือนถ้าล้มเหลว 3 ครั้งติดต่อกัน</li>
+    <li><strong>#75 — MediaRecorder decrypt miss:</strong> Pre-alarm video decryption ล้มเหลวเงียบ ๆ ผู้ใช้ได้ MP4 ที่เสียหาย แก้ไข: เพิ่มการยืนยัน SHA256 checksum + ลองใหม่ถ้าไม่ตรงกัน</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h3>Integration และบุคคลที่สาม</h3>
+  <ul>
+    <li><strong>#36/#38 — LINE API quota throttle:</strong> ส่ง 100 alerts พร้อมกัน → 429 too many requests, alerts หล่น เหตุ: ไม่มี rate limiting แก้ไข: ใช้ queue + 10 msg/sec limit + exponential backoff retry</li>
+    <li><strong>#37 — Mapbox tile 404 ไม่ graceful:</strong> Map ว่างเปล่าเมื่อ tile server ลง แก้ไข: fallback ไปยัง CartoDB ลองใหม่ด้วย exponential backoff</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h3>Operator Error และ Edge Case</h3>
+  <ul>
+    <li><strong>#18 — Admin ลบกล้องโดยไม่มีการเตือน:</strong> Event 10,000 รายการไม่มีเจ้าของรายงานล้มเหลว แก้ไข: เพิ่มกล่องยืนยัน + cascade delete + audit log</li>
+    <li><strong>#32 — Bosch + Hikvision ชื่อโมเดลเดียวกัน:</strong> Admin เพิ่มกล้อง 2 ตัวด้วยชื่อเดียวกัน UI สับสน แก้ไข: บังคับให้ camera_id + name ไม่ซ้ำกัน แสดงโมเดล + MAC address ในการเตือนเกี่ยวกับการซ้ำซ้อน</li>
+    <li><strong>#76 — Offline camera churn:</strong> กล้องออฟไลน์ กลับมาออนไลน์ ออฟไลน์อีก → 3 event records ต่อวินาที เหตุ: การเปลี่ยนแปลงสถานะอย่างรวดเร็ว แก้ไข: debounce state changes โดย 30 วินาที</li>
+  </ul>
+</div>
+
+<h2>เมตริกคุณภาพ</h2>
+
+<table>
+<thead>
+<tr>
+<th>เมตริก</th>
+<th>v1.2.0</th>
+<th>v1.3.0</th>
+<th>v1.4.0</th>
+<th>v1.5.1</th>
+<th>เป้าหมาย</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Uptime (ใน prod)</strong></td>
+<td>95%</td>
+<td>98%</td>
+<td>99.2%</td>
+<td>99.7%</td>
+<td>99.9%</td>
+</tr>
+<tr>
+<td><strong>Event lag (p99)</strong></td>
+<td>5s</td>
+<td>2s</td>
+<td>1s</td>
+<td>500ms</td>
+<td>100ms</td>
+</tr>
+<tr>
+<td><strong>Dashboard load (p95)</strong></td>
+<td>2.5s</td>
+<td>1.2s</td>
+<td>800ms</td>
+<td>400ms</td>
+<td>200ms</td>
+</tr>
+<tr>
+<td><strong>Critical bugs พบ/แก้ไข</strong></td>
+<td>8</td>
+<td>5</td>
+<td>7</td>
+<td>4</td>
+<td>&lt;2/release</td>
+</tr>
+<tr>
+<td><strong>Security CVE (CVSS ≥7)</strong></td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+</tr>
+</tbody>
+</table>
+
+<div class="ibox">
+  <h4>บทเรียน: กลยุทธ์การ Reproduce Heisenbug</h4>
+  <p>เมื่อเจอ heisenbug ที่ไม่สามารถ reproduce ในสภาพแวดล้อม dev ให้ลองแนวทาง: (1) จำลองเงื่อนไข prod ให้แม่นที่สุด (network delay, load), (2) เปิด logging รายละเอียดในจุด suspicious, (3) ใช้ simulation tools (tc, stress-ng) ค่อย ๆ เพิ่ม load จนกระทั่ง repro ได้, (4) record ทั้งหมดใน GOTCHAS.md เพื่อป้องกันในอนาคต</p>
+</div>
+
+<div class="ref">
+  <p><a href="05-security.html">← 05 Security Audit</a> | <a href="07-competitive.html">07 Architecture Decisions →</a></p>
+</div>
+</div>
+</div>
+
+<script src="nav.js"></script>
+</body>
+</html>

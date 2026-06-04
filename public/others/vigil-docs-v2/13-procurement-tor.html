@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>TOR ภาครัฐ — Vigil Platform Live Docs</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="overlay"></div>
+<div class="layout">
+<nav class="nav" id="nav">
+</nav>
+
+<button id="ham">☰</button>
+
+<div class="main">
+<!-- SOURCE: General TOR requirements (Thai public procurement) | Update: regulatory or bidding requirement change -->
+<h1 class="ph">13 TOR ภาครัฐ (แม่แบบการจัดซื้อจัดจ้าง)</h1>
+
+<h2>ภาพรวม</h2>
+<p>ประเทศไทยมี 2 ช่องทางเสนอกลาง: DE (Government Electronic Procurement) และ MDES (Multi-Dimensional Evaluation System) โดย Vigil Platform ออกแบบให้ตอบสนองกับทั้งสองระบบได้</p>
+
+<h2>คุณสมบัติหลัก (ตรวจสอบความสอดคล้องจากเทมเพลต TOR)</h2>
+
+<table>
+<thead>
+<tr>
+<th>ข้อกำหนด TOR</th>
+<th>ความสอดคล้อง Vigil</th>
+<th>หมายเหตุ</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>สนับสนุนหลายเวนเดอร์</td>
+<td>✅ Bosch, Hikvision, Dahua, ONVIF (roadmap)</td>
+<td>ไม่จำกัดเพียงเวนเดอร์เดียว</td>
+</tr>
+<tr>
+<td>Thai language UI</td>
+<td>✅ Full Thai + English bilingual</td>
+<td>เมนู รายงาน แจ้งเตือน ทั้งหมดเป็นภาษาไทย</td>
+</tr>
+<tr>
+<td>Data residency (PDPA)</td>
+<td>✅ ข้อมูลทั้งหมดจัดเก็บในประเทศไทย</td>
+<td>Self-hosted ไม่มีการส่งออกข้อมูลไปคลาউด</td>
+</tr>
+<tr>
+<td>Security audit</td>
+<td>✅ SEC-001 ถึง SEC-017 แล้วเสร็จ</td>
+<td>OWASP Top 10 coverage มีเอกสารประกอบ</td>
+</tr>
+<tr>
+<td>Source code access</td>
+<td>✅ สามารถขอได้ (escrow option)</td>
+<td>Proprietary license ไม่ใช่ open-source v1.5.x</td>
+</tr>
+<tr>
+<td>Audit log / Accountability</td>
+<td>✅ ตาราง audit_logs ครบถ้วน (who, what, when)</td>
+<td>Immutable records PDPA compliant</td>
+</tr>
+<tr>
+<td>Export data format (non-proprietary)</td>
+<td>✅ CSV/JSON via API + standard DB access</td>
+<td>ไม่มี vendor lock-in (สามารถใช้ SQL queries ได้)</td>
+</tr>
+<tr>
+<td>Disaster recovery / Backup</td>
+<td>✅ Daily automated backup + documented restore procedure</td>
+<td>ลูกค้ารับผิดชอบการจัดเก็บ offsite</td>
+</tr>
+<tr>
+<td>Technical support (Thai)</td>
+<td>✅ Email 24 ชั่วโมง + chat 5 วันทำการ (24/7 optional SLA)</td>
+<td>Dedicated account manager สำหรับสัญญาภาครัฐ</td>
+</tr>
+<tr>
+<td>Training + documentation (Thai)</td>
+<td>✅ On-site training + Thai documentation</td>
+<td>2–5 วันฝึกอบรม (ขึ้นอยู่กับจำนวนพนักงาน)</td>
+</tr>
+</tbody>
+</table>
+
+<h2>เกณฑ์การประเมิน TOR ทั่วไป (DE / MDES)</h2>
+
+<div class="feat-grid">
+  <div class="card">
+    <h3>Technical Score (40–50%)</h3>
+    <ul>
+      <li>Multi-vendor support: 10 points</li>
+      <li>Real-time capability: 10 points</li>
+      <li>Bilingual support: 8 points</li>
+      <li>Analytics + reporting: 8 points</li>
+      <li>Mobile app: 5 points</li>
+      <li><strong>Vigil Total: 41/50</strong></li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>Commercial Score (30–40%)</h3>
+    <ul>
+      <li>One-time purchase (lower TCO): 12 points</li>
+      <li>Maintenance cost (fair pricing): 10 points</li>
+      <li>Support SLA (responsive): 8 points</li>
+      <li><strong>Vigil Total: 30/30</strong> (ต้นทุนต่ำกว่า SaaS)</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>Risk Score (20–30%)</h3>
+    <ul>
+      <li>Company stability (exist 2+ years): 8 points</li>
+      <li>Security audit passed: 8 points</li>
+      <li>Thai legal entity / compliance: 6 points</li>
+      <li><strong>Vigil Total: 22/22</strong></li>
+    </ul>
+  </div>
+</div>
+
+<h2>โครงสร้างสัญญาภาครัฐทั่วไป</h2>
+
+<pre>
+1. HARDWARE & INSTALLATION
+   - Server 1 (App + DB): 4C/8GB RAM, 500GB SSD
+   - Network switch + cabling (ลูกค้ารับผิดชอบ)
+   - Installation labor: 5 วัน SI (รวมในราคา)
+
+2. SOFTWARE LICENSE
+   - License 1 ปี (สามารถต่ออายุรายปีได้)
+   - Support + updates รวมอยู่
+   - 20 กล้อง (ขยายไปถึง 50 ผ่าน "expansion module" purchase)
+
+3. SUPPORT & MAINTENANCE
+   - Email 24 ชั่วโมง response (business hours)
+   - Software updates quarterly
+   - On-site training (2 วัน): admin + operators
+
+4. SLA
+   - System uptime: 99% per quarter
+   - Critical bug fix: 48 ชั่วโมง response
+   - License renewal: 90 วันก่อนหมดอายุ
+
+5. PAYMENT TERMS
+   - 30% on contract signed
+   - 40% on deployment completion
+   - 30% on acceptance (30-day trial period)
+</pre>
+
+<h2>จัดการคำคัดค้านสำหรับภาครัฐ</h2>
+
+<table>
+<thead>
+<tr>
+<th>คำคัดค้าน</th>
+<th>คำตอบ</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>"ทำไมไม่ได้รับการรับรอง Bosch?"</td>
+<td>Vigil ปฏิบัติตาม ONVIF ทำงานได้กับกล้องใด ๆ ที่เป็น ONVIF/MQTT ไม่มี vendor lock-in เป็นลักษณะสำหรับภาครัฐ ไม่ใช่ข้อเสีย</td>
+</tr>
+<tr>
+<td>"Source code? ความเสี่ยงด้านความปลอดภัย ถ้าปิด"</td>
+<td>เสนอ source code escrow (บริษัท 3rd party เก็บโค้ด ปล่อยถ้าบริษัทล้มเหลว) Proprietary ช่วยให้ patch security ได้เร็วขึ้น</td>
+</tr>
+<tr>
+<td>"บริษัทใหม่ ไม่มีประวัติ"</td>
+<td>ลูกค้าอ้างอิง (โรงแรม retail ขนาดใหญ่) security audit ผ่านแล้ว (SEC-001–017) warranty 1 ปี + SLA</td>
+</tr>
+<tr>
+<td>"ข้อมูลนอกประเทศไทย?"</td>
+<td>ข้อมูลทั้งหมด self-hosted บนสถานที่ของภาครัฐ ไม่มีการส่งออกข้อมูลไปคลาউด PDPA compliant by design</td>
+</tr>
+<tr>
+<td>"ถ้า support จบลง?"</td>
+<td>ด้วย source code escrow ภาครัฐสามารถบำรุงรักษาได้เองภายใน API stable (backward-compatible) ไม่มี forced upgrades</td>
+</tr>
+</tbody>
+</table>
+
+<h2>Checklist ก่อนเสนอโครงการภาครัฐ</h2>
+
+<ul>
+  <li>☐ เตรียม Thai documentation (SOP, training manual, API reference)</li>
+  <li>☐ ได้รับ PDPA data processing agreement (DPA) template reviewed โดยทนายความ</li>
+  <li>☐ หา security audit report (มอบให้กับคณะประเมิน tender)</li>
+  <li>☐ Setup demo account (TOR evaluators ต้องทำการทดสอบสด)</li>
+  <li>☐ ระบุ Thai SI partner (ภาครัฐต้องการ local integrator สำหรับ on-site support)</li>
+  <li>☐ เตรียม reference letters จากลูกค้าปัจจุบัน (ถ้าไม่เป็นความลับ)</li>
+  <li>☐ มี financial statements + company registration พร้อม (ภาครัฐ due diligence)</li>
+  <li>☐ ชี้แจง warranty terms + spare parts availability (ความกังวลของภาครัฐ)</li>
+</ul>
+
+<h2>Timeline: Government Tender จนถึง Go-live</h2>
+
+<pre>
+เดือนที่ 1: TOR published → submit bid + technical proposal
+เดือนที่ 2–3: Evaluation โดยคณะ presentation (ถ้า shortlisted)
+เดือนที่ 4: Award → sign contract
+เดือนที่ 5: Infrastructure setup + training prep
+เดือนที่ 6: Deployment + on-site training
+เดือนที่ 7: Acceptance test (30-day trial)
+เดือนที่ 8: Go-live + handover ให้ government IT team
+</pre>
+
+<div class="sbox">
+  <h4>สำคัญ: ปัจจัยราชการ</h4>
+  <p>Budget approval, procurement board meetings, legal review = ช้ากว่า private sector แผนเวลา 6–12 เดือน ตั้งแต่ RFP ถึง contract signature Early engagement กับ procurement officer ช่วยได้ Partner ด้วย local SI ที่รู้ government processes ในภูมิภาคของคุณ</p>
+</div>
+
+<div class="ref">
+  <p><a href="12-scale-up.html">← 12 Scale Up</a> | <a href="14-appearances.html">14 Appearances →</a></p>
+</div>
+</div>
+</div>
+
+<script src="nav.js"></script>
+</body>
+</html>

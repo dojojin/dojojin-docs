@@ -1,0 +1,21 @@
+{
+  "name": "dojojin-license-keygen",
+  "version": "1.0.0",
+  "private": true,
+  "description": "License issuance tool for DojoJin Tech Dashboard — INTERNAL USE ONLY. NEVER deploy to a customer server. NEVER share the private key.",
+  "license": "Proprietary",
+  "author": "Prakasit Rochanavipart (Dojo-mAn) <prakasit@dojojin.tech>",
+  "main": "issue-license.js",
+  "bin": {
+    "dojojin-issue-license": "issue-license.js"
+  },
+  "scripts": {
+    "issue": "node issue-license.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "jose": "^6.0.0"
+  }
+}
