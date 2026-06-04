@@ -5,6 +5,41 @@
 
 ---
 
+## วิธีสั่ง check เอง (manual trigger)
+
+ระบบรันอัตโนมัติทุกวันจันทร์ 15:00 น. แต่ถ้าต้องการเช็คทันที:
+
+**ทาง GitHub UI** (ทำจากมือถือได้):
+1. ไปที่ `github.com/dojojin/dojojin-docs` → Actions → **"Upstream Sync Check"**
+2. คลิก **"Run workflow"** (มุมขวา)
+3. `dry_run = true` → ดูว่ามี drift ไหม **ไม่เปิด PR**
+4. `dry_run = false` → เปิด draft PR ถ้ามี drift
+5. คลิก **"Run workflow"** สีเขียว
+
+**ทาง Terminal:**
+```bash
+# dry run — เช็คว่ามี drift ไหม
+gh workflow run upstream-sync-check.yml \
+  --repo dojojin/dojojin-docs \
+  --field dry_run=true
+
+# trigger จริง — เปิด draft PR ถ้ามี drift
+gh workflow run upstream-sync-check.yml \
+  --repo dojojin/dojojin-docs \
+  --field dry_run=false
+
+# ดู log real-time
+gh run watch --repo dojojin/dojojin-docs
+```
+
+**บน local (ไม่ผ่าน Actions):**
+```bash
+bash update-upstream.sh          # pull + แสดง diff hint
+git diff HEAD~4 HEAD -- _upstream/
+```
+
+---
+
 ## Step 0 — Triage (5 นาที) ก่อนเปิด Claude
 
 Pull branch และประเมินว่าอะไรเปลี่ยนจริง
