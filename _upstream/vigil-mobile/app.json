@@ -1,0 +1,69 @@
+{
+  "expo": {
+    "name": "Vigil Mobile",
+    "slug": "vigil-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0F0F0F"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "tech.dojojin.vigil"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false,
+      "package": "tech.dojojin.vigil",
+      "permissions": [
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.READ_MEDIA_AUDIO"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "scheme": "vigil",
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "ใช้ Face ID เพื่อปลดล็อก Vigil"
+        }
+      ],
+      "expo-video",
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Vigil Mobile ต้องการเข้าถึงรูปภาพเพื่อบันทึกภาพใบหน้า",
+          "savePhotosPermission": "Vigil Mobile ต้องการบันทึกภาพลือ Photos",
+          "isAccessMediaLocationEnabled": false
+        }
+      ],
+      "expo-localization"
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "e6e8e170-8093-4ce7-a60c-ba49c4b90522"
+      }
+    }
+  }
+}
