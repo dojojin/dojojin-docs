@@ -9,8 +9,8 @@
 set -euo pipefail
 
 TARGET="${1:-all}"
-PLATFORM_REMOTE="git@github.com:dojojin/vigil-platform.git"
-MOBILE_REMOTE="git@github.com:dojojin/vigil-mobile.git"
+PLATFORM_REMOTE="https://github.com/dojojin/vigil-platform.git"
+MOBILE_REMOTE="https://github.com/dojojin/vigil-mobile.git"
 AI_STACK_REMOTE="https://github.com/dojojin/ai-stack.git"
 PLATFORM_BRANCH="main"
 MOBILE_BRANCH="main"
