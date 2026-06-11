@@ -35,13 +35,14 @@ services:
   # older Bosch firmware emits.)
   # ──────────────────────────────────────
   emqx:
-    image: emqx/emqx:5.8
+    image: emqx/emqx:5.8.9
     container_name: vigil-emqx
     ports:
-      # SEC-001 Phase 2: dual-bind — localhost for mqtt-subscriber.js (same host),
-      # LAN IP for Bosch cameras. WS (8083) removed — nothing uses it externally.
-      - "127.0.0.1:1883:1883"      # MQTT — subscriber (localhost)
-      - "192.168.10.31:1883:1883"  # MQTT — Bosch cameras (LAN)
+      # SEC-001 Phase 2 (updated): bind 0.0.0.0 so EMQX starts regardless of
+      # which network interface is active (camera LAN, home LAN, VPN, etc.).
+      # IP-lock replaced by EMQX AUTHN (credentials required for all clients) —
+      # security level equivalent; EMQX dashboard remains localhost-only.
+      - "1883:1883"                # MQTT — all interfaces; AUTHN enforced
       - "127.0.0.1:18083:18083"    # Dashboard UI — localhost only (never expose)
     environment:
       # SEC-001 Phase 2: AUTHN on — all clients must present credentials.

@@ -4,7 +4,7 @@
 > backup/restore, service lifecycle, duplicate process prevention,
 > settings workspace consolidation, and scale-up planning.
 > Parent index: DECISIONS.md
-> Last updated: 2026-05-24 · v1.5.0
+> Last updated: 2026-06-08 · v1.5.0
 
 ---
 
@@ -46,12 +46,12 @@ Symptom: ad-hoc `pkill` + `node x.js &` sequence left orphan `dahua-cgi.js` runn
 
 Three layers:
 1. **`src/singleton.js`** — PID-file lock. Each long-running process calls `require('./singleton')('<name>')` right after dotenv. Writes `src/.run/<name>.pid`. Live PID holder → new copy logs error + `exit(1)`. Stale locks self-heal via `process.kill(pid, 0)` liveness probe.
-2. **`scripts/services.sh {start|stop|restart|status}`** — single control point. `stop` kills ALL project processes by broad pattern then force-kills survivors and clears `.run/*.pid`. `start` refuses if anything is already up. `status` pgrep-counts each service — flags `>1` as `⛔ DUPLICATE`.
+2. **PM2 + `ecosystem.config.js`** (primary, since 2026-06-03) — 7 workers managed by PM2 (api-server, mqtt-subscriber, media-recorder, hikvision, dahua, alert-worker, report-worker). `scripts/services.sh` เป็น PM2 thin-wrapper. Use `pm2 start/stop/restart <name>` หรือ `./scripts/services.sh`.
 3. **Health Check page** — `/api/health/details` reports per-service instance count. "⚙️ Service Processes" card shows `1x` OK / `0x` down / `>1` DUPLICATE in red.
 
-> STUBBORN_FACT: Use `services.sh` for all start/stop. Never hand-`pkill` or `node x.js &`. GOTCHAS #33 adjacent.
+> STUBBORN_FACT: Use PM2 (`scripts/services.sh` / `pm2` commands) for all start/stop. Never hand-`pkill` or `node x.js &`. GOTCHAS #33 adjacent.
 
-How to apply: any NEW long-running entrypoint → add `require('./singleton')('<name>')` after dotenv AND a row to both `SERVICES` in `services.sh` and the `svc` list in api-server health block.
+How to apply: any NEW long-running entrypoint → add `require('./singleton')('<name>')` after dotenv AND an entry to `ecosystem.config.js` AND the `svc` list in api-server health block.
 
 ---
 

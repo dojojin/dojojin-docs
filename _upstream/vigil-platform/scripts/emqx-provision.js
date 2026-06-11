@@ -1,5 +1,5 @@
 // ============================================================
-// DojoJin Tech Dashboard — EMQX MQTT Auth Provisioner
+// Vigil Platform — EMQX MQTT Auth Provisioner
 // @author Prakasit Rochanavipart (Dojo-mAn)
 // @copyright (c) 2025-2026 Prakasit Rochanavipart. All Rights Reserved.
 // @license Proprietary

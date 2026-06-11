@@ -1,7 +1,7 @@
-# Service Start Manual — DojoJin Tech Dashboard
+# Service Start Manual — Vigil Platform
 
 > วิธีเปิด/ปิด/ตรวจสอบ service ของ Dashboard ในเครื่อง dev (M1 MacBook Pro)
-> Last updated: 2026-06-03
+> Last updated: 2026-06-08
 
 ---
 
@@ -131,6 +131,24 @@ ps aux | grep cloudflared | grep -v grep
 lsof -ti :3000 | xargs kill -9
 ```
 
+### กล้อง "Online" แต่ไม่มี Events (GOTCHAS #81)
+
+อาการ: dashboard แสดงกล้อง Online แต่ไม่มี events เข้าเลย — เกิดจาก EMQX bind แค่ localhost ไม่ bind LAN IP
+
+```bash
+# ตรวจว่า EMQX bind LAN IP ด้วยหรือเปล่า (ต้องเห็น 192.168.x.x:1883)
+docker port vigil-emqx
+
+# ตรวจ camera client connections (ถ้าว่าง = camera connect ไม่ได้)
+docker exec vigil-emqx emqx ctl clients list | grep cam-bosch
+
+# แก้: force recreate ให้ docker apply port binding ใหม่
+docker compose up -d --force-recreate emqx
+```
+
+> หมายเหตุ: `last_seen_at` อัปเดตจาก ONVIF poll (คนละ path กับ MQTT) → กล้องแสดง Online ได้แม้ MQTT พัง
+> ถ้า "Online + ไม่มี events" → ตรวจ EMQX binding เสมอ
+
 ### MQTT subscriber ไม่ได้รับ event
 
 ```bash
@@ -143,6 +161,30 @@ docker exec vigil-emqx emqx ctl clients list
 # ดู topic subscriptions
 docker exec vigil-emqx emqx ctl subscriptions list
 ```
+
+### Snapshot / clip / กล้องบางตัวเข้าไม่ถึงหลัง reboot หรือหลัง restart PM2 (macOS เท่านั้น — GOTCHAS #84)
+
+อาการ: `EHOSTUNREACH` / `No route to host` ไปยัง camera subnet จากบาง process
+(ffmpeg ใน media-recorder, node ตัวที่ไม่มี LNP record) ทั้งที่ `curl`/`nc` จากมือถึงปกติ —
+media-buffer ว่าง, clip ไม่ถูกบันทึก
+
+สาเหตุ: macOS Local Network Privacy — PM2 daemon ที่ถูก start จาก launchd / tmux / ssh /
+Claude shell ไม่มี Local Network grant → ลูกทุกตัวที่ binary ไม่มี record ของตัวเองโดนปัดเงียบ
+
+```bash
+# แก้ — restart PM2 ใต้ VigilPM2.app (ถือ Local Network grant) — รันจาก shell ไหนก็ได้:
+open scripts/VigilPM2.app              # เงียบ ไม่มีหน้าต่าง · log: /tmp/vigilpm2.log
+
+# fallback ถ้า app ใช้ไม่ได้ (เช่นหลัง macOS update):
+open -a Terminal scripts/pm2-lan-safe-restart.command
+
+# ตรวจ (รอ ~30 วิ):
+find media-buffer -name "*.ts" -mmin -1 | wc -l   # > 0 = recorder กลับมาแล้ว
+```
+
+> ⚠️ **ห้าม `pm2 kill && pm2 resurrect` จาก tmux / ssh / Claude Code shell ตรงๆ** — จะเสีย
+> Local Network grant เงียบๆ. boot อัตโนมัติผ่าน `pm2.dojojin.plist` → VigilPM2.app แล้ว.
+> ดู GOTCHAS #84. Linux production ไม่มีปัญหานี้
 
 ### DB connection refused
 
@@ -231,6 +273,16 @@ launchctl list | grep com.dojojin.dashboard.backup
 ```bash
 tail -f ~/vigil-platform/backups/backup.log
 ```
+
+**Offsite (A4, 2026-06-10):** `backup.sh` ส่ง dump + config bundle ขึ้น Google Drive
+อัตโนมัติผ่าน rclone crypt remote `gdrive-crypt` (เข้ารหัสฝั่ง client, retention 30 วัน):
+```bash
+rclone ls gdrive-crypt:          # ดูไฟล์บน Drive (ผ่าน crypt)
+rclone copy gdrive-crypt:dumps/<file> ./   # ดึง dump กลับมา restore
+```
+> ⚠️ restore บนเครื่องใหม่ต้องมี CRYPT_PASSWORD + CRYPT_SALT (อยู่ใน password manager
+> ของ owner) ตั้ง remote ใหม่: `rclone config create gdrive drive scope=drive.file`
+> แล้ว `rclone config create gdrive-crypt crypt remote=gdrive:vigil-backups password=... password2=...`
 
 ### Manual backup
 
@@ -385,4 +437,4 @@ node -e "console.log(JSON.parse(require('fs').readFileSync('cameras-config.json'
 
 ---
 
-<sub>End of service_start.md · DojoJin Tech Dashboard · Owner: Prakasit Rochanavipart</sub>
+<sub>End of service_start.md · Vigil Platform · Owner: Prakasit Rochanavipart</sub>

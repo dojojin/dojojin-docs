@@ -13,7 +13,7 @@
 -- ============================================================
 
 INSERT INTO system_settings (key, value, description) VALUES
-  ('brand_name',          'DojoJin Tech Dashboard', 'Product name shown in sidebar, login, disclaimer and PDF report header.'),
+  ('brand_name',          'Vigil Platform', 'Product name shown in sidebar, login, disclaimer and PDF report header.'),
   ('brand_tagline',       'CCTV Analytics Suite',   'Short subtitle under the brand name.'),
   ('brand_logo_path',     '',                       'Path under /branding/ (e.g. logo.png). Empty = fall back to default emoji.'),
   ('brand_primary_color', '#5b8def',                'Single accent colour applied across the dashboard.')

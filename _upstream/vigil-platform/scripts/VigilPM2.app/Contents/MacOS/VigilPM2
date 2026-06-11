@@ -1,0 +1,36 @@
+#!/bin/zsh
+# ============================================================
+# Vigil Platform — VigilPM2.app launcher
+# @author Prakasit Rochanavipart (Dojo-mAn)
+# @copyright (c) 2025-2026 Prakasit Rochanavipart. All Rights Reserved.
+# @license Proprietary
+# ------------------------------------------------------------
+# Permanent fix for GOTCHAS #84: this app holds the macOS Local
+# Network grant (user clicks Allow once on first run — the app then
+# appears in System Settings → Privacy & Security → Local Network).
+# Every PM2 child it spawns inherits the grant, regardless of which
+# node/ffmpeg binary versions are installed — survives reboots AND
+# brew upgrades, unlike per-binary records or the Terminal.app trick.
+#
+# Run:  open scripts/VigilPM2.app        (or via pm2.dojojin.plist at login)
+# Log:  /tmp/vigilpm2.log
+# ============================================================
+exec >> /tmp/vigilpm2.log 2>&1
+echo "=== VigilPM2 $(date '+%Y-%m-%d %H:%M:%S') ==="
+
+# Force the Local Network prompt / permission check to attribute to this
+# app: a real multicast send + a brief Bonjour browse. After the user
+# allows once, both are instant no-ops.
+PATH="/opt/homebrew/opt/node@24/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+export PATH PM2_HOME="$HOME/.pm2"
+node -e "const d=require('dgram').createSocket('udp4');d.send(Buffer.from('lnp'),5353,'224.0.0.251',()=>d.close())" 2>/dev/null
+/usr/bin/dns-sd -B _ssh._tcp local. >/dev/null 2>&1 &
+sleep 2
+kill %1 2>/dev/null
+
+echo "--- pm2 kill + resurrect under VigilPM2.app context"
+pm2 kill
+pm2 resurrect
+sleep 3
+pm2 ls
+echo "=== done $(date '+%H:%M:%S') ==="

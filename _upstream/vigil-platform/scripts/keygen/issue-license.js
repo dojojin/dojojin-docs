@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // ============================================================
-// DojoJin Tech Dashboard — License Keygen CLI
+// Vigil Platform — License Keygen CLI
 // ============================================================
 // @author    Prakasit Rochanavipart (Dojo-mAn)
 // @copyright (c) 2025-2026 Prakasit Rochanavipart. All Rights Reserved.

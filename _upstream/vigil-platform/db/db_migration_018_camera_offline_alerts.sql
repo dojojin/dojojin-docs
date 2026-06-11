@@ -1,5 +1,5 @@
 -- ============================================================
--- DojoJin Tech Dashboard — Migration 018
+-- Vigil Platform — Migration 018
 -- Ph.1 Camera Offline Alert + Status Log
 -- Idempotent: safe to re-run on an existing schema.
 -- ============================================================

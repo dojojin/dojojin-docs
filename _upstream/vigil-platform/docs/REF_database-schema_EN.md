@@ -1,22 +1,22 @@
 <!-- ============================================================ -->
-<!-- DojoJin Tech Dashboard — Database Schema Reference (EN)     -->
+<!-- Vigil Platform — Database Schema Reference (EN)     -->
 <!-- @copyright (c) 2025-2026 Prakasit Rochanavipart             -->
 <!-- @license Proprietary                                         -->
 <!-- ============================================================ -->
 
 # Database Schema Reference (English)
 
-> **Audience:** External partners, DBAs, and integration engineers who need to understand the database structure of the DojoJin Tech Dashboard platform.
+> **Audience:** External partners, DBAs, and integration engineers who need to understand the database structure of the Vigil Platform platform.
 >
 > **Status:** Standalone reference — distribute freely to authorized 3rd parties.
-> **Last updated:** 2026-05-27 · Schema baseline: migration 027
+> **Last updated:** 2026-06-08 · Schema baseline: migration 027
 > **Companion document:** [REF_third-party-integration_EN.md](REF_third-party-integration_EN.md) — connection setup, query patterns, security checklist.
 
 ---
 
 ## About This Document
 
-The DojoJin Tech Dashboard is a self-hosted CCTV analytics platform that ingests events from IP cameras (Bosch, Hikvision, Dahua, ONVIF) via MQTT, stores them in PostgreSQL, and provides operational dashboards, scheduled reports, and LINE-based alerts.
+The Vigil Platform is a self-hosted CCTV analytics platform that ingests events from IP cameras (Bosch, Hikvision, Dahua, ONVIF) via MQTT, stores them in PostgreSQL, and provides operational dashboards, scheduled reports, and LINE-based alerts.
 
 This document describes the PostgreSQL database that backs the platform — table-by-table column definitions, indexes, retention behavior, and security/PII annotations — so 3rd parties can:
 
@@ -372,7 +372,7 @@ Key/value store for platform settings and white-label branding.
 | `comparison_mode` | `rolling` | `rolling` / `calendar` |
 | `custom_range_max_days` | `365` | Max span for custom date range picker |
 | `analytics_event_display` | CSV of camera-automation types | Event types shown in the live feed |
-| `brand_name` | `DojoJin Tech Dashboard` | Product name (white-label) |
+| `brand_name` | `Vigil Platform` | Product name (white-label) |
 | `brand_tagline` | `CCTV Analytics Suite` | Subtitle |
 | `brand_logo_path` | `` (empty) | Logo file path |
 | `brand_primary_color` | `#5b8def` | Primary accent color |
@@ -651,4 +651,4 @@ GROUP BY status;
 
 ---
 
-<sub>End of REF_database-schema_EN.md · DojoJin Tech Dashboard · 2026-05-27</sub>
+<sub>End of REF_database-schema_EN.md · Vigil Platform · 2026-06-08</sub>

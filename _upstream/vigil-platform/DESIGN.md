@@ -1,4 +1,4 @@
-# DESIGN.md — DojoJin Tech Dashboard Design System
+# DESIGN.md — Vigil Platform Design System
 
 > **Living Docs role:** `GUIDE_` (Standards — how we build UI) · Owner: Prakasit Rochanavipart (Dojo-mAn)
 > Created: 2026-05-27 · Governs all user-facing visual surfaces
@@ -302,4 +302,4 @@ html[data-theme="light"] {
 
 ---
 
-<sub>End of DESIGN.md · DojoJin Tech Dashboard · Created 2026-05-27 · Updated 2026-06-01 · role GUIDE_</sub>
+<sub>End of DESIGN.md · Vigil Platform · Created 2026-05-27 · Updated 2026-06-08 · role GUIDE_</sub>

@@ -1,5 +1,5 @@
 // ============================================================
-// DojoJin Tech Dashboard — Frontend
+// Vigil Platform — Frontend
 // CCTV Analytics & Management Suite
 // ============================================================
 // @author    Prakasit Rochanavipart (Dojo-mAn)
@@ -327,21 +327,19 @@ function renderPagination(container, currentPage, totalCount, pageSize, onPage, 
 
   if (total === 0) { el.innerHTML = ''; return; }
 
-  const btn = (page, text, opts = {}) => {
-    const disabled = opts.disabled || page === cp;
-    const cls = (page === cp) ? 'pg-btn pg-current' : 'pg-btn';
-    if (page === '…') return `<span class="pg-dot">…</span>`;
-    return `<button class="${cls}" ${disabled ? 'disabled' : ''} onclick="${opts.handler}(${page})">${text}</button>`;
+  const btn = (page, text) => {
+    const dis = page === cp;
+    const cls = dis ? 'pg-btn pg-current' : 'pg-btn';
+    return `<button class="${cls}" ${dis ? 'disabled' : ''} data-action="pgGo" data-pg="${el.id}" data-page="${page}">${text}</button>`;
   };
-  const handlerName = `_pgHandlers.${el.id || ''}`;
-  // Stash callback under a global so HTML onclick can reach it
+  // Stash callback under a global so dispatcher can reach it
   window._pgHandlers = window._pgHandlers || {};
   window._pgHandlers[el.id] = onPage;
 
   const items = _paginationItems(cp, totalPages);
   const itemsHtml = items.map(i =>
     i === '…' ? `<span class="pg-dot">…</span>` :
-    btn(i, String(i), { handler: handlerName })
+    btn(i, String(i))
   ).join('');
 
   const hint = total > 1000
@@ -350,9 +348,9 @@ function renderPagination(container, currentPage, totalCount, pageSize, onPage, 
   el.innerHTML = `
     <div class="pg-bar">
       <div class="pg-controls">
-        <button class="pg-btn" ${cp === 1 ? 'disabled' : ''} onclick="${handlerName}(${cp - 1})">‹ Prev</button>
+        <button class="pg-btn" ${cp === 1 ? 'disabled' : ''} data-action="pgGo" data-pg="${el.id}" data-page="${cp - 1}">‹ Prev</button>
         ${itemsHtml}
-        <button class="pg-btn" ${cp === totalPages ? 'disabled' : ''} onclick="${handlerName}(${cp + 1})">Next ›</button>
+        <button class="pg-btn" ${cp === totalPages ? 'disabled' : ''} data-action="pgGo" data-pg="${el.id}" data-page="${cp + 1}">Next ›</button>
       </div>
       <div class="pg-range">${from.toLocaleString()}-${to.toLocaleString()} / ${total.toLocaleString()} ${label}${hint}</div>
     </div>`;
@@ -386,7 +384,7 @@ function initDateTimePickers() {
     return;
   }
   const lang = (typeof I18N !== 'undefined' && I18N.getLang()) || 'th';
-  const locale = lang === 'th' ? _ADP_LOCALE_TH : undefined;
+  const locale = lang === 'th' ? _ADP_LOCALE_TH : _ADP_LOCALE_EN;
   // isMobile:true on ≤768px → ADP renders as modal overlay (handles keyboard + viewport clipping).
   const _adpMobile = window.innerWidth <= 768;
   const baseOpts = { ...(locale ? { locale } : {}), isMobile: _adpMobile, position: 'bottom left' };
@@ -712,7 +710,7 @@ function renderBackupList(backups) {
       <span class="bk-name">${escapeHtml(b.filename)}</span>
       <span style="color:var(--dim)">${dt}</span>
       <span style="color:var(--dim);min-width:62px;text-align:right">${sz}</span>
-      <button class="btn btn-secondary" style="font-size:11px;padding:5px 10px" onclick="downloadBackup('${escapeHtml(b.filename)}')">${escapeHtml(I18N.t('bk.download'))}</button>
+      <button class="btn btn-secondary" style="font-size:11px;padding:5px 10px" data-action="downloadBackup" data-filename="${escapeHtml(b.filename)}">${escapeHtml(I18N.t('bk.download'))}</button>
     </div>`;
   }).join('');
 }
@@ -808,7 +806,7 @@ function showToast({ icon, title, sub, page }) {
   el.querySelector('.tx').onclick = (e) => { e.stopPropagation(); remove(); };
   el.onclick = () => {
     remove();
-    const nav = document.querySelector(`.nav-item[onclick*="showPage('${page}'"]`);
+    const nav = document.querySelector(`.nav-item[data-page="${page}"]`);
     showPage(page, nav || undefined);
   };
   stack.appendChild(el);
@@ -976,17 +974,17 @@ function renderGroupBars() {
 
 function renderGroupBarHTML(opts) {
   opts = opts || {};
-  const all = `<button class="gtab ${activeGroupId === 'all' ? 'active' : ''}" onclick="setActiveGroup('all')">
+  const all = `<button class="gtab ${activeGroupId === 'all' ? 'active' : ''}" data-action="setActiveGroup" data-gid="all">
     ALL <span class="tc">${cameras.length}</span></button>`;
 
   const grps = groups.map(g => {
     const count = g.cameraIds.length;
     const active = activeGroupId === g.id ? 'active' : '';
     const colorBox = g.color ? `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${g.color}"></span>` : '';
-    return `<button class="gtab ${active}" onclick="setActiveGroup('${g.id}')">${colorBox} ${escapeHtml(g.name)} <span class="tc">${count}</span></button>`;
+    return `<button class="gtab ${active}" data-action="setActiveGroup" data-gid="${g.id}">${colorBox} ${escapeHtml(g.name)} <span class="tc">${count}</span></button>`;
   }).join('');
 
-  const mgr = `<button class="gtab mgr" onclick="openGroupManager()">${escapeHtml(I18N.t('aux.manageGroups'))}</button>`;
+  const mgr = `<button class="gtab mgr" data-action="openGroupManager">${escapeHtml(I18N.t('aux.manageGroups'))}</button>`;
 
   return all + grps + (opts.includeManager === false ? '' : mgr);
 }
@@ -1020,7 +1018,7 @@ function renderGroupList() {
   el.innerHTML = groups.map(g => {
     const sel = editingGroupId === g.id ? 'sel' : '';
     return `
-      <div class="gli ${sel}" onclick="editGroup('${g.id}')">
+      <div class="gli ${sel}" data-action="editGroup" data-gid="${g.id}">
         <div>
           <div class="gli-name">
             <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${g.color || 'var(--accent)'};margin-right:6px"></span>
@@ -1029,7 +1027,7 @@ function renderGroupList() {
           <div class="gli-meta">${g.cameraIds.length} cameras</div>
         </div>
         <div class="gli-actions">
-          <button class="btn btn-danger" style="padding:3px 8px;font-size:10px" onclick="event.stopPropagation();deleteGroup('${g.id}')">${escapeHtml(I18N.t('common.delete'))}</button>
+          <button class="btn btn-danger" style="padding:3px 8px;font-size:10px" data-action="deleteGroup" data-gid="${g.id}">${escapeHtml(I18N.t('common.delete'))}</button>
         </div>
       </div>`;
   }).join('');
@@ -1063,7 +1061,7 @@ function renderGroupEditor(name, selectedCams, color) {
   const camList = cameras.map(c => {
     const sel = selectedCams.has(c.camera_id) ? 'sel' : '';
     return `
-      <div class="grp-cam-item ${sel}" onclick="toggleCamInGroup('${c.camera_id}')">
+      <div class="grp-cam-item ${sel}" data-action="toggleCamInGroup" data-cam-id="${c.camera_id}">
         <input type="checkbox" ${selectedCams.has(c.camera_id) ? 'checked' : ''} style="accent-color:var(--accent)">
         <div style="flex:1">
           <div style="font-size:12px;font-weight:600">${c.camera_name || c.camera_id}</div>
@@ -1075,7 +1073,7 @@ function renderGroupEditor(name, selectedCams, color) {
 
   const colors = ['#5b8def', '#22c55e', '#f59e0b', '#a78bfa', '#ef4444', '#06b6d4', '#ec4899'];
   const colorPicker = colors.map(c =>
-    `<button onclick="document.getElementById('grpColor').value='${c}'" style="width:24px;height:24px;border-radius:50%;background:${c};border:2px solid ${color === c ? '#fff' : 'transparent'};cursor:pointer;margin-right:4px"></button>`
+    `<button data-action="setGrpColor" data-color="${c}" style="width:24px;height:24px;border-radius:50%;background:${c};border:2px solid ${color === c ? '#fff' : 'transparent'};cursor:pointer;margin-right:4px"></button>`
   ).join('');
 
   document.getElementById('grpEditor').innerHTML = `
@@ -1094,14 +1092,14 @@ function renderGroupEditor(name, selectedCams, color) {
     <div class="form-group" style="margin-bottom:12px">
       <label class="form-label">${escapeHtml(I18N.t('grp.pickCameras'))} <span style="color:var(--accent)" id="selCount">(${selectedCams.size}/${cameras.length})</span></label>
       <div style="display:flex;gap:6px;margin-bottom:6px">
-        <button class="btn btn-secondary" style="padding:4px 10px;font-size:10px" onclick="selectAllCams()">${escapeHtml(I18N.t('grp.selectAll'))}</button>
-        <button class="btn btn-secondary" style="padding:4px 10px;font-size:10px" onclick="clearAllCams()">${escapeHtml(I18N.t('grp.clearAll'))}</button>
+        <button class="btn btn-secondary" style="padding:4px 10px;font-size:10px" data-action="selectAllCams">${escapeHtml(I18N.t('grp.selectAll'))}</button>
+        <button class="btn btn-secondary" style="padding:4px 10px;font-size:10px" data-action="clearAllCams">${escapeHtml(I18N.t('grp.clearAll'))}</button>
       </div>
       <div class="grp-cam-list">${camList}</div>
     </div>
     <div style="display:flex;gap:8px">
-      <button class="btn btn-primary" onclick="saveGroup()">${escapeHtml(I18N.t('common.saveBtn'))}</button>
-      <button class="btn btn-secondary" onclick="cancelEditGroup()">${escapeHtml(I18N.t('common.cancel'))}</button>
+      <button class="btn btn-primary" data-action="saveGroup">${escapeHtml(I18N.t('common.saveBtn'))}</button>
+      <button class="btn btn-secondary" data-action="cancelEditGroup">${escapeHtml(I18N.t('common.cancel'))}</button>
     </div>`;
 }
 
@@ -1262,7 +1260,7 @@ function renderCameraGrid() {
           ${paused
             ? `<div class="placeholder cam-placeholder-paused" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;background:#111"><svg width="32" height="32" style="color:var(--text-secondary);opacity:.5"><use href="#icon-pause"/></svg><span style="font-size:11px;color:var(--text-secondary)">${escapeHtml(I18N.t('cam.maintenance'))}</span></div>`
             : online && c.ip_address
-              ? `<img loading="lazy" decoding="async" src="${API}/api/snapshot/live/${c.camera_id}?w=400&t=${Date.now()}" alt="" onerror="this.parentElement.innerHTML='<div class=placeholder>${I18N.t('cam.imgErr')}</div>'">`
+              ? `<img loading="lazy" decoding="async" src="${API}/api/snapshot/live/${c.camera_id}?w=400&t=${Date.now()}" alt="" data-err="cam-placeholder">`
               : `<div class="placeholder">${online ? I18N.t('cam.noIp') : 'Offline'}</div>`}
           <div class="cam-status-badges">${badges.join('')}</div>
         </div>
@@ -1314,14 +1312,15 @@ function _renderEulaMarkdown(md) {
   return out.join('\n');
 }
 
-let _eulaCache = null;
+const _eulaCache = {};
 async function _loadEulaHtml() {
-  if (_eulaCache) return _eulaCache;
+  const lang = I18N.getLang();
+  if (_eulaCache[lang]) return _eulaCache[lang];
   try {
-    const r = await fetch(`${API}/api/eula`, { cache: 'no-store' });
+    const r = await fetch(`${API}/api/eula?lang=${encodeURIComponent(lang)}`, { cache: 'no-store' });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    _eulaCache = _renderEulaMarkdown(await r.text());
-    return _eulaCache;
+    _eulaCache[lang] = _renderEulaMarkdown(await r.text());
+    return _eulaCache[lang];
   } catch (e) {
     return `<p style="color:var(--red)">${escapeHtml(I18N.t('aux.eulaLoadFailed'))}${escapeHtml(e.message)}</p>`;
   }
@@ -1522,7 +1521,7 @@ function renderLicenseModalContent(status) {
       <div style="font-size:11px;color:var(--dim);margin-bottom:6px">${escapeHtml(I18N.t('lic.machineIdLabel'))}</div>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         <code style="flex:1;font-family:monospace;font-size:13px;padding:7px 10px;background:rgba(0,0,0,0.3);border-radius:4px;letter-spacing:1px;min-width:240px">${escapeHtml(machineId)}</code>
-        <button class="btn btn-secondary" style="font-size:11px;padding:7px 14px;white-space:nowrap" onclick="copyMachineId('${escapeHtml(machineId)}', event)">📋 Copy</button>
+        <button class="btn btn-secondary" style="font-size:11px;padding:7px 14px;white-space:nowrap" data-action="copyMachineId" data-machine-id="${escapeHtml(machineId)}">📋 Copy</button>
       </div>
       <div style="font-size:10px;color:var(--dim);margin-top:6px">${escapeHtml(I18N.t('lic.machineIdHint'))}</div>
     </div>`;
@@ -1533,7 +1532,7 @@ function renderLicenseModalContent(status) {
     <div style="background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:14px">
       <div style="font-size:11px;color:var(--dim);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">
         <span>${isRenewing ? I18N.t('lic.renewHeader') : I18N.t('lic.activateHeader')}</span>
-        <a href="#" onclick="event.preventDefault();openEulaViewer();return false" style="color:var(--accent);text-decoration:none;font-size:11px">${escapeHtml(I18N.t('lic.readEula'))}</a>
+        <a href="#" data-action="openEulaViewer" style="color:var(--accent);text-decoration:none;font-size:11px">${escapeHtml(I18N.t('lic.readEula'))}</a>
       </div>
       ${!isRenewing ? `
       <div style="font-size:11px;color:var(--text);line-height:1.8;margin-bottom:10px;padding:8px 12px;background:rgba(91,141,239,0.08);border-radius:5px">
@@ -1542,12 +1541,12 @@ function renderLicenseModalContent(status) {
       <textarea id="licenseKeyInput" placeholder="${escapeHtml(I18N.t('lic.keyPlaceholder'))}"
                 style="width:100%;min-height:90px;padding:10px;background:rgba(0,0,0,0.3);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:monospace;font-size:11px;resize:vertical;box-sizing:border-box;line-height:1.4"></textarea>
       <label style="display:flex;align-items:flex-start;gap:8px;margin-top:10px;cursor:pointer;font-size:11px;line-height:1.5">
-        <input type="checkbox" id="licenseEulaAccept" onchange="document.getElementById('licenseActivateBtn').disabled=!this.checked" style="margin-top:2px;flex-shrink:0">
-        <span>${escapeHtml(I18N.t('lic.eulaAcceptPre'))} <a href="#" onclick="event.preventDefault();openEulaViewer();return false" style="color:var(--accent)">${escapeHtml(I18N.t('lic.eulaLinkText'))}</a></span>
+        <input type="checkbox" id="licenseEulaAccept" data-change="eulaToggle" style="margin-top:2px;flex-shrink:0">
+        <span>${escapeHtml(I18N.t('lic.eulaAcceptPre'))} <a href="#" data-action="openEulaViewer" style="color:var(--accent)">${escapeHtml(I18N.t('lic.eulaLinkText'))}</a></span>
       </label>
       <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
-        <button class="btn btn-primary" id="licenseActivateBtn" style="flex:1;min-width:140px" onclick="activateLicense()" disabled>🔐 ${isRenewing ? I18N.t('lic.btnRenew') : 'Activate License'}</button>
-        ${isRenewing ? `<button class="btn btn-secondary" onclick="deactivateLicense()" title="${escapeHtml(I18N.t('lic.deactivateTitle'))}">🗑️ Deactivate</button>` : ''}
+        <button class="btn btn-primary" id="licenseActivateBtn" style="flex:1;min-width:140px" data-action="activateLicense" disabled>🔐 ${isRenewing ? I18N.t('lic.btnRenew') : 'Activate License'}</button>
+        ${isRenewing ? `<button class="btn btn-secondary" data-action="deactivateLicense" title="${escapeHtml(I18N.t('lic.deactivateTitle'))}">🗑️ Deactivate</button>` : ''}
       </div>
       <div id="licenseActivateError" style="margin-top:10px;font-size:12px;display:none;padding:8px 12px;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:5px;color:#ef4444"></div>
     </div>`;
@@ -1753,11 +1752,11 @@ async function renderCameraDetail(c) {
           ${isPaused
             ? `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;width:100%;height:100%"><svg width="40" height="40" style="color:var(--text-secondary);opacity:.45"><use href="#icon-pause"/></svg><span style="font-size:12px;color:var(--text-secondary)">${escapeHtml(I18N.t('cam.maintenance'))}</span></div>`
             : online && c.ip_address
-              ? `<img src="${API}/api/snapshot/live/${encodeURIComponent(c.camera_id)}?w=640&t=${Date.now()}" alt="" style="width:100%;height:100%;object-fit:contain" onerror="this.parentElement.innerHTML='<span style=color:var(--dim);font-size:13px>${I18N.t('cam.imgErr')}</span>'">`
+              ? `<img src="${API}/api/snapshot/live/${encodeURIComponent(c.camera_id)}?w=640&t=${Date.now()}" alt="" style="width:100%;height:100%;object-fit:contain" data-err="cam-span">`
               : `<span style="color:var(--dim);font-size:13px">${online ? escapeHtml(I18N.t('cam.noIp')) : 'Offline'}</span>`}
         </div>
         ${online && c.ip_address
-          ? `<button class="btn btn-secondary" style="font-size:11px;margin-top:8px" onclick="window.open('${cdLiveFullUrl}','_blank')">${escapeHtml(I18N.t('snap.viewFull'))}${cdCap ? ` (${cdCap}px)` : ''}</button>`
+          ? `<button class="btn btn-secondary" style="font-size:11px;margin-top:8px" data-action="openUrl" data-url="${escapeHtml(cdLiveFullUrl)}">${escapeHtml(I18N.t('snap.viewFull'))}${cdCap ? ` (${cdCap}px)` : ''}</button>`
           : ''}
       </div>
       <!-- Info + KPI -->
@@ -2054,19 +2053,21 @@ function renderFaceGrid(faces) {
   const noImg = escapeHtml(I18N.t('face.noImage'));
   grid.innerHTML = faces.map(f => {
     const img = f.snapshot
-      ? `<img src="${API}/snapshots/${encodeURIComponent(f.snapshot)}" loading="lazy" decoding="async" alt="" onerror="this.parentElement.innerHTML='<div class=face-noimg>${noImg}</div>'">`
+      ? `<img src="${API}/snapshots/${encodeURIComponent(f.snapshot)}" loading="lazy" decoding="async" alt="" data-err="face-noimg">`
       : `<div class="face-noimg">${noImg}</div>`;
     const t = f.event_time
       ? new Date(f.event_time).toLocaleString('th-TH', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit', hour12:false })
       : '—';
     const wear = [];
-    if (f.glass === 'yes') wear.push(I18N.t('face.wearGlasses'));
+    // กล้องส่ง glass = no / yes / sunglasses — แยก label แว่นกันแดด
+    if (f.glass === 'sunglasses') wear.push(I18N.t('face.wearSunglasses'));
+    else if (f.glass === 'yes')   wear.push(I18N.t('face.wearGlasses'));
     if (f.mask  === 'yes') wear.push(I18N.t('face.wearMask'));
     if (f.hat   === 'yes') wear.push(I18N.t('face.wearHat'));
     const wearHtml = wear.length
       ? wear.map(w => `<span class="face-chip">${escapeHtml(w)}</span>`).join('')
       : `<span class="face-chip" style="color:var(--dim)">${escapeHtml(I18N.t('face.nothingWorn'))}</span>`;
-    return `<div class="face-card" onclick="openFaceModal(${f.id})">
+    return `<div class="face-card" data-action="openFaceModal" data-id="${f.id}">
       ${img}
       <div class="face-card-body">
         <div style="font-size:10px;color:var(--dim);margin-bottom:3px">${t} · ${escapeHtml(f.camera_id || '')}</div>
@@ -2104,7 +2105,7 @@ function openFaceModal(id) {
   if (!f) return;
   const fullSrc = f.snapshot_full || f.snapshot;
   const fullImg = fullSrc
-    ? `<img src="${API}/snapshots/${encodeURIComponent(fullSrc)}" style="width:100%;border-radius:8px;background:#000;display:block" alt="" onerror="this.style.opacity=0.3">`
+    ? `<div style="position:relative"><img id="faceModalFullImg" src="${API}/snapshots/${encodeURIComponent(fullSrc)}" style="width:100%;border-radius:8px;background:#000;display:block" alt="" data-err="dim"></div>`
     : `<div class="face-noimg" style="border-radius:8px">${escapeHtml(I18N.t('face.noFullImg'))}</div>`;
   const cropImg = f.snapshot
     ? `<img src="${API}/snapshots/${encodeURIComponent(f.snapshot)}" style="width:84px;height:104px;object-fit:cover;border-radius:6px;float:right;margin:0 0 6px 8px" alt="">`
@@ -2113,7 +2114,8 @@ function openFaceModal(id) {
     ? new Date(f.event_time).toLocaleString('th-TH', { dateStyle:'medium', timeStyle:'medium' })
     : '—';
   const wear = [];
-  if (f.glass === 'yes') wear.push(I18N.t('face.wearGlasses'));
+  if (f.glass === 'sunglasses') wear.push(I18N.t('face.wearSunglasses'));
+  else if (f.glass === 'yes')   wear.push(I18N.t('face.wearGlasses'));
   if (f.mask  === 'yes') wear.push(I18N.t('face.wearMask'));
   if (f.hat   === 'yes') wear.push(I18N.t('face.wearHat'));
   const clipHtml = (f.clip_file && f.clip_status === 'done')
@@ -2140,6 +2142,16 @@ function openFaceModal(id) {
       </div>
     </div>`;
   document.getElementById('faceModal').classList.remove('hidden');
+
+  // faceRect (normalized 0–1) ชี้ตำแหน่งบนรูป full frame เท่านั้น —
+  // ถ้า fullSrc fallback เป็น crop (ไม่มี _snapshot_full) ห้ามวาด.
+  // กรอบหน้านับเป็น BBox → เคารพ overlay_show_bbox ของกล้อง
+  const fr = f.face_rect;
+  if (f.snapshot_full && fr && fr.width > 0 && fr.height > 0
+      && _camOverlayFlags(f.camera_id).bbox) {
+    attachSnapOverlay(document.getElementById('faceModalFullImg'),
+      [{ kind: 'box', x1: fr.x, y1: fr.y, x2: fr.x + fr.width, y2: fr.y + fr.height }]);
+  }
 }
 
 function closeFaceModal() {
@@ -2187,7 +2199,7 @@ let _appCustomFromPicker = null, _appCustomToPicker = null;
 function _initAppCustomPickers() {
   if (typeof AirDatepicker === 'undefined') return;
   const lang = (typeof I18N !== 'undefined' && I18N.getLang()) || 'th';
-  const locale = lang === 'th' ? _ADP_LOCALE_TH : undefined;
+  const locale = lang === 'th' ? _ADP_LOCALE_TH : _ADP_LOCALE_EN;
   const opts = {
     ...(locale ? { locale } : {}),
     timepicker: true, dateFormat: 'dd/MM/yyyy', timeFormat: 'HH:mm',
@@ -2251,11 +2263,26 @@ const _ADP_LOCALE_TH = {
   timeFormat: 'HH:mm',
   firstDay: 0,
 };
+// AirDatepicker's built-in default locale is Russian — must supply English explicitly.
+const _ADP_LOCALE_EN = {
+  name: 'en',
+  days: ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'],
+  daysShort: ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],
+  daysMin: ['Su','Mo','Tu','We','Th','Fr','Sa'],
+  months: ['January','February','March','April','May','June',
+           'July','August','September','October','November','December'],
+  monthsShort: ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],
+  today: 'Today',
+  clear: 'Clear',
+  dateFormat: 'dd/MM/yyyy',
+  timeFormat: 'HH:mm',
+  firstDay: 0,
+};
 
 function _initAppDatePickers() {
   if (typeof AirDatepicker === 'undefined') return;
   const lang = (typeof I18N !== 'undefined' && I18N.getLang()) || 'th';
-  const locale = lang === 'th' ? _ADP_LOCALE_TH : undefined;
+  const locale = lang === 'th' ? _ADP_LOCALE_TH : _ADP_LOCALE_EN;
   const baseOpts = {
     ...(locale ? { locale } : {}),
     timepicker: true,
@@ -2333,6 +2360,7 @@ async function loadAppearanceSearch(page = 1) {
 }
 
 function _renderAppearanceResults(rows) {
+  window._appRows = rows;
   const container = document.getElementById('appResults');
   if (!container) return;
   if (!rows.length) {
@@ -2340,14 +2368,14 @@ function _renderAppearanceResults(rows) {
     return;
   }
   container.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px">
-    ${rows.map(ev => {
+    ${rows.map((ev, idx) => {
       const thumb = ev.snapshot_file
         ? `<img src="${API}/snapshots/${escapeHtml(ev.snapshot_file)}?w=320" style="width:100%;aspect-ratio:16/9;object-fit:cover;background:var(--surface-base);display:block" loading="lazy">`
         : `<div style="width:100%;aspect-ratio:16/9;background:var(--surface-elevated);display:flex;align-items:center;justify-content:center;color:var(--text-secondary);font-size:11px">${I18N.t('snap.noImage')}</div>`;
       const time = new Date(ev.event_time).toLocaleString('th-TH', {hour12:false});
       const chips = _renderAppearanceChips(ev);
       return `<div style="border-radius:6px;overflow:hidden;border:1px solid var(--border-hairline);background:var(--surface-elevated);cursor:pointer"
-                   onclick='showSnapshot(${JSON.stringify(ev).replace(/'/g,"&#39;")})'>
+                   data-action="showSnapshot" data-source="app" data-idx="${idx}">
         ${thumb}
         <div style="padding:8px">
           <div style="font-size:11px;color:var(--text-secondary)">${escapeHtml(time)}</div>
@@ -2764,7 +2792,7 @@ function renderEvents() {
     'GlobalSceneChange': '🔄',
   };
 
-  document.getElementById('eventsList').innerHTML = allEvents.map(ev => {
+  document.getElementById('eventsList').innerHTML = allEvents.map((ev, idx) => {
     const time = new Date(ev.event_time).toLocaleTimeString('th-TH', {hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
     const icon = ICONS[ev.event_type] || ICONS[ev.event_type?.split('/').pop()] || '📹';
     const hasSnap = !!ev.snapshot_file;
@@ -2781,9 +2809,9 @@ function renderEvents() {
       ? `<span style="font-size:9px;color:var(--accent);margin-left:4px" title="${I18N.t('evt.clipTip')}">🎬</span>` : '';
     // SEC-002: fields from MQTT/DB are attacker-controlled — escape before innerHTML
     return `
-      <div class="event-row" style="border-left:3px solid ${tintColor}" onclick='showSnapshot(${JSON.stringify(ev).replace(/'/g,"&#39;")})'>
+      <div class="event-row" style="border-left:3px solid ${tintColor}" data-action="showSnapshot" data-source="events" data-idx="${idx}">
         <div class="event-thumb">
-          ${hasSnap ? `<img src="${API}/snapshots/${encodeURIComponent(ev.snapshot_file)}?w=400" onerror="this.parentElement.innerHTML='<div class=no-img>err</div>'">` : `<div class="no-img">—</div>`}
+          ${hasSnap ? `<img src="${API}/snapshots/${encodeURIComponent(ev.snapshot_file)}?w=400" data-err="no-img">` : `<div class="no-img">—</div>`}
         </div>
         <span style="font-size:14px">${icon}</span>
         <span class="event-time">${time}</span>
@@ -2932,15 +2960,15 @@ function renderSnapshots() {
   }
 
   if (currentSnapView === 'grid') {
-    c.innerHTML = `<div class="snap-grid">${snapshots.map(ev => {
+    c.innerHTML = `<div class="snap-grid">${snapshots.map((ev, idx) => {
       const time = new Date(ev.event_time);
       const clipBadge = ev.clip_file && ev.clip_status === 'done'
-        ? `<span title="${I18N.t('snap.clipTip')}" onclick='event.stopPropagation();showMediaClip(${JSON.stringify(ev).replace(/'/g,"&#39;")})' style="position:absolute;top:6px;right:6px;background:rgba(91,141,239,0.9);color:#fff;font-size:10px;padding:2px 6px;border-radius:4px;cursor:pointer;backdrop-filter:blur(4px)">🎬 ${ev.clip_duration_sec ? parseFloat(ev.clip_duration_sec).toFixed(0) + 's' : 'clip'}</span>`
+        ? `<span title="${I18N.t('snap.clipTip')}" data-action="showMediaClip" data-source="snaps" data-idx="${idx}" style="position:absolute;top:6px;right:6px;background:rgba(91,141,239,0.9);color:#fff;font-size:10px;padding:2px 6px;border-radius:4px;cursor:pointer;backdrop-filter:blur(4px)">🎬 ${ev.clip_duration_sec ? parseFloat(ev.clip_duration_sec).toFixed(0) + 's' : 'clip'}</span>`
         : '';
       // SEC-002: escape all camera/MQTT-derived fields
       return `
-        <div class="snap-item" style="position:relative" onclick='showSnapshot(${JSON.stringify(ev).replace(/'/g,"&#39;")})'>
-          <img src="${API}/snapshots/${encodeURIComponent(ev.snapshot_file)}?w=400" loading="lazy" onerror="this.style.opacity=0.3">
+        <div class="snap-item" style="position:relative" data-action="showSnapshot" data-source="snaps" data-idx="${idx}">
+          <img src="${API}/snapshots/${encodeURIComponent(ev.snapshot_file)}?w=400" loading="lazy" data-err="dim">
           ${clipBadge}
           <div class="snap-item-info">
             <div style="font-weight:600;display:flex;justify-content:space-between">
@@ -2952,14 +2980,14 @@ function renderSnapshots() {
         </div>`;
     }).join('')}</div>`;
   } else {
-    c.innerHTML = snapshots.map(ev => {
+    c.innerHTML = snapshots.map((ev, idx) => {
       const time = new Date(ev.event_time).toLocaleString('th-TH', {hour12:false});
       const clipChip = ev.clip_file && ev.clip_status === 'done'
-        ? `<span onclick='event.stopPropagation();showMediaClip(${JSON.stringify(ev).replace(/'/g,"&#39;")})' style="display:inline-block;margin-left:8px;background:rgba(91,141,239,0.15);color:var(--accent);font-size:10px;padding:2px 7px;border-radius:3px;cursor:pointer;border:1px solid rgba(91,141,239,0.3)" title="${I18N.t('snap.clipTip')}">🎬 ${ev.clip_duration_sec ? parseFloat(ev.clip_duration_sec).toFixed(0) + 's' : 'clip'}</span>`
+        ? `<span data-action="showMediaClip" data-source="snaps" data-idx="${idx}" style="display:inline-block;margin-left:8px;background:rgba(91,141,239,0.15);color:var(--accent);font-size:10px;padding:2px 7px;border-radius:3px;cursor:pointer;border:1px solid rgba(91,141,239,0.3)" title="${I18N.t('snap.clipTip')}">🎬 ${ev.clip_duration_sec ? parseFloat(ev.clip_duration_sec).toFixed(0) + 's' : 'clip'}</span>`
         : '';
       // SEC-002: escape all camera/MQTT-derived fields
       return `
-        <div style="display:grid;grid-template-columns:100px 1fr;gap:14px;padding:10px;border-bottom:1px solid var(--border);cursor:pointer" onclick='showSnapshot(${JSON.stringify(ev).replace(/'/g,"&#39;")})'>
+        <div style="display:grid;grid-template-columns:100px 1fr;gap:14px;padding:10px;border-bottom:1px solid var(--border);cursor:pointer" data-action="showSnapshot" data-source="snaps" data-idx="${idx}">
           <img src="${API}/snapshots/${encodeURIComponent(ev.snapshot_file)}?w=400" style="width:100px;height:60px;object-fit:cover;border-radius:4px">
           <div>
             <div style="font-weight:600;font-size:13px">${escapeHtml(eventDisplayName(ev))} · ${escapeHtml(ev.object_class || '—')}${clipChip}</div>
@@ -2981,7 +3009,94 @@ function camFullViewWidth(cameraId) {
   return (w && w > 0) ? w : null;
 }
 
+// ============================================================
+// Snapshot overlay — bbox / zone polygon on top of a snapshot <img>.
+// Shapes use normalized 0–1 coordinates; the SVG is positioned to the
+// image's rendered content box so object-fit:contain letterboxing and
+// ?w= server-side resizing don't skew anything.
+//   Dahua: BoundingBox [x1,y1,x2,y2] + DetectRegion [[x,y],…] in 0–8192
+//   Hikvision face: faceRect {x,y,width,height} already 0–1 (full frame)
+//   Hikvision smart events: detectionRegions[].points in 0–1000 grid
+//     (normalizedScreenSize, ยืนยันจาก ISAPI จริง 2026-06-11) +
+//     targetRect {x,y,width,height} เป็น 0–1 อยู่แล้ว
+// ============================================================
+// Per-camera display toggles (migration 043) — default on when camera
+// record is missing (e.g. cameras[] not loaded yet).
+function _camOverlayFlags(cameraId) {
+  const c = (typeof cameras !== 'undefined' && Array.isArray(cameras))
+    ? cameras.find(x => x.camera_id === cameraId) : null;
+  return {
+    bbox: c?.overlay_show_bbox !== false,
+    zone: c?.overlay_show_zone !== false,
+  };
+}
+
+function _dahuaSnapShapes(raw) {
+  if (raw?.vendor !== 'dahua') return [];
+  const d = raw?.data, out = [];
+  const reg = d?.DetectRegion;
+  if (Array.isArray(reg) && reg.length >= 3) {
+    out.push({ kind: 'poly', points: reg.map(p => [p[0] / 8192, p[1] / 8192]) });
+  }
+  const bb = d?.Object?.BoundingBox;
+  if (Array.isArray(bb) && bb.length === 4) {
+    out.push({ kind: 'box', x1: bb[0] / 8192, y1: bb[1] / 8192, x2: bb[2] / 8192, y2: bb[3] / 8192 });
+  }
+  return out;
+}
+
+function _hikSnapShapes(raw) {
+  if (raw?.vendor !== 'hikvision') return [];
+  const out = [];
+  for (const r of (Array.isArray(raw?.detectionRegions) ? raw.detectionRegions : [])) {
+    // zone polygon (intrusion ≥3 จุด) หรือเส้น line crossing (2 จุด) —
+    // <polygon> 2 จุดวาดเป็น segment ได้เลย (fill:none อยู่แล้ว)
+    if (Array.isArray(r.points) && r.points.length >= 2) {
+      out.push({ kind: 'poly', points: r.points.map(p => [p[0] / 1000, p[1] / 1000]) });
+    }
+    const tr = r.targetRect;
+    if (tr && tr.width > 0 && tr.height > 0) {
+      out.push({ kind: 'box', x1: tr.x, y1: tr.y, x2: tr.x + tr.width, y2: tr.y + tr.height });
+    }
+  }
+  return out;
+}
+
+function attachSnapOverlay(imgEl, shapes) {
+  if (!imgEl || !shapes?.length) return;
+  const wrap = imgEl.parentElement;
+  if (!wrap) return;
+  const draw = () => {
+    const iw = imgEl.naturalWidth, ih = imgEl.naturalHeight;
+    const cw = imgEl.clientWidth,  ch = imgEl.clientHeight;
+    if (!iw || !ih || !cw || !ch) return;
+    const s = Math.min(cw / iw, ch / ih);
+    const w = iw * s, h = ih * s;
+    const ox = imgEl.offsetLeft + (cw - w) / 2;
+    const oy = imgEl.offsetTop  + (ch - h) / 2;
+    let svg = wrap.querySelector(':scope > svg.snap-ovl');
+    if (!svg) {
+      svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('class', 'snap-ovl');
+      svg.setAttribute('viewBox', '0 0 1 1');
+      svg.setAttribute('preserveAspectRatio', 'none');
+      wrap.appendChild(svg);
+    }
+    svg.style.cssText = `position:absolute;left:${ox}px;top:${oy}px;width:${w}px;height:${h}px;pointer-events:none`;
+    svg.innerHTML = shapes.map(sh => sh.kind === 'poly'
+      ? `<polygon points="${sh.points.map(p => p.join(',')).join(' ')}" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="6 4" vector-effect="non-scaling-stroke" opacity="0.85"/>`
+      : `<rect x="${sh.x1}" y="${sh.y1}" width="${sh.x2 - sh.x1}" height="${sh.y2 - sh.y1}" fill="none" stroke="var(--warn)" stroke-width="2" vector-effect="non-scaling-stroke"/>`
+    ).join('');
+  };
+  if (imgEl.complete && imgEl.naturalWidth) draw();
+  else imgEl.addEventListener('load', draw, { once: true });
+  // Modal width follows the viewport — track it so the overlay stays glued.
+  // Observer dies with the img element when the modal body is re-rendered.
+  if (typeof ResizeObserver === 'function') new ResizeObserver(draw).observe(imgEl);
+}
+
 function showSnapshot(ev) {
+  window._currentSnapEv = ev;
   const modal = document.getElementById('snapModal');
   const time = new Date(ev.event_time);
   document.getElementById('snapModalTitle').textContent = `${eventDisplayName(ev)} - ${ev.camera_id}`;
@@ -2989,7 +3104,7 @@ function showSnapshot(ev) {
   // Phase 2 — the modal shows a medium ?w=640 thumbnail (fast); the
   // full image loads only on the explicit "ดูภาพเต็ม" click.
   const imgHtml = ev.snapshot_file
-    ? `<img src="${API}/snapshots/${ev.snapshot_file}?w=640" style="width:100%;max-height:400px;object-fit:contain;background:#000;border-radius:8px">`
+    ? `<div style="position:relative"><img id="snapModalImg" src="${API}/snapshots/${ev.snapshot_file}?w=640" style="width:100%;max-height:400px;object-fit:contain;background:#000;border-radius:8px;display:block"></div>`
     : `<div style="height:200px;display:flex;align-items:center;justify-content:center;background:var(--panel2);border-radius:8px;color:var(--dim)">${I18N.t('snap.noImage')}</div>`;
 
   const fields = [
@@ -3000,6 +3115,12 @@ function showSnapshot(ev) {
     ev.object_class ? ['Class', ev.object_class] : null,
     ['Confidence', ev.likelihood ? `${(ev.likelihood*100).toFixed(1)}%` : '—'],
     ev.speed       ? [I18N.t('snap.speed'), `${ev.speed} m/s`] : null,
+    // Dahua zone events แนบ direction (Enter/Leave) มาใน envelope (Ph.2);
+    // ค่าอื่น (เช่น LeftToRight) แสดงดิบเพราะไม่มีคำแปลมาตรฐาน
+    ev.raw_json?.direction ? [I18N.t('snap.direction'),
+      ['enter','leave'].includes(String(ev.raw_json.direction).toLowerCase())
+        ? I18N.t('dir.' + String(ev.raw_json.direction).toLowerCase())
+        : escapeHtml(String(ev.raw_json.direction))] : null,
     ['Source', ev.snapshot_source || '—'],
   ].filter(Boolean);
 
@@ -3009,11 +3130,11 @@ function showSnapshot(ev) {
   if (ev.snapshot_file) {
     const cap = camFullViewWidth(ev.camera_id);
     const fullUrl = `${API}/snapshots/${ev.snapshot_file}` + (cap ? `?w=${cap}` : '');
-    viewFullBtn = `<button class="btn btn-secondary" style="font-size:11px" onclick="window.open('${fullUrl}','_blank')">${I18N.t('snap.viewFull')}${cap ? ` (${cap}px)` : ''}</button>`;
+    viewFullBtn = `<button class="btn btn-secondary" style="font-size:11px" data-action="viewFullSnap">${I18N.t('snap.viewFull')}${cap ? ` (${cap}px)` : ''}</button>`;
   }
   // Phase 6.1.5 — link to pre-alarm clip if available
   const clipBtn = ev.clip_file && ev.clip_status === 'done'
-    ? `<button class="btn btn-primary" style="font-size:11px" onclick='closeSnapModal();showMediaClip(${JSON.stringify(ev).replace(/'/g,"&#39;")})'>${I18N.t('snap.viewClip')} (${ev.clip_duration_sec ? parseFloat(ev.clip_duration_sec).toFixed(1) + 's' : ''})</button>`
+    ? `<button class="btn btn-primary" style="font-size:11px" data-action="closeAndShowClip">${I18N.t('snap.viewClip')} (${ev.clip_duration_sec ? parseFloat(ev.clip_duration_sec).toFixed(1) + 's' : ''})</button>`
     : '';
   const btnRow = (viewFullBtn || clipBtn)
     ? `<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">${viewFullBtn}${clipBtn}</div>`
@@ -3022,11 +3143,19 @@ function showSnapshot(ev) {
   document.getElementById('snapModalBody').innerHTML = `
     ${imgHtml}
     ${btnRow}
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-top:16px">
+    <div id="snapFieldsGrid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-top:16px">
       ${fields.map(([k, v]) => `<div><div style="font-size:10px;color:var(--text-secondary);text-transform:uppercase">${k}</div><div style="font-size:13px;margin-top:2px">${v}</div></div>`).join('')}
     </div>
     <div id="snapAppearanceSection"></div>`;
   modal.classList.remove('hidden');
+
+  // Dahua zone events — draw BoundingBox + rule DetectRegion on the snapshot.
+  // หมายเหตุ: snapshot ถูกเลือกจาก RTSP buffer ใกล้เวลา event — กรอบอาจเหลื่อม
+  // จากตัวคนเล็กน้อยเพราะคนละเฟรมกับที่ analytic ตัดสิน
+  const ovlFlags = _camOverlayFlags(ev.camera_id);
+  attachSnapOverlay(document.getElementById('snapModalImg'),
+    [..._dahuaSnapShapes(ev.raw_json), ..._hikSnapShapes(ev.raw_json)]
+      .filter(s => s.kind === 'box' ? ovlFlags.bbox : ovlFlags.zone));
 
   // Lazy-load IVA Pro appearance data — only shown when a record exists
   if (ev.id) {
@@ -3037,6 +3166,24 @@ function showSnapshot(ev) {
         const sec = document.getElementById('snapAppearanceSection');
         if (!sec) return;
         sec.innerHTML = _renderAppearanceSection(ap);
+      })
+      .catch(() => {});
+  }
+
+  // Zone dwell duration — lazy, FieldDetector enter events only (server
+  // ตรวจ type/state ซ้ำ). ไม่มี object identity → ค่าคือช่วงที่โซนมีคนอยู่
+  if (ev.id && ev.event_type === 'FieldDetector/ObjectsInside') {
+    fetch(`${API}/api/events/${ev.id}/dwell`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (!d) return;
+        const grid = document.getElementById('snapFieldsGrid');
+        // กัน race: ผู้ใช้เปิด event อื่นไปแล้วระหว่างรอ fetch
+        if (!grid || window._currentSnapEv !== ev) return;
+        const val = d.dwell_sec != null ? _fmtDwell(d.dwell_sec) : I18N.t('snap.dwellOpen');
+        const cell = document.createElement('div');
+        cell.innerHTML = `<div style="font-size:10px;color:var(--text-secondary);text-transform:uppercase">${escapeHtml(I18N.t('snap.dwell'))}</div><div style="font-size:13px;margin-top:2px">${escapeHtml(val)}</div>`;
+        grid.appendChild(cell);
       })
       .catch(() => {});
   }
@@ -3119,6 +3266,18 @@ function _buildAppChips(ap) {
   if (ap.glasses)         chips.push([I18N.t('snap.appGlasses'), '']);
   if (ap.bag_category)    chips.push([I18N.t('snap.appBag'),     _appLabel(_APP_BAG, ap.bag_category)]);
   if (ap.helmet_wear)     chips.push([I18N.t('snap.appHelmet'),  ap.helmet_subtype ? escapeHtml(ap.helmet_subtype) : '']);
+  // Low-fidelity row จากกล้อง IVA non-Pro (migration 041/042): โทนสีรวมทั้งตัว —
+  // แสดงครบทุก cluster (สูงสุด 3) เฉพาะเมื่อไม่มี garment attributes
+  // (กล้อง Pro มี top/bottom ละเอียดกว่าอยู่แล้ว)
+  if (!ap.top_category && !ap.bottom_category) {
+    const cl = Array.isArray(ap.color_clusters) && ap.color_clusters.length
+      ? ap.color_clusters.slice(0, 3)
+      : (ap.overall_color ? [{ xyz: ap.overall_color_xyz, name: ap.overall_color }] : []);
+    if (cl.length) {
+      chips.push([I18N.t('snap.appOverall'),
+        cl.map(c => `${_colorChip(c.xyz)}${colorLabel(c.name)}`).join(' ')]);
+    }
+  }
   return chips;
 }
 
@@ -3252,11 +3411,11 @@ function renderMedia() {
     return;
   }
 
-  c.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px">${mediaList.map(ev => {
+  c.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px">${mediaList.map((ev, idx) => {
     const time = new Date(ev.event_time).toLocaleString('th-TH', {hour12:false});
     const dur = ev.clip_duration_sec ? `${parseFloat(ev.clip_duration_sec).toFixed(1)}s` : '—';
     return `
-      <div class="media-card" style="background:var(--panel2);border:1px solid var(--border);border-radius:8px;overflow:hidden;cursor:pointer" onclick='showMediaClip(${JSON.stringify(ev).replace(/'/g,"&#39;")})'>
+      <div class="media-card" style="background:var(--panel2);border:1px solid var(--border);border-radius:8px;overflow:hidden;cursor:pointer" data-action="showMediaClip" data-source="media" data-idx="${idx}">
         <div style="position:relative;background:#000;aspect-ratio:16/9">
           <video src="${API}/media/${ev.clip_file}" preload="metadata" muted playsinline style="width:100%;height:100%;object-fit:contain"></video>
           <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.25);pointer-events:none">
@@ -3274,6 +3433,7 @@ function renderMedia() {
 }
 
 function showMediaClip(ev) {
+  window._currentMediaEv = ev;
   const modal = document.getElementById('mediaModal');
   const time = new Date(ev.event_time).toLocaleString('th-TH', {hour12:false});
   document.getElementById('mediaModalTitle').textContent = `${ev.rule_name || eventDisplayName(ev)} — ${ev.camera_id}`;
@@ -3293,7 +3453,7 @@ function showMediaClip(ev) {
     </div>
     <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
       <a href="${API}/media/${ev.clip_file}" download class="btn btn-secondary" style="font-size:11px">⬇ Download MP4</a>
-      ${ev.snapshot_file ? `<button class="btn btn-secondary" onclick='showSnapshot(${JSON.stringify(ev).replace(/'/g,"&#39;")})' style="font-size:11px">${I18N.t('media.viewSnap')}</button>` : ''}
+      ${ev.snapshot_file ? `<button class="btn btn-secondary" data-action="showSnapFromMedia" style="font-size:11px">${I18N.t('media.viewSnap')}</button>` : ''}
     </div>`;
   modal.classList.remove('hidden');
 }
@@ -3696,7 +3856,7 @@ function renderMapLegend() {
     const hidden = hiddenGroupIds.has(g.id);
     const swatch = g.color || '#94a3b8';
     return `<label class="ml-chip${hidden ? ' ml-chip-off' : ''}">
-      <input type="checkbox" ${hidden ? '' : 'checked'} onchange="toggleMapGroup('${g.id}')">
+      <input type="checkbox" ${hidden ? '' : 'checked'} data-change="toggleMapGroup" data-gid="${g.id}">
       <span class="ml-swatch" style="background:${swatch}"></span>
       <span class="ml-name">${escapeHtml(g.name)}</span>
     </label>`;
@@ -3711,7 +3871,7 @@ function renderMapLegend() {
 
   if (mode === 'drawer') {
     // Panel = trigger button only; chips live inside drawer
-    el.innerHTML = `<button class="map-legend-drawer-btn" onclick="toggleMapDrawer()">
+    el.innerHTML = `<button class="map-legend-drawer-btn" data-action="toggleMapDrawer">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
       </svg>
@@ -3722,11 +3882,11 @@ function renderMapLegend() {
       drawer.innerHTML = `
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
           <div class="ml-title">${I18N.t('map.legendGroups')}</div>
-          <button onclick="toggleMapDrawer()" style="background:none;border:none;cursor:pointer;color:var(--text);font-size:14px;">&#x2715;</button>
+          <button data-action="toggleMapDrawer" style="background:none;border:none;cursor:pointer;color:var(--text);font-size:14px;">&#x2715;</button>
         </div>
-        <input class="ml-search" type="search" placeholder="${I18N.t('map.legendSearch')}" value="${escapeHtml(q)}" oninput="_legendSearch(this.value)">
+        <input class="ml-search" type="search" placeholder="${I18N.t('map.legendSearch')}" value="${escapeHtml(q)}" data-input="legendSearch">
         <div class="ml-controls">
-          <button class="ml-hide-all-btn" onclick="${allHidden ? '_legendShowAll()' : '_legendHideAll()'}">${I18N.t(allHidden ? 'map.legendShowAll' : 'map.legendHideAll')}</button>
+          <button class="ml-hide-all-btn" data-action="${allHidden ? 'legendShowAll' : 'legendHideAll'}">${I18N.t(allHidden ? 'map.legendShowAll' : 'map.legendHideAll')}</button>
         </div>
         <div class="ml-chips-wrap scrollable">${chipsHtml}${ungroupedChip}</div>`;
     }
@@ -3738,11 +3898,11 @@ function renderMapLegend() {
   el.innerHTML = `
     <div class="ml-title" style="display:flex;align-items:center;justify-content:space-between;">
       <span>Groups</span>
-      ${showControls ? `<button class="ml-collapse-btn" onclick="_legendCollapse()">${I18N.t(collapsed ? 'map.legendExpand' : 'map.legendCollapse')}</button>` : ''}
+      ${showControls ? `<button class="ml-collapse-btn" data-action="legendCollapse">${I18N.t(collapsed ? 'map.legendExpand' : 'map.legendCollapse')}</button>` : ''}
     </div>
-    ${showControls ? `<input class="ml-search" type="search" placeholder="${I18N.t('map.legendSearch')}" value="${escapeHtml(q)}" oninput="_legendSearch(this.value)">` : ''}
+    ${showControls ? `<input class="ml-search" type="search" placeholder="${I18N.t('map.legendSearch')}" value="${escapeHtml(q)}" data-input="legendSearch">` : ''}
     ${showControls ? `<div class="ml-controls">
-      <button class="ml-hide-all-btn" onclick="${allHidden ? '_legendShowAll()' : '_legendHideAll()'}">${I18N.t(allHidden ? 'map.legendShowAll' : 'map.legendHideAll')}</button>
+      <button class="ml-hide-all-btn" data-action="${allHidden ? 'legendShowAll' : 'legendHideAll'}">${I18N.t(allHidden ? 'map.legendShowAll' : 'map.legendHideAll')}</button>
     </div>` : ''}
     <div class="ml-chips-wrap${mode === 'scroll' ? ' scrollable' : ''}${collapsed ? ' collapsed' : ''}">
       ${chipsHtml}${ungroupedChip}
@@ -3893,7 +4053,7 @@ function _handleMapFaceCard(event) {
   const attr = [genderTxt, ageTxt].filter(Boolean).join(' · ');
 
   const thumb = snapUrl
-    ? `<img class="mfc-crop" src="${snapUrl}" alt="" onerror="this.style.display='none'">`
+    ? `<img class="mfc-crop" src="${snapUrl}" alt="" data-err="hide">`
     : `<div class="mfc-no-crop"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg></div>`;
 
   const el = document.createElement('div');
@@ -3979,7 +4139,7 @@ function _handleMapPulse(event) {
     ? `${API}/snapshots/${encodeURIComponent(snapFile)}?w=80`
     : null;
   const thumb = snapUrl
-    ? `<img class="mpc-thumb" src="${snapUrl}" alt="" onerror="this.style.display='none'">`
+    ? `<img class="mpc-thumb" src="${snapUrl}" alt="" data-err="hide">`
     : `<div class="mpc-thumb mpc-no-snap"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="20" height="20" rx="3"/><circle cx="12" cy="10" r="3"/><path d="M2 20c0-3.5 4-6 10-6s10 2.5 10 6"/></svg></div>`;
 
   const el = document.createElement('div');
@@ -4162,16 +4322,19 @@ async function loadStats() {
   // Update per-camera-bar badges
   const peopleBadge  = document.getElementById('peopleCamBadge');
   const vehicleBadge = document.getElementById('vehicleCamBadge');
+  const dwellBadge   = document.getElementById('dwellBadge');
   if (peopleBadge)  peopleBadge.textContent  = label;
   if (vehicleBadge) vehicleBadge.textContent = label;
+  if (dwellBadge)   dwellBadge.textContent   = label;
 
   try {
-    const [catsRes, tlRes, brkRes, peopleRes, vehicleRes] = await Promise.all([
+    const [catsRes, tlRes, brkRes, peopleRes, vehicleRes, dwellRes] = await Promise.all([
       fetch(`${API}/api/stats/categories?from=${from}&to=${to}${camParam}`),
       fetch(`${API}/api/stats/timeline-by-category?from=${from}&to=${to}${camParam}`),
       fetch(`${API}/api/stats/breakdown-v2?from=${from}&to=${to}${camParam}`),
       fetch(`${API}/api/stats/per-camera-counts?kind=people&from=${from}&to=${to}${camParam}`),
       fetch(`${API}/api/stats/per-camera-counts?kind=vehicle&from=${from}&to=${to}${camParam}`),
+      fetch(`${API}/api/stats/dwell?from=${from}&to=${to}`),
     ]);
     if (!catsRes.ok || !tlRes.ok || !brkRes.ok) throw new Error('stats fetch failed');
 
@@ -4181,9 +4344,14 @@ async function loadStats() {
     const peopleBody  = peopleRes.ok  ? await peopleRes.json()  : { per_camera: [] };
     const vehicleBody = vehicleRes.ok ? await vehicleRes.json() : { per_camera: [] };
 
+    // dwell endpoint รับ camera_id เดี่ยว — group filter เป็นหลายตัว จึงกรองฝั่ง client
+    let dwellRows = dwellRes.ok ? await dwellRes.json() : [];
+    if (camIds.length) dwellRows = dwellRows.filter(r => camIds.includes(r.camera_id));
+
     renderCategoryKPI(catsBody.categories || []);
     renderTimelineByCategory(tlBody, from, to);
     renderBreakdown(breakdown);
+    renderDwell(dwellRows);
     renderCategoryPie(catsBody.categories || []);
     renderPerCameraBar('people',  peopleBody.per_camera  || []);
     renderPerCameraBar('vehicle', vehicleBody.per_camera || []);
@@ -4815,7 +4983,7 @@ function renderHeatmap(cells) {
       else                  bg = 'rgba(91,141,239,1)';
       const fg = ratio > 0.5 ? '#fff' : 'var(--text)';
       const cell = v > 0
-        ? `<td onclick="drillHeatmapCell(${d},${h},${v})" title="${escapeHtml(dayLabel[d])} ${hourLabel(h)}:00 — ${v} events · click to drill down" style="cursor:pointer;text-align:center;padding:0;background:${bg};color:${fg};border:1px solid rgba(255,255,255,0.04);height:24px;min-width:24px">${v}</td>`
+        ? `<td data-action="drillHeatmapCell" data-d="${d}" data-h="${h}" data-v="${v}" title="${escapeHtml(dayLabel[d])} ${hourLabel(h)}:00 — ${v} events · click to drill down" style="cursor:pointer;text-align:center;padding:0;background:${bg};color:${fg};border:1px solid rgba(255,255,255,0.04);height:24px;min-width:24px">${v}</td>`
         : `<td title="${escapeHtml(dayLabel[d])} ${hourLabel(h)}:00 — 0 events" style="text-align:center;padding:0;background:${bg};color:${fg};border:1px solid rgba(255,255,255,0.04);height:24px;min-width:24px"></td>`;
       html += cell;
     }
@@ -4868,7 +5036,7 @@ function renderQuietCameras(cams) {
   el.innerHTML = cams.map(c => {
     const ago = c.last_seen_ago_sec;
     const agoTxt = ago < 60 ? `${ago}s` : ago < 3600 ? `${Math.round(ago/60)}m` : `${Math.round(ago/3600)}h`;
-    return `<div onclick="drillTo({camera:'${escapeHtml(c.camera_id).replace(/'/g,"\\'")}',label:'🔇 ${escapeHtml(c.camera_name || c.camera_id).replace(/'/g,"\\'")}'})" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;padding:9px 12px;border-bottom:1px solid var(--border)" title="Click to inspect this camera's events">
+    return `<div data-action="drillToCamera" data-camera="${escapeHtml(c.camera_id)}" data-label="${escapeHtml('🔇 ' + (c.camera_name || c.camera_id))}" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;padding:9px 12px;border-bottom:1px solid var(--border)" title="Click to inspect this camera's events">
       <div>
         <div style="font-weight:600">${escapeHtml(c.camera_name || c.camera_id)}</div>
         <div style="font-size:10px;color:var(--dim)">${escapeHtml(c.camera_id)} · last_seen ${agoTxt} ago</div>
@@ -4888,8 +5056,7 @@ function renderTopRules(rules) {
   const max = rules[0]?.count || 1;
   el.innerHTML = rules.map((r, i) => {
     const pct  = (r.count / max * 100).toFixed(0);
-    const safe = escapeHtml(r.rule_name).replace(/'/g, "\\'");
-    return `<div onclick="drillTo({rule_name:'${safe}', label:'🏆 Rule: ${escapeHtml(r.rule_name)}'})" style="cursor:pointer;display:grid;grid-template-columns:24px 1fr 60px 80px;gap:8px;align-items:center;padding:7px 12px;border-bottom:1px solid var(--border);font-size:11px" title="Click to drill down">
+    return `<div data-action="drillToRule" data-rule-name="${escapeHtml(r.rule_name)}" data-label="${escapeHtml('🏆 Rule: ' + r.rule_name)}" style="cursor:pointer;display:grid;grid-template-columns:24px 1fr 60px 80px;gap:8px;align-items:center;padding:7px 12px;border-bottom:1px solid var(--border);font-size:11px" title="Click to drill down">
       <div style="color:var(--dim);text-align:right">${i + 1}.</div>
       <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(r.rule_name)}">${escapeHtml(r.rule_name)}</div>
       <div style="font-size:10px;color:var(--dim)">📷 ${r.cameras_seen}</div>
@@ -4957,7 +5124,7 @@ function renderCategoryKPI(cats) {
 
   const allChip = `
     <button type="button" class="stats-kpi-chip stats-kpi-all ${_statsFocusCategoryId == null ? 'active' : ''}"
-            onclick="setStatsFocusCategory(null)"
+            data-action="setFocusCat" data-cat-id=""
             title="${escapeHtml(I18N.t('stats.focusAllSub'))}">
       <span class="stats-kpi-icon"><svg aria-hidden="true" width="13" height="13"><use href="#icon-stats"/></svg></span>
       <span class="stats-kpi-name">${escapeHtml(I18N.t('stats.focusAll'))}</span>
@@ -4974,7 +5141,7 @@ function renderCategoryKPI(cats) {
     const focusTitle = I18N.t('stats.focusSub').replace('{name}', c.name);
     return `
       <button type="button" class="stats-kpi-chip ${active}" style="--ka:${color}"
-              onclick="setStatsFocusCategory(${c.id})"
+              data-action="setFocusCat" data-cat-id="${c.id}"
               title="${escapeHtml(focusTitle)}">
         <span class="stats-kpi-icon">${escapeHtml(c.icon || '🚨')}</span>
         <span class="stats-kpi-name">${escapeHtml(c.name)}</span>
@@ -5313,6 +5480,49 @@ function renderBreakdown(data) {
           <td><div style="display:flex;align-items:center;gap:7px"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${color}"></span><span>${d.name}</span></div></td>
           <td><div class="ebar-w"><div class="ebar-bg"><div class="ebar-f" style="width:${pct}%;background:${color}"></div></div></div></td>
           <td class="ecnt" style="color:${color}">${d.count}</td>
+        </tr>`;
+      }).join('')}
+    </tbody>`;
+}
+
+// Zone Dwell Time (Data Enrichment Ph.1) — rows from GET /api/stats/dwell
+// [{camera_id, rule_name, episodes, avg_sec, max_sec, min_sec, total_sec}]
+function _fmtDwell(sec) {
+  if (sec == null) return '—';
+  if (sec < 60) return `${sec}s`;
+  if (sec < 3600) return `${Math.floor(sec / 60)}m ${String(sec % 60).padStart(2, '0')}s`;
+  return `${Math.floor(sec / 3600)}h ${String(Math.floor((sec % 3600) / 60)).padStart(2, '0')}m`;
+}
+
+function renderDwell(rows) {
+  const tbl = document.getElementById('dwellTbl');
+  if (!tbl) return;
+  if (!rows.length) {
+    tbl.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:30px;color:var(--text-secondary)">${escapeHtml(I18N.t('stats.dwellNone'))}</td></tr>`;
+    return;
+  }
+  const maxAvg = Math.max(...rows.map(r => r.avg_sec || 0), 1);
+  tbl.innerHTML = `
+    <thead><tr>
+      <th>${escapeHtml(I18N.t('stats.dwellColCamera'))}</th>
+      <th>${escapeHtml(I18N.t('stats.dwellColRule'))}</th>
+      <th style="text-align:right">${escapeHtml(I18N.t('stats.dwellColEpisodes'))}</th>
+      <th>${escapeHtml(I18N.t('stats.dwellColAvg'))}</th>
+      <th style="text-align:right">${escapeHtml(I18N.t('stats.dwellColMax'))}</th>
+      <th style="text-align:right">${escapeHtml(I18N.t('stats.dwellColTotal'))}</th>
+    </tr></thead>
+    <tbody>
+      ${rows.map((r, i) => {
+        const color = COLORS[i % COLORS.length];
+        const pct = (r.avg_sec / maxAvg * 100).toFixed(0);
+        const camName = (cameras.find(c => c.camera_id === r.camera_id) || {}).camera_name || r.camera_id;
+        return `<tr>
+          <td>${escapeHtml(camName)}</td>
+          <td>${escapeHtml(r.rule_name || '—')}</td>
+          <td class="ecnt" style="color:${color}">${r.episodes}</td>
+          <td><div style="display:flex;align-items:center;gap:8px"><div class="ebar-w" style="flex:0 0 80px"><div class="ebar-bg"><div class="ebar-f" style="width:${pct}%;background:${color}"></div></div></div><span style="white-space:nowrap">${_fmtDwell(r.avg_sec)}</span></div></td>
+          <td style="text-align:right;white-space:nowrap">${_fmtDwell(r.max_sec)}</td>
+          <td style="text-align:right;white-space:nowrap;color:var(--text-secondary)">${_fmtDwell(r.total_sec)}</td>
         </tr>`;
       }).join('')}
     </tbody>`;
@@ -5700,7 +5910,7 @@ function pollDownloadStatus() {
             <span>${s.done.toLocaleString()} / ${s.total.toLocaleString()} tiles</span>
             <span>${s.progressPercent}%${s.failed > 0 ? ` · ${s.failed} failed` : ''}</span>
           </div>
-          <button class="btn btn-danger" style="width:100%;margin-top:8px;padding:5px" onclick="cancelDownload()">${I18N.t('mapMgr.cancel')}</button>`;
+          <button class="btn btn-danger" style="width:100%;margin-top:8px;padding:5px" data-action="cancelDownload">${I18N.t('mapMgr.cancel')}</button>`;
       } else if (s.startedAt && s.finishedAt) {
         progEl.innerHTML = `
           <div style="color:var(--green);font-size:11px">
@@ -5744,7 +5954,7 @@ async function loadSavedAreas() {
             Z${a.zoomMin}-${a.zoomMax} · ${a.styles.join(', ')} · ${new Date(a.createdAt).toLocaleString('th-TH', {hour12:false})}
           </div>
         </div>
-        <button class="btn btn-danger" style="padding:3px 8px;font-size:10px" onclick="deleteArea('${a.id}')">${I18N.t('mapMgr.delete')}</button>
+        <button class="btn btn-danger" style="padding:3px 8px;font-size:10px" data-action="deleteArea" data-id="${escapeHtml(a.id)}">${I18N.t('mapMgr.delete')}</button>
       </div>`).join('');
   } catch (e) { console.error(e); }
 }
@@ -5885,7 +6095,7 @@ async function loadHealthRecipients() {
       const icon = r.type === 'group' ? '👥' : r.type === 'room' ? '🚪' : '👤';
       const idShort = escapeHtml((r.id || '').slice(0, 8) + '…');
       return `<label style="display:flex;align-items:center;gap:6px;padding:3px 0;cursor:pointer">
-        <input type="checkbox" class="hrRecipCheck" value="${escapeHtml(r.id)}" checked onchange="_updateHealthSendBtnLabel()">
+        <input type="checkbox" class="hrRecipCheck" value="${escapeHtml(r.id)}" checked data-change="updateHrSendBtn">
         <span style="flex:1">${icon} ${escapeHtml(r.name || r.id)} <span style="color:var(--dim);font-size:10px">${idShort}</span></span>
       </label>`;
     }).join('');
@@ -5897,7 +6107,7 @@ async function loadHealthRecipients() {
 
 function _updateHealthSendBtnLabel() {
   const n = document.querySelectorAll('.hrRecipCheck:checked').length;
-  const btns = document.querySelectorAll('[onclick="sendHealthReportNow()"]');
+  const btns = document.querySelectorAll('#hrSendNowBtn');
   btns.forEach(b => {
     b.textContent = I18N.t('hr.btnSendNowN').replace('{n}', n);
     b.disabled = n === 0;
@@ -5973,6 +6183,8 @@ async function sendHealthReportNow() {
 
 function _computeReportRange() {
   const type = document.getElementById('reportType').value;
+  // วันที่บน label ต้องตามภาษา UI — th = พ.ศ./เดือนไทย, en = ค.ศ. (เหมือน convention ใน renderEventsTable)
+  const loc  = ((typeof I18N !== 'undefined' && I18N.getLang()) || 'th') === 'th' ? 'th-TH' : 'en-GB';
   let from, to, label;
 
   if (type === 'daily') {
@@ -5981,7 +6193,7 @@ function _computeReportRange() {
     from = new Date(`${dStr}T00:00:00`);
     to   = new Date(`${dStr}T23:59:59.999`);
     label = I18N.t('rep.dateLabel').replace('{d}',
-      new Date(dStr).toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' }));
+      new Date(dStr).toLocaleDateString(loc, { year: 'numeric', month: 'long', day: 'numeric' }));
   } else if (type === 'weekly') {
     const dStr = getDtValue('reportWeekDate');
     if (!dStr) return null;
@@ -5989,21 +6201,21 @@ function _computeReportRange() {
     const dow = (ref.getDay() + 6) % 7;          // Mon = 0
     from = new Date(ref); from.setDate(from.getDate() - dow);
     to   = new Date(from); to.setDate(to.getDate() + 7); to.setMilliseconds(-1);
-    label = `${from.toLocaleDateString('th-TH')} – ${new Date(to.getTime()).toLocaleDateString('th-TH')}`;
+    label = `${from.toLocaleDateString(loc)} – ${new Date(to.getTime()).toLocaleDateString(loc)}`;
   } else if (type === 'monthly') {
     const m = getDtValue('reportMonth');
     if (!m) return null;
     const [yr, mo] = m.split('-').map(Number);
     from = new Date(yr, mo - 1, 1, 0, 0, 0, 0);
     to   = new Date(yr, mo, 1, 0, 0, 0, -1);
-    label = `${from.toLocaleString('th-TH', { month: 'long', year: 'numeric' })}`;
+    label = `${from.toLocaleString(loc, { month: 'long', year: 'numeric' })}`;
   } else { // custom
     const f = getDtValue('reportFrom');
     const t = getDtValue('reportTo');
     if (!f || !t) return null;
     from = new Date(f);
     to   = new Date(t);
-    label = `${from.toLocaleString('th-TH', {hour12:false})} – ${to.toLocaleString('th-TH', {hour12:false})}`;
+    label = `${from.toLocaleString(loc, {hour12:false})} – ${to.toLocaleString(loc, {hour12:false})}`;
   }
   if (!(from < to)) return null;
   return { type, from, to, label };
@@ -6303,9 +6515,9 @@ function renderReportSchedules(list) {
         <td style="text-align:center">${s.enabled ? escapeHtml(I18N.t('rs.enabledOn')) : escapeHtml(I18N.t('rs.enabledOff'))}</td>
         <td style="text-align:center;font-size:11px">${lastRun}<br>${statusBadge}</td>
         <td style="text-align:right;white-space:nowrap">
-          <button class="csv-btn" style="font-size:10px" title="${escapeHtml(I18N.t('rh.runNowTip'))}" onclick="runReportNow(${s.id},this)">▶</button>
-          <button class="csv-btn" style="font-size:10px" onclick="editReportSchedule(${s.id})"><svg aria-hidden="true" width="11" height="11"><use href="#icon-edit"/></svg></button>
-          <button class="csv-btn" style="font-size:10px;color:var(--red)" onclick="deleteReportSchedule(${s.id})"><svg aria-hidden="true" width="11" height="11"><use href="#icon-trash"/></svg></button>
+          <button class="csv-btn" style="font-size:10px" title="${escapeHtml(I18N.t('rh.runNowTip'))}" data-action="runReportNow" data-id="${s.id}">▶</button>
+          <button class="csv-btn" style="font-size:10px" data-action="editReportSched" data-id="${s.id}"><svg aria-hidden="true" width="11" height="11"><use href="#icon-edit"/></svg></button>
+          <button class="csv-btn" style="font-size:10px;color:var(--red)" data-action="deleteReportSched" data-id="${s.id}"><svg aria-hidden="true" width="11" height="11"><use href="#icon-trash"/></svg></button>
         </td></tr>`;
     }).join('') + '</tbody>';
 }
@@ -6384,10 +6596,11 @@ async function runReportNow(id, btn) {
     if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || `HTTP ${res.status}`); }
     btn.textContent = '✓';
     setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 3000);
+    showToast({ icon: '▶', title: I18N.t('rh.runQueued'), sub: I18N.t('rh.runQueuedSub') });
   } catch (e) {
     btn.textContent = orig;
     btn.disabled = false;
-    alert(I18N.t('rh.runFailed') + e.message);
+    showToast({ icon: '▶', title: I18N.t('rh.runFailed') + e.message });
   }
 }
 
@@ -6427,7 +6640,7 @@ function renderReportHistoryStats(d) {
     </div>`;
 
   const winBtn = (w, label) => `
-    <button onclick="loadReportHistoryStats('${w}')"
+    <button data-action="loadRhStats" data-window="${w}"
       style="padding:3px 10px;font-size:10px;border-radius:12px;border:1px solid var(--border);cursor:pointer;
              background:${_rhStatsWindow === w ? 'var(--accent)' : 'var(--panel2)'};
              color:${_rhStatsWindow === w ? '#fff' : 'var(--dim)'};white-space:nowrap">
@@ -6517,9 +6730,9 @@ function renderReportHistory(items, total) {
   const pages = Math.ceil(total / _RH_LIMIT);
   const cur = Math.floor(_rhOffset / _RH_LIMIT);
   pager.innerHTML = `<span style="font-size:11px;color:var(--dim)">${total} ${escapeHtml(I18N.t('rh.rows'))}</span>` +
-    (cur > 0 ? `<button class="csv-btn" onclick="loadReportHistory(${(cur-1)*_RH_LIMIT})">‹ ${escapeHtml(I18N.t('rh.prev'))}</button>` : '') +
+    (cur > 0 ? `<button class="csv-btn" data-action="loadReportHistory" data-offset="${(cur-1)*_RH_LIMIT}">‹ ${escapeHtml(I18N.t('rh.prev'))}</button>` : '') +
     `<span style="font-size:11px">${cur+1} / ${pages}</span>` +
-    (cur < pages-1 ? `<button class="csv-btn" onclick="loadReportHistory(${(cur+1)*_RH_LIMIT})">${escapeHtml(I18N.t('rh.next'))} ›</button>` : '');
+    (cur < pages-1 ? `<button class="csv-btn" data-action="loadReportHistory" data-offset="${(cur+1)*_RH_LIMIT}">${escapeHtml(I18N.t('rh.next'))} ›</button>` : '');
 }
 
 async function exportReportHistoryCsv() {
@@ -6879,7 +7092,7 @@ async function previewCameraSnapshot() {
 // The ⚙️ top-bar gear button still calls openSettings() — camera settings
 // is now a full SPA page, not a modal, so just navigate there.
 function openSettings() {
-  const nav = document.querySelector('.nav-item[onclick*="settings"]');
+  const nav = document.querySelector('.nav-item[data-page="settings"]');
   showPage('settings', nav || undefined);
 }
 function closeSettings() { closeCameraForm(); }
@@ -6903,9 +7116,9 @@ function renderAdminCameras() {
           : `<span class="badge ${c.status === 'online' ? 'badge-online' : 'badge-offline'}">${c.status === 'online' ? 'ON' : 'OFF'}</span>`}
       </div>
       <div style="display:flex;gap:4px">
-        <button class="btn btn-secondary" style="padding:4px 8px;font-size:10px" onclick="editCamera('${c.camera_id}')">${escapeHtml(I18N.t('common.edit'))}</button>
-        <button class="btn ${c.status === 'paused' ? 'btn-secondary' : 'btn-warning'}" style="padding:4px 8px;font-size:10px" onclick="toggleCameraPause('${c.camera_id}',${c.status !== 'paused'})" title="${c.status === 'paused' ? escapeHtml(I18N.t('cam.resumeBtn')) : escapeHtml(I18N.t('cam.pauseBtn'))}"><svg width="10" height="10" aria-hidden="true"><use href="#icon-pause"/></svg> ${c.status === 'paused' ? escapeHtml(I18N.t('cam.resumeBtn')) : escapeHtml(I18N.t('cam.pauseBtn'))}</button>
-        <button class="btn btn-danger" style="padding:4px 8px;font-size:10px" onclick="deleteCamera('${c.camera_id}')">${escapeHtml(I18N.t('common.delete'))}</button>
+        <button class="btn btn-secondary" style="padding:4px 8px;font-size:10px" data-action="editCamera" data-camera-id="${c.camera_id}">${escapeHtml(I18N.t('common.edit'))}</button>
+        <button class="btn ${c.status === 'paused' ? 'btn-secondary' : 'btn-warning'}" style="padding:4px 8px;font-size:10px" data-action="toggleCamPause" data-camera-id="${c.camera_id}" data-pause-state="${c.status !== 'paused'}" title="${c.status === 'paused' ? escapeHtml(I18N.t('cam.resumeBtn')) : escapeHtml(I18N.t('cam.pauseBtn'))}"><svg width="10" height="10" aria-hidden="true"><use href="#icon-pause"/></svg> ${c.status === 'paused' ? escapeHtml(I18N.t('cam.resumeBtn')) : escapeHtml(I18N.t('cam.pauseBtn'))}</button>
+        <button class="btn btn-danger" style="padding:4px 8px;font-size:10px" data-action="deleteCamera" data-camera-id="${c.camera_id}">${escapeHtml(I18N.t('common.delete'))}</button>
       </div>
     </div>`;
   }).join('') || `<div style="padding:20px;text-align:center;color:var(--dim)">${escapeHtml(I18N.t('cs.noCameras'))}</div>`;
@@ -6921,6 +7134,9 @@ function onVendorChange() {
   show('frmMediaSection',     v !== 'onvif');
   show('frmMonitorNote',      v === 'onvif');
   show('frmVcaOverlayGroup',  v === 'bosch');
+  // client-side overlay (migration 043) — มีผลเฉพาะ vendor ที่ส่งพิกัดใน payload
+  show('frmOverlayBboxGroup', v === 'hikvision' || v === 'dahua');
+  show('frmOverlayZoneGroup', v === 'hikvision' || v === 'dahua');
   show('frmSnapStreamGroup',  v === 'hikvision' || v === 'dahua');
   show('frmCamSnapPathGroup', v === 'dahua' || v === 'onvif');
   _resetSnapProbeUI();
@@ -7011,6 +7227,8 @@ function openCameraForm() {
   document.getElementById('frmCamEnableSnapshot').checked    = true;
   document.getElementById('frmCamEnableVcaOverlay').checked  = true;
   document.getElementById('frmCamEnableClipCapture').checked = false;
+  document.getElementById('frmCamOverlayBbox').checked       = true;
+  document.getElementById('frmCamOverlayZone').checked       = true;
   document.getElementById('frmCamClipPre').value  = 10;
   document.getElementById('frmCamClipPost').value = 5;
   document.getElementById('frmCamId').disabled = false;
@@ -7050,6 +7268,8 @@ function editCamera(id) {
   document.getElementById('frmCamEnableSnapshot').checked    = c.enable_snapshot    !== false;
   document.getElementById('frmCamEnableVcaOverlay').checked  = c.enable_vca_overlay !== false;
   document.getElementById('frmCamEnableClipCapture').checked = c.enable_clip_capture === true;
+  document.getElementById('frmCamOverlayBbox').checked       = c.overlay_show_bbox  !== false;
+  document.getElementById('frmCamOverlayZone').checked       = c.overlay_show_zone  !== false;
   document.getElementById('frmCamClipPre').value  = c.clip_pre_sec  ?? 10;
   document.getElementById('frmCamClipPost').value = c.clip_post_sec ?? 5;
   // Ph.1 — load offline alert config for this camera
@@ -7293,9 +7513,9 @@ async function loadStatusCurrent() {
       .replace('{total}', totalRows);
     const currentPager = totalRows > STATUS_CURRENT_LIMIT
       ? `<div style="display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:10px;flex-wrap:wrap">
-          <button class="btn btn-secondary" style="font-size:11px" ${_statusCurrentPage <= 1 ? 'disabled' : ''} onclick="setStatusCurrentPage(${_statusCurrentPage - 1})">${escapeHtml(I18N.t('rh.prev'))}</button>
+          <button class="btn btn-secondary" style="font-size:11px" ${_statusCurrentPage <= 1 ? 'disabled' : ''} data-action="setStatusPage" data-page="${_statusCurrentPage - 1}">${escapeHtml(I18N.t('rh.prev'))}</button>
           <span style="font-size:11px;color:var(--dim)">${escapeHtml(currentPageInfo)}</span>
-          <button class="btn btn-secondary" style="font-size:11px" ${_statusCurrentPage >= totalPages ? 'disabled' : ''} onclick="setStatusCurrentPage(${_statusCurrentPage + 1})">${escapeHtml(I18N.t('rh.next'))}</button>
+          <button class="btn btn-secondary" style="font-size:11px" ${_statusCurrentPage >= totalPages ? 'disabled' : ''} data-action="setStatusPage" data-page="${_statusCurrentPage + 1}">${escapeHtml(I18N.t('rh.next'))}</button>
         </div>`
       : `<div style="display:flex;justify-content:flex-end;margin-top:10px;font-size:11px;color:var(--dim)">${escapeHtml(currentPageInfo)}</div>`;
 
@@ -7313,15 +7533,15 @@ async function loadStatusCurrent() {
       </div>
       <div class="status-current-filters">
         <label class="form-label" style="margin:0">${escapeHtml(I18N.t('co.currentShow'))}</label>
-        <select class="form-input" id="statusCurrentFilter" onchange="resetStatusCurrentPage()" style="max-width:170px">
+        <select class="form-input" id="statusCurrentFilter" data-change="resetStatusPage" style="max-width:170px">
           <option value="offline" ${statusFilter === 'offline' ? 'selected' : ''}>${escapeHtml(I18N.t('co.currentOffline'))}</option>
           <option value="all" ${statusFilter === 'all' ? 'selected' : ''}>${escapeHtml(I18N.t('co.currentAll'))}</option>
           <option value="online" ${statusFilter === 'online' ? 'selected' : ''}>${escapeHtml(I18N.t('co.currentOnline'))}</option>
         </select>
         <label class="form-label" style="margin:0">${escapeHtml(I18N.t('co.currentSearch'))}</label>
-        <input class="form-input" id="statusCurrentSearch" value="${escapeHtml(searchRaw)}" placeholder="${escapeHtml(I18N.t('co.currentSearchPh'))}" onkeydown="if(event.key==='Enter'){resetStatusCurrentPage()}" style="max-width:220px">
-        <button class="btn btn-secondary" onclick="resetStatusCurrentPage()" style="font-size:11px">${escapeHtml(I18N.t('co.currentApply'))}</button>
-        <button class="btn btn-secondary" onclick="resetStatusCurrentFilters()" style="font-size:11px">${escapeHtml(I18N.t('common.reset'))}</button>
+        <input class="form-input" id="statusCurrentSearch" value="${escapeHtml(searchRaw)}" placeholder="${escapeHtml(I18N.t('co.currentSearchPh'))}" data-action-enter="resetStatusPage" style="max-width:220px">
+        <button class="btn btn-secondary" data-action="resetStatusPage" style="font-size:11px">${escapeHtml(I18N.t('co.currentApply'))}</button>
+        <button class="btn btn-secondary" data-action="resetStatusFilts" style="font-size:11px">${escapeHtml(I18N.t('common.reset'))}</button>
       </div>
       <div class="status-current-table">
         <div class="status-current-grid status-current-head">
@@ -7467,6 +7687,8 @@ async function saveCamera() {
     enable_snapshot:     document.getElementById('frmCamEnableSnapshot').checked,
     enable_vca_overlay:  document.getElementById('frmCamEnableVcaOverlay').checked,
     enable_clip_capture: document.getElementById('frmCamEnableClipCapture').checked,
+    overlay_show_bbox:   document.getElementById('frmCamOverlayBbox').checked,
+    overlay_show_zone:   document.getElementById('frmCamOverlayZone').checked,
     clip_pre_sec:        parseInt(document.getElementById('frmCamClipPre').value, 10) || 10,
     clip_post_sec:       parseInt(document.getElementById('frmCamClipPost').value, 10) || 5,
   };
@@ -7626,7 +7848,7 @@ async function _initDashboard() {
   // Navigate to the default page explicitly so loadSummary() fires and nav/content
   // stay in sync on every hard reload (decision #172 made summary the default;
   // the old cameras nav active was never cleaned up — fixed here).
-  const _defaultNav = document.querySelector(".nav-item[onclick*=\"showPage('summary'\"]");
+  const _defaultNav = document.querySelector('.nav-item[data-page="summary"]');
   showPage('summary', _defaultNav || undefined);
 }
 
@@ -7707,7 +7929,7 @@ function renderAlertRules() {
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px">
           <div style="flex:1;min-width:0">
             <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-              <div class="rule-toggle ${r.enabled ? 'on' : ''}" onclick="toggleRule(${r.id})"></div>
+              <div class="rule-toggle ${r.enabled ? 'on' : ''}" data-action="toggleRule" data-id="${r.id}"></div>
               <strong style="font-size:14px">${r.name}</strong>
               <span style="font-size:10px;color:var(--dim)">${escapeHtml(I18N.t('ar.trigCount').replace('{n}', r.trigger_count))}</span>
             </div>
@@ -7719,8 +7941,8 @@ function renderAlertRules() {
             </div>
           </div>
           <div style="display:flex;gap:6px;flex-shrink:0">
-            <button class="btn btn-secondary" style="padding:5px 10px;font-size:11px" onclick="openRuleEditor(${r.id})">${escapeHtml(I18N.t('common.edit'))}</button>
-            <button class="btn btn-danger" style="padding:5px 10px;font-size:11px" onclick="deleteRule(${r.id})">${escapeHtml(I18N.t('common.delete'))}</button>
+            <button class="btn btn-secondary" style="padding:5px 10px;font-size:11px" data-action="openRuleEditor" data-id="${r.id}">${escapeHtml(I18N.t('common.edit'))}</button>
+            <button class="btn btn-danger" style="padding:5px 10px;font-size:11px" data-action="deleteRule" data-id="${r.id}">${escapeHtml(I18N.t('common.delete'))}</button>
           </div>
         </div>
       </div>`;
@@ -7830,7 +8052,7 @@ function _renderPushUsersChecklist(selectedIds) {
   // role shortcuts — ปุ่มลัด select all per role + all + none
   const roles = [...new Set(usersCache.map(u => u.role).filter(Boolean))].sort();
   const btn = (label, action) =>
-    `<button type="button" class="btn btn-secondary" style="font-size:10px;padding:3px 8px" onclick="_pushUsersSelect('${action}')">${label}</button>`;
+    `<button type="button" class="btn btn-secondary" style="font-size:10px;padding:3px 8px" data-action="pushUsersSelect" data-push-action="${escapeHtml(action)}">${label}</button>`;
   shortcutEl.innerHTML =
     btn('ทั้งหมด', 'all')
     + btn('ล้าง', 'none')
@@ -7917,7 +8139,7 @@ function renderAlertStats(d) {
     </div>`;
 
   const winBtn = (w, label) => `
-    <button onclick="loadAlertStats('${w}')"
+    <button data-action="loadAlertStats" data-window="${escapeHtml(w)}"
       style="padding:3px 10px;font-size:10px;border-radius:12px;border:1px solid var(--border);cursor:pointer;
              background:${_alertStatsWindow === w ? 'var(--accent)' : 'var(--panel2)'};
              color:${_alertStatsWindow === w ? '#fff' : 'var(--dim)'};white-space:nowrap">
@@ -8042,7 +8264,7 @@ function renderLineQuotaWidget(data) {
     return `<div style="${base} var(--border);background:var(--panel2)">
       <span style="color:var(--green)">●</span>&ensp;
       <strong>Connected</strong>&ensp;·&ensp;แผน Unlimited&ensp;·&ensp;ส่งแล้ว <strong>${data.used.toLocaleString()}</strong> ข้อความเดือนนี้
-      <button onclick="loadLineQuota()" style="float:right;background:none;border:none;color:var(--dim);font-size:10px;cursor:pointer;padding:0">↻</button>
+      <button data-action="loadLineQuota" style="float:right;background:none;border:none;color:var(--dim);font-size:10px;cursor:pointer;padding:0">↻</button>
     </div>`;
   }
   const limit = data.limit ?? 0;
@@ -8054,7 +8276,7 @@ function renderLineQuotaWidget(data) {
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:7px">
       <span><span style="color:var(--green)">●</span>&ensp;<strong>Connected</strong>&ensp;·&ensp;Push quota เดือนนี้</span>
       <span style="color:${textColor};font-weight:700">${used.toLocaleString()} / ${limit.toLocaleString()}</span>
-      <button onclick="loadLineQuota()" style="background:none;border:none;color:var(--dim);font-size:10px;cursor:pointer;padding:0;margin-left:8px">↻</button>
+      <button data-action="loadLineQuota" style="background:none;border:none;color:var(--dim);font-size:10px;cursor:pointer;padding:0;margin-left:8px">↻</button>
     </div>
     <div style="height:5px;border-radius:3px;background:var(--border);overflow:hidden">
       <div style="height:100%;width:${pct}%;background:${barColor};border-radius:3px;transition:width .3s"></div>
@@ -8087,7 +8309,7 @@ function renderOnboardQr(basicId) {
   const friendUrl = `https://line.me/R/ti/p/${encodeURIComponent(id)}`;
   if (step2) step2.innerHTML = I18N.t('ln.onboardStep2').replace('{id}', `<strong>${escapeHtml(id)}</strong>`);
   wrap.innerHTML = `
-    <img src="${API}/api/line-config/qr" alt="QR" style="width:160px;height:160px;border-radius:8px;border:1px solid var(--border)" onerror="this.style.display='none'">
+    <img src="${API}/api/line-config/qr" alt="QR" style="width:160px;height:160px;border-radius:8px;border:1px solid var(--border)" data-err="hide">
     <div style="margin-top:8px;font-size:10px;color:var(--dim)">
       <a href="${escapeHtml(friendUrl)}" target="_blank" style="color:var(--accent)">${escapeHtml(id)}</a>
     </div>`;
@@ -8137,9 +8359,9 @@ function renderPendingRecipients() {
           <div style="font-size:10px;color:var(--dim);margin-top:2px">${escapeHtml(I18N.t('ln.lastSeen').replace('{time}', lastSeen))}</div>
         </div>
         <div class="line-pending-actions">
-          <button class="btn btn-primary" style="padding:5px 10px;font-size:10px" onclick='approvePendingRecipient(${JSON.stringify(r.line_id)})'>${escapeHtml(I18N.t('ln.approve'))}</button>
-          <button class="btn btn-secondary" style="padding:5px 10px;font-size:10px" onclick='ignorePendingRecipient(${JSON.stringify(r.line_id)})'>${escapeHtml(I18N.t('ln.ignore'))}</button>
-          <button class="btn btn-danger" style="padding:5px 10px;font-size:10px" onclick='blockRecipient(${JSON.stringify(r.line_id)})'>${escapeHtml(I18N.t('ln.block'))}</button>
+          <button class="btn btn-primary" style="padding:5px 10px;font-size:10px" data-action="approvePendingRecipient" data-line-id="${escapeHtml(r.line_id)}">${escapeHtml(I18N.t('ln.approve'))}</button>
+          <button class="btn btn-secondary" style="padding:5px 10px;font-size:10px" data-action="ignorePendingRecipient" data-line-id="${escapeHtml(r.line_id)}">${escapeHtml(I18N.t('ln.ignore'))}</button>
+          <button class="btn btn-danger" style="padding:5px 10px;font-size:10px" data-action="blockRecipient" data-line-id="${escapeHtml(r.line_id)}">${escapeHtml(I18N.t('ln.block'))}</button>
         </div>
       </div>`;
   }).join('');
@@ -8154,13 +8376,13 @@ function renderRecipients() {
   }
   el.innerHTML = recipients.map((r, i) => `
     <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--panel2);border-radius:5px;margin-bottom:6px">
-      <input type="checkbox" ${r.enabled !== false ? 'checked' : ''} onchange="updateRecipient(${i}, 'enabled', this.checked)">
+      <input type="checkbox" ${r.enabled !== false ? 'checked' : ''} data-change="updateRecipient" data-idx="${i}" data-field="enabled">
       <div style="flex:1;min-width:0">
         <div style="font-size:11px;font-weight:600"><span class="chip" style="font-size:9px;margin-right:4px">${r.type === 'group' ? 'GRP' : r.type === 'room' ? 'ROOM' : 'USER'}</span>${escapeHtml(r.name || I18N.t('ar.unnamed'))}</div>
         <div style="font-size:9px;color:var(--text-secondary);font-family:monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.id}</div>
       </div>
-      <button class="btn btn-secondary" style="padding:3px 7px;font-size:9px" onclick="testRecipient('${r.id}')">Test</button>
-      <button class="btn btn-danger" style="padding:3px 7px;font-size:9px" onclick="removeRecipient(${i})">✕</button>
+      <button class="btn btn-secondary" style="padding:3px 7px;font-size:9px" data-action="testRecipient" data-id="${escapeHtml(r.id)}">Test</button>
+      <button class="btn btn-danger" style="padding:3px 7px;font-size:9px" data-action="removeRecipient" data-idx="${i}">✕</button>
     </div>`).join('');
 }
 
@@ -8304,7 +8526,7 @@ function renderBlockedRecipients() {
           <div style="font-size:9px;color:var(--muted);font-family:monospace">${escapeHtml(r.line_id)}</div>
           <div style="font-size:10px;color:var(--muted);margin-top:2px">${escapeHtml(I18N.t('ln.lastSeen').replace('{time}', lastSeen))}</div>
         </div>
-        <button class="btn btn-secondary" style="padding:4px 8px;font-size:10px" onclick='unblockRecipient(${JSON.stringify(r.line_id)})'>${escapeHtml(I18N.t('ln.unblock'))}</button>
+        <button class="btn btn-secondary" style="padding:4px 8px;font-size:10px" data-action="unblockRecipient" data-line-id="${escapeHtml(r.line_id)}">${escapeHtml(I18N.t('ln.unblock'))}</button>
       </div>`;
   }).join('');
 }
@@ -8483,9 +8705,9 @@ function renderUsersList() {
         <div>${status}</div>
         <div style="font-size:10px;color:var(--dim)">${lastLogin}<br><span style="font-family:monospace;font-size:9px">${u.last_login_ip || ''}</span></div>
         <div style="display:flex;gap:4px;justify-content:flex-end;flex-wrap:wrap">
-          <button class="btn btn-secondary" style="padding:3px 8px;font-size:10px" onclick="openUserEditor(${u.id})">${escapeHtml(I18N.t('common.edit'))}</button>
-          <button class="btn btn-secondary" style="padding:3px 8px;font-size:10px" onclick="resetUserPassword(${u.id})">Reset</button>
-          ${!isMe ? `<button class="btn btn-danger" style="padding:3px 8px;font-size:10px" onclick="deleteUserConfirm(${u.id})">${escapeHtml(I18N.t('common.delete'))}</button>` : ''}
+          <button class="btn btn-secondary" style="padding:3px 8px;font-size:10px" data-action="openUserEditor" data-id="${u.id}">${escapeHtml(I18N.t('common.edit'))}</button>
+          <button class="btn btn-secondary" style="padding:3px 8px;font-size:10px" data-action="resetUserPassword" data-id="${u.id}">Reset</button>
+          ${!isMe ? `<button class="btn btn-danger" style="padding:3px 8px;font-size:10px" data-action="deleteUserConfirm" data-id="${u.id}">${escapeHtml(I18N.t('common.delete'))}</button>` : ''}
         </div>
       </div>`;
     }).join('')}`;
@@ -8568,7 +8790,7 @@ async function deleteUserConfirm(id) {
 // ── Audit Log Modal ─────────────────────────────────────────
 function openAuditLog() {
   document.getElementById('userDropdown')?.classList.add('hidden');
-  const nav = document.querySelector('.nav-item[onclick*="history"]');
+  const nav = document.querySelector('.nav-item[data-page="history"]');
   showPage('history', nav || undefined);
   historyNav('audit');
 }
@@ -8649,7 +8871,7 @@ function renderAuditLog(logs) {
 // ── Sessions Manager ────────────────────────────────────────
 function openSessionManager() {
   document.getElementById('userDropdown')?.classList.add('hidden');
-  const nav = document.querySelector('.nav-item[onclick*="history"]');
+  const nav = document.querySelector('.nav-item[data-page="history"]');
   showPage('history', nav || undefined);
   historyNav('sessions');
 }
@@ -8687,7 +8909,7 @@ async function loadSessions() {
             Last used: ${new Date(s.last_used_at).toLocaleString('th-TH', {hour12:false})}
           </div>
         </div>
-        ${!s.is_current ? `<button class="btn btn-danger" style="padding:5px 12px;font-size:11px" onclick="revokeSession('${s.id}')">🚫 Revoke</button>` : ''}
+        ${!s.is_current ? `<button class="btn btn-danger" style="padding:5px 12px;font-size:11px" data-action="revokeSession" data-id="${escapeHtml(s.id)}">🚫 Revoke</button>` : ''}
       </div>`;
     }).join('');
   } catch (e) { alert('Error: ' + e.message); }
@@ -8727,11 +8949,11 @@ function applyBrandToDom() {
     }
   }
   const nameEl = document.getElementById('brandName');
-  if (nameEl)    nameEl.textContent = _brand.name || 'DojoJin Tech Dashboard';
+  if (nameEl)    nameEl.textContent = _brand.name || 'Vigil Platform';
   const tagEl = document.getElementById('brandTagline');
   if (tagEl)     tagEl.textContent = _brand.tagline || '';
   const footerName = document.getElementById('brandFooterName');
-  if (footerName) footerName.textContent = _brand.name || 'DojoJin Tech Dashboard';
+  if (footerName) footerName.textContent = _brand.name || 'Vigil Platform';
   if (_brand.name) document.title = _brand.name;
   if (_brand.primary_color) {
     document.documentElement.style.setProperty('--accent', _brand.primary_color);
@@ -8828,9 +9050,9 @@ function renderCategoriesList() {
         </div>
         <div class="cat-col-rules" style="font-size:11px;color:var(--text-secondary)">${c.rule_count} rules</div>
         <div style="display:flex;gap:6px;justify-content:flex-end">
-          <button class="btn btn-secondary" style="font-size:11px;padding:5px 9px" onclick="openCategoryRules(${c.id})"><svg aria-hidden="true" width="12" height="12" style="vertical-align:-1px;margin-right:4px"><use href="#icon-list"/></svg>Rules</button>
-          <button class="btn btn-secondary" style="font-size:11px;padding:5px 9px" onclick="openCategoryEditor(${c.id})"><svg aria-hidden="true" width="12" height="12" style="vertical-align:-1px;margin-right:4px"><use href="#icon-edit"/></svg>Edit</button>
-          <button class="btn btn-secondary" style="font-size:11px;padding:5px 9px;${c.is_builtin?'opacity:0.4;pointer-events:none':''}" onclick="deleteCategory(${c.id})" aria-label="Delete"><svg aria-hidden="true" width="12" height="12" style="vertical-align:-1px"><use href="#icon-trash"/></svg></button>
+          <button class="btn btn-secondary" style="font-size:11px;padding:5px 9px" data-action="openCatRules" data-id="${c.id}"><svg aria-hidden="true" width="12" height="12" style="vertical-align:-1px;margin-right:4px"><use href="#icon-list"/></svg>Rules</button>
+          <button class="btn btn-secondary" style="font-size:11px;padding:5px 9px" data-action="openCatEditor" data-id="${c.id}"><svg aria-hidden="true" width="12" height="12" style="vertical-align:-1px;margin-right:4px"><use href="#icon-edit"/></svg>Edit</button>
+          <button class="btn btn-secondary" style="font-size:11px;padding:5px 9px;${c.is_builtin?'opacity:0.4;pointer-events:none':''}" data-action="deleteCat" data-id="${c.id}" aria-label="Delete"><svg aria-hidden="true" width="12" height="12" style="vertical-align:-1px"><use href="#icon-trash"/></svg></button>
         </div>
       </div>
     `;
@@ -8844,7 +9066,7 @@ function _renderIconPresets(selected) {
   if (!container) return;
   container.innerHTML = _ICON_PRESETS.map(e =>
     `<button type="button" class="icon-preset-btn${e === selected ? ' active' : ''}"
-       onclick="selectIconPreset('${e}')" title="${e}">${e}</button>`
+       data-action="selectIconPreset" data-preset="${e}" title="${e}">${e}</button>`
   ).join('');
 }
 function selectIconPreset(emoji) {
@@ -9006,7 +9228,7 @@ async function loadCategoryRules() {
           <div class="cat-rule-list-cell">${w(r.object_class)}</div>
           <div class="cat-rule-list-cell">${w(r.match_state)}</div>
           <div class="cat-rule-list-cell">${r.priority}</div>
-          <div><button class="btn btn-secondary" style="font-size:10px;padding:4px 8px" onclick="deleteCategoryRule(${r.id})">🗑️</button></div>
+          <div><button class="btn btn-secondary" style="font-size:10px;padding:4px 8px" data-action="deleteCatRule" data-id="${r.id}">🗑️</button></div>
         </div>
       `;
     }).join('');
@@ -9102,7 +9324,7 @@ async function loadSystemSettings() {
     const list = document.getElementById('systemSettingsList');
 
     // ── Branding section (always shown first) ─────────────────
-    const brandName    = settings.brand_name?.value          || 'DojoJin Tech Dashboard';
+    const brandName    = settings.brand_name?.value          || 'Vigil Platform';
     const brandTagline = settings.brand_tagline?.value       || '';
     const brandLogo    = settings.brand_logo_path?.value     || '';
     const brandColor   = settings.brand_primary_color?.value || '#5b8def';
@@ -9120,9 +9342,9 @@ async function loadSystemSettings() {
           </div>
           <div style="flex:1">
             <label class="form-label">Logo</label>
-            <input type="file" id="brandLogoFile" accept="image/png,image/jpeg,image/webp,image/svg+xml" style="font-size:11px;width:100%" onchange="uploadBrandLogo(this)">
+            <input type="file" id="brandLogoFile" accept="image/png,image/jpeg,image/webp,image/svg+xml" style="font-size:11px;width:100%" data-change="uploadBrandLogo">
             <div style="font-size:10px;color:var(--dim);margin-top:4px">PNG / JPG / WebP / SVG (max 5MB) — server resize to 256×256</div>
-            ${brandLogo ? `<button class="csv-btn" style="margin-top:6px" onclick="clearBrandLogo()">🗑️ Remove logo</button>` : ''}
+            ${brandLogo ? `<button class="csv-btn" style="margin-top:6px" data-action="clearBrandLogo">🗑️ Remove logo</button>` : ''}
           </div>
         </div>
 
@@ -9130,7 +9352,7 @@ async function loadSystemSettings() {
           <label class="form-label">Product Name</label>
           <div style="display:flex;gap:8px;align-items:center">
             <input type="text" class="form-input" id="ss_brand_name" value="${escapeHtml(brandName)}" maxlength="100" style="font-size:12px">
-            <button class="btn btn-primary" style="font-size:11px;padding:7px 12px" onclick="saveSetting('brand_name')"><svg aria-hidden="true" width="12" height="12"><use href="#icon-save"/></svg> Save</button>
+            <button class="btn btn-primary" style="font-size:11px;padding:7px 12px" data-action="saveSetting" data-key="brand_name"><svg aria-hidden="true" width="12" height="12"><use href="#icon-save"/></svg> Save</button>
           </div>
         </div>
 
@@ -9138,7 +9360,7 @@ async function loadSystemSettings() {
           <label class="form-label">Tagline</label>
           <div style="display:flex;gap:8px;align-items:center">
             <input type="text" class="form-input" id="ss_brand_tagline" value="${escapeHtml(brandTagline)}" maxlength="200" style="font-size:12px">
-            <button class="btn btn-primary" style="font-size:11px;padding:7px 12px" onclick="saveSetting('brand_tagline')"><svg aria-hidden="true" width="12" height="12"><use href="#icon-save"/></svg> Save</button>
+            <button class="btn btn-primary" style="font-size:11px;padding:7px 12px" data-action="saveSetting" data-key="brand_tagline"><svg aria-hidden="true" width="12" height="12"><use href="#icon-save"/></svg> Save</button>
           </div>
         </div>
 
@@ -9147,8 +9369,8 @@ async function loadSystemSettings() {
           <div style="display:flex;gap:8px;align-items:center">
             <input type="color" class="form-input" id="ss_brand_primary_color" value="${escapeHtml(brandColor)}" style="height:38px;width:60px;padding:0">
             <input type="text" class="form-input" id="ss_brand_primary_color_text" value="${escapeHtml(brandColor)}" pattern="^#[0-9a-fA-F]{6}$" style="font-size:12px;font-family:monospace;flex:0 0 110px"
-              oninput="document.getElementById('ss_brand_primary_color').value=this.value">
-            <button class="btn btn-primary" style="font-size:11px;padding:7px 12px" onclick="saveBrandColor()"><svg aria-hidden="true" width="12" height="12"><use href="#icon-save"/></svg> Save</button>
+              data-input="syncBrandColor">
+            <button class="btn btn-primary" style="font-size:11px;padding:7px 12px" data-action="saveBrandColor"><svg aria-hidden="true" width="12" height="12"><use href="#icon-save"/></svg> Save</button>
           </div>
           <div style="font-size:10px;color:var(--dim);margin-top:4px">${escapeHtml(I18N.t('sys.accentHint'))}</div>
         </div>
@@ -9176,7 +9398,7 @@ async function loadSystemSettings() {
           <div style="font-size:10px;color:var(--dim);margin-bottom:8px">${def.hint}</div>
           <div style="display:flex;gap:8px;align-items:center">
             ${inputHtml}
-            <button class="btn btn-primary" style="font-size:11px;padding:7px 12px" onclick="saveSetting('${key}')"><svg aria-hidden="true" width="12" height="12"><use href="#icon-save"/></svg> Save</button>
+            <button class="btn btn-primary" style="font-size:11px;padding:7px 12px" data-action="saveSetting" data-key="${escapeHtml(key)}"><svg aria-hidden="true" width="12" height="12"><use href="#icon-save"/></svg> Save</button>
           </div>
           <div style="font-size:10px;color:var(--dim);margin-top:5px">key: <code>${key}</code></div>
         </div>
@@ -9213,7 +9435,7 @@ async function loadSystemSettings() {
             <span>${escapeHtml(o.label)}</span>
           </label>`).join('')}
         <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
-          <button class="btn btn-primary" style="font-size:11px;padding:7px 12px" onclick="saveAnalyticsDisplay()"><svg aria-hidden="true" width="12" height="12"><use href="#icon-save"/></svg> Save</button>
+          <button class="btn btn-primary" style="font-size:11px;padding:7px 12px" data-action="saveAnalyticsDisplay"><svg aria-hidden="true" width="12" height="12"><use href="#icon-save"/></svg> Save</button>
           <span style="font-size:10px;color:var(--dim)">key: <code>analytics_event_display</code></span>
         </div>
       </div>`;
@@ -9312,7 +9534,7 @@ async function bootstrapApp() {
     try {
       const want = new URLSearchParams(window.location.search).get('page');
       if (want && document.getElementById('page-' + want)) {
-        const navItem = document.querySelector(`.nav-item[onclick*="showPage('${want}'"]`);
+        const navItem = document.querySelector(`.nav-item[data-page="${want}"]`);
         showPage(want, navItem || undefined);
         // Strip the query param so a manual refresh doesn't keep replaying
         // the deep-link if the user has since navigated elsewhere.
@@ -9429,9 +9651,9 @@ function _svcCard(svcs) {
     // api-server stop = dashboard bricks with no UI recovery → restrict to Restart only.
     const canStop  = s.name !== 'api-server' && (s.status === 'online' || s.status === 'launching');
     const canStart = s.name !== 'api-server' && (s.status === 'stopped' || s.status === 'errored');
-    const restartBtn = `<button class="admin-only" onclick="_svcAction('${svcName}','restart')" style="${btnBase} var(--accent);color:var(--accent);background:transparent" title="${I18N.t('hlth.svcRestart')}">${I18N.t('hlth.svcRestart')}</button>`;
-    const stopBtn   = canStop  ? `<button class="admin-only" onclick="_svcAction('${svcName}','stop')"    style="${btnBase} var(--warn);color:var(--warn);background:transparent"   title="${I18N.t('hlth.svcStop')}">${I18N.t('hlth.svcStop')}</button>` : '';
-    const startBtn  = canStart ? `<button class="admin-only" onclick="_svcAction('${svcName}','start')"   style="${btnBase} var(--status-ok);color:var(--status-ok);background:transparent" title="${I18N.t('hlth.svcStart')}">${I18N.t('hlth.svcStart')}</button>` : '';
+    const restartBtn = `<button class="admin-only" data-action="svcAction" data-svc="${svcName}" data-svc-cmd="restart" style="${btnBase} var(--accent);color:var(--accent);background:transparent" title="${I18N.t('hlth.svcRestart')}">${I18N.t('hlth.svcRestart')}</button>`;
+    const stopBtn   = canStop  ? `<button class="admin-only" data-action="svcAction" data-svc="${svcName}" data-svc-cmd="stop"    style="${btnBase} var(--warn);color:var(--warn);background:transparent"   title="${I18N.t('hlth.svcStop')}">${I18N.t('hlth.svcStop')}</button>` : '';
+    const startBtn  = canStart ? `<button class="admin-only" data-action="svcAction" data-svc="${svcName}" data-svc-cmd="start"   style="${btnBase} var(--status-ok);color:var(--status-ok);background:transparent" title="${I18N.t('hlth.svcStart')}">${I18N.t('hlth.svcStart')}</button>` : '';
     // Left col: name + uptime sub-line; right col: badge + buttons.
     // Uptime moved to left col so right col stays ≤180px — fits 280px card.
     return `<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;padding:6px 0;border-bottom:1px dashed var(--border)">
@@ -9751,12 +9973,12 @@ function _smbRenderAttention(recentEvents, cams) {
     } else {
       alertEl.innerHTML = alerts.map(e => {
         const img = e.snapshot_url ? `<img src="${escapeHtml(e.snapshot_url)}?w=120" loading="lazy" alt="">` : '';
-        const evObj = JSON.stringify({
+        const evJson = escapeHtml(JSON.stringify({
           id:e.id, event_time:e.event_time, camera_id:e.camera_id,
           event_type:e.event_type, rule_name:e.rule_name,
           object_class:e.object_class, snapshot_file:e.snapshot_file||null,
-        }).replace(/'/g,"&#39;");
-        return `<div class="smb-alert-row" onclick='summaryOpenEvent(${evObj})'>
+        }));
+        return `<div class="smb-alert-row" data-action="summaryOpenEvent" data-event-json="${evJson}">
           <div class="smb-alert-thumb">${img}</div>
           <div class="smb-alert-body">
             <div class="smb-alert-rule">${escapeHtml(e.rule_name)}</div>
@@ -9794,7 +10016,7 @@ function _smbRenderAttention(recentEvents, cams) {
 function summaryOpenEvent(ev) {
   if (!ev) return;
   if (ev.event_type === 'FaceCapture' || ev.rule_name === 'Face Capture') {
-    showPage('faces', document.querySelector('.nav-item[onclick*="faces"]'));
+    showPage('faces', document.querySelector('.nav-item[data-page="faces"]'));
     loadFaces().then(() => openFaceModal(ev.id)).catch(() => {});
   } else {
     showSnapshot(ev);
@@ -10111,9 +10333,474 @@ function stopSummaryAutoRefresh() {
   if (_summaryRefreshTimer) { clearInterval(_summaryRefreshTimer); _summaryRefreshTimer = null; }
 }
 
+// ============================================================
+// Static nav-chrome handler bindings (Phase 2 of onclick= → addEventListener migration)
+// Replaces onclick= attrs removed from index.html for the sidebar nav + header chrome.
+// Called before bootstrapApp so sidebar/hamburger work even before auth resolves.
+// ============================================================
+function _bindNavChrome() {
+  // Main navigation — event delegation on <nav class="nav">
+  document.querySelector('.nav')?.addEventListener('click', function(e) {
+    const item = e.target.closest('.nav-item[data-page]');
+    if (item) showPage(item.dataset.page, item);
+  });
+
+  // Sidebar chrome
+  document.getElementById('sidebarOverlay')?.addEventListener('click', closeSidebar);
+  document.getElementById('hamburgerBtn')?.addEventListener('click', toggleSidebar);
+  document.getElementById('sidebarCollapseBtn')?.addEventListener('click', toggleSidebarCollapsed);
+
+  // User menu
+  document.getElementById('userMenuBtn')?.addEventListener('click', function(e) { toggleUserDropdown(e); });
+  document.getElementById('ddSettings')?.addEventListener('click', function() {
+    showPage('settings', document.querySelector('.nav-item[data-page=settings]'));
+  });
+  document.getElementById('ddChangePw')?.addEventListener('click', openChangePassword);
+  document.getElementById('ddAbout')?.addEventListener('click', openAboutModal);
+  document.getElementById('ddLangTh')?.addEventListener('click', function() { I18N.setLang('th'); });
+  document.getElementById('ddLangEn')?.addEventListener('click', function() { I18N.setLang('en'); });
+  document.getElementById('ddThemeDark')?.addEventListener('click', function() { setTheme('dark'); });
+  document.getElementById('ddThemeLight')?.addEventListener('click', function() { setTheme('light'); });
+  document.getElementById('ddLogout')?.addEventListener('click', doLogout);
+}
+
+function _bindStaticHandlers() {
+  function bind(id, fn) { document.getElementById(id)?.addEventListener('click', fn); }
+  function delegate(id, sel, fn) {
+    document.getElementById(id)?.addEventListener('click', function(e) {
+      const el = e.target.closest(sel);
+      if (el && this.contains(el)) fn(e, el);
+    });
+  }
+  function backdropClose(id, fn) {
+    document.getElementById(id)?.addEventListener('click', function(e) { if (e.target === this) fn(); });
+  }
+
+  // ── Summary ────────────────────────────────────────────────────
+  bind('smbHeatToggle',    toggleSummaryHeatmap);
+  bind('smbViewallHistory', () => showPage('history', document.querySelector('.nav-item[data-page=history]')));
+  bind('smbViewallCameras', () => showPage('cameras', document.querySelector('.nav-item[data-page=cameras]')));
+
+  // ── Events ─────────────────────────────────────────────────────
+  bind('evtClearDrillBtn', clearDrillFilter);
+  bind('evtSearchBtn',     () => loadEvents(1));
+  bind('evtResetBtn',      resetEventFilters);
+  bind('evtExportCsvBtn',  exportEventsCsv);
+  bind('evtPauseBtn',      toggleEventsPause);
+  delegate('evtTabBar', '.tab[data-tab]', (e, el) => setEventTab(el.dataset.tab, el));
+
+  // ── Snapshots ──────────────────────────────────────────────────
+  bind('snapSearchBtn', () => loadSnapshots(1));
+  bind('snapResetBtn',  resetSnapFilters);
+  delegate('snapViewBar', '.tab[data-view]', (e, el) => setSnapView(el.dataset.view, el));
+
+  // ── Media ──────────────────────────────────────────────────────
+  bind('mediaSearchBtn',  () => loadMedia(1));
+  bind('mediaResetBtn',   resetMediaFilters);
+  backdropClose('mediaModal', closeMediaModal);
+  bind('mediaModalClose', closeMediaModal);
+
+  // ── Faces ──────────────────────────────────────────────────────
+  bind('faceSearchBtn',  loadFaces);
+  bind('faceResetBtn',   resetFaceFilters);
+  backdropClose('faceModal', closeFaceModal);
+  bind('faceModalClose', closeFaceModal);
+
+  // ── Appearance ─────────────────────────────────────────────────
+  delegate('appTabBar',   '.tab[data-tab]',       (e, el) => setAppTab(el.dataset.tab, el));
+  delegate('appRangeBar', '.per-btn[data-range]', (e, el) => setAppRange(el.dataset.range, el));
+  bind('appSearchBtn', () => loadAppearanceSearch(1));
+  bind('appResetBtn',  resetAppearanceFilters);
+
+  // ── Map ────────────────────────────────────────────────────────
+  document.getElementById('selMapPulseDebounce')?.addEventListener('change', function() { setMapPulseDebounce(this.value); });
+  bind('mapWallExit',       toggleWallMode);
+  bind('togHeat',           function() { toggleMapLayer('heat', this); });
+  bind('togCams',           function() { toggleMapLayer('cams', this); });
+  bind('btnMapPulse',       toggleMapPulse);
+  bind('btnMapFace',        toggleMapFaceOverlay);
+  bind('mapRecenterBtn',    recenterMap);
+  bind('btnMapMore',        toggleMapSecondary);
+  bind('togStyle',          toggleMapStyle);
+  bind('togProvider',       toggleMapProvider);
+  bind('togSource',         toggleMapSource);
+  bind('btnWallMode',       toggleWallMode);
+  bind('mapDrawerBackdrop', toggleMapDrawer);
+
+  // ── Stats ──────────────────────────────────────────────────────
+  document.getElementById('statsRangeBar')?.addEventListener('click', function(e) {
+    const btn = e.target.closest('.per-btn[data-range]');
+    if (!btn || !this.contains(btn)) return;
+    btn.dataset.range === 'custom' ? openCustomRangeModal() : setStatsRange(btn.dataset.range, btn);
+  });
+  bind('csvBtnTimeline',     () => exportCsv('timeline'));
+  bind('csvBtnBreakdown',    () => exportCsv('breakdown'));
+  bind('csvBtnKpi',          () => exportCsv('kpi'));
+  bind('csvBtnPeople',       () => exportCsv('people'));
+  bind('csvBtnVehicle',      () => exportCsv('vehicle'));
+  bind('csvBtnHeatmap',      () => exportCsv('heatmap'));
+  bind('csvBtnQuietCameras', () => exportCsv('quietCameras'));
+  bind('csvBtnTopRules',     () => exportCsv('topRules'));
+
+  // ── Reports ────────────────────────────────────────────────────
+  bind('repLoadBtn',     updateReportPreview);
+  bind('repPdfBtn',      downloadPDF);
+  bind('hrPreviewBtn',   previewHealthReport);
+  bind('hrPdfBtn',       downloadHealthPdf);
+  bind('hrPngBtn',       downloadHealthPng);
+  bind('hrSendNowBtn',   sendHealthReportNow);
+  bind('repScheduleBtn', openReportScheduleModal);
+
+  // ── History srail ──────────────────────────────────────────────
+  delegate('historySrail', '.srail-item[data-hist]', (e, el) => historyNav(el.dataset.hist, el));
+  bind('historyBackBtn', historyBack);
+  bind('alRefreshBtn',   loadAlertLogs);
+  bind('alClearOldBtn',  clearOldLogs);
+  bind('rhExportCsvBtn', exportReportHistoryCsv);
+  delegate('cameraStatusTabBar', '.tab[data-camera-status-tab]',
+    (e, el) => setCameraStatusTab(el.dataset.cameraStatusTab, el));
+  bind('statusLogResetBtn',   resetStatusLogFilters);
+  bind('statusLogRefreshBtn', () => loadStatusLog(1));
+  bind('imgQualResetBtn',     resetImageQualityFilters);
+  bind('imgQualRefreshBtn',   () => loadImageQualityLog(1));
+  bind('auditRefreshBtn',     loadAuditLog);
+  bind('healthRefreshBtn',    loadHealth);
+
+  // ── Settings srail ─────────────────────────────────────────────
+  delegate('settingsSrail', '.srail-item[data-sec]', (e, el) => settingsNav(el.dataset.sec, el));
+  bind('settingsBackBtn', settingsBack);
+
+  // ── Camera form ────────────────────────────────────────────────
+  bind('camSubTabCameras',       function() { camerasSubTab('cameras', this); });
+  bind('camSubTabGroups',        function() { camerasSubTab('groups',  this); });
+  bind('openCameraFormBtn',      openCameraForm);
+  bind('frmCamPassToggle',       toggleCamPassVisibility);
+  bind('frmTestConnBtn',         testCameraConnection);
+  bind('camUseLocationBtn',      camFormUseMyLocation);
+  bind('frmCamProbeBtn',         probeCameraSnapshot);
+  bind('frmSnapPreviewBtn',      previewCameraSnapshot);
+  bind('saveCamOfflineAlertBtn', saveCameraOfflineAlert);
+  bind('mqttCopyUserBtn',        () => copyMqttCreds('user'));
+  bind('mqttPassToggleBtn',      toggleMqttPassVisibility);
+  bind('mqttCopyPassBtn',        () => copyMqttCreds('pass'));
+  bind('mqttRegenBtn',           regenerateMqttPassword);
+  bind('mqttCopyRegenPassBtn',   copyMqttRegenPass);
+  bind('saveCameraBtn',          saveCamera);
+  bind('closeCameraFormBtn',     closeCameraForm);
+  bind('newGroupBtn',            newGroup);
+
+  // ── Users / Categories / Alerts ────────────────────────────────
+  bind('openUserEditorBtn',       () => openUserEditor());
+  bind('openCategoryEditorBtn',   () => openCategoryEditor());
+  bind('alertTabRules',           () => switchAlertTab('rules'));
+  bind('alertTabConfig',          () => switchAlertTab('config'));
+  bind('openRuleEditorBtn',       () => openRuleEditor());
+  bind('saveLineConfigBtn',       saveLineConfig);
+  bind('onboardGuideToggle',      toggleOnboardGuide);
+  bind('loadPendingRecipientsBtn',loadPendingRecipients);
+  bind('loadBlockedRecipientsBtn',loadBlockedRecipients);
+  bind('addRecipientBtn',         addRecipient);
+  bind('backupRunBtn',            runBackup);
+  bind('mapboxTokenToggleBtn',    toggleMapboxTokenVis);
+  bind('saveMapboxTokenBtn',      saveMapboxToken);
+  bind('mapDownloadStartBtn',     startDownload);
+  bind('mapDownloadEstimateBtn',  estimateDownload);
+  bind('mapClearCacheBtn',        clearAllCache);
+
+  // ── Modals ─────────────────────────────────────────────────────
+  bind('snapModalClose',           closeSnapModal);
+  bind('eulaViewerClose',          closeEulaViewer);
+  bind('eulaLogoutBtn',            doLogout);
+  bind('eulaAcceptBtn',            acceptEula);
+  backdropClose('cameraDetailModal', closeCameraDetailModal);
+  bind('cameraDetailModalClose',   closeCameraDetailModal);
+  bind('ruleEditorModalClose',     closeRuleEditor);
+  bind('ruleActiveClearBtn', function() {
+    document.getElementById('ruleActiveFrom').value = '';
+    document.getElementById('ruleActiveTo').value   = '';
+  });
+  bind('ruleEditorCancelBtn',      closeRuleEditor);
+  bind('saveRuleBtn',              saveRule);
+  backdropClose('reportScheduleModal', closeReportScheduleModal);
+  bind('reportScheduleModalClose', closeReportScheduleModal);
+  bind('saveReportScheduleBtn',    saveReportSchedule);
+  bind('newReportScheduleBtn',     resetReportScheduleForm);
+  bind('userEditorModalClose',     closeUserEditor);
+  bind('userEditorCancelBtn',      closeUserEditor);
+  bind('saveUserBtn',              saveUser);
+  bind('changePasswordModalClose', closeChangePassword);
+  bind('changePasswordCancelBtn',  closeChangePassword);
+  bind('submitChangePasswordBtn',  submitChangePassword);
+  bind('aboutModalClose',          closeAboutModal);
+  bind('aboutEulaLink', function(e) { e.preventDefault(); closeAboutModal(); openEulaViewer(); });
+  bind('appCustomModalClose',      closeAppCustomModal);
+  bind('appCustomModalCancelBtn',  closeAppCustomModal);
+  bind('applyAppCustomRangeBtn',   applyAppCustomRange);
+  bind('customRangeModalClose',    closeCustomRangeModal);
+  delegate('crQuickBar', '.btn[data-quick]', (e, el) => crQuick(el.dataset.quick));
+  bind('customRangeCancelBtn',     closeCustomRangeModal);
+  bind('applyCustomRangeBtn',      applyCustomRange);
+  bind('categoryEditorModalClose', closeCategoryEditor);
+  bind('categoryEditorCancelBtn',  closeCategoryEditor);
+  bind('saveCategoryBtn',          saveCategory);
+  bind('categoryRulesModalClose',  closeCategoryRules);
+  bind('addCategoryRuleBtn',       addCategoryRule);
+
+  // ── Inline handlers removed from index.html (Pre-Phase-5 gate) ─────────
+  // Cameras
+  document.getElementById('camSearch')?.addEventListener('input', renderCameraGrid);
+  // Stats selects
+  document.getElementById('occTlCamRule')?.addEventListener('change', loadOccupancyTimeline);
+  document.getElementById('occHmCamRule')?.addEventListener('change', loadOccupancyHeatmap);
+  document.getElementById('heatmapCatFilter')?.addEventListener('change', loadHeatmap);
+  // Reports
+  document.getElementById('reportType')?.addEventListener('change', onReportTypeChange);
+  document.getElementById('hrRangePreset')?.addEventListener('change', _hrToggleCustomRange);
+  // History / logs
+  document.getElementById('logFilterStatus')?.addEventListener('change', () => loadAlertLogs());
+  document.getElementById('statusLogCamFilter')?.addEventListener('change', () => loadStatusLog(1));
+  document.getElementById('statusLogStatusFilter')?.addEventListener('change', () => loadStatusLog(1));
+  document.getElementById('iqCamFilter')?.addEventListener('change', () => loadImageQualityLog(1));
+  document.getElementById('iqTypeFilter')?.addEventListener('change', () => loadImageQualityLog(1));
+  document.getElementById('auditFilterAction')?.addEventListener('change', () => loadAuditLog());
+  document.getElementById('auditFilterCamera')?.addEventListener('change', () => loadAuditLog());
+  // Camera form
+  document.getElementById('frmCamId')?.addEventListener('blur', onCamIdBlur);
+  document.getElementById('frmCamVendor')?.addEventListener('change', onVendorChange);
+  document.getElementById('frmCamIp')?.addEventListener('blur', onCamIpBlur);
+  document.getElementById('frmCamLat')?.addEventListener('input', onCamCoordInput);
+  document.getElementById('frmCamLng')?.addEventListener('input', onCamCoordInput);
+  document.getElementById('frmCamEnableSnapshot')?.addEventListener('change', updateDahuaSnapNote);
+  document.getElementById('frmOfflineEscalateOnce')?.addEventListener('change', toggleEscalateOnce);
+  // EULA viewer checkbox
+  document.getElementById('eulaAcceptCheck')?.addEventListener('change', function() {
+    const b = document.getElementById('eulaAcceptBtn'); if (b) b.disabled = !this.checked;
+  });
+  // Report schedule type
+  document.getElementById('rsType')?.addEventListener('change', _rsToggleTypeFields);
+  // Category editor icon
+  document.getElementById('ceIcon')?.addEventListener('input', syncIconPresets);
+  // Custom range camera filter
+  document.getElementById('crCamera')?.addEventListener('change', loadFacets);
+}
+
+// ============================================================
+// _bindDynamicHandlers — Global dispatcher for data-action elements
+// Replaces inline onclick= generated by render functions (Phase 4).
+// Add new actions here as each section is migrated.
+// ============================================================
+function _bindDynamicHandlers() {
+  const ACTION_MAP = {
+    // Pagination — reads window._pgHandlers[data-pg] stash set by renderPagination
+    pgGo: (el) => {
+      const handler = window._pgHandlers?.[el.dataset.pg];
+      if (handler) handler(+el.dataset.page);
+    },
+
+    // Snapshots / Media / Events — idx-based routing into module-level arrays
+    // _currentSnapEv / _currentMediaEv set on modal open for in-modal actions
+    showSnapshot: (el) => {
+      const SOURCE = { events: allEvents, snaps: snapshots, app: window._appRows || [] };
+      const arr = SOURCE[el.dataset.source];
+      if (arr) showSnapshot(arr[+el.dataset.idx]);
+    },
+    showMediaClip: (el) => {
+      const SOURCE = { snaps: snapshots, media: mediaList };
+      const arr = SOURCE[el.dataset.source];
+      if (arr) showMediaClip(arr[+el.dataset.idx]);
+    },
+    viewFullSnap: () => {
+      const ev = window._currentSnapEv;
+      if (!ev?.snapshot_file) return;
+      const cap = camFullViewWidth(ev.camera_id);
+      window.open(`${API}/snapshots/${ev.snapshot_file}${cap ? '?w=' + cap : ''}`, '_blank');
+    },
+    closeAndShowClip: () => {
+      const ev = window._currentSnapEv;
+      closeSnapModal();
+      if (ev) showMediaClip(ev);
+    },
+    showSnapFromMedia: () => {
+      const ev = window._currentMediaEv;
+      if (ev) showSnapshot(ev);
+    },
+    openUrl: (el) => window.open(el.dataset.url, '_blank'),
+
+    // Groups (renderGroupBarHTML + renderGroupList + renderGroupEditor)
+    setActiveGroup:   (el) => setActiveGroup(el.dataset.gid),
+    openGroupManager: ()   => openGroupManager(),
+    editGroup:        (el) => editGroup(el.dataset.gid),
+    deleteGroup:      (el) => deleteGroup(el.dataset.gid),
+    toggleCamInGroup: (el) => toggleCamInGroup(el.dataset.camId),
+    setGrpColor:      (el) => { const inp = document.getElementById('grpColor'); if (inp) inp.value = el.dataset.color; },
+    selectAllCams:    ()   => selectAllCams(),
+    clearAllCams:     ()   => clearAllCams(),
+    saveGroup:        ()   => saveGroup(),
+    cancelEditGroup:  ()   => cancelEditGroup(),
+
+    // Stats / Heatmap / Insights (renderQuietCameras + renderTopRules + heatmap td + renderCategoryKPI)
+    drillHeatmapCell: (el) => drillHeatmapCell(+el.dataset.d, +el.dataset.h, +el.dataset.v),
+    drillToCamera:    (el) => drillTo({ camera: el.dataset.camera, label: el.dataset.label }),
+    drillToRule:      (el) => drillTo({ rule_name: el.dataset.ruleName, label: el.dataset.label }),
+    setFocusCat:      (el) => setStatsFocusCategory(el.dataset.catId === '' ? null : +el.dataset.catId),
+
+    // Categories (renderCategories + _renderIconPresets + loadCategoryRules)
+    openCatRules:     (el) => openCategoryRules(+el.dataset.id),
+    openCatEditor:    (el) => openCategoryEditor(+el.dataset.id),
+    deleteCat:        (el) => deleteCategory(+el.dataset.id),
+    selectIconPreset: (el) => selectIconPreset(el.dataset.preset),
+    deleteCatRule:    (el) => deleteCategoryRule(+el.dataset.id),
+
+    // Reports (renderReportSchedules + loadReportHistoryStats winBtn + loadReportHistory pager)
+    runReportNow:      (el) => runReportNow(+el.dataset.id, el),
+    editReportSched:   (el) => editReportSchedule(+el.dataset.id),
+    deleteReportSched: (el) => deleteReportSchedule(+el.dataset.id),
+    loadRhStats:       (el) => loadReportHistoryStats(el.dataset.window),
+    loadReportHistory: (el) => loadReportHistory(+el.dataset.offset),
+
+    // Cameras (renderCameraRows)
+    editCamera:       (el) => editCamera(el.dataset.cameraId),
+    toggleCamPause:   (el) => toggleCameraPause(el.dataset.cameraId, el.dataset.pauseState === 'true'),
+    deleteCamera:     (el) => deleteCamera(el.dataset.cameraId),
+
+    // Status Current pager + filter buttons (onclick only; onchange/onkeydown deferred to non-click batch)
+    setStatusPage:    (el) => setStatusCurrentPage(+el.dataset.page),
+    resetStatusPage:  ()   => resetStatusCurrentPage(),
+    resetStatusFilts: ()   => resetStatusCurrentFilters(),
+
+    // Alert Rules (renderAlertRules)
+    toggleRule:       (el) => toggleRule(+el.dataset.id),
+    openRuleEditor:   (el) => openRuleEditor(+el.dataset.id),
+    deleteRule:       (el) => deleteRule(+el.dataset.id),
+
+    // Backup (B8)
+    downloadBackup:       (el)    => downloadBackup(el.dataset.filename),
+
+    // License (B8)
+    copyMachineId:        (el, e) => copyMachineId(el.dataset.machineId, e),
+    openEulaViewer:       ()      => openEulaViewer(),
+    activateLicense:      ()      => activateLicense(),
+    deactivateLicense:    ()      => deactivateLicense(),
+
+    // Face Recognition (B8)
+    openFaceModal:        (el)    => openFaceModal(+el.dataset.id),
+
+    // Map legend + Map Manager (B8)
+    toggleMapDrawer:      ()      => toggleMapDrawer(),
+    legendShowAll:        ()      => _legendShowAll(),
+    legendHideAll:        ()      => _legendHideAll(),
+    legendCollapse:       ()      => _legendCollapse(),
+    cancelDownload:       ()      => cancelDownload(),
+    deleteArea:           (el)    => deleteArea(el.dataset.id),
+
+    // Users + Sessions (B8)
+    openUserEditor:       (el)    => openUserEditor(+el.dataset.id),
+    resetUserPassword:    (el)    => resetUserPassword(+el.dataset.id),
+    deleteUserConfirm:    (el)    => deleteUserConfirm(+el.dataset.id),
+    revokeSession:        (el)    => revokeSession(el.dataset.id),
+
+    // Brand / Settings (B8)
+    clearBrandLogo:       ()      => clearBrandLogo(),
+    saveSetting:          (el)    => saveSetting(el.dataset.key),
+    saveBrandColor:       ()      => saveBrandColor(),
+    saveAnalyticsDisplay: ()      => saveAnalyticsDisplay(),
+
+    // Services (B8)
+    svcAction:            (el)    => _svcAction(el.dataset.svc, el.dataset.svcCmd),
+
+    // Summary (B8)
+    summaryOpenEvent:     (el)    => summaryOpenEvent(JSON.parse(el.dataset.eventJson)),
+
+    // LINE config (B7)
+    pushUsersSelect:           (el) => _pushUsersSelect(el.dataset.pushAction),
+    loadAlertStats:            (el) => loadAlertStats(el.dataset.window),
+    loadLineQuota:             ()   => loadLineQuota(),
+    approvePendingRecipient:   (el) => approvePendingRecipient(el.dataset.lineId),
+    ignorePendingRecipient:    (el) => ignorePendingRecipient(el.dataset.lineId),
+    blockRecipient:            (el) => blockRecipient(el.dataset.lineId),
+    unblockRecipient:          (el) => unblockRecipient(el.dataset.lineId),
+    testRecipient:             (el) => testRecipient(el.dataset.id),
+    removeRecipient:           (el) => removeRecipient(+el.dataset.idx),
+
+    // Events nudge link (i18n.js aux.evtNewNudge — was onclick=)
+    goEventsPage1:    ()   => loadEvents(1),
+
+    // Non-click batch (B6b) — shared map, keyed by data-change / data-input / data-action-enter values
+    eulaToggle:       (el) => { document.getElementById('licenseActivateBtn').disabled = !el.checked; },
+    toggleMapGroup:   (el) => toggleMapGroup(el.dataset.gid),
+    legendSearch:     (el) => _legendSearch(el.value),
+    updateHrSendBtn:  ()   => _updateHealthSendBtnLabel(),
+    updateRecipient:  (el) => updateRecipient(+el.dataset.idx, el.dataset.field, el.checked),
+    uploadBrandLogo:  (el) => uploadBrandLogo(el),
+    syncBrandColor:   (el) => { document.getElementById('ss_brand_primary_color').value = el.value; },
+    // resetStatusPage already in map (B6) — reused by data-change on select + data-action-enter on input
+  };
+
+  document.addEventListener('click', (e) => {
+    const target = e.target.closest('[data-action]');
+    if (!target) return;
+    const fn = ACTION_MAP[target.dataset.action];
+    if (!fn) return;
+    e.preventDefault();
+    fn(target, e);
+  });
+
+  // change — checkboxes, select, file input; no preventDefault (would cancel native toggle/file-picker)
+  document.addEventListener('change', (e) => {
+    const target = e.target.closest('[data-change]');
+    if (!target) return;
+    const fn = ACTION_MAP[target.dataset.change];
+    if (!fn) return;
+    fn(target, e);
+  });
+
+  // input — text inputs; no preventDefault
+  document.addEventListener('input', (e) => {
+    const target = e.target.closest('[data-input]');
+    if (!target) return;
+    const fn = ACTION_MAP[target.dataset.input];
+    if (!fn) return;
+    fn(target, e);
+  });
+
+  // keydown Enter — data-action-enter avoids double-fire with buttons (which also fire click on Enter)
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    const target = e.target.closest('[data-action-enter]');
+    if (!target) return;
+    const fn = ACTION_MAP[target.dataset.actionEnter];
+    if (!fn) return;
+    fn(target, e);
+  });
+
+  // img onerror capture — replaces inline onerror= attrs (CSP script-src-attr blocked those).
+  // Capture phase required: 'error' does not bubble from <img>.
+  // data-err vocab: hide | dim | cam-placeholder | cam-span | face-noimg | no-img
+  window.addEventListener('error', (e) => {
+    const img = e.target;
+    if (!img || img.tagName !== 'IMG' || !img.dataset.err) return;
+    const p = img.parentElement;
+    switch (img.dataset.err) {
+      case 'hide': img.style.display = 'none'; break;
+      case 'dim':  img.style.opacity = '0.3'; break;
+      case 'cam-placeholder':
+        if (p) p.innerHTML = `<div class="placeholder">${I18N.t('cam.imgErr')}</div>`; break;
+      case 'cam-span':
+        if (p) p.innerHTML = `<span style="color:var(--dim);font-size:13px">${I18N.t('cam.imgErr')}</span>`; break;
+      case 'face-noimg':
+        if (p) p.innerHTML = `<div class="face-noimg">${escapeHtml(I18N.t('face.noImage'))}</div>`; break;
+      case 'no-img':
+        if (p) p.innerHTML = '<div class="no-img">err</div>'; break;
+    }
+  }, true);
+}
+
 // Run after DOM ready
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', bootstrapApp);
+  document.addEventListener('DOMContentLoaded', function() { _bindNavChrome(); _bindStaticHandlers(); _bindDynamicHandlers(); bootstrapApp(); });
 } else {
+  _bindNavChrome();
+  _bindStaticHandlers();
+  _bindDynamicHandlers();
   bootstrapApp();
 }

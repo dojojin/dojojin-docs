@@ -1,5 +1,5 @@
 // ============================================================
-// DojoJin Tech Dashboard — Dahua CGI Event Ingester
+// Vigil Platform — Dahua CGI Event Ingester
 // CCTV Analytics & Management Suite — Multi-vendor (Phase MV.5)
 // ============================================================
 // @author    Prakasit Rochanavipart (Dojo-mAn)
@@ -60,7 +60,9 @@ const SNAPSHOT_DIR  = path.join(__dirname, '..', '..', 'snapshots');
 const MEDIA_BUFFER_DIR = path.join(__dirname, '..', '..', 'media-buffer');
 const MEDIA_DIR = path.join(__dirname, '..', '..', 'media');
 if (!fs.existsSync(SNAPSHOT_DIR)) fs.mkdirSync(SNAPSHOT_DIR, { recursive: true });
-const RECONNECT_MS      = 5000;   // delay before re-opening a dropped stream
+const RECONNECT_BASE_MS  = 5_000;   // base reconnect delay
+const RECONNECT_MAX_MS   = 30_000;  // backoff ceiling
+const UNREACHABLE_CODES  = new Set(['EHOSTUNREACH', 'ENETUNREACH']);
 const DEDUP_WINDOW_MS   = 3000;   // collapse repeated posts of one detection
 const EVENT_LOOKBACK_MS = 1200;   // fallback: event arrives ~this long after the detection frame
 const RTSP_FRAME_LOOKBACK_MS = 700; // pick the buffer frame just before Dahua reports the event
@@ -106,6 +108,8 @@ const pool = new Pool({
   database: process.env.DB_NAME,
   user:     process.env.DB_USER,
   password: process.env.DB_PASSWORD,
+  max: 3,
+  application_name: 'dahua',
 });
 pool.on('connect', (c) => { c.query("SET TIME ZONE 'UTC'").catch(() => {}); });
 
@@ -721,16 +725,22 @@ async function ingestEvent(cam, code, mapping, data) {
     ruleName: data?.Name || null, direction: data?.Direction || null,
     eventId: data?.EventID ?? null, data,
   };
+  // Zone Enter/Leave → event_state true/false ให้ตรง convention ของ Bosch
+  // IsInside (Ph.2, 2026-06-10): ปลดล็อก dwell pairing + Leave ถูกซ่อนจาก
+  // Events list แบบเดียวกับ Bosch leave events. Direction อื่น (เช่น
+  // LeftToRight ของ line crossing) คงเป็น 'true' ตามเดิม.
+  const dir = data?.Direction;
+  const eventState = dir === 'Enter' ? 'true' : dir === 'Leave' ? 'false' : 'true';
   let eventId;
   try {
     const r = await pool.query(
       `INSERT INTO events
        (camera_id, event_category, event_type, rule_name,
         object_id, object_class, likelihood, event_state, raw_json, event_time)
-       VALUES ($1,'RuleEngine',$2,$3,NULL,$4,NULL,'true',$5,NOW())
+       VALUES ($1,'RuleEngine',$2,$3,NULL,$4,NULL,$5,$6,NOW())
        RETURNING id`,
       [cam.camera_id, mapping.event_type, mapping.rule_name, objectClass,
-       JSON.stringify(rawJson)]
+       eventState, JSON.stringify(rawJson)]
     );
     eventId = r.rows[0].id;
   } catch (err) {
@@ -988,6 +998,7 @@ function connectCamera(cam) {
           return scheduleReconnect(cam);
         }
         console.log(`  📡 [${cam.camera_id}] event stream connected (${cam.ip_address}:${port})`);
+        _retryCount.delete(cam.camera_id);
         let buffer = Buffer.alloc(0);
         res.on('data', (chunk) => {
           buffer = processMultipart(cam, Buffer.concat([buffer, chunk]), 'event');
@@ -1001,7 +1012,7 @@ function connectCamera(cam) {
     req.on('error', (e) => {
       if (_eventReqs.get(cam.camera_id) === req) _eventReqs.delete(cam.camera_id);
       console.error(`  ❌ [${cam.camera_id}] request:`, e.message);
-      scheduleReconnect(cam);
+      scheduleReconnect(cam, e.code);
     });
     req.end();
   };
@@ -1050,6 +1061,7 @@ function connectSnapManager(cam) {
           return scheduleSnapReconnect(cam);
         }
         _snapConnected.add(cam.camera_id);
+        _retryCount.delete(cam.camera_id);
         console.log(`  📸 [${cam.camera_id}] snapManager event snapshot stream connected`);
         let buffer = Buffer.alloc(0);
         res.on('data', (chunk) => {
@@ -1076,7 +1088,7 @@ function connectSnapManager(cam) {
         console.warn(`  ℹ️  [${cam.camera_id}] snapManager parser rejected stream — using RTSP/live fallback`);
         return;
       }
-      scheduleSnapReconnect(cam);
+      scheduleSnapReconnect(cam, e.code);
     });
     req.end();
   };
@@ -1090,6 +1102,7 @@ const _snapActive      = new Set();
 const _eventReqs       = new Map();   // camera_id → current eventManager request
 const _snapReqs        = new Map();   // camera_id → current snapManager request
 const _destroyed       = new Set();   // camera_ids that must not reconnect (hot-removed)
+const _retryCount      = new Map();   // camera_id → consecutive EHOSTUNREACH count (for backoff)
 let _clipDoneClient    = null;
 
 function cameraConfigSignature(cam) {
@@ -1115,6 +1128,7 @@ function stopCameraConnection(cameraId) {
   _reconnectTimers.delete(cameraId);
   clearTimeout(_snapReconnectTimers.get(cameraId));
   _snapReconnectTimers.delete(cameraId);
+  _retryCount.delete(cameraId);
   const eventReq = _eventReqs.get(cameraId);
   if (eventReq) {
     try { eventReq.destroy(); } catch { /* ignore */ }
@@ -1128,23 +1142,41 @@ function stopCameraConnection(cameraId) {
   clearSnapState(cameraId);
 }
 
-function scheduleReconnect(cam) {
+function scheduleReconnect(cam, errCode = null) {
   if (_destroyed.has(cam.camera_id)) return;
   if (_reconnectTimers.has(cam.camera_id)) return;
+  let delay;
+  if (UNREACHABLE_CODES.has(errCode)) {
+    const retries = _retryCount.get(cam.camera_id) || 0;
+    delay = Math.min(RECONNECT_BASE_MS * (2 ** retries), RECONNECT_MAX_MS);
+    _retryCount.set(cam.camera_id, retries + 1);
+  } else {
+    delay = RECONNECT_BASE_MS;
+    _retryCount.delete(cam.camera_id);
+  }
   const t = setTimeout(() => {
     _reconnectTimers.delete(cam.camera_id);
     connectCamera(cam);
-  }, RECONNECT_MS);
+  }, delay);
   _reconnectTimers.set(cam.camera_id, t);
 }
 
-function scheduleSnapReconnect(cam) {
+function scheduleSnapReconnect(cam, errCode = null) {
   if (_destroyed.has(cam.camera_id)) return;
   if (_snapReconnectTimers.has(cam.camera_id)) return;
+  let delay;
+  if (UNREACHABLE_CODES.has(errCode)) {
+    const retries = _retryCount.get(cam.camera_id) || 0;
+    delay = Math.min(RECONNECT_BASE_MS * (2 ** retries), RECONNECT_MAX_MS);
+    _retryCount.set(cam.camera_id, retries + 1);
+  } else {
+    delay = RECONNECT_BASE_MS;
+    _retryCount.delete(cam.camera_id);
+  }
   const t = setTimeout(() => {
     _snapReconnectTimers.delete(cam.camera_id);
     connectSnapManager(cam);
-  }, RECONNECT_MS);
+  }, delay);
   _snapReconnectTimers.set(cam.camera_id, t);
 }
 
@@ -1178,7 +1210,7 @@ function syncCameras() {
       console.log(`  🔄 [${cam.camera_id}] config changed — reconnecting`);
       stopCameraConnection(cam.camera_id);
       _snapDisabled.delete(cam.camera_id);
-      setTimeout(() => { _destroyed.delete(cam.camera_id); connectCamera(cam); }, RECONNECT_MS);
+      setTimeout(() => { _destroyed.delete(cam.camera_id); connectCamera(cam); }, RECONNECT_BASE_MS);
     } else if (!prev) {
       console.log(`  ➕ [${cam.camera_id}] new camera — connecting`);
       connectCamera(cam);

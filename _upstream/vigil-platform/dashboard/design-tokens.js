@@ -1,5 +1,5 @@
 // ============================================================
-// DojoJin Tech Dashboard — Design Token Helper (Layer 2)
+// Vigil Platform — Design Token Helper (Layer 2)
 // @author Prakasit Rochanavipart (Dojo-mAn)
 // @copyright (c) 2025-2026 Prakasit Rochanavipart. All Rights Reserved.
 // @license Proprietary

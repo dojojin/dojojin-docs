@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // ============================================================
-// DojoJin Tech Dashboard — Camera Credential Encryption Migration
+// Vigil Platform — Camera Credential Encryption Migration
 // @author Prakasit Rochanavipart (Dojo-mAn)
 // @copyright (c) 2025-2026 Prakasit Rochanavipart. All Rights Reserved.
 // @license Proprietary

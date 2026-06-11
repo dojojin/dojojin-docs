@@ -1,5 +1,5 @@
 // ============================================================
-// DojoJin Tech Dashboard — Hikvision ISAPI Ingester
+// Vigil Platform — Hikvision ISAPI Ingester
 // CCTV Analytics & Management Suite — Multi-vendor (Path B, MVP)
 // ============================================================
 // @author    Prakasit Rochanavipart (Dojo-mAn)
@@ -35,7 +35,9 @@ require('../singleton')('hikvision');   // refuse to run a second copy
 const CONFIG_FILE  = path.join(__dirname, '..', '..', 'cameras-config.json');
 const SNAPSHOT_DIR = path.join(__dirname, '..', '..', 'snapshots');
 if (!fs.existsSync(SNAPSHOT_DIR)) fs.mkdirSync(SNAPSHOT_DIR, { recursive: true });
-const RECONNECT_MS = 5000;       // delay before re-opening a dropped stream
+const RECONNECT_BASE_MS  = 5_000;   // base reconnect delay
+const RECONNECT_MAX_MS   = 30_000;  // backoff ceiling
+const UNREACHABLE_CODES  = new Set(['EHOSTUNREACH', 'ENETUNREACH']);
 const DEDUP_WINDOW_MS = 3000;    // collapse repeated 'active' posts of one detection
 
 // ============================================================
@@ -64,6 +66,8 @@ const pool = new Pool({
   database: process.env.DB_NAME,
   user:     process.env.DB_USER,
   password: process.env.DB_PASSWORD,
+  max: 3,
+  application_name: 'hikvision',
 });
 pool.on('connect', (c) => { c.query("SET TIME ZONE 'UTC'").catch(() => {}); });
 
@@ -154,10 +158,63 @@ function xmlTag(xml, tag) {
   return m ? m[1].trim() : null;
 }
 
+// All occurrences of a repeating block tag — inner content per match.
+function xmlBlocks(xml, tag) {
+  const out = [];
+  const re = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)</${tag}>`, 'gi');
+  let m;
+  while ((m = re.exec(xml))) out.push(m[1]);
+  return out;
+}
+
+// ============================================================
+// Coordinate capture (Smart Events) — VCA EventNotificationAlert
+// ส่ง rule polygon (<DetectionRegionList>) และบางรุ่นส่ง target rect
+// (<TargetRect>) มาด้วย. เก็บค่า "ดิบ" ลง raw_json โดยไม่แปลง scale —
+// สเปค ISAPI บอก RegionCoordinates เป็น grid 0–1000 แต่ยังไม่เคยเห็น
+// XML จริงจากกล้องเรา (Smart Events ยังไม่เปิด); ตัดสินเรื่อง scale
+// ตอนทำ overlay เมื่อมี event จริงให้เทียบ. additive อย่างเดียว —
+// ไม่มีพิกัด = ไม่เพิ่ม field, ห้าม throw เด็ดขาด (อยู่ใน ingest path)
+// ============================================================
+function extractDetectionRegions(xml) {
+  // Number(null/'') = 0 — tag ที่หายไปต้องเป็น NaN ไม่ใช่พิกัด 0 ปลอม
+  const numTag = (x, t) => {
+    const v = xmlTag(x, t);
+    return (v === null || v === '') ? NaN : Number(v);
+  };
+  try {
+    const out = [];
+    for (const entry of xmlBlocks(xml, 'DetectionRegionEntry')) {
+      const region = {};
+      const pts = [];
+      for (const rc of xmlBlocks(entry, 'RegionCoordinates')) {
+        const x = numTag(rc, 'positionX');
+        const y = numTag(rc, 'positionY');
+        if (Number.isFinite(x) && Number.isFinite(y)) pts.push([x, y]);
+      }
+      if (pts.length) region.points = pts;
+      const rid = numTag(entry, 'regionID');
+      if (Number.isFinite(rid)) region.regionID = rid;
+      const target = xmlTag(entry, 'detectionTarget');
+      if (target) region.target = target;
+      const tr = xmlBlocks(entry, 'TargetRect')[0];
+      if (tr) {
+        const r = ['X', 'Y', 'width', 'height'].map(t => numTag(tr, t));
+        if (r.every(Number.isFinite)) {
+          region.targetRect = { x: r[0], y: r[1], width: r[2], height: r[3] };
+        }
+      }
+      if (Object.keys(region).length) out.push(region);
+    }
+    return out;
+  } catch { return []; }
+}
+
 // ============================================================
 // Per-camera Alert Stream connection
 // ============================================================
 const _dedup = new Map();   // key `${cameraId}|${eventType}` → last host-ms
+const _unmappedSeen = new Set();   // eventTypes นอก map ที่ log ไปแล้ว (log once)
 
 function shouldRecord(cameraId, hikType) {
   const key = `${cameraId}|${hikType}`;
@@ -178,7 +235,15 @@ async function ingestEvent(cam, xml) {
   pool.query(`UPDATE cameras SET last_seen_at=NOW() WHERE id=$1`,
     [cam.camera_id]).catch(() => {});
   const mapping = HIK_EVENT_MAP[hikType];
-  if (!mapping) return;   // ignore videoloss heartbeats + unmapped types
+  if (!mapping) {
+    // videoloss = heartbeat ~ทุก 10s — เงียบไว้. type อื่นที่ไม่อยู่ใน map
+    // log ครั้งแรกที่เจอ (กัน Smart Event ชื่อไม่ตรง map หายเงียบ — 2026-06-11)
+    if (hikType !== 'videoloss' && !_unmappedSeen.has(hikType)) {
+      _unmappedSeen.add(hikType);
+      console.warn(`  ⚠️ [${cam.camera_id}] unmapped eventType "${hikType}" — ignored (add to HIK_EVENT_MAP?)`);
+    }
+    return;
+  }
 
   const hikState = (xmlTag(xml, 'eventState') || 'active').toLowerCase();
   // Hikvision re-posts 'active' ~1×/s while a detection persists; collapse
@@ -199,6 +264,9 @@ async function ingestEvent(cam, xml) {
     description:  xmlTag(xml, 'eventDescription'),
     activePostCount: xmlTag(xml, 'activePostCount'),
   };
+  // rule polygon + target rect (เมื่อกล้องแนบมา) — สำหรับ snapshot overlay
+  const regions = extractDetectionRegions(xml);
+  if (regions.length) rawJson.detectionRegions = regions;
 
   try {
     const r = await pool.query(
@@ -520,6 +588,7 @@ function connectCamera(cam) {
         }
 
         console.log(`  📡 [${cam.camera_id}] Alert Stream connected (${cam.ip_address}:${port})`);
+        _retryCount.delete(cam.camera_id);
         // Binary-safe Buffer accumulation — JPEG parts ride in this stream.
         let buffer = Buffer.alloc(0);
         res.on('data', (chunk) => {
@@ -535,7 +604,7 @@ function connectCamera(cam) {
     req.on('error', (e) => {
       if (_eventReqs.get(cam.camera_id) === req) _eventReqs.delete(cam.camera_id);
       console.error(`  ❌ [${cam.camera_id}] request:`, e.message);
-      scheduleReconnect(cam);
+      scheduleReconnect(cam, e.code);
     });
     req.end();
   };
@@ -547,6 +616,7 @@ const _reconnectTimers = new Map();
 const _activeCams      = new Map();   // camera_id → cam (currently live or reconnecting)
 const _eventReqs       = new Map();   // camera_id → current long-lived ISAPI request
 const _destroyed       = new Set();   // camera_ids that must not reconnect (hot-removed)
+const _retryCount      = new Map();   // camera_id → consecutive EHOSTUNREACH count (for backoff)
 
 function cameraConfigSignature(cam) {
   return JSON.stringify({
@@ -563,6 +633,7 @@ function stopCameraConnection(cameraId) {
   _activeCams.delete(cameraId);
   clearTimeout(_reconnectTimers.get(cameraId));
   _reconnectTimers.delete(cameraId);
+  _retryCount.delete(cameraId);
   const req = _eventReqs.get(cameraId);
   if (req) {
     try { req.destroy(); } catch { /* ignore */ }
@@ -570,13 +641,22 @@ function stopCameraConnection(cameraId) {
   }
 }
 
-function scheduleReconnect(cam) {
+function scheduleReconnect(cam, errCode = null) {
   if (_destroyed.has(cam.camera_id)) return;
   if (_reconnectTimers.has(cam.camera_id)) return;   // already pending
+  let delay;
+  if (UNREACHABLE_CODES.has(errCode)) {
+    const retries = _retryCount.get(cam.camera_id) || 0;
+    delay = Math.min(RECONNECT_BASE_MS * (2 ** retries), RECONNECT_MAX_MS);
+    _retryCount.set(cam.camera_id, retries + 1);
+  } else {
+    delay = RECONNECT_BASE_MS;
+    _retryCount.delete(cam.camera_id);
+  }
   const t = setTimeout(() => {
     _reconnectTimers.delete(cam.camera_id);
     connectCamera(cam);
-  }, RECONNECT_MS);
+  }, delay);
   _reconnectTimers.set(cam.camera_id, t);
 }
 
@@ -609,7 +689,7 @@ function syncCameras() {
     if (changed) {
       console.log(`  🔄 [${cam.camera_id}] config changed — reconnecting`);
       stopCameraConnection(cam.camera_id);
-      setTimeout(() => { _destroyed.delete(cam.camera_id); connectCamera(cam); }, RECONNECT_MS);
+      setTimeout(() => { _destroyed.delete(cam.camera_id); connectCamera(cam); }, RECONNECT_BASE_MS);
     } else if (!prev) {
       console.log(`  ➕ [${cam.camera_id}] new camera — connecting`);
       connectCamera(cam);

@@ -1,0 +1,893 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Commercial System Review 2026 — Vigil Platform</title>
+  <style>
+    :root {
+      --surface-base: #f6f7f9;
+      --surface-elevated: #ffffff;
+      --surface-muted: #edf2f7;
+      --surface-strong: #101828;
+      --text-primary: #182230;
+      --text-secondary: #475467;
+      --text-inverse: #f9fafb;
+      --accent: #0f766e;
+      --accent-muted: #ecfdf3;
+      --accent-strong: #134e4a;
+      --blue: #1d4ed8;
+      --warn: #b45309;
+      --bad: #b42318;
+      --ok: #15803d;
+      --border: #d0d5dd;
+      --shadow: 0 18px 48px rgba(16, 24, 40, 0.08);
+      --radius: 8px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      background: var(--surface-base);
+      color: var(--text-primary);
+      font-family: "Noto Sans Thai", "Tahoma", "Arial", sans-serif;
+      line-height: 1.7;
+    }
+
+    a {
+      color: var(--blue);
+      text-decoration-thickness: 0.08em;
+      text-underline-offset: 0.18em;
+    }
+
+    .page {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 32px 20px 72px;
+    }
+
+    .hero {
+      background: var(--surface-strong);
+      color: var(--text-inverse);
+      border-radius: var(--radius);
+      padding: 40px;
+      box-shadow: var(--shadow);
+    }
+
+    .eyebrow {
+      margin: 0 0 10px;
+      color: #99f6e4;
+      font-size: 0.82rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    h1 {
+      margin: 0;
+      max-width: 880px;
+      font-size: 2.65rem;
+      line-height: 1.16;
+      letter-spacing: 0;
+    }
+
+    .lead {
+      margin: 20px 0 0;
+      max-width: 920px;
+      color: #d0d5dd;
+      font-size: 1.12rem;
+    }
+
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 24px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 32px;
+      padding: 5px 11px;
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      border-radius: 999px;
+      color: #e5e7eb;
+      background: rgba(255, 255, 255, 0.06);
+      font-size: 0.9rem;
+    }
+
+    .toc {
+      margin-top: 18px;
+      padding: 18px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface-elevated);
+    }
+
+    .toc strong {
+      display: block;
+      margin-bottom: 8px;
+    }
+
+    .toc nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .toc a {
+      display: inline-flex;
+      align-items: center;
+      min-height: 34px;
+      padding: 5px 10px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text-primary);
+      background: var(--surface-base);
+      text-decoration: none;
+      font-size: 0.92rem;
+    }
+
+    section {
+      margin-top: 24px;
+      padding: 26px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface-elevated);
+      box-shadow: 0 8px 22px rgba(16, 24, 40, 0.04);
+    }
+
+    h2 {
+      margin: 0 0 14px;
+      font-size: 1.55rem;
+      line-height: 1.28;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      margin: 26px 0 10px;
+      font-size: 1.12rem;
+      line-height: 1.35;
+      color: var(--accent-strong);
+      letter-spacing: 0;
+    }
+
+    p {
+      margin: 0 0 14px;
+    }
+
+    ul,
+    ol {
+      margin: 0 0 16px 1.2rem;
+      padding: 0;
+    }
+
+    li {
+      margin: 6px 0;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 16px 0;
+      font-size: 0.94rem;
+    }
+
+    th,
+    td {
+      padding: 11px 12px;
+      border: 1px solid var(--border);
+      vertical-align: top;
+      text-align: left;
+    }
+
+    th {
+      background: var(--surface-muted);
+      color: var(--text-primary);
+      font-weight: 800;
+    }
+
+    code {
+      padding: 0.08em 0.32em;
+      border-radius: 5px;
+      background: #eef4ff;
+      color: #1849a9;
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: 0.92em;
+    }
+
+    blockquote {
+      margin: 18px 0;
+      padding: 16px 18px;
+      border-left: 5px solid var(--accent);
+      border-radius: var(--radius);
+      background: var(--accent-muted);
+      font-weight: 700;
+    }
+
+    .grid {
+      display: grid;
+      gap: 14px;
+      margin: 16px 0;
+    }
+
+    .grid.two {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .grid.three {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .note {
+      padding: 14px 16px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface-base);
+      min-width: 0;
+    }
+
+    .note strong {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--accent-strong);
+    }
+
+    .score {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 3px 9px;
+      border-radius: 999px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .score.ok {
+      color: var(--ok);
+      background: #ecfdf3;
+    }
+
+    .score.warn {
+      color: var(--warn);
+      background: #fffaeb;
+    }
+
+    .score.bad {
+      color: var(--bad);
+      background: #fef3f2;
+    }
+
+    .matrix td:first-child {
+      font-weight: 800;
+      color: var(--accent-strong);
+      width: 18%;
+    }
+
+    .sources li {
+      word-break: break-word;
+    }
+
+    @media (max-width: 768px) {
+      .page {
+        padding: 20px 12px 48px;
+      }
+
+      .hero,
+      section {
+        padding: 20px;
+      }
+
+      h1 {
+        font-size: 2rem;
+      }
+
+      .lead {
+        font-size: 1rem;
+      }
+
+      .grid.two,
+      .grid.three {
+        grid-template-columns: 1fr;
+      }
+
+      table {
+        display: block;
+        overflow-x: auto;
+        white-space: normal;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="hero">
+      <p class="eyebrow">Commercial Market Review</p>
+      <h1>รีวิว Vigil Platform ในเชิงพาณิชย์เมื่อเทียบกับตลาด VMS และ Physical Security Platform</h1>
+      <p class="lead">
+        เอกสารนี้ประเมิน Vigil Platform ในฐานะสินค้าที่ต้องขายจริง แข่งจริง และดูแลลูกค้าจริง โดยเทียบกับกลุ่ม VMS enterprise,
+        cloud physical security, vendor suite และ local integrator dashboard ไม่ใช่รีวิวโค้ดเชิงเทคนิคอย่างเดียว
+      </p>
+      <div class="meta">
+        <span class="pill">วันที่จัดทำ: 2026-06-07</span>
+        <span class="pill">ภาษา: ไทย</span>
+        <span class="pill">Companion: commercial_system_review_2026-06-07.md</span>
+        <span class="pill">ขอบเขต: Commercial / Product / GTM</span>
+      </div>
+    </header>
+
+    <div class="toc">
+      <strong>สารบัญ</strong>
+      <nav aria-label="Table of contents">
+        <a href="#summary">บทสรุป</a>
+        <a href="#positioning">ตำแหน่งสินค้า</a>
+        <a href="#market">ภาพตลาด</a>
+        <a href="#strengths">ข้อดีและจุดแข็ง</a>
+        <a href="#weaknesses">ข้อเสียและข้อจำกัด</a>
+        <a href="#comparison">เทียบคู่แข่ง</a>
+        <a href="#commercial">มุมขายและแพ็กเกจ</a>
+        <a href="#roadmap">Roadmap เชิงพาณิชย์</a>
+        <a href="#verdict">คำตัดสิน</a>
+      </nav>
+    </div>
+
+    <section id="summary">
+      <h2>1. บทสรุปสำหรับผู้บริหาร</h2>
+      <blockquote>
+        Vigil Platform ไม่ควรถูกขายเป็น VMS ตัวใหม่ที่แทน Genetec, Milestone, Axis, HikCentral หรือ Nx Witness โดยตรง
+        แต่ควรถูกขายเป็น Security Operations Layer ที่ทำให้ระบบกล้อง/VMS เดิมมี alert, LINE workflow, health report,
+        evidence snapshot, Thai/English operation และ commercial ownership ที่ตอบตลาดไทยกว่า
+      </blockquote>
+      <p>
+        ถ้าวางตำแหน่งถูก ระบบนี้มี commercial potential สูง เพราะโจทย์ที่แก้ไม่ใช่แค่ "ดูภาพจากกล้อง" แต่เป็น
+        "ทำให้เหตุการณ์จากกล้องกลายเป็นการตอบสนองของทีมงานจริง" ซึ่งเป็นช่องว่างที่ VMS ใหญ่หลายตัวแก้ได้แต่แพง
+        ซับซ้อน หรือต้องพึ่ง plugin/integration เพิ่ม
+      </p>
+      <p>
+        จุดแข็งของ Vigil คือ local market fit: LINE alert, Thai-first workflow, on-prem / data ownership, multi-vendor event ingestion,
+        health/reporting, white-label, license/EULA และ service operations ที่เริ่ม mature แล้ว จุดอ่อนคือยังไม่ใช่ full VMS,
+        ยังไม่มี continuous playback/evidence case workflow ระดับ enterprise, ยังต้องพิสูจน์ scale และยังมี codebase บางส่วนที่ใหญ่
+        ทำให้ cost of change สูง
+      </p>
+
+      <div class="grid three">
+        <div class="note">
+          <strong>Commercial Fit</strong>
+          เหมาะกับโรงงาน อาคารสำนักงาน ศูนย์กระจายสินค้า โรงเรียน retail และไซต์ที่มี VMS/camera เดิมแต่ alert workflow ไม่ตอบโจทย์
+        </div>
+        <div class="note">
+          <strong>Best Positioning</strong>
+          Add-on / overlay platform สำหรับ security operations, LINE alert, camera health, analytics reports และ Thai operator workflows
+        </div>
+        <div class="note">
+          <strong>Main Risk</strong>
+          ถ้าขายเป็น VMS replacement เต็มรูปแบบ จะชนกับคู่แข่งที่มี recording/playback/evidence/device management แข็งกว่ามาก
+        </div>
+      </div>
+    </section>
+
+    <section id="basis">
+      <h2>2. ฐานข้อมูลที่ใช้ประเมิน</h2>
+      <p>ข้อมูลระบบ Vigil ดึงจาก repo ปัจจุบันและเอกสาร project memory ภายใน โดยไม่อ่าน secret, `.env`, media, snapshots หรือ customer data</p>
+      <table>
+        <thead>
+          <tr>
+            <th>หัวข้อ</th>
+            <th>สิ่งที่ตรวจพบ</th>
+            <th>ผลต่อ commercial review</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Runtime topology</td>
+            <td>กล้อง Bosch/Hikvision/Dahua/ONVIF → ingesters/media-recorder → PostgreSQL → Express/WebSocket → Vanilla JS dashboard → Cloudflare Tunnel</td>
+            <td>เป็น platform ที่มี data pipeline จริง ไม่ใช่ static dashboard</td>
+          </tr>
+          <tr>
+            <td>Process model</td>
+            <td>PM2 apps 7 ตัว: `api-server`, `mqtt-subscriber`, `media-recorder`, `hikvision`, `dahua`, `report-worker`, `alert-worker`</td>
+            <td>มี crash isolation และ operational story ดีกว่า prototype</td>
+          </tr>
+          <tr>
+            <td>API surface</td>
+            <td>พบ route declarations ประมาณ 133 จุด จาก `api-server.js` และ `src/routes/categories.js`</td>
+            <td>feature breadth กว้าง แต่ route modularity ยังต้องทำต่อ</td>
+          </tr>
+          <tr>
+            <td>Frontend size</td>
+            <td>`dashboard/dashboard.js` ประมาณ 10,601 บรรทัด และ `dashboard/index.html` ประมาณ 3,661 บรรทัด</td>
+            <td>UI มี feature เยอะ แต่ maintenance และ regression cost สูง</td>
+          </tr>
+          <tr>
+            <td>Security posture</td>
+            <td>มี auth-gated media/static, CSP, RBAC, audit, EULA, license, upload validation และ dependency upgrade ล่าสุด</td>
+            <td>พร้อมคุยกับลูกค้า enterprise ได้มากขึ้น แต่ยังต้องแก้ browser supply-chain risk</td>
+          </tr>
+          <tr>
+            <td>Testing</td>
+            <td>มี `node:test` 4 ไฟล์ ครอบคลุม helpers, crypto, alert engine, color utils</td>
+            <td>ดีขึ้นแล้ว แต่ยังไม่พอสำหรับ commercial SLA ถ้ายังไม่มี route/integration smoke tests</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="positioning">
+      <h2>3. ตำแหน่งสินค้าที่ควรวาง</h2>
+      <h3>3.1 ควรวางเป็นอะไร</h3>
+      <p>
+        ตำแหน่งที่แข็งที่สุดคือ <strong>on-prem security operations add-on สำหรับตลาดไทย</strong> ที่เชื่อมระบบกล้องและ VMS เดิม
+        แล้วเพิ่มชั้น alert, analytics, reporting, health monitoring และ operator workflow ที่ vendor หลักไม่ได้ออกแบบมาเฉพาะบริบทไทย
+      </p>
+      <p>
+        ในมุมลูกค้า สิ่งที่ Vigil ขายได้ไม่ใช่ "มี dashboard" แต่คือ "ลดการพลาดเหตุการณ์", "ลดเวลาตอบสนอง",
+        "ลด vendor lock-in", "เก็บข้อมูลในองค์กร", "ใช้ LINE ได้จริง", และ "มีรายงานสุขภาพระบบให้ฝ่ายบริหาร"
+      </p>
+
+      <h3>3.2 ไม่ควรวางเป็นอะไร</h3>
+      <p>
+        ไม่ควรวางเป็น full enterprise VMS replacement เพราะตลาดนั้นมีผู้เล่นที่ mature กว่าใน recording, playback, evidence export,
+        storage failover, device lifecycle, access control, intrusion, mobile client และ ecosystem integration
+      </p>
+
+      <table class="matrix">
+        <tbody>
+          <tr>
+            <td>One-line positioning</td>
+            <td>Vigil Platform คือชั้น Security Operations ที่ทำให้กล้องและ VMS เดิมตอบสนองเหตุการณ์ได้เร็วขึ้น โดยเฉพาะในบริบทการทำงานของทีมไทย</td>
+          </tr>
+          <tr>
+            <td>Primary buyer</td>
+            <td>เจ้าของอาคาร, facility manager, security manager, factory operations, system integrator ที่ต้องส่งมอบ workflow มากกว่าแค่ติดตั้งกล้อง</td>
+          </tr>
+          <tr>
+            <td>Economic buyer</td>
+            <td>ผู้บริหารที่ต้องการลด incident miss, ลดค่า cloud/VMS add-on, คุมข้อมูลเอง และมีรายงานให้ตรวจสอบได้</td>
+          </tr>
+          <tr>
+            <td>Best first use case</td>
+            <td>LINE alert + camera health + daily/weekly reports + event dashboard สำหรับไซต์ที่มีกล้อง 20-300 ตัว</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="market">
+      <h2>4. ภาพตลาดและกลุ่มคู่แข่ง</h2>
+      <p>
+        ตลาดที่ Vigil เข้าไปอยู่มีอย่างน้อย 5 กลุ่ม คู่แข่งแต่ละกลุ่มไม่ได้ชนะด้วยเหตุผลเดียวกัน และ Vigil ไม่จำเป็นต้องชนทุกกลุ่มพร้อมกัน
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>กลุ่มตลาด</th>
+            <th>ตัวอย่าง</th>
+            <th>เขาชนะด้วยอะไร</th>
+            <th>ช่องว่างที่ Vigil ใช้ได้</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Enterprise unified security</td>
+            <td>Genetec Security Center</td>
+            <td>รวม video, access control, ALPR, intrusion, communications, SDK และ ecosystem ขนาดใหญ่</td>
+            <td>Vigil เบากว่า ถูกกว่า ปรับให้เข้ากับ LINE/ไทย/on-prem ได้เร็วกว่า แต่ไม่ควรชน enterprise suite ตรงๆ</td>
+          </tr>
+          <tr>
+            <td>Open-platform VMS</td>
+            <td>Milestone XProtect, Nx Witness</td>
+            <td>recording/playback/search/client/device support/partner ecosystem</td>
+            <td>Vigil เป็น overlay ที่อ่าน event/analytics แล้วทำ workflow/report/LINE ได้เร็วกว่า ไม่ต้องแทน VMS</td>
+          </tr>
+          <tr>
+            <td>Vendor-centric VMS</td>
+            <td>Axis Camera Station Pro, HikCentral, Dahua DSS</td>
+            <td>integration ลึกกับ hardware vendor, device management, playback, access control</td>
+            <td>Vigil เชื่อมหลาย vendor และลดการผูกกับ vendor เดียว โดยเน้น operations layer</td>
+          </tr>
+          <tr>
+            <td>Cloud physical security</td>
+            <td>Verkada, Avigilon Alta, Rhombus</td>
+            <td>cloud UX, remote management, integrated hardware, AI, mobile, access control, alarm monitoring</td>
+            <td>Vigil ชนะใน on-prem/data ownership/source ownership/local customization/LINE แต่ UX และ mobile ยังต้องตามให้ทัน</td>
+          </tr>
+          <tr>
+            <td>Local SI dashboard</td>
+            <td>custom dashboard / NVR add-on ในตลาดไทย</td>
+            <td>ราคายืดหยุ่น, ทำตาม requirement, มีคน onsite</td>
+            <td>Vigil มี product memory, license, reports, health, multi-vendor ingestion และ security hardening ดีกว่า dashboard เฉพาะกิจ</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="strengths">
+      <h2>5. ข้อดีและจุดแข็งเชิงพาณิชย์</h2>
+
+      <h3>5.1 Local workflow fit แข็งมาก</h3>
+      <p>
+        จุดแข็งอันดับแรกคือระบบเข้าใจ workflow ไทย: LINE notification, Thai/English UI, disclaimer/EULA, report ที่อ่านได้,
+        recipient onboarding และ quiet hours/cooldown ซึ่งเป็นสิ่งที่ระบบ global ทำได้แต่ไม่ใช่ default experience
+      </p>
+      <p>
+        สิ่งนี้ขายได้จริง เพราะลูกค้าหลายรายไม่ได้แพ้ที่กล้องไม่ฉลาด แต่แพ้ที่ alert ไปไม่ถึงคนที่ต้องตัดสินใจ หรือไปถึงแบบใช้งานไม่ได้
+      </p>
+
+      <h3>5.2 On-prem และ data ownership เป็น positioning ที่ชัด</h3>
+      <p>
+        Vigil เหมาะกับลูกค้าที่ไม่ต้องการส่ง video/event metadata ขึ้น cloud vendor โดยเฉพาะองค์กรที่กังวล PDPA, audit,
+        customer data, factory layout หรือ security-sensitive operations
+      </p>
+
+      <h3>5.3 Multi-vendor event ingestion ไม่ใช่แค่คำโฆษณา</h3>
+      <p>
+        มี ingester จริงสำหรับ Bosch MQTT, Hikvision ISAPI, Dahua CGI และ ONVIF monitor path พร้อม gotchas จากเหตุการณ์จริง
+        เช่น Dahua Smart Plan, Hikvision channel selection, Bosch native snapshot และ EMQX/MQTT compatibility
+      </p>
+
+      <h3>5.4 Alert-to-action loop ครบกว่า dashboard ทั่วไป</h3>
+      <ul>
+        <li>LINE alert ต่อ rule/camera/recipient</li>
+        <li>cooldown และ quiet hours</li>
+        <li>quota visibility</li>
+        <li>pending recipient approval/blocking</li>
+        <li>camera offline/recovery alert</li>
+        <li>report history และ scheduled report delivery</li>
+      </ul>
+
+      <h3>5.5 Reporting และ health monitoring เป็น value ที่ผู้บริหารเข้าใจง่าย</h3>
+      <p>
+        หลาย VMS แข็งเรื่อง playback แต่ไม่สื่อสาร health และ performance ให้ผู้บริหาร non-technical ดีพอ Vigil มี Health Report,
+        daily/weekly/monthly reports, report history, camera uptime, storage/system warnings ซึ่งเป็นสิ่งที่ช่วยขาย maintenance contract ได้
+      </p>
+
+      <h3>5.6 White-label และ license foundation พร้อมขายต่อ</h3>
+      <p>
+        ระบบมี branding, license, EULA, hardware sizing, backup/restore, docs และ PM2 operations ทำให้เป็นสินค้าที่ partner/SI
+        สามารถนำไป package ได้ ไม่ใช่งาน custom ที่ไม่มี product boundary
+      </p>
+
+      <h3>5.7 Project memory แข็งกว่าทีมเล็กทั่วไป</h3>
+      <p>
+        การมี `DECISIONS.md`, `GOTCHAS.md`, `ARCHITECTURE.md`, `ROADMAP.md`, `SKILL.md`, audit history และ changelog รายละเอียดสูง
+        ลดความเสี่ยงที่คนใหม่จะแก้ผิดทาง เป็นข้อดีเชิง sustainability ที่สำคัญมากถ้าจะขายเป็น product
+      </p>
+    </section>
+
+    <section id="weaknesses">
+      <h2>6. ข้อเสีย ข้อจำกัด และความเสี่ยง</h2>
+
+      <h3>6.1 ยังไม่ใช่ full VMS</h3>
+      <p>
+        ช่องว่างสำคัญเมื่อเทียบกับ VMS ใหญ่คือ continuous recording, timeline playback, multi-camera synchronized playback,
+        evidence package, video redaction, device firmware management, storage failover, PTZ depth, native mobile client และ enterprise access control
+      </p>
+
+      <h3>6.2 Scale proof ยังต้องทำก่อนขายไซต์ใหญ่</h3>
+      <p>
+        เอกสารวาง scale 100-3,000 cameras ได้ แต่ในเชิง commercial ควรมี benchmark ที่ reproduce ได้ เช่น 100/500/1,000 camera simulation,
+        event burst, WebSocket fanout, report queue latency, DB query latency และ snapshot/clip throughput
+      </p>
+
+      <h3>6.3 Browser supply-chain risk ยังเป็น commercial blocker บางตลาด</h3>
+      <p>
+        จาก audit รอบ 3 dashboard ยังโหลด vendor JS จาก CDN ขณะที่ token อยู่ใน browser storage ถ้าลูกค้า enterprise หรือ critical site ตรวจ security
+        ประเด็นนี้จะถูกถามแน่นอน ควร self-host library และ tighten CSP ก่อนนำไป pitch กลุ่มที่จริงจังเรื่อง security
+      </p>
+
+      <h3>6.4 Codebase บางส่วนใหญ่เกินไปสำหรับ product team</h3>
+      <p>
+        `api-server.js` และ `dashboard.js` ยังใหญ่ ทำให้การเพิ่ม feature, regression control, onboarding developer และ partner support มีต้นทุนสูง
+        ทางแก้คือ route/module extraction แบบ incremental ไม่ใช่ rewrite
+      </p>
+
+      <h3>6.5 Integration กับ enterprise IT ยังไม่ครบ</h3>
+      <p>
+        ถ้าขายองค์กรใหญ่ จะถูกถามเรื่อง AD/LDAP/SSO, syslog/SIEM, outbound webhook, email/SMTP, approval workflow,
+        incident case management, SLA dashboard และ backup off-host ซึ่งบางส่วนอยู่ใน roadmap แต่ยังไม่ครบ
+      </p>
+
+      <h3>6.6 Commercial support model ต้องชัด</h3>
+      <p>
+        Multi-vendor ingest คือจุดขาย แต่ก็เป็นภาระ support: firmware, camera config, event payload, RTSP, snapshot timing และ network quirks
+        ถ้าจะขายผ่าน partner ต้องมี compatibility matrix, known-good firmware list และ payload replay fixtures
+      </p>
+    </section>
+
+    <section id="comparison">
+      <h2>7. เทียบกับคู่แข่งและทางเลือกในตลาด</h2>
+
+      <table>
+        <thead>
+          <tr>
+            <th>มิติ</th>
+            <th>Vigil Platform</th>
+            <th>Enterprise VMS / Cloud Platform</th>
+            <th>ผลเชิงขาย</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Video recording/playback</td>
+            <td><span class="score warn">ปานกลาง</span><br>มี snapshot/clip/live paths แต่ยังไม่ใช่ playback suite</td>
+            <td><span class="score ok">แข็งมาก</span><br>timeline, export, recording, failover mature</td>
+            <td>ห้ามขายแทน VMS หากลูกค้าต้องการ playback เป็นแกนหลัก</td>
+          </tr>
+          <tr>
+            <td>Event-to-action workflow</td>
+            <td><span class="score ok">แข็งมาก</span><br>LINE, rule matching, recipients, reports, health</td>
+            <td><span class="score warn">ขึ้นกับระบบ</span><br>มักต้อง plugin/integration เพิ่ม</td>
+            <td>นี่คือสนามที่ Vigil ควรขาย</td>
+          </tr>
+          <tr>
+            <td>Local Thai market fit</td>
+            <td><span class="score ok">แข็งมาก</span><br>Thai-first, LINE, EULA/PDPA, local customization</td>
+            <td><span class="score warn">ปานกลาง</span><br>global workflow เป็นหลัก</td>
+            <td>ใช้เป็น differentiator หลักใน proposal</td>
+          </tr>
+          <tr>
+            <td>Cloud UX/mobile</td>
+            <td><span class="score warn">กำลังพัฒนา</span><br>web dashboard เป็นหลัก</td>
+            <td><span class="score ok">แข็ง</span><br>Verkada/Alta/Rhombus เด่นมาก</td>
+            <td>ไม่ควรชน cloud-first ใน UX ระยะสั้น</td>
+          </tr>
+          <tr>
+            <td>Data ownership</td>
+            <td><span class="score ok">แข็ง</span><br>on-prem, self-host, source ownership direction</td>
+            <td><span class="score warn">ขึ้นกับรุ่น</span><br>บางเจ้า cloud-first, บางเจ้า on-prem</td>
+            <td>เหมาะกับลูกค้าที่กลัว lock-in/cloud data transfer</td>
+          </tr>
+          <tr>
+            <td>Access control / intrusion</td>
+            <td><span class="score bad">ยังอ่อน</span><br>ไม่ได้เป็น unified physical security suite</td>
+            <td><span class="score ok">แข็ง</span><br>Genetec/Axis/Alta/Verkada รวมหลาย domain</td>
+            <td>ระบุ boundary ให้ชัดใน TOR/proposal</td>
+          </tr>
+          <tr>
+            <td>Customizability</td>
+            <td><span class="score ok">แข็ง</span><br>vanilla stack, raw SQL, white-label, local owner control</td>
+            <td><span class="score warn">ขึ้นกับ SDK/licensing</span><br>custom ได้แต่มี partner model</td>
+            <td>เป็นข้อดีสำหรับ SI/ลูกค้าที่มี requirement เฉพาะ</td>
+          </tr>
+          <tr>
+            <td>Enterprise proof</td>
+            <td><span class="score warn">ยังต้องพิสูจน์</span><br>ต้องมี benchmark, CI, SLA, support matrix</td>
+            <td><span class="score ok">พิสูจน์แล้ว</span><br>reference base และ ecosystem ใหญ่</td>
+            <td>เริ่มขาย mid-market/pilot ก่อน อย่าเริ่มจาก global enterprise</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>7.1 เทียบกับ Genetec</h3>
+      <p>
+        Genetec เป็น unified security platform ที่รวม video, access control, ALPR, communications และ ecosystem ขนาดใหญ่
+        Vigil ไม่ควรชนในมิติ unified enterprise suite แต่ควรชนะในความเบา, on-prem customization, LINE workflow และราคาที่เข้าถึงได้กว่า
+      </p>
+
+      <h3>7.2 เทียบกับ Milestone / Nx Witness</h3>
+      <p>
+        Milestone และ Nx Witness เป็น VMS/open platform ที่แข็งเรื่อง live/recorded video, device support, client UX และ ecosystem
+        Vigil ควรวางเป็น companion layer: ดึง event/metadata/snapshot แล้วเพิ่ม alert, reports, health และ Thai workflows
+      </p>
+
+      <h3>7.3 เทียบกับ Axis Camera Station Pro / HikCentral / Dahua DSS</h3>
+      <p>
+        vendor suite แข็งกับ hardware ของตัวเองและมี device management/playback ดี แต่ลูกค้าหลายรายมีหลาย vendor ปนกัน
+        Vigil ชนะเมื่อโจทย์คือรวม event จากหลาย vendor และสร้าง operation layer กลางที่ไม่ผูกกับ brand เดียว
+      </p>
+
+      <h3>7.4 เทียบกับ Verkada / Avigilon Alta / Rhombus</h3>
+      <p>
+        กลุ่ม cloud physical security แข็งเรื่อง UX, mobile, cloud admin, hardware integration, access/alarm/sensor ecosystem
+        Vigil แข่งตรงนี้ยากถ้าลูกค้าต้องการ cloud-first แต่ชนะในกรณีที่ลูกค้าต้องการ on-prem, source ownership, local data control,
+        LINE integration และการปรับแต่งเฉพาะไซต์
+      </p>
+    </section>
+
+    <section id="commercial">
+      <h2>8. มุมขาย แพ็กเกจ และราคา</h2>
+
+      <h3>8.1 Ideal Customer Profile</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>กลุ่มลูกค้า</th>
+            <th>เหตุผลที่เหมาะ</th>
+            <th>ข้อความขายที่ควรใช้</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>โรงงาน / warehouse / logistics</td>
+            <td>ต้องการ alert เร็ว, offline monitoring, incident report, on-prem data</td>
+            <td>ลดเหตุการณ์หลุด ลดเวลาตอบสนอง และมีรายงานสุขภาพกล้องรายวัน</td>
+          </tr>
+          <tr>
+            <td>อาคารสำนักงาน / mixed-use building</td>
+            <td>มีหลาย vendor, ต้องการ LINE ถึงทีม security/facility, ต้องการ report ให้ management</td>
+            <td>ทำให้ระบบกล้องเดิมกลายเป็น operation dashboard ที่ทีมใช้จริง</td>
+          </tr>
+          <tr>
+            <td>โรงเรียน / มหาวิทยาลัย</td>
+            <td>ต้องการ alert, privacy, budget control, bilingual operation</td>
+            <td>ระบบแจ้งเตือนและรายงานที่เก็บข้อมูลในองค์กร ไม่ล็อกกับ cloud vendor</td>
+          </tr>
+          <tr>
+            <td>System Integrator</td>
+            <td>ต้องการ productizable add-on ที่ white-label ได้และขาย maintenance ต่อได้</td>
+            <td>เพิ่ม recurring service value เหนืองานติดตั้งกล้อง/NVR</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>8.2 Packaging ที่แนะนำ</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>แพ็กเกจ</th>
+            <th>เหมาะกับ</th>
+            <th>ควรมี</th>
+            <th>ไม่ควรสัญญาเกิน</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Starter Operations</td>
+            <td>10-50 cameras</td>
+            <td>LINE alert, live events, snapshots, camera health, basic reports, backup</td>
+            <td>full playback/evidence suite</td>
+          </tr>
+          <tr>
+            <td>Professional Site</td>
+            <td>50-300 cameras</td>
+            <td>multi-vendor ingest, scheduled reports, report history, camera groups, audit, offline alerts</td>
+            <td>enterprise federation / multi-site command center</td>
+          </tr>
+          <tr>
+            <td>Enterprise Add-on</td>
+            <td>300+ cameras หรือหลายไซต์</td>
+            <td>hardening, benchmark, off-host backup, SIEM/webhook, SSO, support SLA, partition plan</td>
+            <td>อย่าขายก่อนมี load test และ support playbook</td>
+          </tr>
+          <tr>
+            <td>SI White-label</td>
+            <td>partner ที่ขายต่อ</td>
+            <td>branding, license, deployment kit, compatibility matrix, training, update policy</td>
+            <td>source-code protection ต้องชัดก่อนส่งมอบวงกว้าง</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>8.3 Pricing logic ที่เหมาะ</h3>
+      <p>
+        ไม่ควรตั้งราคาเทียบ "ต่อกล้องแบบ VMS" อย่างเดียว เพราะ Vigil ไม่ได้ขาย recording engine เป็นแกนหลัก ควรตั้งราคาแบบผสม:
+      </p>
+      <ul>
+        <li>base platform license ต่อไซต์</li>
+        <li>camera/event ingestion tier ตามจำนวนกล้อง</li>
+        <li>LINE/reporting module เป็น add-on หรือรวมใน Professional</li>
+        <li>maintenance/support รายปี</li>
+        <li>custom vendor integration เป็น professional service</li>
+      </ul>
+      <p>
+        Commercial anchor ควรเป็นต้นทุน incident miss + manpower + cloud/VMS add-on savings ไม่ใช่ราคา license ต่อ channel อย่างเดียว
+      </p>
+
+      <h3>8.4 Sales motion ที่ควรใช้</h3>
+      <ol>
+        <li>เริ่มจาก pilot 30-60 วันกับ 10-30 cameras ในพื้นที่ที่มี event จริง</li>
+        <li>วัด KPI: alert latency, missed event reduction, camera downtime detection, report usage, LINE acknowledgement</li>
+        <li>ทำ before/after dashboard ให้ผู้บริหารเห็น</li>
+        <li>ขยายไป camera group หรือ site อื่นหลังได้ operational proof</li>
+      </ol>
+    </section>
+
+    <section id="roadmap">
+      <h2>9. Roadmap เชิงพาณิชย์ที่ควรทำก่อนขายหนัก</h2>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Priority</th>
+            <th>งาน</th>
+            <th>เหตุผลเชิงขาย</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>P0</td>
+            <td>Self-host dashboard vendor JS และ tighten CSP</td>
+            <td>ลด commercial security objection จาก enterprise/customer audit</td>
+          </tr>
+          <tr>
+            <td>P0</td>
+            <td>Route/auth/static/CSP smoke tests</td>
+            <td>เพิ่มความมั่นใจก่อน demo/upgrade ให้หลายลูกค้า</td>
+          </tr>
+          <tr>
+            <td>P0</td>
+            <td>Off-host backup + restore drill</td>
+            <td>ขาย maintenance/SLA ได้จริง ไม่พึ่ง local backup อย่างเดียว</td>
+          </tr>
+          <tr>
+            <td>P1</td>
+            <td>Compatibility matrix และ known-good firmware list</td>
+            <td>ลด support risk และทำให้ SI ขายต่อได้ง่าย</td>
+          </tr>
+          <tr>
+            <td>P1</td>
+            <td>Load test harness สำหรับ 100/500/1,000 cameras</td>
+            <td>ใช้ตอบคำถาม scale ใน proposal และ TOR</td>
+          </tr>
+          <tr>
+            <td>P1</td>
+            <td>SMTP/email report delivery</td>
+            <td>ขยายตลาดองค์กรที่ไม่ใช้ LINE เป็นช่องทางหลัก</td>
+          </tr>
+          <tr>
+            <td>P1</td>
+            <td>Incident acknowledgement / assign / comment</td>
+            <td>เปลี่ยนจาก alert dashboard เป็น operations workflow เต็มขึ้น</td>
+          </tr>
+          <tr>
+            <td>P2</td>
+            <td>SSO/LDAP และ SIEM/syslog/webhook</td>
+            <td>ปลดล็อก enterprise IT และ regulated customers</td>
+          </tr>
+          <tr>
+            <td>P2</td>
+            <td>VMS playback proxy</td>
+            <td>เติมช่องว่าง playback โดยไม่ต้องสร้าง VMS ใหม่</td>
+          </tr>
+          <tr>
+            <td>P2</td>
+            <td>Native/mobile companion app หรือ PWA hardening</td>
+            <td>ลด gap กับ cloud physical security platform</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="verdict">
+      <h2>10. คำตัดสินเชิงพาณิชย์</h2>
+      <p>
+        Vigil Platform มี commercial thesis ที่แข็ง ถ้าขายถูกตลาดและไม่ overclaim ระบบเหมาะเป็น product สำหรับ SI/DojoJin
+        ที่ต้องการแตกต่างจากการขายกล้อง/NVR/VMS ธรรมดา เพราะ value อยู่ที่ operations, alert, report, local workflow และ data ownership
+      </p>
+      <p>
+        จุดที่ควรระวังคืออย่าชนกับ VMS ใหญ่ในสนามที่เขา mature กว่า เช่น recording/playback/evidence/device management
+        ให้ขายเป็น layer ที่ทำงานร่วมกับ VMS/camera เดิม และค่อยเติม playback proxy/incident management ใน roadmap
+      </p>
+      <blockquote>
+        คำแนะนำสุดท้าย: ใช้ Vigil เป็น "response and intelligence layer" ไม่ใช่ "recording engine" แล้วทำ benchmark/security hardening
+        ให้พอใช้เป็นหลักฐานเชิงพาณิชย์ก่อนขยายไปไซต์ใหญ่
+      </blockquote>
+    </section>
+
+    <section id="sources">
+      <h2>11. แหล่งอ้างอิงภายนอกที่ใช้เทียบตลาด</h2>
+      <p>อ้างอิงจากหน้า official/public product pages ที่ตรวจในวันที่ 2026-06-07 เพื่อหลีกเลี่ยงการอ้างข้อมูลตลาดจากความจำอย่างเดียว</p>
+      <ul class="sources">
+        <li>Genetec Security Center: <a href="https://www.genetec.com/products/unified-security/security-center">https://www.genetec.com/products/unified-security/security-center</a></li>
+        <li>Milestone XProtect: <a href="https://www.milestonesys.com/products/software/xprotect/">https://www.milestonesys.com/products/software/xprotect/</a></li>
+        <li>Network Optix Nx Witness: <a href="https://www.networkoptix.com/landing/nx-witness-schedule-a-demo">https://www.networkoptix.com/landing/nx-witness-schedule-a-demo</a></li>
+        <li>Network Optix support overview: <a href="https://support.networkoptix.com/hc/en-us/articles/205415918-What-is-Nx-Witness-">https://support.networkoptix.com/hc/en-us/articles/205415918-What-is-Nx-Witness-</a></li>
+        <li>Verkada: <a href="https://www.verkada.com/">https://www.verkada.com/</a></li>
+        <li>Avigilon Alta cloud VMS: <a href="https://www.avigilon.com/vms/cloud">https://www.avigilon.com/vms/cloud</a></li>
+        <li>Axis Camera Station Pro: <a href="https://www.axis.com/en-us/products/axis-camera-station-pro">https://www.axis.com/en-us/products/axis-camera-station-pro</a></li>
+        <li>Axis Camera Station Pro feature guide: <a href="https://help.axis.com/en-us/axis-camera-station-pro-feature-guide">https://help.axis.com/en-us/axis-camera-station-pro-feature-guide</a></li>
+        <li>Rhombus cloud physical security: <a href="https://www.rhombus.com/">https://www.rhombus.com/</a></li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>

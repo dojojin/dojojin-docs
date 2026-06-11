@@ -4,375 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Vigil Platform — Camera Vendor Comparison (Bosch / Hikvision / Dahua)</title>
-<style>
-  :root {
-    --bg:        #0a0e1a;
-    --panel:     #111827;
-    --panel2:    #1a2236;
-    --border:    #1e2d45;
-    --accent:    #5b8def;
-    --accent2:   #3a6fd8;
-    --text:      #e2e8f0;
-    --dim:       #94a3b8;
-    --green:     #22c55e;
-    --amber:     #f59e0b;
-    --red:       #ef4444;
-    --bosch:     #009ee3;
-    --hik:       #e8000b;
-    --dahua:     #ff6600;
-    --radius:    8px;
-    --gap:       1.5rem;
-  }
-
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: 'Segoe UI', 'Noto Sans Thai', system-ui, sans-serif;
-    font-size: 14px;
-    line-height: 1.6;
-    padding: 2rem 1rem 4rem;
-  }
-
-  .page-wrap {
-    max-width: 1200px;
-    margin: 0 auto;
-  }
-
-  /* ── Header ── */
-  .page-header {
-    text-align: center;
-    margin-bottom: 2.5rem;
-    padding-bottom: 1.5rem;
-    border-bottom: 1px solid var(--border);
-  }
-  .page-header h1 {
-    font-size: 1.75rem;
-    font-weight: 700;
-    color: var(--accent);
-    margin-bottom: .4rem;
-  }
-  .page-header .subtitle {
-    color: var(--dim);
-    font-size: .875rem;
-  }
-  .badge-row {
-    display: flex;
-    gap: .5rem;
-    justify-content: center;
-    margin-top: .75rem;
-    flex-wrap: wrap;
-  }
-  .badge {
-    padding: .2rem .75rem;
-    border-radius: 999px;
-    font-size: .75rem;
-    font-weight: 600;
-    letter-spacing: .03em;
-  }
-  .badge-bosch { background: #003a6640; color: var(--bosch); border: 1px solid var(--bosch); }
-  .badge-hik   { background: #6600001a; color: var(--hik);   border: 1px solid var(--hik);   }
-  .badge-dahua { background: #6622001a; color: var(--dahua); border: 1px solid var(--dahua); }
-
-  /* ── Section ── */
-  .section {
-    margin-bottom: 2.5rem;
-  }
-  .section-title {
-    font-size: 1.1rem;
-    font-weight: 700;
-    color: var(--accent);
-    margin-bottom: 1rem;
-    padding-bottom: .4rem;
-    border-bottom: 2px solid var(--border);
-    display: flex;
-    align-items: center;
-    gap: .5rem;
-  }
-  .section-title svg { flex-shrink: 0; }
-
-  /* ── Summary table ── */
-  .summary-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: var(--gap);
-    margin-bottom: var(--gap);
-  }
-  @media (max-width: 768px) {
-    .summary-grid { grid-template-columns: 1fr; }
-  }
-
-  .vendor-card {
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    overflow: hidden;
-  }
-  .vendor-header {
-    padding: .75rem 1rem;
-    font-weight: 700;
-    font-size: 1rem;
-    display: flex;
-    align-items: center;
-    gap: .5rem;
-  }
-  .vendor-header.bosch { background: #003a6640; color: var(--bosch); border-bottom: 2px solid var(--bosch); }
-  .vendor-header.hik   { background: #6600001a; color: var(--hik);   border-bottom: 2px solid var(--hik);   }
-  .vendor-header.dahua { background: #6622001a; color: var(--dahua); border-bottom: 2px solid var(--dahua); }
-
-  .vendor-body { padding: 1rem; }
-
-  .kv-list { list-style: none; }
-  .kv-list li {
-    display: grid;
-    grid-template-columns: 110px 1fr;
-    gap: .4rem;
-    padding: .3rem 0;
-    border-bottom: 1px solid var(--border);
-    font-size: .8rem;
-  }
-  .kv-list li:last-child { border-bottom: none; }
-  .kv-key { color: var(--dim); }
-  .kv-val { color: var(--text); font-weight: 500; word-break: break-word; }
-  .kv-val.mono { font-family: monospace; font-size: .75rem; color: #93c5fd; }
-
-  /* ── Flow diagram ── */
-  .flow-section {
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 1.25rem;
-    margin-bottom: var(--gap);
-  }
-  .flow-section h3 {
-    font-size: .9rem;
-    font-weight: 700;
-    margin-bottom: 1rem;
-    color: var(--accent);
-  }
-  .flow-row {
-    display: flex;
-    align-items: flex-start;
-    gap: 0;
-    flex-wrap: wrap;
-  }
-  .flow-box {
-    background: var(--panel2);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: .55rem .8rem;
-    font-size: .78rem;
-    line-height: 1.4;
-    min-width: 110px;
-    text-align: center;
-    position: relative;
-  }
-  .flow-box .label {
-    font-weight: 700;
-    color: var(--text);
-    display: block;
-  }
-  .flow-box .sub {
-    color: var(--dim);
-    font-size: .7rem;
-    display: block;
-    margin-top: .15rem;
-  }
-  .flow-arrow {
-    display: flex;
-    align-items: center;
-    padding: 0 .35rem;
-    color: var(--dim);
-    font-size: 1.1rem;
-    align-self: center;
-  }
-  .flow-arrow .proto {
-    font-size: .65rem;
-    color: var(--accent);
-    writing-mode: horizontal-tb;
-    position: absolute;
-    top: -1.2rem;
-    left: 50%;
-    transform: translateX(-50%);
-    white-space: nowrap;
-    font-weight: 600;
-  }
-  .flow-arrow-wrap {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: .5rem 0;
-  }
-  .arrow-label {
-    font-size: .65rem;
-    color: var(--accent);
-    white-space: nowrap;
-    margin-bottom: .1rem;
-  }
-  .arrow-char { color: var(--dim); font-size: 1.2rem; }
-
-  .col-bosch { border-left: 3px solid var(--bosch) !important; }
-  .col-hik   { border-left: 3px solid var(--hik)   !important; }
-  .col-dahua { border-left: 3px solid var(--dahua) !important; }
-
-  /* ── Big compare table ── */
-  .compare-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: .8rem;
-    background: var(--panel);
-    border-radius: var(--radius);
-    overflow: hidden;
-  }
-  .compare-table th, .compare-table td {
-    padding: .65rem .9rem;
-    text-align: left;
-    border-bottom: 1px solid var(--border);
-    vertical-align: top;
-  }
-  .compare-table th {
-    background: var(--panel2);
-    font-weight: 700;
-    color: var(--dim);
-    font-size: .75rem;
-    letter-spacing: .04em;
-    text-transform: uppercase;
-  }
-  .compare-table th.h-bosch { color: var(--bosch); }
-  .compare-table th.h-hik   { color: var(--hik);   }
-  .compare-table th.h-dahua { color: var(--dahua); }
-  .compare-table tr:last-child td { border-bottom: none; }
-  .compare-table td:first-child { color: var(--dim); font-weight: 600; white-space: nowrap; }
-  .compare-table code {
-    font-family: monospace;
-    font-size: .72rem;
-    background: rgba(255,255,255,.06);
-    padding: .1rem .3rem;
-    border-radius: 3px;
-    color: #93c5fd;
-  }
-  tr.row-alt { background: rgba(255,255,255,.02); }
-
-  /* ── Snapshot timeline ── */
-  .snap-chain {
-    display: flex;
-    flex-direction: column;
-    gap: .4rem;
-  }
-  .snap-step {
-    display: flex;
-    align-items: flex-start;
-    gap: .6rem;
-    background: var(--panel2);
-    border: 1px solid var(--border);
-    border-radius: 5px;
-    padding: .5rem .75rem;
-    font-size: .78rem;
-  }
-  .snap-step.primary   { border-left: 3px solid var(--green); }
-  .snap-step.secondary { border-left: 3px solid var(--amber); }
-  .snap-step.fallback  { border-left: 3px solid var(--red);   }
-  .snap-step.upgrade   { border-left: 3px solid var(--accent); }
-  .snap-num {
-    font-weight: 800;
-    font-size: .85rem;
-    min-width: 1.4rem;
-    color: var(--dim);
-  }
-  .snap-desc .title { font-weight: 700; color: var(--text); }
-  .snap-desc .detail { color: var(--dim); margin-top: .1rem; }
-
-  /* ── Network table ── */
-  .net-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: .8rem;
-    background: var(--panel);
-    border-radius: var(--radius);
-    overflow: hidden;
-  }
-  .net-table th, .net-table td {
-    padding: .6rem .9rem;
-    border-bottom: 1px solid var(--border);
-    text-align: center;
-  }
-  .net-table th {
-    background: var(--panel2);
-    color: var(--dim);
-    font-size: .72rem;
-    letter-spacing: .04em;
-    text-transform: uppercase;
-  }
-  .net-table td:first-child { text-align: left; font-weight: 600; color: var(--dim); }
-  .net-table tr:last-child td { border-bottom: none; }
-  .net-low  { color: var(--green); font-weight: 600; }
-  .net-mid  { color: var(--amber); font-weight: 600; }
-  .net-high { color: var(--red);   font-weight: 600; }
-  .net-note { font-size: .7rem; color: var(--dim); margin-top: .15rem; }
-  row.alt { background: rgba(255,255,255,.02); }
-
-  /* ── Info boxes ── */
-  .info-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-    gap: 1rem;
-  }
-  .info-box {
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 1rem;
-  }
-  .info-box h4 {
-    font-size: .85rem;
-    font-weight: 700;
-    margin-bottom: .6rem;
-    color: var(--accent);
-  }
-  .info-box ul { padding-left: 1.1rem; }
-  .info-box ul li {
-    color: var(--dim);
-    font-size: .78rem;
-    line-height: 1.6;
-    margin-bottom: .2rem;
-  }
-  .info-box ul li strong { color: var(--text); }
-
-  /* ── Chip ── */
-  .chip {
-    display: inline-block;
-    padding: .1rem .5rem;
-    border-radius: 999px;
-    font-size: .7rem;
-    font-weight: 700;
-    margin: .1rem .05rem;
-  }
-  .chip-green  { background: #16a34a20; color: var(--green); border: 1px solid #22c55e50; }
-  .chip-amber  { background: #d9770620; color: var(--amber); border: 1px solid #f59e0b50; }
-  .chip-red    { background: #ef444420; color: var(--red);   border: 1px solid #ef444450; }
-  .chip-blue   { background: #3b82f620; color: #93c5fd;      border: 1px solid #3b82f650; }
-
-  /* ── Footer ── */
-  .page-footer {
-    margin-top: 3rem;
-    text-align: center;
-    color: var(--dim);
-    font-size: .72rem;
-    border-top: 1px solid var(--border);
-    padding-top: 1rem;
-  }
-
-  /* ── Responsive ── */
-  @media (max-width: 768px) {
-    .flow-row { flex-direction: column; align-items: flex-start; }
-    .flow-arrow { transform: rotate(90deg); }
-    .info-grid { grid-template-columns: 1fr; }
-    body { padding: 1rem .5rem 3rem; }
-  }
-</style>
+<link rel="stylesheet" href="vendor-comparison.css">
 </head>
 <body>
 <div class="page-wrap">
@@ -512,7 +144,7 @@
       <div style="flex:1"></div>
       <div class="flow-box col-bosch" style="min-width:160px">
         <span class="label">mqtt-subscriber.js</span>
-        <span class="sub">INSERT events + UPDATE snapshot + alertEngine</span>
+        <span class="sub">INSERT events + UPDATE snapshot + pg_notify alert_event → alert-worker</span>
       </div>
       <div class="flow-arrow-wrap">
         <span class="arrow-label">pg_notify<br>new_event</span>
@@ -1174,7 +806,7 @@
     <div class="info-box">
       <h4>ทั้ง 3 ยี่ห้อ — Pipeline ร่วมกัน</h4>
       <ul>
-        <li>ทุก event เข้า <strong>alert-engine</strong> เหมือนกัน → rule matching, cooldown, quiet hours, LINE notification</li>
+        <li>ทุก event ผ่าน <strong>alert-engine</strong> → rule matching, cooldown, quiet hours, LINE notification (Bosch: ผ่าน <code>pg_notify alert_event</code> → <strong>alert-worker</strong> (PM2 แยก); Hik/Dahua: direct <code>onEvent()</code>)</li>
         <li><code>pg_notify('new_event', id)</code> → api-server LISTEN → WebSocket broadcast → Dashboard real-time update</li>
         <li><code>pg_notify('event_for_clip', ...)</code> → media-recorder ตัดสินใจ capture clip ตาม <code>cameras.enable_clip_capture</code></li>
         <li>Snapshot บันทึกไว้ที่ <code>snapshots/</code> folder · ชื่อไฟล์ = <code>{camera_id}_{event_id}_{timestamp}.jpg</code></li>
@@ -1215,62 +847,7 @@
     System Architecture Diagram — แต่ละยี่ห้อ
   </div>
 
-  <style>
-    /* ── Diagram styles ── */
-    .diagram-wrap {
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 1.5rem;
-      margin-bottom: 1.5rem;
-      overflow-x: auto;
-    }
-    .diagram-title {
-      font-size: .9rem;
-      font-weight: 700;
-      margin-bottom: 1.25rem;
-      display: flex;
-      align-items: center;
-      gap: .5rem;
-    }
-    .diagram-title .dot {
-      width: 10px; height: 10px;
-      border-radius: 50%;
-      display: inline-block;
-    }
-
-    /* SVG diagram container */
-    .diagram-svg-wrap {
-      min-width: 700px;
-    }
-    .diagram-svg-wrap svg text { font-family: 'Segoe UI', system-ui, sans-serif; }
-
-    /* Component box shared styles */
-    .dbox { rx: 8; ry: 8; }
-
-    /* Legend */
-    .legend {
-      display: flex;
-      gap: 1.5rem;
-      margin-top: 1rem;
-      flex-wrap: wrap;
-    }
-    .legend-item {
-      display: flex;
-      align-items: center;
-      gap: .4rem;
-      font-size: .72rem;
-      color: var(--dim);
-    }
-    .legend-line {
-      width: 28px;
-      height: 2px;
-      border-radius: 1px;
-    }
-    .legend-line.dashed {
-      background: repeating-linear-gradient(90deg, currentColor 0, currentColor 4px, transparent 4px, transparent 8px);
-    }
-  </style>
+  
 
   <!-- Bosch Diagram -->
   <div class="diagram-wrap">
@@ -1338,17 +915,17 @@
       <text x="487" y="213" text-anchor="middle" fill="#94a3b8" font-size="9">native JPEG (no size cap)</text>
       <text x="487" y="225" text-anchor="middle" fill="#94a3b8" font-size="9">port 80 · Basic auth</text>
 
-      <!-- Arrow: subscriber → alert-engine -->
+      <!-- Arrow: subscriber → alert-worker -->
       <line x1="565" y1="70" x2="620" y2="70" stroke="#22c55e" stroke-width="1.5" marker-end="url(#arr-bg)"/>
-      <text x="592" y="62" text-anchor="middle" fill="#22c55e" font-size="9" font-weight="600">onEvent()</text>
-      <text x="592" y="82" text-anchor="middle" fill="#64748b" font-size="9">fire &amp; forget</text>
+      <text x="592" y="62" text-anchor="middle" fill="#22c55e" font-size="9" font-weight="600">pg_notify</text>
+      <text x="592" y="82" text-anchor="middle" fill="#64748b" font-size="9">alert_event</text>
 
-      <!-- alert-engine -->
+      <!-- alert-worker -->
       <rect x="620" y="30" width="120" height="80" rx="8" fill="#1a2236" stroke="#1e2d45" stroke-width="1.5"/>
-      <text x="680" y="54" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="700">alert-engine</text>
-      <text x="680" y="70" text-anchor="middle" fill="#94a3b8" font-size="9">rule matching</text>
-      <text x="680" y="84" text-anchor="middle" fill="#94a3b8" font-size="9">cooldown · quiet hrs</text>
-      <text x="680" y="98" text-anchor="middle" fill="#94a3b8" font-size="9">LINE notification</text>
+      <text x="680" y="54" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="700">alert-worker</text>
+      <text x="680" y="70" text-anchor="middle" fill="#94a3b8" font-size="9">LISTEN alert_event</text>
+      <text x="680" y="84" text-anchor="middle" fill="#94a3b8" font-size="9">rule matching · LINE</text>
+      <text x="680" y="98" text-anchor="middle" fill="#94a3b8" font-size="9">isolated PM2 process</text>
 
       <!-- ══ Row 2: DB ══ -->
 
@@ -1679,7 +1256,7 @@
 
 <!-- ── Footer ──────────────────────────────────────────────── -->
 <div class="page-footer">
-  Vigil Platform · Internal Technical Reference · Generated 2026-05-29<br>
+  Vigil Platform · Internal Technical Reference · Generated 2026-05-29 · Updated 2026-06-06<br>
   สำหรับใช้ภายในทีมเท่านั้น · ข้อมูลอ้างอิงจาก source code จริง (mqtt-subscriber.js · hikvision-isapi.js · dahua-cgi.js)
 </div>
 

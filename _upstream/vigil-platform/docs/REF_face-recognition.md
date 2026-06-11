@@ -4,7 +4,7 @@
 > บันทึกแผนงาน, สถาปัตยกรรม, hardware sizing, และขั้นตอนพัฒนาไว้เป็น reference
 > สำหรับ session ที่จะเริ่มทำจริง
 >
-> Last updated: 2026-05-29 · v1.5.0
+> Last updated: 2026-06-08 · v1.5.0
 > Load when: วางแผน / เริ่มทำ Face Recognition feature ใดก็ตาม
 
 ---
@@ -427,4 +427,4 @@ pip install onnxruntime-gpu  # ชื่อ import เหมือนเดิ�
 
 ---
 
-<sub>REF_face-recognition.md · Vigil Platform v1.5.0 · Planned feature · 2026-05-29</sub>
+<sub>REF_face-recognition.md · Vigil Platform v1.5.0 · Planned feature · 2026-06-08</sub>

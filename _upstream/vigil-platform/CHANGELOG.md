@@ -1,13 +1,153 @@
-# CHANGELOG — DojoJin Tech Dashboard
+# CHANGELOG — Vigil Platform
 
 > Companion to [CLAUDE.md](CLAUDE.md). Records completed work by
 > version / phase. For pending work see [ROADMAP.md](ROADMAP.md);
 > for design rationale see [DECISIONS.md](DECISIONS.md).
-> Last updated: 2026-06-03 · Current version: **v1.5.1**
+> Last updated: 2026-06-08 · Current version: **v1.5.3**
 
 ---
 
 ## 📰 Recent Updates Timeline (reverse chronological)
+
+- **2026-06-07 — docs(api-ref): เพิ่ม REF_api-reference.md — full REST API reference** (commits `ef2f844` `a9a20be` `fbb3548` `98e876d` `fef8816` `48ff98d` `09ef3d2`) — จัดทำ API reference ฉบับแรกของโปรเจกต์ + ลงทะเบียนใน doc registry ครบทุกจุด:
+  - `docs/REF_api-reference.md` (new, ~1510 lines) — ครอบคลุม **126 routes ใน 22 groups** ได้แก่ Auth, Users, Cameras, Events, Snapshots, Media, Appearances, LPR, Stats, Executive Summary, LINE config/alerts/recipients, Report schedules/history, Settings (validated keys + ranges ทุกตัว), Face Capture, Categories, System/Branding, Health & Services (service management rules), WebSocket protocol
+  - Notable: `GET /api/events` — ระบุ query params ทุกตัว (17 params รวม `camera`, `cameras`, `cls`, `object_classes`, `category_id`, `hasSnapshot`, `hasClip`, `dow`, `hour` ฯลฯ); `PUT /api/settings/:key` — ตาราง validated keys + exact ranges (`data_retention_days` 1–730, `clip_retention_days` 1–90, `brand_primary_color` `#RRGGBB` ฯลฯ)
+  - Notable: Service Management — api-server stop/start blocked (400 `api_server_stop_start_disallowed`); alert-worker + report-worker ไม่อยู่ใน `_SVC_NAMES` (status-only)
+  - Notable: WebSocket — auth flow, message shape, `type` enum ครบ (`new_event`, `alert_fired`, `camera_status`, `push_token`, `health_update`)
+  - ลงทะเบียนใน `CLAUDE.md` (Documentation Map + Task→Load), `ARCHITECTURE.md` (File Ownership), `docs/ARCH_documentation-governance.md` (Registry + Task→Load + Canonical Ownership + File Size Status)
+
+- **2026-06-07 — docs(skill): แปล SKILL.md เป็น English-only + สร้าง SKILL-TH.md (Thai version)** (commits `be36834` `d052dfd` `fbb3548` `98e876d` `09ef3d2`) — สร้าง bilingual operator playbook set:
+  - `SKILL.md` — แปล §6–§16 จาก Thai → English-only (faithful translation ไม่เปลี่ยนเนื้อหา); แก้ stale ref: GOTCHAS #35 ("MUST be flatpickr") → GOTCHAS #64/#65 (AirDatepicker, ตาม DECISIONS #186)
+  - `SKILL-TH.md` (new) — Thai-language version: prose ภาษาไทย + English technical terms คงไว้ + `> **TERM** = คำอธิบายไทย` remark หลังทุก concept ที่ซับซ้อน (PM2, MQTT, RTSP, CGI, JWT, LTS, EOL, Docker container, burst scoring, clip resolver, heartbeat, async, i18n, vanilla JS ฯลฯ)
+  - ลงทะเบียนใน `CLAUDE.md` (Documentation Map), `ARCHITECTURE.md` (File Ownership), `docs/ARCH_documentation-governance.md` (Registry + Task→Load + Canonical Ownership + File Size Status)
+
+- **2026-06-07 — docs: full AI-reference doc accuracy audit (Phase 1–3)** (commits `ba146ab` `8fc8a95` `fa6319a`) — ตรวจสอบและแก้ไข reference docs ทั้งหมดให้ตรงกับ code จริง แบ่ง 3 phase ตาม priority:
+
+  **Phase 1 — High (ARCHITECTURE.md, HARDWARE_SIZING_GUIDE.md):**
+  - `ARCHITECTURE.md`: Node.js 18+ → 22 LTS (v22.22.3); EMQX 5.8 → 5.8.9 พร้อม port/AUTHN note; เพิ่ม `alert-worker.js` + `report-worker.js` rows; ลบ "report scheduler" จาก api-server role; แก้ mqtt-subscriber "alert hook" → `pg_notify` dispatch; Data flow step 4: `alertEngine.onEvent()` → `pg_notify('alert_event')`; DB map 20 → 21 tables (เพิ่ม `push_tokens`); date 2026-05-27 → 2026-06-07
+  - `HARDWARE_SIZING_GUIDE.md`: B_snap ~160 KB → ~640 KB (GOTCHAS #40, JpegSize param removed 2026-05-21); cascaded recalculation ทุกจุด (formula, G1 Snapshot Volume ~80 GB → ~307 GB, Worked Example snapshot 190 GB → 768 GB, total 720 GB → 1.3 TB, SSD rec 2 TB → 4 TB); G1 diagram "subscriber + api" → "7 workers (PM2)"; EMQX AUTHN comment แก้ historical→production; EMQX ports ลบ WS :8083
+
+  **Phase 2 — Medium (GOTCHAS.md, DECISIONS.md, microservice_plan.md):**
+  - `GOTCHAS.md` #50: Phase 3 note — dual-bind → `0.0.0.0:1883` + AUTHN (network resilience 2026-06-07); Broker address แก้จาก hardcode `192.168.10.31` → LAN IP จริงของ server
+  - `GOTCHAS.md` #57: wildcard rule เพิ่ม EMQX `:1883` exception (allowed เมื่อ AUTHN enforced)
+  - `GOTCHAS.md` #81: note dual-bind replaced 2026-06-07
+  - `DECISIONS.md` header/footer: v1.5.1 → v1.5.3; #152 Phase 2 ✅ + Phase 3 (0.0.0.0); #160 เพิ่ม EMQX exception
+  - `microservice_plan.md`: Phase 3 ✅ DONE — checklist อัปเดต (alert_event ไม่ใช่ new_event, HTTP ไม่ใช่ job queue); process table + IPC section เพิ่ม 2 workers; timeline updated
+
+  **Phase 3 — Low (ROADMAP.md, LOGIC_camera-ingesters.md, REF_database-schema.md, LOGIC_infra-ops.md, REF_operator-sql.md):**
+  - `ROADMAP.md`: PM2 5 workers → 7 workers; ecosystem 5 apps → 7 apps; Node 20 → Node 22 (test harness S1 note)
+  - `LOGIC_camera-ingesters.md` #112: EMQX ports ลบ WS :8083; AUTHN + password env var
+  - `REF_database-schema.md`: เพิ่ม migration history 028–040 (13 entries); footer v1.5.3 / 2026-06-07
+  - `LOGIC_infra-ops.md` #124: layer 2 services.sh → PM2 + ecosystem.config.js (7 workers); STUBBORN_FACT + How to apply อัปเดต
+  - `REF_operator-sql.md`: EMQX dashboard comment "admin/public" → `EMQX_DASHBOARD_PASSWORD` env var
+
+- **2026-06-07 — docs(codex): 3rd-tier system audit + technical + commercial AI reviews** (commits `5150d55` `92a83f2` `7a5209f` `a8c2497` `d2ba6cd`) — เพิ่มเอกสาร audit/review 3 ชุด ก่อน Phase 1-3 accuracy pass:
+
+  **`CODEX_AUDIT_3rdTier.md`** (commit `5150d55`, 1044 lines) — Security/Performance/Sustainability audit หลัง 2nd-tier remediation เสร็จ:
+  - 6 concerns หลัก: (1) CDN JS trust (`cdn.jsdelivr.net` + bearer token ใน browser storage); (2) EMQX MQTT all-interface exposure (accepted risk — AUTHN enforced); (3) analytics query bottleneck (`events` table growth); (4) health endpoint I/O heavy (media/snapshot scan + PM2 shell); (5) api-server.js + dashboard.js ขนาดใหญ่; (6) test coverage ยังเป็น unit-level เท่านั้น (route/auth/CSP/migration smoke tests = next tier)
+  - Overall: materially stronger than prior rounds — largest risks from 2nd-tier mostly closed; remaining concerns = production hardening + scale
+
+  **`public/others/codex/commercial_system_review_2026-06-07.html/.md`** (commits `92a83f2` `7a5209f`, ~1280 lines) — Commercial positioning review:
+  - Vigil = on-prem security ops layer ไม่ใช่ enterprise VMS replacement (vs Genetec/Milestone/Axis/HikCentral/Dahua DSS)
+  - Strongest at: LINE-first alerting, Thai/English ops workflows, on-prem event+media ownership, multi-vendor ingestion, camera health monitoring
+  - Target gap: enterprise video search + failover + mobile app + integrations ยังเป็น differentiator gap
+
+  **`public/others/codex/coding/technical_engineering_review_2026-06-07.html/.md`** (commits `a8c2497` `d2ba6cd`, ~960 lines) — Technical engineering review:
+  - ผล: system beyond prototype maturity — practical single-host architecture, PM2 isolation, raw SQL, auth-gated media, RBAC, disciplined migrations, operational docs, initial test coverage
+  - Main risk: large core files (api-server.js, dashboard.js) — route-order/auth/i18n/UI regression harder to control
+  - Conclusion: "does not need a rewrite — needs stronger guardrails around an already-working architecture"
+
+- **2026-06-07 — docs(vigil-docs-v2): sync index.html to v1.5.3** (commit `4c98326`) — อัปเดต Live Docs index:
+  - Title/hero/footer: v1.5.1 → v1.5.3
+  - Timeline table: เพิ่ม v1.5.2 (report-worker crash isolation) + v1.5.3 (alert-worker/CSP/perf/CVE audit)
+  - KPI: DB tables 20→21, DB Migrations 30+→40+
+  - Doc status: 05-security.html date 2026-06-04→2026-06-07
+
+- **2026-06-07 — docs(skill): SKILL.md full audit pass** (commit `86be848`) — ตรวจสอบ SKILL.md เทียบ source จริงครบทุกจุด:
+  - **§4 System Settings**: เพิ่ม 8 keys ที่หายไป แบ่ง 4 กลุ่ม — Data retention (`clip_retention_days`, `appearances_retention_days`); Stats/display (`counter_dedup_mode`, `comparison_mode`, `custom_range_max_days`); Branding (`brand_tagline`, `brand_logo_path`); Map (`mapbox_token`)
+  - **§5 White-label**: ระบุ key names ตรงๆ ใน how-to section
+  - **§6 Health Check**: (1) Service Processes card แก้ description จาก pgrep-count เป็น PM2 status/uptime/↺restart/buttons พร้อม note 5 controllable vs 7 shown; (2) เพิ่ม 2 cards ใหม่: Camera Image Quality (24h) + Camera Automation Triggers (24h); (3) Storage card เพิ่ม clips + retention days; (4) API Server เพิ่ม Node version + Heap; (5) Status thresholds แยก warn/err ชัด (MQTT idle 5m-1h/stale >1h; memory >70%/>85%; disk >75%/>90%)
+  - **§16 Runtime Stack**: เพิ่ม `pm2 save`, `scripts/services.sh` wrapper, `npm test` command + path
+
+- **2026-06-07 — CVE audit round 4 + runtime stack upgrade** (commit `bb157ab`) — npm audit 0 vulnerabilities; อัปเกรด runtime stack ทั้งหมด:
+  - **Node.js 20 → 22 LTS** (v22.22.3): Node 20 EOL 2026-04-30 → ย้ายก่อน EOL; `brew link --overwrite node@22`; `~/.zshrc` + `pm2.dojojin.plist` PATH อัปเดต; PM2 dump ล้าง + restart จาก `ecosystem.config.js`; `sharp` rebuild บน Node 22 (`npm rebuild sharp`); ยืนยันด้วย `lsof` (api-server pid ใช้ node@22 Cellar binary)
+  - **EMQX 5.8.6 → 5.8.9** (pinned): image tag เปลี่ยนจาก `5.8` (floating) → `5.8.9` (pinned) ใน `docker-compose.yml`
+  - **PostgreSQL 16.14** (verified): `SELECT version()` ยืนยัน 16.14 = latest 16.x; ไม่ต้องเปลี่ยน image
+  - **pg 8.20.0 → 8.21.0**, **ws 8.20.1 → 8.21.0** (DoS fix CVE-2024-37890): `src/package.json` อัปเดต; `npm install` รัน fresh lock
+  - **Puppeteer 24.43.1 → 25.1.0** / Chrome 148 → 149.0.7827.53: `src/package.json`; `npm install` ดึง `~/.cache/puppeteer/chrome/linux-149.0.7827.53` อัตโนมัติ
+  - **EMQX port binding resilience** (SEC-001 Phase 2 update): เปลี่ยนจาก `192.168.10.31:1883:1883` → `1883:1883` (0.0.0.0); EMQX start ได้ทุก network interface (camera LAN / home LAN / VPN / hotspot); security เทียบเท่าเดิมผ่าน EMQX AUTHN (credentials บังคับทุก client); port 18083 ยัง `127.0.0.1:18083:18083` (localhost-only ไม่เปลี่ยน)
+
+- **2026-06-07 — docs sync: security / SKILL.md / audit status** (commits `73fc373` `6217d8f` `5480000` `e8f94aa` `3fc2841` `281db3f`) — อัปเดตเอกสารตามสถานะจริงหลัง CVE audit round 4:
+  - `73fc373` `05-security.html`: เพิ่มรอบ audit ที่ 4 (2026-06-07) ใน timeline table; section ใหม่ "CVE / Dependency Audit" พร้อมตาราง npm packages, runtime stack, EMQX network resilience card, EOL tracking; OWASP A6 badge `b-amber` → `b-green`; การป้องกัน CVE 4 แถวใหม่ (Node EOL, ws DoS, Docker images, Puppeteer/Chrome)
+  - `6217d8f` `SKILL.md`: เวอร์ชัน v1.5.0 → v1.5.3; เพิ่ม §15 Camera Pause (ตาราง behavior MQTT/snapshot/alerts/heartbeat/feed/audit log); เพิ่ม §16 Runtime Stack Reference (ตาราง versions + PM2 commands + Docker commands + CVE audit link); Service Processes row อัปเดต "(7 workers: api-server, mqtt-subscriber, media-recorder, hikvision, dahua, report-worker, alert-worker)"
+  - `5480000` `CODEX_AUDIT_2ndTier.md`: อัปเดต finding statuses หลัง audit round 4
+  - `e8f94aa` `3fc2841` `281db3f`: docs minor — vigil-docs-v2 sync v1.5.3, vendor-comparison Bosch alert path, README footer
+
+- **2026-06-06 — S4: route split — categories & mapping-rules → `src/routes/categories.js`** (commit `b8122a8`) — ย้าย 7 routes ออกจาก `api-server.js` (−111 lines) ตาม factory pattern `module.exports = function(app, pool) {}`:
+  - GET/POST `/api/categories`, PUT/DELETE `/api/categories/:id`, GET/POST `/api/categories/:id/rules`, DELETE `/api/category-rules/:id`
+  - `require('./routes/categories')(app, pool)` ใน api-server.js; auth สืบทอดจาก global `app.use('/api', ...)` gate อัตโนมัติ
+  - smoke-tested: 401 (no token) / 200 (GET list) / 404 (wrong id) / 403 (builtin delete) ✓
+
+- **2026-06-06 — S3: worker /health HTTP endpoints** (commit `c7e306f`) — loopback health endpoints สำหรับ monitoring:
+  - alert-worker: `GET http://127.0.0.1:3002/health` → ok, uptime, pid, memory, db.latency, listener.connected
+  - report-worker: `GET http://127.0.0.1:3001/health` → ok, uptime, pid, memory, db.latency, scheduler.last_check_at
+  - api-server `/api/health/details` aggregate ทั้งสอง worker ใน response
+
+- **2026-06-06 — S2: `events` table partition plan + migration script + retention fix** (commit `b8f6557`):
+  - `db/MANUAL_partition_events_option_a.sql` (Option A: drop FK → monthly partitions 2026-01 → 2027-12 + DEFAULT catch) — MANUAL_ prefix, ไม่ auto-run; รันเมื่อ table ถึง ~500K rows
+  - แก้ `enforceRetention()` ใน api-server.js: explicit DELETE appearances + license_plates ก่อน DELETE events — ป้องกัน FK violation หลัง partition migration
+  - schema blockers verify จาก PG 16.13 จริง (rolled-back): composite PK บังคับ, FK single-column reject หลัง partition
+
+- **2026-06-06 — S1: test harness (43 tests, node:test)** (commit `778b114`) — zero devDependency test runner ใช้ `node:test` + `node:assert/strict` (built-in Node 20):
+  - `test/color-utils.test.js` (17 tests) — xyzToColorName achromatic/chromatic/edge cases ยืนยันจาก live DB
+  - `test/crypto-creds.test.js` (11 tests) — AES-256-GCM round-trip + prefix guard + wrong-key rejection
+  - `test/helpers.test.js` (3 tests) — routeError: 500 response format + no-leak guard
+  - `test/alert-engine.test.js` (12 tests) — matchRule (8 tests) + isInCooldown (4 tests); values ยืนยันจาก source code จริง
+  - `npm test` → `node --test test/*.test.js`
+
+- **2026-06-06 — P4: Puppeteer render queue** (commit `71c9392`) — เพิ่ม `_renderTail` promise-chain mutex ใน `report-renderer.js:162`:
+  - serialize renders 1 at a time — `_withPage()` await ticket ก่อนรัน, `release()` เมื่อ page closed
+  - ป้องกัน concurrent render race condition (preventive hardening สำหรับ single-tenant prod)
+
+- **2026-06-06 — P3b: drop `idx_events_type_trgm` (migration 040)** — ลบ GIN trigram index ที่ 1 scan ตลอดชีวิต:
+  - EXPLAIN ANALYZE ยืนยัน: planner ใช้ Bitmap Index Scan สำหรับ `LIKE '%Recognition%'` แต่คืน 0 rows — ไม่มี LPR events ใน dataset; write cost บน hot INSERT path ไม่ได้รับ read benefit ใดเลย
+  - migration 040 `DROP INDEX IF EXISTS idx_events_type_trgm` (idempotent); `pg_trgm` extension คงไว้ (partition migration ใช้)
+  - LPR tab query ยังทำงานถูกต้อง — fallback seq_scan บน 63K rows, 42MB table
+
+- **2026-06-06 — P3: drop `idx_events_raw_gin` (migration 039)** (commit `9df3731`) — ลบ GIN index ที่ 0 scans ตลอดชีวิต:
+  - migration 039 `DROP INDEX IF EXISTS idx_events_raw_gin` (idempotent)
+
+- **2026-06-06 — P1: ตั้ง `pool.max` + `application_name` ทุก worker** (commit `3be5bbb`) — ป้องกัน connection exhaustion + ระบุ process ใน `pg_stat_activity`:
+  - api-server: `max:15`; alert-worker: `max:3`; report-worker: `max:3`; media-recorder: `max:2`; mqtt-subscriber: `max:5`; hikvision-isapi: `max:3`; dahua-cgi: `max:3` → รวม **34 connections**
+  - `application_name` ครบทุก 7 worker; `max_connections=100`; headroom **~63** connections (หลัง superuser reserve 3)
+
+- **2026-06-06 — alert-worker: isolate LINE/push alerts from MQTT ingestion (v1.5.3)** (commit `79abb51`) — แยก alert-engine ออกจาก mqtt-subscriber เป็น PM2 process ต่างหาก ป้องกัน LINE/push failure กระทบ ingestion หรือ web API:
+  - `src/alert-worker.js` (new) — LISTEN บน 2 pg_notify channels: `alert_event` (payload จาก mqtt-subscriber → `alertEngine.onEvent()`) + `alert_rules_changed` (invalidate cache); dedicated `pg.Client` สำหรับ LISTEN + pool แยกสำหรับ alert-engine queries; singleton guard + reconnect loop (5s)
+  - `src/mqtt-subscriber.js` — ลบ `alertEngine` require + `alertEngine.init()` + `alertEngine.onEvent()` ออกทั้งหมด; แทนด้วย `pg_notify('alert_event', payload)` ใน `if (ruleName)` guard (async, ไม่ block ingestion)
+  - `src/api-server.js` — ลบ `alertEngine` require; แทน `invalidateCache()` 6 จุด → `pg_notify('alert_rules_changed','')` (PUT line-config, approve recipient, POST/PUT/DELETE alert-rules, LINE webhook leave/unfollow)
+  - `ecosystem.config.js` — เพิ่ม worker ที่ 7 (`alert-worker`, `restart_delay: 3000`)
+  - **Verified E2E**: MQTT จริง `BOSCH_8000i/LineDetector/Crossed` → mqtt-subscriber → `pg_notify` → alert-worker → `alert_logs` (delta=1, `status=no_recipients`, no double-fire)
+
+- **2026-06-06 — report-worker: scheduler crash isolation + on-demand Run Now proxy (v1.5.2)** (commits `1b2dc94` `27b4a23` `85da151` `209d009`) — แยก scheduled-report loop ออกจาก api-server เป็น PM2 process ต่างหาก + เพิ่ม HTTP endpoint สำหรับ on-demand run:
+  - **Step 1 (`1b2dc94`)**: `INTERNAL_API_TOKEN` → อ่านจาก env `INTERNAL_API_SECRET` (shared secret ระหว่าง api-server ↔ report-worker)
+  - **Step 2 (`27b4a23`)**: สร้าง `src/report-worker.js` — PM2 process ที่รับ scheduler loop (60s tick) ออกจาก api-server; crash isolation: ถ้า Chrome/Puppeteer crash ใน worker → PM2 restart เฉพาะ worker; api-server ยังออนไลน์; แก้ bug `rangeLabel` scope + dangling `runScheduledReport()` call ที่ค้างใน api-server
+  - **Step 3 (`85da151`)**: report-worker เปิด HTTP server บน `127.0.0.1:REPORT_WORKER_PORT` (default 3001, loopback-only); `POST /run/:id` — validate `X-Internal-Token` (length guard + timingSafeEqual), ตอบ 200 `{ok:true}` ทันที แล้ว `runScheduledReport` fire-and-forget; api-server `POST /api/report-schedules/:id/run` proxy ไปหา worker แทน 501 stub; ECONNREFUSED/timeout → 503 graceful; `REPORT_WORKER_PORT` เพิ่มใน `.env.example`
+  - **UI (`209d009`)**: เพิ่ม `showToast` หลัง Run Now สำเร็จ ("กำลังสร้างรายงาน…") + แทน `alert()` ด้วย toast เมื่อ error; i18n keys `rh.runQueued` / `rh.runQueuedSub` (th+en)
+  - **PM2 + launchd**: `ecosystem.config.js` เพิ่ม report-worker entry; `pm2 startup` launchd ติดตั้ง + verify หลัง reboot จริง (2026-06-06) ทุก 6 process online
+
+- **2026-06-05 — SEC-2T-002 Pre-Phase-5 gate complete: zero inline scripts + handlers across all dashboard HTML** (decisions #203–#207, commit `93b1c22`) — งาน CSP migration ที่เริ่มตั้งแต่ 2026-06-04 เสร็จสมบูรณ์ใน 4 phases:
+  - **Phase 2 (reporter + /others enforce, commits `959c52c` `0661b31` `21fe8c8`)**: เพิ่ม `/api/csp-report` endpoint + `Content-Security-Policy-Report-Only` header บน dashboard routes เพื่อดู violation log จริง; enforce CSP สำหรับ `/others/*` (non-dashboard routes ที่ไม่มี inline script) ทันที
+  - **Phase 3 (164 static handlers, commit `fa84855`)**: migrate `onclick=` ทุกตัวที่อยู่ใน static HTML (sidebar, nav, modal triggers ฯลฯ) → `_bindStaticHandlers()` pattern ใน `dashboard.js`; แก้ selector regression `_updateHealthSendBtnLabel` (commit `df8e461`)
+  - **Phase 4 Batches 1–8 (commits `117f3fb`→`165e933`)**: migrate 189 handlers ที่เหลือในส่วน dynamic — สร้าง **global dispatcher** (`document.addEventListener('click', fn)` + `ACTION_MAP` keyed by `data-action`) สำหรับ handlers ใน innerHTML template literals (pagination, groups, Events, Snapshots, Media, CamDetail, Stats, Reports, Cameras, LINE); รองรับทั้ง `click` และ non-click events (`change`, `input`, `keyup`, `keydown`) ใน dispatcher เดียว
+  - **Pre-Phase-5 gate (commit `93b1c22`)**: (1) Externalize 4 inline `<script>` blocks → `theme-init.js` / `login.js` / `disclaimer.js` / `report-print.js`; (2) migrate 28 `on*=` ที่เหลือใน `index.html` + login + disclaimer + i18n string → `_bindStaticHandlers` + `addEventListener`; (3) replace 9 `onerror=` ใน JS template literals → `data-err=` vocab + `window.addEventListener('error', fn, true)` capture listener; (4) patch CSP policy gaps: `cdn.jsdelivr.net` (script+style), `cloudflareinsights.com` (script+connect), `tile.openstreetmap.org` + `*.tile.openstreetmap.org` (img-src ต้องใส่ทั้ง bare+wildcard), `worker-src blob:` (OL web workers)
+  - **ตัวเลขรวม**: ~353 `onclick=` + 28 `on*=` อื่น + 9 `onerror=` = **390 inline handlers** ออกทั้งหมด; 4 inline `<script>` blocks externalized; grep source สะอาด 100%
+  - **Phase 5 พร้อม**: เปลี่ยน `Content-Security-Policy-Report-Only` → `Content-Security-Policy` ใน `api-server.js` 1 บรรทัดเพื่อ enforce จริง
+
+- **2026-06-05 — Platform UI rename: "DojoJin Tech Dashboard" → "Vigil Platform"** (commits `56dafd2` `39954ae`) — เปลี่ยน product display name ใน docs, dashboard title, i18n strings, และ login page title; repo + folder + DB ชื่อ `vigil-platform` อยู่แล้วตั้งแต่ 2026-05-29 — นี่คือ UI/display text ที่เหลือ
+
+- **2026-06-05 — EULA: English version + per-lang routing + cache fix** (commit `ab179fa`) — เพิ่ม `docs/EULA-en.md` (English EULA); `GET /api/eula` ส่ง lang param → serve ภาษาที่ตรง; `disclaimer.html` EULA viewer routing ถูกต้องตาม `I18N.lang()`; แก้ cache ที่ cache เวอร์ชัน TH ค้างเมื่อสลับภาษา
+
+- **2026-06-05 — Fix: AirDatepicker default locale is Russian** (commit `75000f5`) — เพิ่ม `locale: en` option ให้ datepicker ทุก instance ใน English mode; ก่อนหน้านี้ปฏิทินแสดงชื่อเดือน/วันเป็น Cyrillic เมื่อใช้ภาษา EN
 
 - **2026-06-03 — Planning session: Modular Refactor + Security Hardening master plan** (decisions #200–#202) — รีวิว CODEX_AUDIT_2ndTier.md (11 findings: 1 High, 5 Medium, 5 Low) + วิเคราะห์ architecture จริงจาก codebase; สร้าง [`microservice_plan.md`](microservice_plan.md) เป็น master plan รวม refactor + security; อัปเดต [`ROADMAP.md`](ROADMAP.md) พร้อม phase status checkboxes. **Key decisions:** (1) ไม่ทำ full microservices — ระบบเป็น 5-process SOA ผ่าน PM2 + pg_notify อยู่แล้ว; ปัญหาหลักคือ `api-server.js` god-file 6,615 บรรทัด → แก้ด้วย modular monolith (decision #200); (2) Phase ordering: security fixes ที่อิสระจาก refactor ต้องทำก่อน ไม่รอ → Phase 0 (lockfile/docs/DS_Store/cred-guard) + Phase 1 (origin isolation) ก่อน Phase 2 (route split) เสมอ (decision #201); (3) SEC-2T-001 partial fix — ลบ 4 ไฟล์ไม่ได้ใช้ออกจาก `public/others/`: `index.html` (EmailJS CDN), `vss_v1.html` (Materialize CDN), `partners.html`, `reference-projects.html`; CDN risk ของ EmailJS + Materialize หายทันที; `boxbox-th/en.html` (Cytoscape CDN) ยังเหลือ → auth-gate ถัดไป (decision #202). Plan เต็มอยู่ใน `microservice_plan.md`.
 
@@ -488,4 +628,4 @@ This version's completed work is captured chronologically in the
 
 - **PM2 decision** (decision #196) — ตัดสินใจ pull PM2 forward เป็น prerequisite ของ Service Management UI (Start/Stop/Restart per-service); เหตุผล: `concurrently -k` ทำ per-service restart พัง stack; api-server restart ตัวเองไม่ได้ (PM2 daemon แก้); pgrep self-detection bug; scope MVP 5 workers; cloudflared/infra = Phase 2
 
-<sub>End of CHANGELOG.md · Companion to CLAUDE.md · Updated 2026-06-02</sub>
+<sub>End of CHANGELOG.md · Companion to CLAUDE.md · Updated 2026-06-08</sub>

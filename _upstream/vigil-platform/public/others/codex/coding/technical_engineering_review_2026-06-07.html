@@ -1,0 +1,675 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Technical Engineering Review 2026 — Vigil Platform</title>
+  <style>
+    :root {
+      --surface-base: #f8fafc;
+      --surface-elevated: #ffffff;
+      --surface-muted: #eef2f6;
+      --surface-strong: #111827;
+      --text-primary: #172033;
+      --text-secondary: #526070;
+      --text-inverse: #f9fafb;
+      --accent: #155eef;
+      --accent-soft: #eff4ff;
+      --accent-strong: #1849a9;
+      --ok: #166534;
+      --ok-soft: #ecfdf3;
+      --warn: #a16207;
+      --warn-soft: #fffaeb;
+      --bad: #b42318;
+      --bad-soft: #fef3f2;
+      --border: #d0d5dd;
+      --code-bg: #f1f5f9;
+      --shadow: 0 18px 44px rgba(15, 23, 42, 0.08);
+      --radius: 8px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      color: var(--text-primary);
+      background: var(--surface-base);
+      font-family: "Noto Sans Thai", "Tahoma", "Arial", sans-serif;
+      line-height: 1.7;
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration-thickness: 0.08em;
+      text-underline-offset: 0.18em;
+    }
+
+    .page {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 32px 20px 72px;
+    }
+
+    .hero {
+      padding: 40px;
+      border-radius: var(--radius);
+      background: linear-gradient(135deg, #111827 0%, #1e293b 58%, #1d4ed8 100%);
+      color: var(--text-inverse);
+      box-shadow: var(--shadow);
+    }
+
+    .eyebrow {
+      margin: 0 0 10px;
+      color: #bfdbfe;
+      font-size: 0.82rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      max-width: 900px;
+      font-size: 2.6rem;
+      line-height: 1.16;
+      letter-spacing: 0;
+    }
+
+    .lead {
+      margin: 20px 0 0;
+      max-width: 920px;
+      color: #e5e7eb;
+      font-size: 1.1rem;
+    }
+
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 24px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 32px;
+      padding: 5px 11px;
+      border: 1px solid rgba(255, 255, 255, 0.24);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.08);
+      color: #f9fafb;
+      font-size: 0.9rem;
+    }
+
+    .toc {
+      margin-top: 18px;
+      padding: 18px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface-elevated);
+    }
+
+    .toc strong {
+      display: block;
+      margin-bottom: 8px;
+    }
+
+    .toc nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .toc a {
+      display: inline-flex;
+      align-items: center;
+      min-height: 34px;
+      padding: 5px 10px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface-base);
+      color: var(--text-primary);
+      text-decoration: none;
+      font-size: 0.92rem;
+    }
+
+    section {
+      margin-top: 24px;
+      padding: 26px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface-elevated);
+      box-shadow: 0 8px 22px rgba(15, 23, 42, 0.04);
+    }
+
+    h2 {
+      margin: 0 0 14px;
+      font-size: 1.55rem;
+      line-height: 1.28;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      margin: 26px 0 10px;
+      color: var(--accent-strong);
+      font-size: 1.12rem;
+      line-height: 1.35;
+      letter-spacing: 0;
+    }
+
+    p {
+      margin: 0 0 14px;
+    }
+
+    ul,
+    ol {
+      margin: 0 0 16px 1.2rem;
+      padding: 0;
+    }
+
+    li {
+      margin: 6px 0;
+    }
+
+    table {
+      width: 100%;
+      margin: 16px 0;
+      border-collapse: collapse;
+      font-size: 0.94rem;
+    }
+
+    th,
+    td {
+      padding: 11px 12px;
+      border: 1px solid var(--border);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: var(--surface-muted);
+      font-weight: 800;
+    }
+
+    code {
+      padding: 0.08em 0.32em;
+      border-radius: 5px;
+      background: var(--code-bg);
+      color: #0f172a;
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: 0.92em;
+    }
+
+    blockquote {
+      margin: 18px 0;
+      padding: 16px 18px;
+      border-left: 5px solid var(--accent);
+      border-radius: var(--radius);
+      background: var(--accent-soft);
+      font-weight: 700;
+    }
+
+    .grid {
+      display: grid;
+      gap: 14px;
+      margin: 16px 0;
+    }
+
+    .grid.two {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .grid.three {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .card {
+      min-width: 0;
+      padding: 15px 16px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface-base);
+    }
+
+    .card strong {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--accent-strong);
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 3px 9px;
+      border-radius: 999px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .badge.ok {
+      color: var(--ok);
+      background: var(--ok-soft);
+    }
+
+    .badge.warn {
+      color: var(--warn);
+      background: var(--warn-soft);
+    }
+
+    .badge.bad {
+      color: var(--bad);
+      background: var(--bad-soft);
+    }
+
+    .score td:first-child {
+      width: 18%;
+      font-weight: 800;
+      color: var(--accent-strong);
+    }
+
+    @media (max-width: 768px) {
+      .page {
+        padding: 20px 12px 48px;
+      }
+
+      .hero,
+      section {
+        padding: 20px;
+      }
+
+      h1 {
+        font-size: 2rem;
+      }
+
+      .lead {
+        font-size: 1rem;
+      }
+
+      .grid.two,
+      .grid.three {
+        grid-template-columns: 1fr;
+      }
+
+      table {
+        display: block;
+        overflow-x: auto;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="hero">
+      <p class="eyebrow">Technical Engineering Review</p>
+      <h1>รีวิวระบบ Vigil Platform ในเชิง Coding, System Architecture, Operations และ Technical Sustainability</h1>
+      <p class="lead">
+        เอกสารนี้เป็น technical review รอบใหม่ที่แยกจาก product/commercial review เดิม โดยมองระบบในฐานะ codebase และ production platform:
+        โครงสร้าง runtime, backend, frontend, database, security, performance, testing, operations และความพร้อมในการดูแลระยะยาว
+      </p>
+      <div class="meta">
+        <span class="pill">วันที่จัดทำ: 2026-06-07</span>
+        <span class="pill">ภาษา: ไทย</span>
+        <span class="pill">Companion: technical_engineering_review_2026-06-07.md</span>
+        <span class="pill">Scope: Technical / Architecture / Coding</span>
+      </div>
+    </header>
+
+    <div class="toc">
+      <strong>สารบัญ</strong>
+      <nav aria-label="Table of contents">
+        <a href="#summary">บทสรุป</a>
+        <a href="#evidence">หลักฐาน</a>
+        <a href="#architecture">Architecture</a>
+        <a href="#backend">Backend</a>
+        <a href="#frontend">Frontend</a>
+        <a href="#database">Database</a>
+        <a href="#security">Security</a>
+        <a href="#performance">Performance</a>
+        <a href="#ops">Operations</a>
+        <a href="#tests">Testing</a>
+        <a href="#recommendations">ข้อเสนอแนะ</a>
+      </nav>
+    </div>
+
+    <section id="summary">
+      <h2>1. บทสรุป</h2>
+      <blockquote>
+        Vigil Platform เป็นระบบ production-oriented ที่พัฒนาเกินระดับ prototype แล้ว จุดแข็งคือ architecture ที่ตอบโจทย์จริง,
+        multi-process isolation, raw SQL ที่ควบคุมได้, audit/security hardening หลายชั้น, project memory ดี และ feature breadth ครบสำหรับ security operations
+        จุดอ่อนหลักคือ core files ยังใหญ่, integration tests ยังบาง, frontend ยังเป็น monolith, browser supply-chain ยังต้อง harden และ scale proof ยังต้องทำเชิงระบบ
+      </blockquote>
+      <div class="grid three">
+        <div class="card">
+          <strong>Engineering maturity</strong>
+          <span class="badge ok">ดี</span>
+          <p>มี PM2, migrations, worker split, auth gates, audit logs, docs และ test harness แล้ว</p>
+        </div>
+        <div class="card">
+          <strong>Maintainability risk</strong>
+          <span class="badge warn">ต้องจัดการ</span>
+          <p>`api-server.js` และ `dashboard.js` ใหญ่ ทำให้ regression และ onboarding cost สูง</p>
+        </div>
+        <div class="card">
+          <strong>Scale readiness</strong>
+          <span class="badge warn">ยังต้องพิสูจน์</span>
+          <p>มี partition plan และ pooling แล้ว แต่ยังขาด benchmark/EXPLAIN/load test ที่ใช้เป็นหลักฐานได้</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="evidence">
+      <h2>2. หลักฐานที่ใช้รีวิว</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Area</th>
+            <th>Fact จาก repo</th>
+            <th>ความหมายเชิงเทคนิค</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Runtime</td>
+            <td>PM2 apps 7 ตัว: `api-server`, `mqtt-subscriber`, `media-recorder`, `hikvision`, `dahua`, `report-worker`, `alert-worker`</td>
+            <td>ระบบแยก background work สำคัญออกจาก API แล้ว ลด blast radius ได้จริง</td>
+          </tr>
+          <tr>
+            <td>Backend size</td>
+            <td>`src/api-server.js` ประมาณ 6,480 บรรทัด และยังมี route declarations 126 จุดในไฟล์นี้</td>
+            <td>feature breadth สูง แต่ route-order/middleware drift เป็นความเสี่ยง</td>
+          </tr>
+          <tr>
+            <td>Frontend size</td>
+            <td>`dashboard/dashboard.js` ประมาณ 10,601 บรรทัด, `dashboard/index.html` ประมาณ 3,661 บรรทัด</td>
+            <td>SPA มีความสามารถเยอะ แต่ UI maintenance และ regression control ยาก</td>
+          </tr>
+          <tr>
+            <td>Database</td>
+            <td>มี migrations, schema_migrations, partition plan สำหรับ events และ retention handling</td>
+            <td>DB discipline ดี แต่ analytics scale ยังต้อง benchmark</td>
+          </tr>
+          <tr>
+            <td>Security</td>
+            <td>auth-gated media/static, CSP, RBAC, audit, upload magic bytes, internal-token guard, EMQX auth</td>
+            <td>security posture ดีขึ้นมาก แต่ยังมี CDN JS และ MQTT network exposure ที่ต้องบริหาร</td>
+          </tr>
+          <tr>
+            <td>Tests</td>
+            <td>มี `node:test` 4 ไฟล์: helpers, crypto, alert-engine, color-utils</td>
+            <td>เริ่มมี regression harness แต่ยังขาด route/auth/CSP/DB integration smoke tests</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="architecture">
+      <h2>3. System Architecture Review</h2>
+      <h3>3.1 สิ่งที่ออกแบบดี</h3>
+      <ul>
+        <li><strong>Modular monolith + workers เป็นทางเลือกที่เหมาะ:</strong> ระบบไม่ได้กระโดดไป full microservices แต่แยก process ที่เสี่ยง crash หรือ block เช่น alert/report/ingester ออกแล้ว</li>
+        <li><strong>PostgreSQL เป็น center of gravity ที่ถูกต้อง:</strong> events, audit, sessions, reports, alert logs และ settings มี source of truth ชัด</li>
+        <li><strong>LISTEN/NOTIFY เหมาะกับ workload:</strong> ใช้เป็น event bridge ภายใน host ได้ดี โดยไม่ต้องเพิ่ม queue infrastructure หนัก</li>
+        <li><strong>Vendor-specific ingesters แยกไฟล์:</strong> Bosch/Hikvision/Dahua มี behavior ต่างกันมาก การแยก ingester เป็น boundary ที่ถูกต้อง</li>
+        <li><strong>PM2 + Docker split pragmatic:</strong> DB/MQTT ใช้ Docker, Node workers ใช้ PM2 เหมาะกับ single-host edge deployment</li>
+      </ul>
+
+      <h3>3.2 จุดเปราะบาง</h3>
+      <ul>
+        <li><strong>api-server ยังเป็น god-file บางส่วน:</strong> แม้เริ่มแยก `src/routes/categories.js` แล้ว แต่ route หลักส่วนใหญ่ยังอยู่ไฟล์เดียว</li>
+        <li><strong>worker orchestration ยังพึ่ง process convention:</strong> ถ้า env/internal token mismatch อาจกลายเป็น failure แบบ operational มากกว่า compile-time</li>
+        <li><strong>system boundary ระหว่าง config JSON กับ DB ต้องระวัง:</strong> camera config อยู่ JSON แต่ runtime state อยู่ DB เป็น design ที่มีเหตุผล แต่ต้องมี guard กัน drift ต่อเนื่อง</li>
+        <li><strong>ไม่มี formal job queue:</strong> ตอนนี้ pg_notify/HTTP callback พอเหมาะ แต่ถ้า scheduled reports/alerts หนักขึ้นอาจต้องมี durable queue table</li>
+      </ul>
+
+      <table class="score">
+        <tbody>
+          <tr>
+            <td>Architecture grade</td>
+            <td><span class="badge ok">B+</span> เหมาะกับ single-tenant/on-prem edge product และเดินมาถูกทาง แต่ควร modularize API ต่อ</td>
+          </tr>
+          <tr>
+            <td>Best next step</td>
+            <td>แยก route groups ที่เสี่ยงสูง เช่น health, reports, line-config, backup/service และเพิ่ม smoke tests รอบ middleware boundary</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="backend">
+      <h2>4. Coding / Backend Review</h2>
+      <h3>4.1 จุดแข็ง</h3>
+      <ul>
+        <li><strong>Raw SQL เหมาะกับระบบนี้:</strong> query analytics, time window, JSONB, category rule และ migration ต้องการ control สูง ORM จะเพิ่ม abstraction cost โดยไม่จำเป็น</li>
+        <li><strong>Defensive auth patterns ดีขึ้น:</strong> มี global auth gate, role checks, internal token, auditor write-block, EULA/license gates และ admin-only sensitive operations</li>
+        <li><strong>File-serving routes ระวังมากขึ้น:</strong> media/snapshot gated, filename checks, dotfile deny และ public prefixes จำกัดขึ้น</li>
+        <li><strong>Upload path มี layered validation:</strong> branding upload เช็ค role, size, MIME, magic bytes, SVG rejection และ normalize ด้วย `sharp`</li>
+        <li><strong>Operational commands ใช้ allowlist + `execFile`:</strong> backup/service management ลด command injection risk ได้ดี</li>
+      </ul>
+
+      <h3>4.2 จุดอ่อน</h3>
+      <ul>
+        <li><strong>Route count สูงในไฟล์เดียว:</strong> `api-server.js` ยังมี route declarations จำนวนมาก ทำให้ review diff ยากและ route-order bug มีโอกาสเกิด</li>
+        <li><strong>Helper duplication:</strong> report-worker มี copied helper logic จาก api-server บางส่วน เสี่ยง drift</li>
+        <li><strong>Error handling ยังไม่ uniform ทั้งระบบ:</strong> เริ่มมี `routeError` แล้ว แต่ยังไม่ได้ migrate ครบทุก route</li>
+        <li><strong>Dynamic behavior หลายจุดพึ่ง convention:</strong> เช่น internal token, worker health, report queue, camera config reload ควรมี guard/health visibility เพิ่ม</li>
+      </ul>
+
+      <h3>4.3 ความเห็นเชิง coding standard</h3>
+      <p>
+        สไตล์ backend เป็น pragmatic production code มากกว่า framework-heavy architecture ซึ่งเหมาะกับระบบ edge/on-prem ที่ต้อง debug ได้เร็ว
+        จุดที่ต้องระวังคือเมื่อ feature โตขึ้น pragmatic code จะกลายเป็น accidental complexity ถ้าไม่แยก module และ test ตาม domain
+      </p>
+    </section>
+
+    <section id="frontend">
+      <h2>5. Frontend / UI Engineering Review</h2>
+      <h3>5.1 จุดแข็ง</h3>
+      <ul>
+        <li><strong>Vanilla JS ลด build/deployment complexity:</strong> เหมาะกับ onsite deployment ที่ต้อง debug จากไฟล์จริงและ cache-bust ง่าย</li>
+        <li><strong>Feature breadth สูง:</strong> dashboard มี live events, maps, stats, reports, settings, health, LINE, audit/history และ camera management</li>
+        <li><strong>i18n engine มี discipline:</strong> Thai source + English translation layer และมี gotcha/decision ชัดเรื่อง parity</li>
+        <li><strong>CSP migration ทำงานหนักแล้ว:</strong> inline handlers/scripts ถูกย้ายออกจำนวนมาก ทำให้ security posture ของ SPA ดีขึ้นมาก</li>
+        <li><strong>Design system มีทิศทาง:</strong> semantic tokens, SVG icons, no-emoji rule และ responsive guard ถูกบันทึกชัด</li>
+      </ul>
+
+      <h3>5.2 จุดอ่อน</h3>
+      <ul>
+        <li><strong>`dashboard.js` ใหญ่มาก:</strong> 10k+ lines ทำให้ state coupling และ event dispatcher complexity สูง</li>
+        <li><strong>ไม่มี module/lazy loading:</strong> หน้า map/report/chart หนักอาจถูกโหลดพร้อมกัน แม้ user ไม่ได้ใช้ทุกส่วน</li>
+        <li><strong>ยังพึ่ง CDN สำหรับ runtime libraries:</strong> เป็นทั้ง security risk และ offline/on-prem reliability risk</li>
+        <li><strong>legacy UI ยังมี carve-outs:</strong> design-token/SVG migration ยังไม่ครบทั้งหมด ซึ่งเข้าใจได้แต่ต้องคุม new code ให้เข้ม</li>
+      </ul>
+
+      <h3>5.3 คำแนะนำ</h3>
+      <p>
+        อย่า rewrite เป็น React/Vue เพราะชน decision และไม่คุ้ม blast radius แต่ควร split vanilla JS เป็น page/domain modules,
+        self-host vendor libraries, lazy-load heavy map/chart/report paths และเพิ่ม UI smoke tests สำหรับ flow สำคัญ
+      </p>
+    </section>
+
+    <section id="database">
+      <h2>6. Database / Data Model Review</h2>
+      <h3>6.1 จุดแข็ง</h3>
+      <ul>
+        <li><strong>Migration discipline ดี:</strong> ใช้ `schema_migrations`, idempotent migration pattern และ fail-fast startup</li>
+        <li><strong>Source-of-truth แยกชัด:</strong> camera config JSON สำหรับ configured cameras และ DB สำหรับ runtime state/history</li>
+        <li><strong>Event schema รองรับหลาย vendor:</strong> ใช้ shared `events` table พร้อม `raw_json` สำหรับ vendor-specific payload</li>
+        <li><strong>Snapshot columns ถูกทำให้ active:</strong> `has_snapshot` / `snapshot_filename` ช่วย query performance และลด reliance บน raw JSON</li>
+        <li><strong>มี partition plan:</strong> `MANUAL_partition_events_option_a.sql` แปลว่าทีมเห็น scale bottleneck ล่วงหน้า</li>
+      </ul>
+
+      <h3>6.2 จุดอ่อน</h3>
+      <ul>
+        <li><strong>Analytics query complexity สูง:</strong> category rules, `COUNT(DISTINCT)`, heatmap, timeline และ rollups จะหนักเมื่อ events โต</li>
+        <li><strong>Partition ยัง manual:</strong> ดีที่ไม่ auto-run แต่ต้องมี threshold/checklist ที่ operator ทำตามได้</li>
+        <li><strong>JSONB flexibility มีต้นทุน:</strong> raw payload ดีสำหรับ vendor variance แต่ถ้า query มากขึ้นควร promote fields ที่ใช้บ่อยเป็น column/index</li>
+      </ul>
+    </section>
+
+    <section id="security">
+      <h2>7. Security Engineering Review</h2>
+      <h3>7.1 Controls ที่ดี</h3>
+      <ul>
+        <li>auth-gated media/snapshot/dashboard assets</li>
+        <li>CSP enforced และ inline handler cleanup จำนวนมาก</li>
+        <li>RBAC: admin/viewer/auditor พร้อม write-block และ admin-only routes</li>
+        <li>session/auth middleware enforce `must_change_password`</li>
+        <li>LINE webhook signature verification pattern</li>
+        <li>camera credential encryption helper และ health warning สำหรับ plaintext fallback</li>
+        <li>backup download audit และ service action audit</li>
+        <li>EMQX auth enabled และ dashboard localhost-only</li>
+      </ul>
+
+      <h3>7.2 Remaining concerns</h3>
+      <ul>
+        <li><strong>Third-party JS on authenticated dashboard:</strong> ควร self-host OpenLayers/Chart.js/date adapter และ remove jsdelivr จาก CSP</li>
+        <li><strong>MQTT 1883 bind all interfaces:</strong> accepted risk ได้ถ้า firewall/source restrictions ชัด แต่ต้องมี ops proof</li>
+        <li><strong>Internal token high-trust:</strong> ควร fail-fast หรือ health warning ใน production เมื่อ secret missing/mismatch</li>
+        <li><strong>Route security regression risk:</strong> ต้องมี automated smoke tests รอบ static/auth/admin/auditor boundary</li>
+      </ul>
+    </section>
+
+    <section id="performance">
+      <h2>8. Performance / Scalability Review</h2>
+      <h3>8.1 สิ่งที่ทำดีแล้ว</h3>
+      <ul>
+        <li>DB pool max และ `application_name` แยกต่อ worker</li>
+        <li>worker split ลด background load บน api-server</li>
+        <li>Puppeteer render queue กัน concurrent memory spike</li>
+        <li>executive summary / today counts มี cache</li>
+        <li>dead indexes ถูก audit และ drop แล้ว</li>
+        <li>snapshot thumbnail route ช่วยลด payload ใน UI</li>
+      </ul>
+
+      <h3>8.2 Bottleneck ที่ควรจับตา</h3>
+      <ul>
+        <li><strong>Stats/category queries:</strong> จะเป็น DB bottleneck หลักเมื่อ `events` โต</li>
+        <li><strong>`/api/events` pagination:</strong> `COUNT(*) OVER()`, deep `OFFSET`, `ILIKE` search มี scale limit</li>
+        <li><strong>`/api/health/details`:</strong> filesystem scans และ PM2 status calls อาจหนักเมื่อ media/snapshots เยอะ</li>
+        <li><strong>Frontend parse/load:</strong> dashboard monolith + CDN libs ควร split/lazy-load</li>
+        <li><strong>Report queue latency:</strong> serialization ปลอดภัย แต่ต้อง expose queue length/age</li>
+      </ul>
+    </section>
+
+    <section id="ops">
+      <h2>9. Operations / Deployment Review</h2>
+      <h3>9.1 จุดแข็ง</h3>
+      <ul>
+        <li><strong>PM2 ecosystem ชัด:</strong> autorestart, restart delay, max restarts และ launchd startup direction</li>
+        <li><strong>Docker boundary เหมาะสม:</strong> PostgreSQL และ EMQX อยู่ Docker; app workers อยู่ PM2</li>
+        <li><strong>Health endpoints มีหลายชั้น:</strong> api-server รวม worker health และ runtime diagnostics</li>
+        <li><strong>Backup/restore มี script และ UI route:</strong> ดีสำหรับ onsite operator</li>
+        <li><strong>Docs operations ดีมาก:</strong> `service_start.md`, `SKILL.md`, `GOTCHAS.md`, `ROADMAP.md` ช่วยลด bus factor</li>
+      </ul>
+
+      <h3>9.2 Gap</h3>
+      <ul>
+        <li>off-host backup ยังเป็น pending work</li>
+        <li>restore drill ควรมีหลักฐานล่าสุด</li>
+        <li>service health ควรแยก fast health กับ deep diagnostics</li>
+        <li>deployment checklist ควรรวม firewall, EMQX auth smoke, CSP smoke, backup smoke และ worker token check</li>
+      </ul>
+    </section>
+
+    <section id="tests">
+      <h2>10. Testing / QA Review</h2>
+      <h3>10.1 สิ่งที่ดี</h3>
+      <p>
+        การใช้ `node:test` แบบไม่มี dependency เพิ่มเป็นทางเลือกที่ดีสำหรับระบบนี้ เพราะรักษา deployment simplicity และทำให้ tests อยู่ใกล้ runtime จริง
+        tests ปัจจุบันครอบคลุม crypto credentials, alert rule matching, helper error format และ color utilities ซึ่งเป็นจุดเริ่มที่ถูกต้อง
+      </p>
+
+      <h3>10.2 สิ่งที่ยังขาด</h3>
+      <ul>
+        <li>route integration tests สำหรับ auth/role gates</li>
+        <li>CSP header tests</li>
+        <li>static media/snapshot denied tests</li>
+        <li>migration fresh/existing schema tests</li>
+        <li>worker health tests</li>
+        <li>ingester payload replay fixtures</li>
+        <li>report render smoke tests แบบไม่พึ่ง customer data</li>
+        <li>frontend smoke tests สำหรับ login, events, health, reports, LINE settings</li>
+      </ul>
+    </section>
+
+    <section id="recommendations">
+      <h2>11. ข้อเสนอแนะเชิงเทคนิคแบบจัดลำดับ</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Priority</th>
+            <th>งาน</th>
+            <th>เหตุผล</th>
+            <th>ความเสี่ยงถ้าไม่ทำ</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>P0</td>
+            <td>Self-host vendor JS และ tighten CSP</td>
+            <td>ลด browser supply-chain risk ใน authenticated dashboard</td>
+            <td>security review ลูกค้า enterprise ติดได้</td>
+          </tr>
+          <tr>
+            <td>P0</td>
+            <td>Route/auth/static/CSP smoke tests</td>
+            <td>กัน regression ใน boundary ที่สำคัญที่สุด</td>
+            <td>route split หรือ security patch อาจเปิดช่องโดยไม่รู้ตัว</td>
+          </tr>
+          <tr>
+            <td>P0</td>
+            <td>Off-host backup + restore drill</td>
+            <td>ทำให้ recovery story น่าเชื่อถือ</td>
+            <td>local disk loss ทำให้ local backup ใช้ไม่ได้</td>
+          </tr>
+          <tr>
+            <td>P1</td>
+            <td>แยก route modules ต่อจาก `api-server.js`</td>
+            <td>ลด route-order risk และทำให้ test ได้เป็น domain</td>
+            <td>maintenance cost โตตาม feature</td>
+          </tr>
+          <tr>
+            <td>P1</td>
+            <td>Extract shared report/time/brand helpers</td>
+            <td>ลด drift ระหว่าง api-server และ report-worker</td>
+            <td>scheduled/on-demand report behavior แตกกัน</td>
+          </tr>
+          <tr>
+            <td>P1</td>
+            <td>EXPLAIN baseline + slow query logging สำหรับ stats</td>
+            <td>รู้ bottleneck ก่อน events โต</td>
+            <td>แก้ performance ตอน production pressure สูง</td>
+          </tr>
+          <tr>
+            <td>P1</td>
+            <td>Health details cache/split deep diagnostics</td>
+            <td>ลด I/O background load บน edge machine</td>
+            <td>health page กลายเป็นแหล่ง load เอง</td>
+          </tr>
+          <tr>
+            <td>P2</td>
+            <td>Frontend module split / lazy-load</td>
+            <td>ลด parse/load cost และ regression scope</td>
+            <td>dashboard monolith จะยิ่งแก้ยาก</td>
+          </tr>
+          <tr>
+            <td>P2</td>
+            <td>Ingester payload replay library</td>
+            <td>กัน vendor firmware/payload regression</td>
+            <td>multi-vendor support ใช้ manual debugging มากเกินไป</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>คำตัดสินสุดท้าย</h3>
+      <blockquote>
+        ระบบนี้มี foundation ที่ดีและมี production sensibility ชัดเจน จุดที่ควรทำต่อไม่ใช่ rewrite แต่เป็นการเพิ่ม guardrails:
+        tests, module boundaries, self-hosted frontend dependencies, DB scale evidence, backup proof และ operational checks
+      </blockquote>
+    </section>
+  </main>
+</body>
+</html>

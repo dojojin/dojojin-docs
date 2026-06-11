@@ -1,5 +1,5 @@
 // ============================================================
-// DojoJin Tech Dashboard — Backfill upper_color / lower_color (one-off)
+// Vigil Platform — Backfill upper_color / lower_color (one-off)
 // @author Prakasit Rochanavipart (Dojo-mAn)
 // @copyright (c) 2025-2026 DojoJin Tech. All Rights Reserved.
 // @license Proprietary

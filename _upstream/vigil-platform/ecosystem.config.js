@@ -1,5 +1,5 @@
 // ============================================================
-// DojoJin Tech Dashboard — PM2 ecosystem config
+// Vigil Platform — PM2 ecosystem config
 // @author    Prakasit Rochanavipart (Dojo-mAn)
 // @contact   prakasit@dojojin.tech | https://dojojin.tech/
 // @copyright (c) 2025-2026 Prakasit Rochanavipart. All Rights Reserved.
@@ -27,6 +27,13 @@ const base = {
   restart_delay: 3000,     // ms to wait before each restart attempt
   max_restarts: 15,        // >15 bad restarts → errored (needs manual pm2 restart)
   log_date_format: 'YYYY-MM-DD HH:mm:ss.SSS',
+  // Pin every app to one explicit LTS runtime (A1+A6, 2026-06-10) — PATH-resolved
+  // `node` drifts with the spawning daemon's environment (GOTCHAS #83/#84).
+  // Camera-subnet reachability is granted by VigilPM2.app context (GOTCHAS #84),
+  // so the runtime can be upgraded without LNP per-binary records.
+  // Interpreter changes need `pm2 delete <app> && pm2 start ecosystem.config.js`
+  // (restart does not re-read this field) + `pm2 save`.
+  interpreter: '/opt/homebrew/opt/node@24/bin/node',
   env: {
     NODE_NO_WARNINGS: '1',
   },
@@ -59,6 +66,18 @@ module.exports = {
       ...base,
       name: 'dahua',
       script: 'ingesters/dahua-cgi.js',
+    },
+    {
+      ...base,
+      name: 'report-worker',
+      script: 'report-worker.js',
+      restart_delay: 5000,  // give api-server time to be up before worker retries
+    },
+    {
+      ...base,
+      name: 'alert-worker',
+      script: 'alert-worker.js',
+      restart_delay: 3000,
     },
   ],
 };

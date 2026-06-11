@@ -1,5 +1,5 @@
 -- ============================================================
--- DojoJin Tech Dashboard — Migration 029: Map Settings
+-- Vigil Platform — Migration 029: Map Settings
 -- @author Prakasit Rochanavipart (Dojo-mAn)
 -- @copyright (c) 2025-2026 DojoJin Tech. All Rights Reserved.
 -- @license Proprietary

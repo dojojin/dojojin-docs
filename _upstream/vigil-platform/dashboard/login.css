@@ -1,0 +1,157 @@
+/* Extracted from login.html inline <style> — SEC-3T-005 (2026-06-10)
+   style-src-elem 'self' enforcement: no inline style elements allowed */
+  :root {
+    color-scheme: light;
+    --bg: #f0f4fa;
+    --panel: #ffffff;
+    --panel2: #e8edf5;
+    --border: #d0d7e4;
+    --accent: #3b6fd4;
+    --text: #1a2030;
+    --dim: #5a6577;
+    --green: #16a34a;
+    --amber: #b45309;
+    --red: #dc2626;
+    --card-shadow: rgba(0,0,0,0.12);
+    --ui-font-family: 'Noto Sans Thai', 'Noto Sans', -apple-system, 'Segoe UI', system-ui, sans-serif;
+  }
+  html[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #0a0e1a;
+    --panel: #131826;
+    --panel2: #1a2030;
+    --border: #232b3d;
+    --accent: #5b8def;
+    --text: #e4e8f0;
+    --dim: #7f8694;
+    --green: #22c55e;
+    --amber: #f59e0b;
+    --red: #ef4444;
+    --card-shadow: rgba(0,0,0,0.4);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  input, button, select, textarea { font-family: inherit; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--ui-font-family);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background-image:
+      radial-gradient(circle at 20% 30%, rgba(91, 141, 239, 0.08) 0%, transparent 40%),
+      radial-gradient(circle at 80% 70%, rgba(34, 197, 94, 0.06) 0%, transparent 40%);
+  }
+  .login-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 40px;
+    width: 100%;
+    max-width: 420px;
+    box-shadow: 0 20px 50px var(--card-shadow);
+  }
+  .logo {
+    text-align: center;
+    margin-bottom: 30px;
+  }
+  .logo-icon {
+    font-size: 42px;
+    margin-bottom: 8px;
+  }
+  .logo-title {
+    font-size: 20px;
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+  .logo-subtitle {
+    font-size: 12px;
+    color: var(--dim);
+    letter-spacing: 1px;
+  }
+  .form-group { margin-bottom: 16px; }
+  .form-label {
+    display: block;
+    font-size: 11px;
+    color: var(--dim);
+    margin-bottom: 6px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+  }
+  .form-input {
+    width: 100%;
+    padding: 12px 14px;
+    background: var(--panel2);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    color: var(--text);
+    font-size: 14px;
+    transition: all .15s;
+  }
+  .form-input:focus {
+    outline: none;
+    border-color: var(--accent);
+    background: rgba(91,141,239,0.05);
+  }
+  .btn-login {
+    width: 100%;
+    padding: 13px;
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 7px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity .15s;
+    margin-top: 8px;
+  }
+  .btn-login:hover { opacity: 0.9; }
+  .btn-login:disabled { opacity: 0.5; cursor: not-allowed; }
+  .error-msg {
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid var(--red);
+    color: var(--red);
+    padding: 10px 14px;
+    border-radius: 6px;
+    font-size: 12px;
+    margin-bottom: 16px;
+    display: none;
+  }
+  .error-msg.show { display: block; }
+  .footer-info {
+    text-align: center;
+    margin-top: 24px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+    font-size: 10px;
+    color: var(--dim);
+    line-height: 1.6;
+  }
+  .footer-info code {
+    background: var(--panel2);
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+  }
+  .lang-toggle { display: flex; gap: 6px; justify-content: center; margin-top: 12px; }
+  .lang-toggle button {
+    background: var(--panel2); border: 1px solid var(--border); color: var(--dim);
+    padding: 4px 12px; border-radius: 5px; font-size: 11px; cursor: pointer;
+  }
+  html[lang="th"] #langTh, html[lang="en"] #langEn {
+    background: var(--accent); color: #fff; border-color: var(--accent);
+  }
+  #themeToggleBtn {
+    position: fixed; top: 12px; right: 12px; z-index: 100;
+    display: flex; align-items: center; gap: 5px;
+    background: var(--panel2); border: 1px solid var(--border); color: var(--dim);
+    padding: 5px 11px; border-radius: 5px; font-size: 11px; cursor: pointer;
+    transition: background .15s, border-color .15s;
+  }
+  #themeToggleBtn:hover { background: var(--border); }
+  @media (max-width: 768px) {
+    body { padding-top: 52px; }
+  }

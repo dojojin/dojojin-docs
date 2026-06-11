@@ -1,8 +1,17 @@
 # Bosch IVA Pro Appearance — แผนพัฒนาให้รองรับ (Development Plan)
 
-Last updated: 2026-06-01 (rev 2 — code-review pass: เพิ่ม §2.4 object_class/confidence gap + immediate 3rd-party impact)
+Last updated: 2026-06-10 (rev 3)
 Owner: Prakasit Rochanavipart (Dojo-mAn)
-Status: **PLANNED** — รอไฟเขียวเริ่ม Phase 1
+Status: **Phase 1-4 ✅ DONE** (migrations 031/032/034/035 + backfill 455 แถว + search API/UI)
+
+> **อัปเดต 2026-06-10:** เพิ่ม **low-fidelity rows จากกล้อง IVA non-Pro** (migration 041) —
+> กล้องอย่าง 3100i ส่ง Appearance แค่ `Class`+`Color` (dominant color ทั้งตัว ไม่มี
+> HumanBody/HumanFace) → เก็บเป็นแถว `object_class`+`confidence`+`overall_color(_xyz)`
+> โดย garment columns = NULL ตามจริง; `/api/appearances/search` filter สี match
+> `overall_color` ด้วย — verified live: 3100i row (Person 0.78, Black) ค้นเจอผ่าน API.
+> **ข้อจำกัดข้อมูลปัจจุบัน:** attributes เต็มชุดมีเฉพาะ BOSCH_8100i (offline ตั้งแต่ 2 มิ.ย.)
+> — 8000i ต้องเปิด Appearance ใน camera config; 3100i ได้แค่ low-fidelity ตาม hardware.
+> เหลือของแผนเดิม: Phase 5 บางส่วน (PDPA polish / 3rd-party view extension)
 
 > เอกสารนี้เป็นแผนพัฒนาให้ `vigil-platform` รองรับ **Bosch IVA Pro Appearance**
 > (appearance-based forensic search: เพศ / สี-ชนิดเสื้อผ้า / ผม / แว่น / กระเป๋า /
@@ -147,7 +156,7 @@ async function extractAppearance(eventId, cameraId, objectId, appearance, snapsh
 
 ```sql
 -- ============================================================
--- DojoJin Tech Dashboard — Migration 031: IVA Pro Appearance attributes
+-- Vigil Platform — Migration 031: IVA Pro Appearance attributes
 -- @author Prakasit Rochanavipart (Dojo-mAn)
 -- @copyright (c) 2025-2026 DojoJin Tech. All Rights Reserved.
 -- @license Proprietary

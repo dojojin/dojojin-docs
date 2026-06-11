@@ -1,5 +1,5 @@
 // ============================================================
-// DojoJin Tech Dashboard — Schema Migration Runner
+// Vigil Platform — Schema Migration Runner
 // CCTV Analytics & Management Suite
 // ============================================================
 // @author    Prakasit Rochanavipart (Dojo-mAn)
@@ -115,6 +115,8 @@ if (require.main === module) {
     database: process.env.DB_NAME,
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
+    max: 2,
+    application_name: 'migrate',
   });
 
   (async () => {

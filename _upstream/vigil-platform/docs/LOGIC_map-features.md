@@ -1,17 +1,17 @@
 // ============================================================
-// DojoJin Tech Dashboard — LOGIC_map-features
+// Vigil Platform — LOGIC_map-features
 // @author Prakasit Rochanavipart (Dojo-mAn)
 // @copyright (c) 2025-2026 DojoJin Tech. All Rights Reserved.
 // @license Proprietary
 // ============================================================
 
-# LOGIC_map-features — DojoJin Tech Dashboard
+# LOGIC_map-features — Vigil Platform
 
 > Feature logic — หน้าแผนที่ (Map page): OpenLayers, camera grouping
 > multi-color overlay, Live Pulse (Toast-on-map), และ improvement backlog.
 > Known bugs → GOTCHAS.md · Pending work pointer → ROADMAP.md
 >
-> Last updated: 2026-05-28 · relates to decisions #155, #156, #161, #168
+> Last updated: 2026-06-08 · relates to decisions #155, #156, #161, #168
 
 ---
 
@@ -950,4 +950,4 @@ async function updateOfflineButtonState() {
 
 ---
 
-<sub>End of LOGIC_map-features.md · Updated 2026-05-29 (decisions #155–#156, #161–#163, #168–#171) · L = Done</sub>
+<sub>End of LOGIC_map-features.md · Updated 2026-06-08 (decisions #155–#156, #161–#163, #168–#171) · L = Done</sub>

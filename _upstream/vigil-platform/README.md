@@ -2,7 +2,7 @@
 
 > **CCTV Analytics & Management Suite** — Real-time, multi-vendor video analytics platform for Bosch, Hikvision, Dahua, and generic ONVIF cameras.
 
-[![Version](https://img.shields.io/badge/version-1.5.0-blue.svg)]()
+[![Version](https://img.shields.io/badge/version-1.5.3-blue.svg)]()
 [![License](https://img.shields.io/badge/license-Proprietary-red.svg)]()
 [![Status](https://img.shields.io/badge/status-Production-green.svg)]()
 [![Multi--vendor](https://img.shields.io/badge/Multi--vendor-Bosch%20%C2%B7%20Hikvision%20%C2%B7%20Dahua%20%C2%B7%20ONVIF-success.svg)]()
@@ -241,7 +241,7 @@ Three daily background jobs:
         │ - Event normalisation    │
         │ - Snapshot capture       │
         │ - pg_notify(new_event)   │
-        │ - Alert engine hook      │
+        │ - pg_notify(alert_event) │
         └────────────┬─────────────┘
                      │
                      ▼
@@ -254,12 +254,12 @@ Three daily background jobs:
                          │
                          ▼
 ┌────────────────────────────────────────────────────────────────┐
-│        api-server.js (Express + WebSocket + Puppeteer)          │
+│        api-server.js (Express + WebSocket)                      │
 │  - Auth middleware · License enforcement                        │
 │  - Migrations on boot (fail-fast on schema error)               │
 │  - WebSocket bridge via Postgres LISTEN/NOTIFY                  │
-│  - Report scheduler loop (60s tick, TZ-aware)                   │
-│  - Puppeteer browser pool (1 Chromium per process)              │
+│  + alert-worker (pg_notify alert_event → LINE) isolated PM2    │
+│  + report-worker (scheduler 60s + Puppeteer) isolated PM2       │
 └──────────────┬────────────────────────────┬────────────────────┘
                │                            │
                ▼                            ▼
@@ -460,11 +460,15 @@ vigil-platform/
 └── src/                      # Backend
     ├── package.json          # 10 direct deps
     ├── .env                  # (git-ignored)
-    ├── api-server.js         # Express + WS + Auth + Scheduler + License
-    ├── mqtt-subscriber.js    # Bosch MQTT ingestion + snapshot + alert hook
+    ├── api-server.js         # Express + WS + Auth + License (proxy → report-worker)
+    ├── alert-worker.js       # PM2 worker — LISTEN alert_event → rule match → LINE/push
+    ├── report-worker.js      # PM2 worker — scheduler (60s) + Puppeteer PDF/PNG
+    ├── mqtt-subscriber.js    # Bosch MQTT ingestion + snapshot + pg_notify alert_event
     ├── ingesters/
     │   ├── hikvision-isapi.js  # Hikvision ISAPI Alert Stream
     │   └── dahua-cgi.js        # Dahua CGI VCA event stream
+    ├── routes/
+    │   └── categories.js     # Categories & mapping-rules routes
     ├── media-recorder.js     # 24/7 RTSP rolling buffer + clip dump
     ├── migrate.js            # Schema migration runner
     ├── auth.js               # bcrypt + sessions + RBAC
@@ -591,4 +595,4 @@ This repository contains proprietary code and configurations. Access is restrict
 
 ---
 
-<sub>**Vigil Platform** v1.5.0 · by DojoJin Tech · Built with care in Thailand 🇹🇭 · © 2025-2026</sub>
+<sub>**Vigil Platform** v1.5.3 · by DojoJin Tech · Built with care in Thailand 🇹🇭 · © 2025-2026</sub>

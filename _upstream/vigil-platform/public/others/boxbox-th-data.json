@@ -1,0 +1,307 @@
+{
+  "layer_labels": {
+    "frontend": "อินเทอร์เฟซผู้ใช้",
+    "api": "จุดปลายทาง API",
+    "backend": "ตรรมชาติของธุรกิจ",
+    "database": "จัดเก็บข้อมูล",
+    "external": "บริการภายนอก"
+  },
+  "ui": {
+    "no_incoming": "ไม่มีการเชื่อมต่อเข้า",
+    "no_outgoing": "ไม่มีการเชื่อมต่อออก",
+    "no_files": "(ไม่มีไฟล์ที่เกี่ยวข้อง)",
+    "connects_here": "เชื่อมต่อที่นี่",
+    "sends_to": "ส่งไปยัง",
+    "theme_dark": "โหมดมืด",
+    "theme_light": "โหมดอ่อน"
+  },
+  "project_name": "vigil-platform",
+  "stack": [
+    { "name": "Node.js", "category": "backend", "icon": "node" },
+    { "name": "Express.js", "category": "backend", "icon": "node" },
+    { "name": "Vanilla JavaScript", "category": "frontend", "icon": "box" },
+    { "name": "PostgreSQL", "category": "database", "icon": "postgres" },
+    { "name": "MQTT (EMQX)", "category": "infrastructure", "icon": "box" },
+    { "name": "WebSocket", "category": "backend", "icon": "box" },
+    { "name": "Puppeteer", "category": "backend", "icon": "box" },
+    { "name": "sharp", "category": "backend", "icon": "box" },
+    { "name": "Chart.js", "category": "frontend", "icon": "chart" },
+    { "name": "OpenLayers", "category": "frontend", "icon": "globe" },
+    { "name": "LINE Messaging API", "category": "external", "icon": "box" },
+    { "name": "Cloudflare Tunnel", "category": "infrastructure", "icon": "box" }
+  ],
+  "nodes": [
+    {
+      "id": "real-time-monitoring",
+      "name": "หน้าจอติดตามสด",
+      "plain_english": "Real-time Monitoring Dashboard",
+      "layer": "frontend",
+      "rank": 0,
+      "icon": "dashboard",
+      "files": [
+        "/Users/dojojin/vigil-platform/dashboard/index.html",
+        "/Users/dojojin/vigil-platform/dashboard/dashboard.js",
+        "/Users/dojojin/vigil-platform/dashboard/i18n.js"
+      ],
+      "external": false
+    },
+    {
+      "id": "geospatial-mapping",
+      "name": "แผนที่และแสดงความหนาแน่นเหตุการณ์",
+      "plain_english": "Geospatial Mapping & Heatmaps",
+      "layer": "frontend",
+      "rank": 0,
+      "icon": "globe",
+      "files": [
+        "/Users/dojojin/vigil-platform/dashboard/dashboard.js",
+        "/Users/dojojin/vigil-platform/map-areas.json"
+      ],
+      "external": false
+    },
+    {
+      "id": "authentication",
+      "name": "เข้าสู่ระบบและจัดการสิทธิ",
+      "plain_english": "User Authentication",
+      "layer": "api",
+      "rank": 1,
+      "icon": "lock",
+      "files": [
+        "/Users/dojojin/vigil-platform/src/auth.js",
+        "/Users/dojojin/vigil-platform/dashboard/login.html"
+      ],
+      "external": false
+    },
+    {
+      "id": "camera-management",
+      "name": "จัดการและตั้งค่ากล้อง",
+      "plain_english": "Camera Management",
+      "layer": "api",
+      "rank": 1,
+      "icon": "box",
+      "files": [
+        "/Users/dojojin/vigil-platform/src/api-server.js",
+        "/Users/dojojin/vigil-platform/cameras-config.json"
+      ],
+      "external": false
+    },
+    {
+      "id": "analytics-statistics",
+      "name": "วิเคราะห์สถิติและข้อมูล",
+      "plain_english": "Analytics & Statistics",
+      "layer": "api",
+      "rank": 1,
+      "icon": "chart",
+      "files": [
+        "/Users/dojojin/vigil-platform/src/api-server.js",
+        "/Users/dojojin/vigil-platform/src/stats-summary-route.js"
+      ],
+      "external": false
+    },
+    {
+      "id": "alert-rules",
+      "name": "ตั้งกฎและเงื่อนไขการแจ้งเตือน",
+      "plain_english": "Alert Rules & Configuration",
+      "layer": "api",
+      "rank": 1,
+      "icon": "settings",
+      "files": [
+        "/Users/dojojin/vigil-platform/src/api-server.js",
+        "/Users/dojojin/vigil-platform/src/alert-engine.js"
+      ],
+      "external": false
+    },
+    {
+      "id": "licensing",
+      "name": "ยืนยันใบอนุญาตและกำหนดขีดจำกัด",
+      "plain_english": "License & Activation",
+      "layer": "api",
+      "rank": 1,
+      "icon": "lock",
+      "files": [
+        "/Users/dojojin/vigil-platform/src/license.js",
+        "/Users/dojojin/vigil-platform/src/api-server.js"
+      ],
+      "external": false
+    },
+    {
+      "id": "white-label-branding",
+      "name": "ปรับแต่งโลโก้และสีของแบรนด์",
+      "plain_english": "White-Label Branding",
+      "layer": "api",
+      "rank": 1,
+      "icon": "box",
+      "files": [
+        "/Users/dojojin/vigil-platform/src/api-server.js",
+        "/Users/dojojin/vigil-platform/branding"
+      ],
+      "external": false
+    },
+    {
+      "id": "event-ingestion",
+      "name": "รับและประมวลผลเหตุการณ์จากกล้อง",
+      "plain_english": "Event Ingestion",
+      "layer": "backend",
+      "rank": 2,
+      "icon": "box",
+      "files": [
+        "/Users/dojojin/vigil-platform/src/mqtt-subscriber.js",
+        "/Users/dojojin/vigil-platform/src/ingesters/hikvision-isapi.js",
+        "/Users/dojojin/vigil-platform/src/ingesters/dahua-cgi.js"
+      ],
+      "external": false
+    },
+    {
+      "id": "line-notifications",
+      "name": "ส่งการแจ้งเตือนผ่าน LINE",
+      "plain_english": "LINE Notifications & Alerts",
+      "layer": "backend",
+      "rank": 2,
+      "icon": "mail",
+      "files": [
+        "/Users/dojojin/vigil-platform/src/line-sender.js",
+        "/Users/dojojin/vigil-platform/src/alert-engine.js"
+      ],
+      "external": false
+    },
+    {
+      "id": "snapshots-media",
+      "name": "จัดเก็บภาพนิ่งและวิดีโอคลิป",
+      "plain_english": "Snapshots & Media Management",
+      "layer": "backend",
+      "rank": 2,
+      "icon": "box",
+      "files": [
+        "/Users/dojojin/vigil-platform/src/media-recorder.js",
+        "/Users/dojojin/vigil-platform/src/mqtt-subscriber.js",
+        "/Users/dojojin/vigil-platform/src/api-server.js"
+      ],
+      "external": false
+    },
+    {
+      "id": "reporting",
+      "name": "สร้างรายงาน PDF และ PNG",
+      "plain_english": "PDF & PNG Report Generation",
+      "layer": "backend",
+      "rank": 2,
+      "icon": "file",
+      "files": [
+        "/Users/dojojin/vigil-platform/src/report-renderer.js",
+        "/Users/dojojin/vigil-platform/src/api-server.js",
+        "/Users/dojojin/vigil-platform/dashboard/report-template.js"
+      ],
+      "external": false
+    },
+    {
+      "id": "audit-logging",
+      "name": "บันทึกการดำเนินการสำหรับตรวจสอบ",
+      "plain_english": "Audit Logging & Compliance",
+      "layer": "backend",
+      "rank": 2,
+      "icon": "box",
+      "files": [
+        "/Users/dojojin/vigil-platform/src/api-server.js",
+        "/Users/dojojin/vigil-platform/src/auth.js"
+      ],
+      "external": false
+    },
+    {
+      "id": "database",
+      "name": "PostgreSQL",
+      "plain_english": "Database",
+      "layer": "database",
+      "rank": 3,
+      "icon": "postgres",
+      "files": [
+        "/Users/dojojin/vigil-platform/db/init.sql"
+      ],
+      "external": false
+    },
+    {
+      "id": "mqtt_broker",
+      "name": "MQTT Broker (EMQX)",
+      "plain_english": "MQTT Broker",
+      "layer": "backend",
+      "rank": 2,
+      "icon": "box",
+      "files": [],
+      "external": false
+    },
+    {
+      "id": "line_messaging_api",
+      "name": "LINE Messaging API",
+      "plain_english": "ส่งข้อความ LINE ไปยังผู้ใช้",
+      "layer": "external",
+      "rank": 1,
+      "icon": "box",
+      "files": [],
+      "external": true
+    },
+    {
+      "id": "cloudflare_tunnel",
+      "name": "Cloudflare Tunnel",
+      "plain_english": "เชื่อมต่อระยะไกลที่ปลอดภัยไม่มีพอร์ต",
+      "layer": "external",
+      "rank": 1,
+      "icon": "box",
+      "files": [],
+      "external": true
+    },
+    {
+      "id": "mapbox",
+      "name": "Mapbox",
+      "plain_english": "แผนที่และกระเบื้องแผนที่ภูมิสารสนเทศ",
+      "layer": "external",
+      "rank": 1,
+      "icon": "globe",
+      "files": [],
+      "external": true
+    },
+    {
+      "id": "imgbb",
+      "name": "imgbb",
+      "plain_english": "บริการโฮสต์ภาพเพื่อการฝังตัว",
+      "layer": "external",
+      "rank": 1,
+      "icon": "box",
+      "files": [],
+      "external": true
+    }
+  ],
+  "edges": [
+    { "from": "real-time-monitoring", "to": "authentication", "label": "ตรวจสอบสิทธิ์ผ่าน API", "kind": "api_call" },
+    { "from": "real-time-monitoring", "to": "camera-management", "label": "ดึงรายการกล้องและสถานะ", "kind": "api_call" },
+    { "from": "real-time-monitoring", "to": "analytics-statistics", "label": "ดึงสถิติและข้อมูล KPI", "kind": "api_call" },
+    { "from": "real-time-monitoring", "to": "event-ingestion", "label": "รับสตรีมเหตุการณ์แบบเรียลไทม์ผ่าน WebSocket", "kind": "api_call" },
+    { "from": "real-time-monitoring", "to": "alert-rules", "label": "ดึงกฎการแจ้งเตือนและการตั้งค่า", "kind": "api_call" },
+    { "from": "geospatial-mapping", "to": "analytics-statistics", "label": "ดึงข้อมูลตำแหน่งและแสดงความหนาแน่น", "kind": "api_call" },
+    { "from": "geospatial-mapping", "to": "mapbox", "label": "โหลดกระเบื้องแผนที่และ API", "kind": "external_call" },
+    { "from": "authentication", "to": "database", "label": "ตรวจสอบชื่อผู้ใช้ และบันทึกเซสชัน", "kind": "db_read" },
+    { "from": "authentication", "to": "audit-logging", "label": "บันทึกการเข้าสู่ระบบ", "kind": "db_write" },
+    { "from": "camera-management", "to": "database", "label": "ดึง อัปเดต ลบข้อมูลกล้อง", "kind": "db_read" },
+    { "from": "camera-management", "to": "audit-logging", "label": "บันทึกการเปลี่ยนแปลงการตั้งค่า", "kind": "db_write" },
+    { "from": "analytics-statistics", "to": "database", "label": "รวมข้อมูลเหตุการณ์ นับตามหมวดหมู่", "kind": "db_read" },
+    { "from": "alert-rules", "to": "database", "label": "ดึง อัปเดต บันทึกเงื่อนไขการแจ้งเตือน", "kind": "db_read" },
+    { "from": "alert-rules", "to": "audit-logging", "label": "บันทึกการแก้ไขกฎ", "kind": "db_write" },
+    { "from": "licensing", "to": "database", "label": "ตรวจสอบและเก็บสถานะใบอนุญาต", "kind": "db_read" },
+    { "from": "white-label-branding", "to": "database", "label": "ดึง อัปเดตการตั้งค่าแบรนด์", "kind": "db_read" },
+    { "from": "event-ingestion", "to": "mqtt_broker", "label": "ติดตามหัวข้อ MQTT จากกล้องแต่ละเรื่อง", "kind": "api_call" },
+    { "from": "event-ingestion", "to": "database", "label": "บันทึกเหตุการณ์ วัตถุ พฤติกรรม", "kind": "db_write" },
+    { "from": "event-ingestion", "to": "line-notifications", "label": "ส่งเหตุการณ์ไปยังเอนจิน", "kind": "api_call" },
+    { "from": "event-ingestion", "to": "snapshots-media", "label": "ส่งภาพนิ่ง และขอคลิป", "kind": "api_call" },
+    { "from": "line-notifications", "to": "database", "label": "ดึงกฎและการตั้งค่า LINE", "kind": "db_read" },
+    { "from": "line-notifications", "to": "line_messaging_api", "label": "ส่งข้อความและภาพ", "kind": "external_call" },
+    { "from": "line-notifications", "to": "imgbb", "label": "อัปโหลดภาพเพื่อแนบ", "kind": "external_call" },
+    { "from": "line-notifications", "to": "database", "label": "บันทึกบันทึกการแจ้งเตือน", "kind": "db_write" },
+    { "from": "snapshots-media", "to": "database", "label": "เก็บตำแหน่งไฟล์และเมตาดาต้า", "kind": "db_write" },
+    { "from": "reporting", "to": "analytics-statistics", "label": "ดึงข้อมูลสถิติในช่วงเวลา", "kind": "api_call" },
+    { "from": "reporting", "to": "database", "label": "ดึงข้อมูลกล้องและเหตุการณ์", "kind": "db_read" },
+    { "from": "reporting", "to": "snapshots-media", "label": "ดึงภาพนิ่งเพื่อฝังในรายงาน", "kind": "api_call" },
+    { "from": "audit-logging", "to": "database", "label": "บันทึกการดำเนินการของผู้ใช้", "kind": "db_write" },
+    { "from": "cloudflare_tunnel", "to": "real-time-monitoring", "label": "ส่งเข้าและโฮสต์แอปพลิเคชัน", "kind": "external_call" }
+  ],
+  "summary": {
+    "feature_count": 13,
+    "connection_count": 28,
+    "headline": "แพลตฟอร์มวิเคราะห์กล้อง CCTV แบบเรียลไทม์ที่ติดตั้งในเครื่อง รับเหตุการณ์ผ่าน MQTT จากกล้องหลาย ประเภท ส่งการแจ้งเตือน LINE ไปยังผู้ใช้บริการ สร้างรายงานประจำวัน และแสดงหน้าจอติดตามสด ด้วยแผนที่ และสถิติ"
+  }
+}

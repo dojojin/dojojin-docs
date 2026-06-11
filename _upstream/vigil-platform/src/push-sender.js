@@ -1,5 +1,5 @@
 // ============================================================
-// DojoJin Tech Dashboard — Push Sender (Expo Push API)
+// Vigil Platform — Push Sender (Expo Push API)
 // @author    Prakasit Rochanavipart (Dojo-mAn)
 // @copyright  (c) 2025-2026 ... All Rights Reserved.
 // @license    Proprietary

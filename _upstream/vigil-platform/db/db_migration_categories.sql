@@ -1,5 +1,5 @@
 -- ============================================================
--- DojoJin Tech Dashboard — Migration: Event Categories & Settings
+-- Vigil Platform — Migration: Event Categories & Settings
 -- ============================================================
 -- Phase 1 (Stats v2 foundation):
 --   • event_categories       — display-level grouping (user-defined + 2 builtin)

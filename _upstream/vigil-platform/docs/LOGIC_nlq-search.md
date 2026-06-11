@@ -2,7 +2,7 @@
 
 > Feature spec + implementation handoff for the NLQ layer.
 > Status: **PLANNED** — backend largely ready; NLQ layer not yet built.
-> Last updated: 2026-06-04 · Author: Prakasit Rochanavipart (Dojo-mAn)
+> Last updated: 2026-06-08 · Author: Prakasit Rochanavipart (Dojo-mAn)
 
 ---
 
@@ -361,4 +361,4 @@ module.exports = router;
 
 ---
 
-*LOGIC_nlq-search.md · DojoJin Tech Dashboard · 2026-06-04*
+*LOGIC_nlq-search.md · Vigil Platform · 2026-06-08*

@@ -4,7 +4,7 @@
 > multipart parsing, face gallery page design, background image handling,
 > and PDPA boundary decisions.
 > Parent index: DECISIONS.md
-> Last updated: 2026-05-24 · v1.5.0
+> Last updated: 2026-06-08 · v1.5.0
 
 ---
 

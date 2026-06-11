@@ -1,5 +1,5 @@
 // ============================================================
-// DojoJin Tech Dashboard — LINE Sender Module
+// Vigil Platform — LINE Sender Module
 // ============================================================
 // @author    Prakasit Rochanavipart (Dojo-mAn)
 // @contact   prakasit@dojojin.tech | https://dojojin.tech/
@@ -228,7 +228,7 @@ async function getLineQuota(token) {
 function testConnection(token, recipientId) {
   return pushLineMessage(token, recipientId, [{
     type: 'text',
-    text: '✅ DojoJin Tech Dashboard\nLINE notification ทดสอบสำเร็จ!\n\nระบบเชื่อมต่อพร้อมใช้งาน 🎉'
+    text: '✅ Vigil Platform\nLINE notification ทดสอบสำเร็จ!\n\nระบบเชื่อมต่อพร้อมใช้งาน 🎉'
   }]);
 }
 

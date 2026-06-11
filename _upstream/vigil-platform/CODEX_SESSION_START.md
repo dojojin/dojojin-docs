@@ -7,7 +7,7 @@
 
 ## Prompt to Codex
 
-You are working on the **DojoJin Tech Dashboard** repository.
+You are working on the **Vigil Platform** repository.
 
 This is production CCTV / security operations software. Work carefully.
 

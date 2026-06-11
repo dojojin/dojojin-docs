@@ -1,0 +1,321 @@
+{
+  "layer_labels": {
+    "frontend": "User interface",
+    "api": "Server endpoints",
+    "backend": "Business logic",
+    "database": "Data storage",
+    "external": "Outside services"
+  },
+  "ui": {
+    "no_incoming": "Nothing comes in.",
+    "no_outgoing": "Nothing goes out.",
+    "no_files": "(no files associated)",
+    "connects_here": "connects here",
+    "sends_to": "sends to",
+    "theme_dark": "Dark mode",
+    "theme_light": "Light mode"
+  },
+  "project_name": "Bosch MQTT Dashboard",
+  "stack": [
+    { "name": "Node.js", "category": "backend", "icon": "node" },
+    { "name": "Express.js", "category": "backend", "icon": "node" },
+    { "name": "Vanilla JavaScript", "category": "frontend", "icon": "box" },
+    { "name": "PostgreSQL", "category": "database", "icon": "postgres" },
+    { "name": "MQTT (EMQX)", "category": "infrastructure", "icon": "box" },
+    { "name": "WebSocket", "category": "backend", "icon": "box" },
+    { "name": "Puppeteer", "category": "backend", "icon": "box" },
+    { "name": "sharp", "category": "backend", "icon": "box" },
+    { "name": "Chart.js", "category": "frontend", "icon": "chart" },
+    { "name": "OpenLayers", "category": "frontend", "icon": "globe" },
+    { "name": "LINE Messaging API", "category": "external", "icon": "box" },
+    { "name": "Cloudflare Tunnel", "category": "infrastructure", "icon": "box" }
+  ],
+  "nodes": [
+    {
+      "id": "login",
+      "name": "Sign in & User Management",
+      "plain_english": "Where operators log in with credentials, manage sessions, and authenticate access to the platform.",
+      "layer": "frontend",
+      "rank": 0,
+      "icon": "lock",
+      "files": ["dashboard/login.html"],
+      "external": false
+    },
+    {
+      "id": "dashboard",
+      "name": "Live Monitoring Dashboard",
+      "plain_english": "Main interface for operators to view real-time events, camera feeds, analytics charts, and map overlays.",
+      "layer": "frontend",
+      "rank": 0,
+      "icon": "dashboard",
+      "files": [
+        "dashboard/index.html",
+        "dashboard/dashboard.js",
+        "dashboard/i18n.js"
+      ],
+      "external": false
+    },
+    {
+      "id": "auth_api",
+      "name": "Authentication Service",
+      "plain_english": "Validates login credentials, manages user sessions, enforces role-based access control, and audits access.",
+      "layer": "api",
+      "rank": 1,
+      "icon": "lock",
+      "files": [
+        "src/auth.js",
+        "db/db_migration_auth.sql"
+      ],
+      "external": false
+    },
+    {
+      "id": "camera_mgmt",
+      "name": "Camera Configuration & Health",
+      "plain_english": "Registers and monitors CCTV cameras (Bosch, Hikvision, Dahua, ONVIF) including network settings and status.",
+      "layer": "api",
+      "rank": 1,
+      "icon": "box",
+      "files": [
+        "src/api-server.js",
+        "src/mqtt-subscriber.js",
+        "cameras-config.json"
+      ],
+      "external": false
+    },
+    {
+      "id": "event_ingestion",
+      "name": "Event Ingestion Engine",
+      "plain_english": "Receives video analytics events from cameras via MQTT, processes detections (people, vehicles, behaviors).",
+      "layer": "api",
+      "rank": 1,
+      "icon": "box",
+      "files": [
+        "src/mqtt-subscriber.js",
+        "src/ingesters/hikvision-isapi.js",
+        "src/ingesters/dahua-cgi.js"
+      ],
+      "external": false
+    },
+    {
+      "id": "alert_rules",
+      "name": "Alert Rules Engine",
+      "plain_english": "Manages conditions and thresholds for triggering alerts based on detected events and patterns.",
+      "layer": "api",
+      "rank": 1,
+      "icon": "settings",
+      "files": [
+        "src/alert-engine.js",
+        "src/api-server.js"
+      ],
+      "external": false
+    },
+    {
+      "id": "line_alerts",
+      "name": "LINE Messaging Integration",
+      "plain_english": "Sends real-time alerts to operators via LINE chat when rules trigger, with optional snapshots.",
+      "layer": "api",
+      "rank": 1,
+      "icon": "mail",
+      "files": [
+        "src/line-sender.js",
+        "src/alert-engine.js"
+      ],
+      "external": false
+    },
+    {
+      "id": "reporting",
+      "name": "Report Generation Engine",
+      "plain_english": "Generates daily/weekly reports with statistics, charts, and snapshots in PDF or PNG format.",
+      "layer": "api",
+      "rank": 1,
+      "icon": "file",
+      "files": [
+        "src/report-renderer.js",
+        "dashboard/report-template.js",
+        "dashboard/report-print.html"
+      ],
+      "external": false
+    },
+    {
+      "id": "analytics",
+      "name": "Analytics & Statistics",
+      "plain_english": "Aggregates event data into insights: timelines, heatmaps, counts by rule/camera, and KPI metrics.",
+      "layer": "api",
+      "rank": 1,
+      "icon": "chart",
+      "files": [
+        "src/stats-summary-route.js",
+        "src/api-server.js"
+      ],
+      "external": false
+    },
+    {
+      "id": "snapshots_media",
+      "name": "Snapshots & Media Storage",
+      "plain_english": "Captures and stores event snapshots and video clips for review and inclusion in alerts.",
+      "layer": "api",
+      "rank": 1,
+      "icon": "box",
+      "files": [
+        "src/media-recorder.js",
+        "src/mqtt-subscriber.js"
+      ],
+      "external": false
+    },
+    {
+      "id": "geospatial",
+      "name": "Geospatial Mapping",
+      "plain_english": "Displays camera locations on interactive maps with event heatmaps and offline tile caching.",
+      "layer": "frontend",
+      "rank": 0,
+      "icon": "globe",
+      "files": [
+        "dashboard/dashboard.js",
+        "map-areas.json"
+      ],
+      "external": false
+    },
+    {
+      "id": "licensing",
+      "name": "License Validation",
+      "plain_english": "Validates Ed25519 JWT licenses, enforces feature gates, and manages subscription/trial periods.",
+      "layer": "api",
+      "rank": 1,
+      "icon": "lock",
+      "files": [
+        "src/license.js",
+        "src/api-server.js"
+      ],
+      "external": false
+    },
+    {
+      "id": "branding",
+      "name": "White-Label Customization",
+      "plain_english": "Allows resellers to customize platform branding, logo, colors, and company name per deployment.",
+      "layer": "api",
+      "rank": 1,
+      "icon": "box",
+      "files": [
+        "src/api-server.js",
+        "branding"
+      ],
+      "external": false
+    },
+    {
+      "id": "audit",
+      "name": "Audit Logging & Compliance",
+      "plain_english": "Logs all user actions (logins, config changes, alerts) for security investigations and compliance.",
+      "layer": "database",
+      "rank": 3,
+      "icon": "box",
+      "files": [
+        "src/api-server.js",
+        "src/auth.js"
+      ],
+      "external": false
+    },
+    {
+      "id": "database",
+      "name": "PostgreSQL Database",
+      "plain_english": "Persistent data store for users, cameras, events, alerts, rules, snapshots, and all analytics data.",
+      "layer": "database",
+      "rank": 3,
+      "icon": "postgres",
+      "files": ["db/init.sql"],
+      "external": false
+    },
+    {
+      "id": "mqtt_broker",
+      "name": "MQTT Message Broker",
+      "plain_english": "Receives camera events and ingests real-time video analytics from ONVIF Profile M cameras.",
+      "layer": "database",
+      "rank": 3,
+      "icon": "box",
+      "files": ["src/mqtt-subscriber.js"],
+      "external": false
+    },
+    {
+      "id": "line_api",
+      "name": "LINE Messaging API",
+      "plain_english": "Sends instant messaging notifications to operators on LINE chat platform.",
+      "layer": "external",
+      "rank": 1,
+      "icon": "mail",
+      "files": [],
+      "external": true
+    },
+    {
+      "id": "imgbb_service",
+      "name": "imgbb Image Hosting",
+      "plain_english": "Hosts event snapshots and report images for embedding in LINE messages with auto-deletion.",
+      "layer": "external",
+      "rank": 1,
+      "icon": "box",
+      "files": [],
+      "external": true
+    },
+    {
+      "id": "mapbox_service",
+      "name": "Mapbox Mapping Service",
+      "plain_english": "Provides detailed map tiles and geospatial data for camera location visualization (optional).",
+      "layer": "external",
+      "rank": 1,
+      "icon": "globe",
+      "files": [],
+      "external": true
+    },
+    {
+      "id": "cloudflare_tunnel",
+      "name": "Cloudflare Tunnel",
+      "plain_english": "Provides secure remote access to dashboard without exposing ports directly to internet.",
+      "layer": "external",
+      "rank": 1,
+      "icon": "box",
+      "files": [],
+      "external": true
+    }
+  ],
+  "edges": [
+    { "from": "login", "to": "auth_api", "label": "submits username and password", "kind": "api_call" },
+    { "from": "dashboard", "to": "auth_api", "label": "verifies user session on load", "kind": "api_call" },
+    { "from": "auth_api", "to": "database", "label": "reads/writes users, sessions, audit logs", "kind": "db_write" },
+    { "from": "dashboard", "to": "camera_mgmt", "label": "fetches camera list and status", "kind": "api_call" },
+    { "from": "dashboard", "to": "event_ingestion", "label": "queries recent events and categories", "kind": "api_call" },
+    { "from": "dashboard", "to": "analytics", "label": "fetches stats, timelines, heatmaps", "kind": "api_call" },
+    { "from": "dashboard", "to": "snapshots_media", "label": "loads snapshots and video clips", "kind": "api_call" },
+    { "from": "dashboard", "to": "alert_rules", "label": "creates, edits, and deletes alert rules", "kind": "api_call" },
+    { "from": "dashboard", "to": "licensing", "label": "checks license status and activates", "kind": "api_call" },
+    { "from": "dashboard", "to": "line_alerts", "label": "configures LINE settings and recipients", "kind": "api_call" },
+    { "from": "dashboard", "to": "reporting", "label": "requests report generation on demand", "kind": "api_call" },
+    { "from": "dashboard", "to": "geospatial", "label": "requests map tiles and heatmaps", "kind": "api_call" },
+    { "from": "dashboard", "to": "branding", "label": "loads brand settings (logo, colors, name)", "kind": "api_call" },
+    { "from": "camera_mgmt", "to": "database", "label": "stores camera configs and status", "kind": "db_write" },
+    { "from": "camera_mgmt", "to": "mqtt_broker", "label": "subscribes to camera MQTT topics", "kind": "import" },
+    { "from": "event_ingestion", "to": "database", "label": "writes analytics events and detections", "kind": "db_write" },
+    { "from": "event_ingestion", "to": "mqtt_broker", "label": "reads events from MQTT stream", "kind": "import" },
+    { "from": "event_ingestion", "to": "alert_rules", "label": "triggers matching alert rules", "kind": "api_call" },
+    { "from": "event_ingestion", "to": "snapshots_media", "label": "captures snapshots on events", "kind": "api_call" },
+    { "from": "alert_rules", "to": "database", "label": "reads alert rules and cooldown state", "kind": "db_read" },
+    { "from": "alert_rules", "to": "line_alerts", "label": "sends triggered alerts with details", "kind": "api_call" },
+    { "from": "line_alerts", "to": "line_api", "label": "sends messages to LINE chat", "kind": "external_call" },
+    { "from": "line_alerts", "to": "imgbb_service", "label": "uploads snapshots for embedding", "kind": "external_call" },
+    { "from": "line_alerts", "to": "database", "label": "reads LINE config, recipients, and snapshots", "kind": "db_read" },
+    { "from": "reporting", "to": "analytics", "label": "gathers stats for report content", "kind": "api_call" },
+    { "from": "reporting", "to": "snapshots_media", "label": "embeds event snapshots in report", "kind": "api_call" },
+    { "from": "reporting", "to": "line_alerts", "label": "sends completed reports via LINE", "kind": "api_call" },
+    { "from": "reporting", "to": "imgbb_service", "label": "uploads report PNG for sharing", "kind": "external_call" },
+    { "from": "reporting", "to": "database", "label": "reads events and reports schedule", "kind": "db_read" },
+    { "from": "analytics", "to": "database", "label": "aggregates and queries event data", "kind": "db_read" },
+    { "from": "snapshots_media", "to": "database", "label": "records snapshot metadata and paths", "kind": "db_write" },
+    { "from": "geospatial", "to": "analytics", "label": "fetches heatmap data by location", "kind": "api_call" },
+    { "from": "geospatial", "to": "mapbox_service", "label": "requests map tiles (optional)", "kind": "external_call" },
+    { "from": "licensing", "to": "database", "label": "validates and stores license state", "kind": "db_write" },
+    { "from": "branding", "to": "database", "label": "reads and writes brand customization", "kind": "db_write" },
+    { "from": "audit", "to": "database", "label": "logs all user actions for compliance", "kind": "db_write" }
+  ],
+  "summary": {
+    "feature_count": 15,
+    "connection_count": 39,
+    "headline": "Self-hosted CCTV analytics platform that ingests camera events via MQTT, triggers smart alerts to LINE messaging, generates analytics reports, and supports white-label deployment."
+  }
+}

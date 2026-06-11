@@ -1,8 +1,8 @@
-# CLAUDE.md — DojoJin Tech Dashboard
+# CLAUDE.md — Vigil Platform
 
 > **Project context handoff document for AI assistants (Claude Code, future chat sessions, etc.)**
-> Last updated: 2026-06-03 · Owner: Prakasit Rochanavipart (Dojo-mAn)
-> Current version: **v1.5.1** · live at `https://dashboard.dojojin.tech`
+> Last updated: 2026-06-08 · Owner: Prakasit Rochanavipart (Dojo-mAn)
+> Current version: **v1.5.3** · live at `https://dashboard.dojojin.tech`
 >
 > **What changed:** this file used to hold everything (~1,750 lines).
 > It was slimmed on 2026-05-23 to 4 top blocks + pointers — detail
@@ -215,10 +215,12 @@ unclear → open `docs/ARCH_documentation-governance.md` first.**
 | [docs/LOGIC_map-features.md](docs/LOGIC_map-features.md) | `LOGIC_` | Map page — what exists, improvement backlog, Option B (multi-group overlay), Live Pulse Toast-on-map T2, bug history |
 | [CHANGELOG.md](CHANGELOG.md) | Completed work log | Completed features by version (v1.2 → v1.5) + recent updates timeline |
 | [ROADMAP.md](ROADMAP.md) | `REFACTOR_TODO` | Pending work · operational roadmap Ph.1–Ph.6 · strategic direction |
-| [SKILL.md](SKILL.md) | `REF_` | Operator's playbook — category mappings, troubleshooting, SQL snippets |
+| [SKILL.md](SKILL.md) | `REF_` | Operator's playbook (English) — mental model, mapping recipes, system settings, branding, Health Check, reports, i18n, camera offline alerts, report history, health report, auditor role, license, Dahua snapshots, camera pause, runtime stack |
+| [SKILL-TH.md](SKILL-TH.md) | `REF_` | Operator's playbook (Thai) — same content as SKILL.md, prose in Thai, technical terms kept in English with Thai remarks |
 | [service_start.md](service_start.md) | `REF_` | Daily start / stop / health check / troubleshoot manual |
 | [docs/REF_database-schema.md](docs/REF_database-schema.md) | `REF_` | Full DB schema (all tables/columns/indexes) · PostgreSQL user/credentials · security/impact analysis · example queries |
 | [docs/REF_third-party-integration.md](docs/REF_third-party-integration.md) | `REF_` | Third-party DB integration — `v_*_public` view catalog · ops setup (CREATE USER + GRANT role + pg_hba + docker bind + SSL) · query do/don't · PDPA · change policy · decommissioning |
+| [docs/REF_api-reference.md](docs/REF_api-reference.md) | `REF_` | Full REST API reference — 126 routes across 22 groups · auth levels · request params · response shapes · WebSocket protocol |
 | [docs/REF_face-recognition.md](docs/REF_face-recognition.md) | `REF_` | **PLANNED** Face Recognition — options A/B/C · InsightFace server-side · DB schema (pgvector) · Python service · hardware sizing · Mac dev → GPU migration · PDPA · phases FR.1–FR.4 |
 | [HARDWARE_SIZING_GUIDE.md](HARDWARE_SIZING_GUIDE.md) | `REF_` | Hardware sizing per camera count (G1–G5) + software scale-up plan |
 | [README.md](README.md) | Public overview | User-facing project intro (v1.5.0) |
@@ -242,6 +244,7 @@ unclear → open `docs/ARCH_documentation-governance.md` first.**
 | License / EULA | + `docs/LOGIC_license.md` + `GOTCHAS.md` (#26–#28) |
 | 3rd party DB integration / setup new partner / rollout views | + `docs/REF_third-party-integration.md` (+ `docs/REF_database-schema.md` สำหรับ column ละเอียด) |
 | Schema lookup / DBA reference | + `docs/REF_database-schema.md` |
+| API endpoint work / mobile app / integration | + `docs/REF_api-reference.md` |
 | Hardware sizing | + `HARDWARE_SIZING_GUIDE.md` |
 | Service ops | + `service_start.md` |
 | Planning | + `ROADMAP.md` |
@@ -269,7 +272,7 @@ When working on this project:
 6. **All `.js` files have copyright headers** — Preserve when editing. Format:
    ```javascript
    // ============================================================
-   // DojoJin Tech Dashboard — [Module Name]
+   // Vigil Platform — [Module Name]
    // @author Prakasit Rochanavipart (Dojo-mAn)
    // @copyright (c) 2025-2026 ... All Rights Reserved.
    // @license Proprietary
@@ -314,4 +317,4 @@ When working on this project:
 
 ---
 
-<sub>End of CLAUDE.md (slim) · DojoJin Tech Dashboard v1.5.1 · Updated 2026-06-03</sub>
+<sub>End of CLAUDE.md (slim) · Vigil Platform v1.5.3 · Updated 2026-06-08</sub>

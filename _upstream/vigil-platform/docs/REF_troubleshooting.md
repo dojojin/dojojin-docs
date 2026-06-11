@@ -3,7 +3,7 @@
 > Extracted from SKILL.md §8 (Common troubleshooting) and §9 (Camera lifecycle).
 > For SQL snippets → REF_operator-sql.md
 > For category mapping recipes → SKILL.md §3
-> Last updated: 2026-05-24 · v1.5.0
+> Last updated: 2026-06-08 · v1.5.0
 
 ---
 

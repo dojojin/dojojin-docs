@@ -1,5 +1,5 @@
 // ============================================================
-// DojoJin Tech Dashboard — Alert Engine
+// Vigil Platform — Alert Engine
 // ============================================================
 // @author    Prakasit Rochanavipart (Dojo-mAn)
 // @contact   prakasit@dojojin.tech | https://dojojin.tech/
@@ -53,7 +53,9 @@ async function refreshCache() {
     if (typeof tz === 'string' && tz.trim()) displayTz = tz.trim();
     lastRefresh = Date.now();
   } catch (e) {
-    console.error('🔔 Alert engine cache refresh error:', e.message);
+    // e.message อาจว่าง (เช่น pg connection teardown) — fallback เป็น error เต็ม
+    // เพื่อไม่ให้ log บรรทัดว่าง (incident 2026-06-07, audit A5)
+    console.error('🔔 Alert engine cache refresh error:', e.message || e);
   }
 }
 
@@ -228,4 +230,7 @@ module.exports = {
   shutdown,
   onEvent,
   invalidateCache,
+  // exported for unit tests (pure functions — no DB/network deps)
+  matchRule,
+  isInCooldown,
 };

@@ -10,11 +10,11 @@
     "jose": "^6.2.3",
     "mqtt": "^5.15.1",
     "multer": "^2.1.1",
-    "pg": "^8.20.0",
-    "puppeteer": "^24.43.1",
+    "pg": "^8.21.0",
+    "puppeteer": "^25.1.0",
     "qrcode": "^1.5.4",
     "sharp": "^0.34.5",
-    "ws": "^8.20.0"
+    "ws": "^8.21.0"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"

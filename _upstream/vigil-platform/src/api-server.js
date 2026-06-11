@@ -1,5 +1,5 @@
 // ============================================================
-// DojoJin Tech Dashboard — API Server
+// Vigil Platform — API Server
 // CCTV Analytics & Management Suite
 // ============================================================
 // @author    Prakasit Rochanavipart (Dojo-mAn)
@@ -68,6 +68,8 @@ const pool = new Pool({
   database: process.env.DB_NAME,
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
+  max: 15,
+  application_name: 'api-server',
 });
 
 // บังคับ session ทุก connection ให้ใช้ UTC — กันปัญหา timezone mismatch
@@ -106,12 +108,10 @@ app.use(cors((req, cb) => {
 // so XSS impact is higher than cookie-only auth. Apply conservative headers:
 // nosniff stops MIME-type confusion, DENY blocks clickjacking, same-origin
 // limits referrer leakage.
-// SEC-006 / Phase 1b: CSP is split by route:
+// SEC-006 / Phase 1b–5: CSP enforced on ALL routes (Phase 5 ✅ 2026-06-05).
 //   /others/*  → Content-Security-Policy (enforced) — auth-gated, no dashboard deps
-//   dashboard  → Content-Security-Policy-Report-Only — blocked by 189 onclick= attrs
-// External deps: cdn.jsdelivr.net (OL/Chart.js/Cytoscape), cartocdn.com + mapbox (tiles),
-// api.imgbb.com (snapshot upload). Remove 'unsafe-inline' from dashboard script-src
-// once onclick= attrs are replaced with addEventListener (opportunistic, Phase 2+).
+//   dashboard  → Content-Security-Policy (enforced) — zero inline scripts/handlers; policy gaps patched
+// All inline onclick= / onerror= attrs removed (Phase 1–4). report-uri kept for drift detection.
 app.disable('x-powered-by');
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -122,31 +122,48 @@ app.use((req, res, next) => {
 
   if (p === '/others' || p.startsWith('/others/')) {
     // SEC-1b: /others is auth-gated + no dashboard deps → enforce CSP now.
-    // boxbox pages embed a DATA <script> block + load Cytoscape from jsdelivr,
-    // so unsafe-inline + jsdelivr remain. vigil-docs-v2 uses only local nav.js
-    // (no CDN, no inline scripts) but shares this policy for simplicity.
-    // Next step: split vigil-docs-v2 to script-src 'self' once boxbox DATA
-    // blocks are moved to external JSON.
+    // style-src unsafe-inline stays for inline <style> blocks in static HTML files.
     res.setHeader('Content-Security-Policy',
       "default-src 'self'; " +
-      "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; " +
+      // SEC-3T-001: cdn.jsdelivr.net removed — all JS vendored under /vendor/
+      "script-src 'self'; " +
+      // SEC-3T-005: <style> elements locked to files (inline blocks extracted);
+      // style-src-attr stays unsafe-inline — JS templates use style="" attrs.
+      // Bare style-src kept as fallback for browsers without -elem/-attr support.
       "style-src 'self' 'unsafe-inline'; " +
+      "style-src-elem 'self'; " +
+      "style-src-attr 'unsafe-inline'; " +
       "img-src 'self' data: blob:; " +
       "font-src 'self' data:; " +
       "connect-src 'self'; " +
       "frame-ancestors 'none'"
     );
   } else {
-    // Dashboard: Report-Only until onclick= attrs are replaced with addEventListener.
-    res.setHeader('Content-Security-Policy-Report-Only',
+    // Dashboard: Enforced (Phase 5 ✅ 2026-06-05) — zero inline scripts/handlers + policy gaps patched.
+    // report-uri kept in enforce mode to catch any future policy drift.
+    // SEC-3T-001 (2026-06-10): cdn.jsdelivr.net removed from script-src/style-src —
+    // OpenLayers + Chart.js + date-fns adapter vendored under dashboard/vendor/.
+    // Policy covers:
+    //   script-src: + CF analytics beacon (static.cloudflareinsights.com)
+    //   img-src:    + tile.openstreetmap.org (OSM map tiles, both bare + wildcard)
+    //   worker-src: blob: (OpenLayers web workers)
+    //   connect-src: + cloudflareinsights.com (CF beacon telemetry POST)
+    res.setHeader('Content-Security-Policy',
       "default-src 'self'; " +
-      "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; " +
+      "script-src 'self' https://static.cloudflareinsights.com; " +
+      // SEC-3T-005: inline <style> blocks extracted to index/login/disclaimer/
+      // report-print .css — style-src-elem locks elements to files; attrs stay
+      // (790 style="" usages in JS templates); bare style-src = legacy fallback.
       "style-src 'self' 'unsafe-inline'; " +
+      "style-src-elem 'self'; " +
+      "style-src-attr 'unsafe-inline'; " +
       // SEC-017: api.mapbox.com removed — tiles via /api/map/tiles/mapbox/* proxy
-      "img-src 'self' data: blob: https://*.basemaps.cartocdn.com https://api.imgbb.com; " +
+      "img-src 'self' data: blob: https://*.basemaps.cartocdn.com https://api.imgbb.com https://tile.openstreetmap.org https://*.tile.openstreetmap.org; " +
       "font-src 'self' data:; " +
-      "connect-src 'self' wss://" + host + " ws://" + host + " https://api.imgbb.com; " +
-      "frame-ancestors 'none'"
+      "connect-src 'self' wss://" + host + " ws://" + host + " https://api.imgbb.com https://cloudflareinsights.com; " +
+      "worker-src blob:; " +
+      "frame-ancestors 'none'; " +
+      "report-uri /api/csp-report"
     );
   }
 
@@ -181,6 +198,7 @@ app.use((req, res, next) => {
 const auth = require('./auth');
 const license = require('./license');
 const { decryptCamCreds, encryptCamCreds } = require('./crypto-creds');
+const routeError = require('./helpers/routeError');
 auth.init(pool, process.env.SESSION_SECRET);
 
 // 🆕 Helper: get client IP.
@@ -216,8 +234,12 @@ function getSessionToken(req) {
 const PUBLIC_HTML_FILES = new Set([
   '/login.html',
   '/disclaimer.html',
-  '/login.css',           // (currently inline; reserved for future external file)
+  '/login.css',           // externalised from login.html (SEC-3T-005, 2026-06-10)
+  '/disclaimer.css',      // externalised from disclaimer.html (SEC-3T-005, 2026-06-10)
   '/i18n.js',             // bilingual engine — login + disclaimer load it pre-auth
+  '/disclaimer.js',       // externalised from disclaimer.html (commit 93b1c22) — must be pre-auth
+  '/login.js',            // externalised from login.html (commit 93b1c22) — must be pre-auth
+  '/theme-init.js',       // sets data-theme before CSS renders (FOUC guard) — pre-auth pages need it
 ]);
 const PUBLIC_PATHS = new Set([
   '/favicon.ico',         // brand logo, served pre-auth so login page can show it
@@ -235,11 +257,8 @@ const PUBLIC_PREFIXES = [
   // /others/ removed — SEC-2T-001: default-deny; see OTHERS_PUBLIC below
 ];
 
-// SEC-2T-001 — /others is default-deny. boxbox pages load Cytoscape from
-// cdn.jsdelivr.net; auth-gating prevents unauthenticated script execution
-// on the same origin. Path comparison is lowercased to prevent APFS
-// case-bypass (macOS APFS is case-insensitive).
-// SEC-2T-001 — /others fully auth-gated pending migration to docs.dojojin.tech subdomain
+// SEC-2T-001 — /others is default-deny; auth-gating prevents unauthenticated script execution
+// on the same origin. Path comparison is lowercased to prevent APFS case-bypass (macOS APFS is case-insensitive).
 const OTHERS_PUBLIC = new Set([]);
 const OTHERS_PUBLIC_PREFIXES = [];
 
@@ -257,11 +276,41 @@ function isPublicAsset(reqPath) {
 // Internal service token — lets server-side code (the report renderer's
 // headless Chrome) load auth-gated assets (report-print.html,
 // report-template.js) AND call /api/stats/* without a user session.
-// Random per boot, never persisted, never sent to clients; only the
-// report-renderer module receives it. Constant-time compare.
-// Defined here (before the static-asset middleware) so both middlewares
-// can use it.
-const INTERNAL_API_TOKEN = require('crypto').randomBytes(32).toString('hex');
+// Fixed secret from INTERNAL_API_SECRET in src/.env so that report-worker
+// (separate process) can share the same token. Falls back to ephemeral
+// random if not set (report-worker will not work in that case).
+// Constant-time compare; defined before static-asset middleware.
+const INTERNAL_API_TOKEN = (() => {
+  const s = process.env.INTERNAL_API_SECRET;
+  if (!s || s.length < 32) {
+    console.warn('[security] INTERNAL_API_SECRET not set in src/.env — using ephemeral token; report-worker will not work');
+    return require('crypto').randomBytes(32).toString('hex');
+  }
+  return s;
+})();
+const WORKER_PORT       = parseInt(process.env.REPORT_WORKER_PORT || '3001', 10);
+const ALERT_WORKER_PORT = parseInt(process.env.ALERT_WORKER_PORT  || '3002', 10);
+
+// Poll a worker's /health endpoint (loopback, short timeout).
+// Returns parsed JSON on success, { ok: false, error } on any failure.
+function fetchWorkerHealth(port) {
+  return new Promise((resolve) => {
+    const req = http.request(
+      { host: '127.0.0.1', port, path: '/health', method: 'GET', timeout: 3000 },
+      (workerRes) => {
+        let data = '';
+        workerRes.on('data', c => { data += c; });
+        workerRes.on('end', () => {
+          try { resolve(JSON.parse(data)); }
+          catch { resolve({ ok: false, error: 'invalid_json' }); }
+        });
+      }
+    );
+    req.on('timeout', () => { req.destroy(); resolve({ ok: false, error: 'timeout' }); });
+    req.on('error',   (e) => resolve({ ok: false, error: e.message }));
+    req.end();
+  });
+}
 function isValidInternalToken(req) {
   const t = req.headers['x-internal-token'];
   if (typeof t !== 'string' || t.length !== INTERNAL_API_TOKEN.length) return false;
@@ -542,7 +591,7 @@ app.post('/api/auth/login', async (req, res) => {
       user: result.user,
       token: result.token  // <-- เพิ่มบรรทัดนี้
     });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { routeError(res, e, 'POST /api/auth/login'); }
 });
 
 app.post('/api/auth/logout', async (req, res) => {
@@ -557,7 +606,7 @@ app.post('/api/auth/logout', async (req, res) => {
     if (isHttps) flags.push('Secure');
     res.setHeader('Set-Cookie', flags.join('; '));
     res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { routeError(res, e, 'POST /api/auth/logout'); }
 });
 
 // Get current user info (สำหรับ frontend check login state)
@@ -574,7 +623,7 @@ app.get('/api/auth/me', async (req, res) => {
     const user = await auth.getUserFromToken(token);
     if (!user) return res.status(401).json({ error: 'Invalid session' });
     res.json({ user });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { routeError(res, e, 'GET /api/auth/me'); }
 });
 
 // Change own password
@@ -596,7 +645,7 @@ app.get('/api/auth/sessions', auth.requireAuth, async (req, res) => {
       id: s.id.slice(0, 8) + '...',  // hide full ID
       is_current: s.id === req.user.session_id,
     })));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { routeError(res, e, 'GET /api/auth/sessions'); }
 });
 
 app.post('/api/auth/sessions/:id/revoke', auth.requireAuth, async (req, res) => {
@@ -610,7 +659,7 @@ app.post('/api/auth/sessions/:id/revoke', auth.requireAuth, async (req, res) => 
     if (!rows[0]) return res.status(404).json({ error: 'Session not found' });
     await auth.revokeSession(rows[0].id, req.user);
     res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { routeError(res, e, 'POST /api/auth/sessions/:id/revoke'); }
 });
 
 // ============================================================
@@ -621,7 +670,7 @@ app.get('/api/users', auth.requireAdminOrAuditor, async (req, res) => {
   try {
     const users = await auth.listUsers();
     res.json(users);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { routeError(res, e, 'GET /api/users'); }
 });
 
 app.post('/api/users', auth.requireAdmin, async (req, res) => {
@@ -667,8 +716,29 @@ app.get('/api/audit-log', auth.requireAdminOrAuditor, async (req, res) => {
       targetCameraId: targetCameraId || null,
     });
     res.json(logs);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { routeError(res, e, 'GET /api/audit-log'); }
 });
+
+// CSP violation reporter — public, no auth (browsers POST before auth cookie is checked).
+// Parses application/csp-report body; rate-limited to 20 req/min per IP to prevent log-flood.
+const _cspRateMap = new Map();
+app.post('/api/csp-report',
+  express.json({ type: ['application/json', 'application/csp-report'], limit: '4kb' }),
+  (req, res) => {
+    const ip = getIP(req);
+    const now = Date.now();
+    const [cnt, win] = _cspRateMap.get(ip) || [0, now];
+    const newCnt = now - win > 60_000 ? 1 : cnt + 1;
+    _cspRateMap.set(ip, [newCnt, now - win > 60_000 ? now : win]);
+    if (newCnt > 20) return res.sendStatus(429);
+    const r = (req.body || {})['csp-report'] || req.body || {};
+    const dir = r['violated-directive'] || r['effective-directive'] || '?';
+    const blocked = r['blocked-uri'] || '?';
+    const src = r['source-file'] ? `${r['source-file']}:${r['line-number'] || 0}` : '?';
+    console.warn(`[CSP-REPORT] directive=${dir} blocked=${blocked} source=${src}`);
+    res.sendStatus(204);
+  }
+);
 
 // 🔐 Global auth middleware for ALL /api/* endpoints below this line
 // Endpoints above (login, logout, me, change-password, sessions, users, audit) มี middleware แล้ว
@@ -832,7 +902,7 @@ app.get('/api/license/status', async (req, res) => {
       if (state.current_machine_id) out.invalid.current_machine_id = state.current_machine_id;
     }
     res.json(out);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { routeError(res, e, 'GET /api/license/status'); }
 });
 
 // POST /api/license/activate — { key } → verify + save.
@@ -854,24 +924,34 @@ app.post('/api/license/activate', async (req, res) => {
     invalidateLicenseStateCache();
     const state = await getCurrentLicenseState();
     res.json({ success: true, mode: state.mode, payload: state.payload });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { routeError(res, e, 'POST /api/license/activate'); }
 });
 
 // ── EULA endpoints (Phase 8.1) ───────────────────────────────
-// Single source of truth: docs/EULA-th.md. Cached in memory after first
-// read (it's static markdown that only changes when we ship a new
-// version). Served as text/markdown; the frontend renders it.
-const EULA_PATH = path.join(__dirname, '..', 'docs', 'EULA-th.md');
-let _eulaContentCache = null;
-function getEulaContent() {
-  if (_eulaContentCache !== null) return _eulaContentCache;
-  try { _eulaContentCache = fs.readFileSync(EULA_PATH, 'utf8'); }
-  catch { _eulaContentCache = '# EULA ไม่พบ\n\nกรุณาติดต่อทีมงาน'; }
-  return _eulaContentCache;
+// EULA files per language. Cached in memory after first read.
+// Served as text/markdown; the frontend renders it.
+// GET /api/eula?lang=en → EULA-en.md (fallback to th if missing)
+// GET /api/eula         → EULA-th.md (default)
+const EULA_PATHS = {
+  th: path.join(__dirname, '..', 'docs', 'EULA-th.md'),
+  en: path.join(__dirname, '..', 'docs', 'EULA-en.md'),
+};
+const _eulaCache = {};
+function getEulaContent(lang = 'th') {
+  const key = EULA_PATHS[lang] ? lang : 'th';
+  if (_eulaCache[key] != null) return _eulaCache[key];
+  try { _eulaCache[key] = fs.readFileSync(EULA_PATHS[key], 'utf8'); }
+  catch {
+    _eulaCache[key] = key === 'en'
+      ? '# EULA not found\n\nPlease contact support.'
+      : '# EULA ไม่พบ\n\nกรุณาติดต่อทีมงาน';
+  }
+  return _eulaCache[key];
 }
 // Public — login page + disclaimer page may want to link to it.
 app.get('/api/eula', (req, res) => {
-  res.type('text/markdown; charset=utf-8').send(getEulaContent());
+  const lang = req.query.lang === 'en' ? 'en' : 'th';
+  res.type('text/markdown; charset=utf-8').send(getEulaContent(lang));
 });
 
 // Whether the operator has accepted the EULA on this deployment. Public
@@ -890,7 +970,7 @@ app.get('/api/eula/status', async (req, res) => {
       accepted_at:  s.eula_accepted_at || null,
       accepted_by:  s.eula_accepted_by || null,
     });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { routeError(res, e, 'GET /api/eula/status'); }
 });
 
 // Record acceptance. Admin-only — EULA acceptance binds the legal
@@ -905,7 +985,7 @@ app.post('/api/eula/accept', async (req, res) => {
     await pool.query(`UPDATE system_settings SET value=$1 WHERE key='eula_accepted_by'`,
                      [req.user.username || '']);
     res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { routeError(res, e, 'POST /api/eula/accept'); }
 });
 
 // POST /api/license/deactivate — clear the stored key. Admin only.
@@ -917,7 +997,7 @@ app.post('/api/license/deactivate', async (req, res) => {
     await license.saveLicenseKey(pool, '');
     invalidateLicenseStateCache();
     res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { routeError(res, e, 'POST /api/license/deactivate'); }
 });
 
 // ============================================================
@@ -1176,7 +1256,7 @@ app.get('/api/stats/occupancy/sources', async (req, res) => {
        GROUP BY camera_id, (raw_json->'Source'->>'Rule')
        ORDER BY samples DESC`, [from.toISOString(), to.toISOString()]);
     res.json({ sources: rows });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { routeError(res, err, 'GET /api/stats/occupancy/sources'); }
 });
 
 // GET /api/stats/occupancy/timeline?from=ISO&to=ISO[&camera_id=X][&rule_name=Y]
@@ -1236,7 +1316,7 @@ app.get('/api/stats/occupancy/timeline', async (req, res) => {
         samples: r.samples,
       })),
     });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { routeError(res, err, 'GET /api/stats/occupancy/timeline'); }
 });
 
 // GET /api/stats/occupancy/heatmap?from=ISO&to=ISO[&camera_id=X][&rule_name=Y]
@@ -1285,7 +1365,7 @@ app.get('/api/stats/occupancy/heatmap', async (req, res) => {
         samples: r.samples,
       })),
     });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { routeError(res, err, 'GET /api/stats/occupancy/heatmap'); }
 });
 
 // ============================================================
@@ -1330,7 +1410,8 @@ app.get('/api/cameras', async (req, res) => {
                sd_status, recording_data_from, recording_data_until,
                recording_count, sd_last_check_at,
                enable_snapshot, enable_vca_overlay, enable_clip_capture,
-               clip_pre_sec, clip_post_sec
+               clip_pre_sec, clip_post_sec,
+               overlay_show_bbox, overlay_show_zone
           FROM cameras
          ORDER BY last_seen_at DESC NULLS LAST
       `);
@@ -1373,6 +1454,9 @@ app.get('/api/cameras', async (req, res) => {
         enable_clip_capture: db.enable_clip_capture ?? false,
         clip_pre_sec:        db.clip_pre_sec ?? 10,
         clip_post_sec:       db.clip_post_sec ?? 5,
+        // Migration 043 — client-side overlay display toggles
+        overlay_show_bbox:   db.overlay_show_bbox ?? true,
+        overlay_show_zone:   db.overlay_show_zone ?? true,
       };
     });
 
@@ -1380,7 +1464,7 @@ app.get('/api/cameras', async (req, res) => {
     // viewer/auditor have no UI that needs RTSP/MQTT credentials
     const safe = req.user?.role === 'admin' ? merged : merged.map(_redactCameraResponse);
     res.json(safe);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { routeError(res, err, 'GET /api/cameras'); }
 });
 
 // camera_id sanitiser — strips invisible characters that destroy MQTT
@@ -1425,8 +1509,14 @@ const EMQX_API_BASE = 'http://localhost:18083/api/v5';
 const EMQX_AUTHN_ID = 'password_based%3Abuilt_in_database';
 
 async function _emqxProvisionCamera(cam) {
+  // หมายเหตุ: api-server โหลด env จาก src/.env (PM2 cwd=src) — key นี้ต้องอยู่
+  // ที่นั่น ไม่ใช่แค่ root .env ของ docker-compose (incident 2026-06-11:
+  // ย้ายมา PM2 แล้ว key หล่น → provision คืน null → UI ค้าง "กำลัง provision")
   const dashPass = process.env.EMQX_DASHBOARD_PASSWORD;
-  if (!dashPass) return null;
+  if (!dashPass) {
+    console.warn('[emqx-provision] EMQX_DASHBOARD_PASSWORD not set in src/.env — cannot provision');
+    return null;
+  }
 
   // Login to EMQX dashboard API
   const loginRes = await fetch(`${EMQX_API_BASE}/login`, {
@@ -1640,6 +1730,9 @@ app.post('/api/cameras', async (req, res) => {
           setTimeout(() => rej(new Error('EMQX provision timeout')), 5000)
         );
         mqttCreds = await Promise.race([provPromise, timeoutPromise]);
+        // null = EMQX_DASHBOARD_PASSWORD ไม่ถูกตั้ง — อย่าปล่อยไปตาย
+        // ที่ null.mqtt_username ข้างล่าง (error เดิมหลอกทางหาสาเหตุ)
+        if (!mqttCreds) throw new Error('EMQX_DASHBOARD_PASSWORD not set in src/.env');
         mqttStatus = 'provisioned';
         // Re-read config from disk (guards against concurrent writes) and
         // merge in the new credentials before writing back.
@@ -1662,7 +1755,8 @@ app.post('/api/cameras', async (req, res) => {
     let previousToggles = {};
     try {
       const tr = await pool.query(
-        `SELECT enable_snapshot, enable_vca_overlay, enable_clip_capture, clip_pre_sec, clip_post_sec
+        `SELECT enable_snapshot, enable_vca_overlay, enable_clip_capture, clip_pre_sec, clip_post_sec,
+                overlay_show_bbox, overlay_show_zone
            FROM cameras WHERE id=$1`,
         [newCam.camera_id]
       );
@@ -1674,6 +1768,9 @@ app.post('/api/cameras', async (req, res) => {
       enable_clip_capture: req.body.enable_clip_capture === undefined ? false : !!req.body.enable_clip_capture,
       clip_pre_sec:        Math.max(1, Math.min(60, parseInt(req.body.clip_pre_sec,  10) || 10)),
       clip_post_sec:       Math.max(0, Math.min(30, parseInt(req.body.clip_post_sec, 10) ||  5)),
+      // Migration 043 — client-side overlay display toggles
+      overlay_show_bbox:   req.body.overlay_show_bbox   === undefined ? true  : !!req.body.overlay_show_bbox,
+      overlay_show_zone:   req.body.overlay_show_zone   === undefined ? true  : !!req.body.overlay_show_zone,
     };
 
     try {
@@ -1681,21 +1778,25 @@ app.post('/api/cameras', async (req, res) => {
         `UPDATE cameras SET
            name=$2, ip_address=$3, location_label=$4,
            enable_snapshot=$5, enable_vca_overlay=$6,
-           enable_clip_capture=$7, clip_pre_sec=$8, clip_post_sec=$9
+           enable_clip_capture=$7, clip_pre_sec=$8, clip_post_sec=$9,
+           overlay_show_bbox=$10, overlay_show_zone=$11
          WHERE id=$1`,
         [newCam.camera_id, newCam.camera_name, newCam.ip_address, newCam.location,
          toggles.enable_snapshot, toggles.enable_vca_overlay,
-         toggles.enable_clip_capture, toggles.clip_pre_sec, toggles.clip_post_sec]
+         toggles.enable_clip_capture, toggles.clip_pre_sec, toggles.clip_post_sec,
+         toggles.overlay_show_bbox, toggles.overlay_show_zone]
       );
       if (updateResult.rowCount === 0) {
         await pool.query(
           `INSERT INTO cameras (id, name, ip_address, location_label, enabled,
                                  enable_snapshot, enable_vca_overlay,
-                                 enable_clip_capture, clip_pre_sec, clip_post_sec)
-           VALUES ($1,$2,$3,$4,TRUE,$5,$6,$7,$8,$9)`,
+                                 enable_clip_capture, clip_pre_sec, clip_post_sec,
+                                 overlay_show_bbox, overlay_show_zone)
+           VALUES ($1,$2,$3,$4,TRUE,$5,$6,$7,$8,$9,$10,$11)`,
           [newCam.camera_id, newCam.camera_name, newCam.ip_address, newCam.location,
            toggles.enable_snapshot, toggles.enable_vca_overlay,
-           toggles.enable_clip_capture, toggles.clip_pre_sec, toggles.clip_post_sec]
+           toggles.enable_clip_capture, toggles.clip_pre_sec, toggles.clip_post_sec,
+           toggles.overlay_show_bbox, toggles.overlay_show_zone]
         );
       }
     } catch (dbErr) { console.warn('DB sync warn:', dbErr.message); }
@@ -1723,7 +1824,7 @@ app.post('/api/cameras', async (req, res) => {
       mqtt_status: mqttStatus,
       mqtt_broker_host: process.env.MQTT_CAMERA_BROKER_HOST || null,
     });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { routeError(res, err, 'POST /api/cameras'); }
 });
 
 // POST /api/cameras/:id/mqtt/regenerate — force-rotate the MQTT password for
@@ -1766,7 +1867,7 @@ app.post('/api/cameras/:id/mqtt/regenerate', auth.requireAdmin, async (req, res)
     res.json({ success: true, mqtt_username: creds.mqtt_username, mqtt_password: creds.mqtt_password });
   } catch (err) {
     console.error('[mqtt-regenerate]', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error', code: 'ERR_INTERNAL' });
   }
 });
 
@@ -1908,7 +2009,7 @@ app.post('/api/cameras/test-connection', auth.requireAdmin, async (req, res) => 
     }
 
     res.json({ reachable: true, auth_status, latency_ms });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { routeError(res, e, 'POST /api/cameras/test-connection'); }
 });
 
 // Fetch a snapshot image as base64 with Digest/Basic auth fallback.
@@ -1995,7 +2096,7 @@ app.post('/api/cameras/snapshot-preview', auth.requireAdmin, async (req, res) =>
     if (!imageBase64) return res.json({ found: false, snapshot_path: pathToUse });
 
     res.json({ found: true, snapshot_path: pathToUse, image_base64: imageBase64 });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { routeError(res, e, 'POST /api/cameras/snapshot-preview'); }
 });
 
 // POST /api/cameras/probe-snapshot — { vendor, ip_address, http_port,
@@ -2022,7 +2123,7 @@ app.post('/api/cameras/probe-snapshot', async (req, res) => {
       if (ok) return res.json({ found: true, snapshot_path: uri, tried });
     }
     res.json({ found: false, tried });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { routeError(res, e, 'POST /api/cameras/probe-snapshot'); }
 });
 
 // PATCH /api/cameras/:cameraId/pause — set/clear maintenance pause flag
@@ -2075,7 +2176,7 @@ app.patch('/api/cameras/:cameraId/pause', auth.requireAdmin, async (req, res) =>
     );
 
     res.json({ ok: true, paused });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { routeError(res, e, 'PATCH /api/cameras/:cameraId/pause'); }
 });
 
 app.delete('/api/cameras/:cameraId', async (req, res) => {
@@ -2107,7 +2208,7 @@ app.delete('/api/cameras/:cameraId', async (req, res) => {
     });
 
     res.json({ success: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { routeError(res, err, 'DELETE /api/cameras/:cameraId'); }
 });
 
 // ============================================================
@@ -2127,7 +2228,7 @@ app.get('/api/camera-offline-alerts/:cameraId', auth.requireAuth, async (req, re
       quiet_from: null, quiet_to: null, recipient_ids: '',
     };
     res.json(row);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { routeError(res, err, 'GET /api/camera-offline-alerts/:cameraId'); }
 });
 
 // PUT /api/camera-offline-alerts/:cameraId — upsert config
@@ -2172,7 +2273,7 @@ app.put('/api/camera-offline-alerts/:cameraId', auth.requireAdmin, async (req, r
       changed_fields: _diffAuditObjects(before, after),
     });
     res.json({ success: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { routeError(res, err, 'PUT /api/camera-offline-alerts/:cameraId'); }
 });
 
 // GET /api/cameras/status-current — current operational snapshot for the
@@ -2235,7 +2336,7 @@ app.get('/api/cameras/status-current', auth.requireAdminOrAuditor, async (req, r
       },
       cameras: camerasCurrent,
     });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { routeError(res, err, 'GET /api/cameras/status-current'); }
 });
 
 // GET /api/cameras/status-log — paginated transition history
@@ -2273,7 +2374,7 @@ app.get('/api/cameras/status-log', auth.requireAuth, async (req, res) => {
       id: r.id, camera_id: r.camera_id, status: r.status,
       changed_at: r.changed_at, reason: r.reason,
     })));
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { routeError(res, err, 'GET /api/cameras/status-log'); }
 });
 
 // GET /api/cameras/image-quality-log — paginated camera diagnostics history.
@@ -2321,7 +2422,7 @@ app.get('/api/cameras/image-quality-log', auth.requireAdminOrAuditor, async (req
       event_state: r.event_state,
       event_time: r.event_time,
     })));
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { routeError(res, err, 'GET /api/cameras/image-quality-log'); }
 });
 
 // ============================================================
@@ -2376,7 +2477,7 @@ app.post('/api/groups', async (req, res) => {
       await _logCameraAudit(req, 'camera_group_remove', cameraId, { group_id: newGroup.id, group_name: newGroup.name });
     }
     res.json({ success: true, group: newGroup });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { routeError(res, err, 'POST /api/groups'); }
 });
 
 app.delete('/api/groups/:groupId', async (req, res) => {
@@ -2394,7 +2495,7 @@ app.delete('/api/groups/:groupId', async (req, res) => {
       await _logCameraAudit(req, 'camera_group_remove', cameraId, { group_id: req.params.groupId, group_name: prevGroup?.name || null });
     }
     res.json({ success: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { routeError(res, err, 'DELETE /api/groups/:groupId'); }
 });
 
 // ============================================================
@@ -2577,6 +2678,9 @@ app.get('/api/events', async (req, res) => {
       params.push(disabledAnalytics);
     }
     sql += ` AND NOT ((${ANALYTICS_KEY_SQL}) IS NOT NULL AND e.event_state = 'false')`;
+    // FieldDetector fires enter (state='true') + leave (state='false') per detection.
+    // Hide the leave half — it has no snapshot and appears as a duplicate in the UI.
+    sql += ` AND NOT (e.event_type LIKE 'FieldDetector%' AND e.event_state = 'false')`;
     if (camera)    { sql += ` AND e.camera_id = $${++n}`;      params.push(camera); }
     if (cameras)   {
       const arr = String(cameras).split(',').map(s => s.trim()).filter(Boolean);
@@ -2651,7 +2755,7 @@ app.get('/api/events', async (req, res) => {
     rows.forEach(r => { delete r._total; });
     res.set('X-Total-Count', String(total));
     res.json(rows);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { routeError(res, err, 'GET /api/events'); }
 });
 
 // ============================================================
@@ -2680,7 +2784,7 @@ app.get('/api/stats/timeline', async (req, res) => {
     sql += ` GROUP BY bucket ORDER BY bucket ASC`;
     const { rows } = await pool.query(sql, params);
     res.json(rows);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { routeError(res, err, 'GET /api/stats/timeline'); }
 });
 
 // Per-camera "today" counts — used by Camera Status dashboard.
@@ -2727,7 +2831,7 @@ app.get('/api/stats/today-counts', async (req, res) => {
     _todayCountsCache = { total: totalAll, cameras, tz };
     _todayCountsCacheAt = now;
     res.json(_todayCountsCache);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { routeError(res, err, 'GET /api/stats/today-counts'); }
 });
 
 // KPI Cards
@@ -2752,7 +2856,7 @@ app.get('/api/stats/kpi', async (req, res) => {
     }
     const { rows } = await pool.query(sql, params);
     res.json(rows[0] || {});
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { routeError(res, err, 'GET /api/stats/kpi'); }
 });
 
 // Event Breakdown by rule_name
@@ -2777,7 +2881,7 @@ app.get('/api/stats/breakdown', async (req, res) => {
     sql += ` GROUP BY name, event_type ORDER BY count DESC LIMIT 20`;
     const { rows } = await pool.query(sql, params);
     res.json(rows);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { routeError(res, err, 'GET /api/stats/breakdown'); }
 });
 
 // Original endpoints (kept for compatibility)
@@ -2799,7 +2903,7 @@ app.get('/api/stats/timeseries-rules', async (req, res) => {
     sql += ` GROUP BY bucket, rule_name ORDER BY bucket ASC`;
     const { rows } = await pool.query(sql, params);
     res.json(rows);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { routeError(res, err, 'GET /api/stats/timeseries-rules'); }
 });
 
 app.get('/api/heatmap', async (req, res) => {
@@ -2815,7 +2919,7 @@ app.get('/api/heatmap', async (req, res) => {
       GROUP BY camera_id
     `, [Math.max(1, parseInt(hours, 10) || 24)]);
     res.json(rows);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { routeError(res, err, 'GET /api/heatmap'); }
 });
 
 // ============================================================
@@ -3079,7 +3183,7 @@ app.post('/api/map/estimate', (req, res) => {
       perZoom: calc.perZoom,
       mapboxAvailable: !!MAPBOX_TOKEN,
     });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { routeError(res, e, 'POST /api/map/estimate'); }
 });
 
 // API: Start download (background)
@@ -3191,7 +3295,7 @@ app.delete('/api/map/cache', (req, res) => {
       fs.mkdirSync(MAP_CACHE_DIR, { recursive: true });
     }
     res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { routeError(res, e, 'DELETE /api/map/cache'); }
 });
 
 // SEC-017: Mapbox tile proxy — keeps token server-side; auth-gated (under /api middleware).
@@ -3289,8 +3393,6 @@ app.get('/tiles/:style/:z/:x/:y.png', (req, res) => {
 const lineSender = require('./line-sender');
 const pushSender = require('./push-sender');
 const QRCode = require('qrcode');
-let alertEngine;
-try { alertEngine = require('./alert-engine'); } catch {}
 
 // ── Push notification token registry (mobile app) ───────────
 // Mobile ส่ง Expo push token หลัง login. UPSERT by token —
@@ -3312,7 +3414,7 @@ app.post('/api/push/register', auth.requireAuth, async (req, res) => {
       [token, req.user?.id ?? null, (platform || '').slice(0, 10), nAlert, nFace]
     );
     res.json({ success: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { routeError(res, err, 'POST /api/push/register'); }
 });
 
 // ปิด token (logout) — ไม่ลบ เผื่อ re-login device เดิม
@@ -3321,11 +3423,11 @@ app.post('/api/push/unregister', auth.requireAuth, async (req, res) => {
     const { token } = req.body || {};
     if (token) await pool.query(`UPDATE push_tokens SET enabled = FALSE WHERE token = $1`, [token]);
     res.json({ success: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { routeError(res, err, 'POST /api/push/unregister'); }
 });
 
 // ── LINE Config (CRUD) ──────────────────────────────────────
-app.get('/api/line-config', async (req, res) => {
+app.get('/api/line-config', auth.requireAdminOrAuditor, async (req, res) => {
   try {
     const { rows } = await pool.query('SELECT * FROM line_config WHERE id = 1');
     const cfg = rows[0] || { id: 1, channel_access_token: null, recipients: [], enabled: false };
@@ -3346,7 +3448,7 @@ app.get('/api/line-config', async (req, res) => {
       _hasImgbb: !!cfg.imgbb_api_key,
     };
     res.json(masked);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { routeError(res, e, 'GET /api/line-config'); }
 });
 
 app.put('/api/line-config', async (req, res) => {
@@ -3390,9 +3492,9 @@ app.put('/api/line-config', async (req, res) => {
       );
     }
 
-    if (alertEngine) await alertEngine.invalidateCache();
+    pool.query(`SELECT pg_notify('alert_rules_changed', '')`).catch(() => {});
     res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { routeError(res, e, 'PUT /api/line-config'); }
 });
 
 // LINE message quota
@@ -3404,11 +3506,11 @@ app.get('/api/line-config/quota', auth.requireAuth, async (_req, res) => {
     const quota = await lineSender.getLineQuota(token);
     if (!quota) return res.json({ connected: false });
     res.json({ connected: true, ...quota });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { routeError(res, e, 'GET /api/line-config/quota'); }
 });
 
 // Test LINE connection
-app.post('/api/line-config/test', async (req, res) => {
+app.post('/api/line-config/test', auth.requireAdmin, async (req, res) => {
   try {
     const { recipientId } = req.body;
     if (!recipientId) return res.status(400).json({ error: 'recipientId required' });
@@ -3417,7 +3519,7 @@ app.post('/api/line-config/test', async (req, res) => {
     if (!token) return res.status(400).json({ error: 'LINE token ยังไม่ได้ตั้งค่า' });
     const result = await lineSender.testConnection(token, recipientId);
     res.json(result);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { routeError(res, e, 'POST /api/line-config/test'); }
 });
 
 // QR code for LINE OA friend-add (Phase B onboarding)
@@ -3430,7 +3532,7 @@ app.get('/api/line-config/qr', auth.requireAuth, async (req, res) => {
     const url = `https://line.me/R/ti/p/${encodeURIComponent(id)}`;
     const png = await QRCode.toBuffer(url, { type: 'png', width: 200, margin: 2 });
     res.set('Content-Type', 'image/png').send(png);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { routeError(res, e, 'GET /api/line-config/qr'); }
 });
 
 // ── LINE pending recipients (self-service onboarding Phase A) ─
@@ -3445,7 +3547,7 @@ app.get('/api/line/pending', auth.requireAdmin, async (_req, res) => {
       LIMIT 100
     `);
     res.json(rows);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { routeError(res, e, 'GET /api/line/pending'); }
 });
 
 app.post('/api/line/pending/:id/approve', auth.requireAdmin, async (req, res) => {
@@ -3478,7 +3580,7 @@ app.post('/api/line/pending/:id/approve', auth.requireAdmin, async (req, res) =>
       [lineId, name]
     );
     await client.query('COMMIT');
-    if (alertEngine) await alertEngine.invalidateCache();
+    pool.query(`SELECT pg_notify('alert_rules_changed', '')`).catch(() => {});
     await auth.logAudit(req.user?.id, req.user?.username, 'line_recipient_approve', null, null, getIP(req), req.headers['user-agent'], {
       line_id: lineId, source_type: p.source_type, display_name: name, existing: exists,
     });
@@ -3498,7 +3600,7 @@ app.post('/api/line/pending/:id/approve', auth.requireAdmin, async (req, res) =>
       .catch(e => console.warn('⚠️ approve notify push error:', e.message));
   } catch (e) {
     await client.query('ROLLBACK').catch(() => {});
-    res.status(500).json({ error: e.message });
+    routeError(res, e, 'POST /api/line/pending/:id/approve');
   } finally {
     client.release();
   }
@@ -3517,7 +3619,7 @@ app.post('/api/line/pending/:id/ignore', auth.requireAdmin, async (req, res) => 
     if (!rows.length) return res.status(404).json({ error: 'pending recipient not found' });
     await auth.logAudit(req.user?.id, req.user?.username, 'line_recipient_ignore', null, null, getIP(req), req.headers['user-agent'], rows[0]);
     res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { routeError(res, e, 'POST /api/line/pending/:id/ignore'); }
 });
 
 app.post('/api/line/pending/:id/block', auth.requireAdmin, async (req, res) => {
@@ -3533,7 +3635,7 @@ app.post('/api/line/pending/:id/block', auth.requireAdmin, async (req, res) => {
     if (!rows.length) return res.status(404).json({ error: 'recipient not found or already blocked' });
     await auth.logAudit(req.user?.id, req.user?.username, 'line_recipient_block', null, null, getIP(req), req.headers['user-agent'], rows[0]);
     res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { routeError(res, e, 'POST /api/line/pending/:id/block'); }
 });
 
 app.post('/api/line/blocked/:id/unblock', auth.requireAdmin, async (req, res) => {
@@ -3549,7 +3651,7 @@ app.post('/api/line/blocked/:id/unblock', auth.requireAdmin, async (req, res) =>
     if (!rows.length) return res.status(404).json({ error: 'blocked recipient not found' });
     await auth.logAudit(req.user?.id, req.user?.username, 'line_recipient_unblock', null, null, getIP(req), req.headers['user-agent'], rows[0]);
     res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { routeError(res, e, 'POST /api/line/blocked/:id/unblock'); }
 });
 
 app.get('/api/line/blocked', auth.requireAdmin, async (_req, res) => {
@@ -3560,7 +3662,7 @@ app.get('/api/line/blocked', auth.requireAdmin, async (_req, res) => {
        ORDER BY last_message_at DESC`
     );
     res.json(rows);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { routeError(res, e, 'GET /api/line/blocked'); }
 });
 
 // ── Alert Rules (CRUD) ──────────────────────────────────────
@@ -3568,7 +3670,7 @@ app.get('/api/alert-rules', async (req, res) => {
   try {
     const { rows } = await pool.query('SELECT * FROM alert_rules ORDER BY enabled DESC, id DESC');
     res.json(rows);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { routeError(res, e, 'GET /api/alert-rules'); }
 });
 
 // "HH:MM" or "HH:MM:SS" → "HH:MM" (Postgres TIME accepts it); ''/null → null.
@@ -3604,9 +3706,9 @@ app.post('/api/alert-rules', async (req, res) => {
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
       [name.trim(), enabled, camera_ids, rule_names, recipient_ids, cooldown_seconds, send_snapshot, push_user_ids, tpl, af, at]
     );
-    if (alertEngine) await alertEngine.invalidateCache();
+    pool.query(`SELECT pg_notify('alert_rules_changed', '')`).catch(() => {});
     res.json(rows[0]);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { routeError(res, e, 'POST /api/alert-rules'); }
 });
 
 app.put('/api/alert-rules/:id', async (req, res) => {
@@ -3641,18 +3743,18 @@ app.put('/api/alert-rules/:id', async (req, res) => {
       values
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Rule not found' });
-    if (alertEngine) await alertEngine.invalidateCache();
+    pool.query(`SELECT pg_notify('alert_rules_changed', '')`).catch(() => {});
     res.json(rows[0]);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { routeError(res, e, 'PUT /api/alert-rules/:id'); }
 });
 
 app.delete('/api/alert-rules/:id', async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     await pool.query('DELETE FROM alert_rules WHERE id = $1', [id]);
-    if (alertEngine) await alertEngine.invalidateCache();
+    pool.query(`SELECT pg_notify('alert_rules_changed', '')`).catch(() => {});
     res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { routeError(res, e, 'DELETE /api/alert-rules/:id'); }
 });
 
 // ── Alert Logs (read + filter) ──────────────────────────────
@@ -3670,7 +3772,7 @@ app.get('/api/alert-logs', async (req, res) => {
     values.push(parseInt(limit));
     const { rows } = await pool.query(sql, values);
     res.json(rows);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { routeError(res, e, 'GET /api/alert-logs'); }
 });
 
 app.get('/api/alert-logs/stats', async (req, res) => {
@@ -3707,7 +3809,7 @@ app.get('/api/alert-logs/stats', async (req, res) => {
       avg_duration_ms:    r.avg_duration_ms ? parseInt(r.avg_duration_ms, 10) : null,
       success_rate:       denom > 0 ? Math.round(success / denom * 100) : null,
     });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { routeError(res, e, 'GET /api/alert-logs/stats'); }
 });
 
 app.delete('/api/alert-logs', async (req, res) => {
@@ -3720,16 +3822,13 @@ app.delete('/api/alert-logs', async (req, res) => {
       await pool.query('TRUNCATE alert_logs');
     }
     res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { routeError(res, e, 'DELETE /api/alert-logs'); }
 });
 
 // ============================================================
 // Report Schedules (Phase 7.3 — scheduled report delivery)
 // ============================================================
-// Commit 1: config layer + scheduler loop. The scheduler fires at the
-// configured send_time and records the run; PDF generation (commit 2,
-// Puppeteer) and email delivery (commit 3, nodemailer) fill in
-// runScheduledReport() — until then it records last_status='pending'.
+// Scheduler loop lives in report-worker.js (separate PM2 process).
 const REPORT_TYPES = ['daily', 'weekly', 'monthly', 'health'];
 const HEALTH_SECTION_KEYS = ['camera_status', 'camera_uptime', 'alerts', 'storage', 'system'];
 
@@ -3748,7 +3847,7 @@ app.get('/api/report-schedules', async (req, res) => {
   try {
     const { rows } = await pool.query('SELECT * FROM report_schedules ORDER BY id');
     res.json(rows);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { routeError(res, e, 'GET /api/report-schedules'); }
 });
 
 // Phase 7.4 — day-of-week / day-of-month picker validators.
@@ -3812,7 +3911,7 @@ app.post('/api/report-schedules', async (req, res) => {
       [report_type, !!enabled, st, String(recipients || '').trim(), resolvedLayout, sdow, sdom, healthSections ? JSON.stringify(healthSections) : null]
     );
     res.json(rows[0]);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { routeError(res, e, 'POST /api/report-schedules'); }
 });
 
 app.put('/api/report-schedules/:id', async (req, res) => {
@@ -3870,26 +3969,49 @@ app.put('/api/report-schedules/:id', async (req, res) => {
     );
     if (rows.length === 0) return res.status(404).json({ error: 'schedule not found' });
     res.json(rows[0]);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { routeError(res, e, 'PUT /api/report-schedules/:id'); }
 });
 
 app.delete('/api/report-schedules/:id', async (req, res) => {
   try {
     await pool.query('DELETE FROM report_schedules WHERE id = $1', [parseInt(req.params.id)]);
     res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { routeError(res, e, 'DELETE /api/report-schedules/:id'); }
 });
 
-// POST /api/report-schedules/:id/run — manual "run now" (Ph.2)
+// POST /api/report-schedules/:id/run — manual "run now"
+// api-server owns the 404 check; proxies to report-worker (fire-and-forget inside worker).
 app.post('/api/report-schedules/:id/run', async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const { rows } = await pool.query('SELECT * FROM report_schedules WHERE id = $1', [id]);
     if (!rows.length) return res.status(404).json({ error: 'Schedule not found' });
+
+    await new Promise((resolve, reject) => {
+      const workerReq = http.request(
+        { host: '127.0.0.1', port: WORKER_PORT, path: `/run/${id}`, method: 'POST',
+          headers: { 'X-Internal-Token': INTERNAL_API_TOKEN }, timeout: 5000 },
+        (workerRes) => {
+          workerRes.resume();
+          if (workerRes.statusCode === 200) resolve();
+          else reject(Object.assign(new Error(`worker ${workerRes.statusCode}`), { workerStatus: workerRes.statusCode }));
+        }
+      );
+      workerReq.on('timeout', () => {
+        workerReq.destroy();
+        reject(Object.assign(new Error('worker timeout'), { workerStatus: 503 }));
+      });
+      workerReq.on('error', (e) => reject(Object.assign(e, { workerStatus: 503 })));
+      workerReq.end();
+    });
+
     res.json({ ok: true });
-    // fire after response so HTTP doesn't wait for Puppeteer
-    runScheduledReport(rows[0]).catch(() => {});
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) {
+    if (e.workerStatus === 503) {
+      return res.status(503).json({ error: 'Report worker is not available — try again shortly' });
+    }
+    routeError(res, e, 'POST /api/report-schedules/:id/run');
+  }
 });
 
 // GET /api/report-history/stats — aggregate counts for summary strip
@@ -3928,7 +4050,7 @@ app.get('/api/report-history/stats', async (req, res) => {
         health:  parseInt(r.type_health,  10),
       },
     });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { routeError(res, e, 'GET /api/report-history/stats'); }
 });
 
 // GET /api/report-history — Ph.2 Report History list (paginated)
@@ -3946,7 +4068,7 @@ app.get('/api/report-history', async (req, res) => {
     );
     const { rows: cnt } = await pool.query('SELECT COUNT(*) FROM report_history');
     res.json({ items: rows, total: parseInt(cnt[0].count) });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { routeError(res, e, 'GET /api/report-history'); }
 });
 
 // GET /api/report-history/:id/image — stream PNG file (Ph.2)
@@ -3961,7 +4083,7 @@ app.get('/api/report-history/:id/image', async (req, res) => {
     res.setHeader('Content-Type', 'image/png');
     res.setHeader('Content-Disposition', `attachment; filename="${rows[0].file_path}"`);
     fs.createReadStream(full).pipe(res);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { routeError(res, e, 'GET /api/report-history/:id/image'); }
 });
 
 // Brand info for report headers — read straight from system_settings.
@@ -4020,201 +4142,14 @@ app.get('/api/reports/pdf', async (req, res) => {
     res.send(pdf);
   } catch (e) {
     console.error('📅 /api/reports/pdf failed:', e.message);
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: 'Internal server error', code: 'ERR_INTERNAL' });
   }
 });
 
-// ── Scheduler loop ──────────────────────────────────────────
-// Every 60s: for each enabled schedule whose send_time matches the
-// current minute (in display_timezone) and that hasn't already run
-// today, fire runScheduledReport(). No catch-up — if the server is
-// down at the exact minute, that day's run is skipped.
-async function runScheduledReport(schedule) {
-  const reportRenderer = require('./report-renderer');
-  const lineSender = require('./line-sender');
-  const record = (status, err) => pool.query(
-    `UPDATE report_schedules SET last_run_at = NOW(), last_status = $2, last_error = $3 WHERE id = $1`,
-    [schedule.id, status, err ? String(err).slice(0, 500) : null]
-  ).catch(() => {});
-  // Ph.2 — log every attempt (success + failure) to report_history
-  const logHistory = (fields) => pool.query(
-    `INSERT INTO report_history
-       (schedule_id, report_type, range_from, range_to, image_layout,
-        file_path, recipients_sent, sent_count, total_recipients, status, error_message)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-    [
-      schedule.id, fields.report_type, fields.range_from || null, fields.range_to || null,
-      fields.image_layout || null, fields.file_path || null, fields.recipients_sent || null,
-      fields.sent_count || 0, fields.total_recipients || 0,
-      fields.status, fields.error_message ? String(fields.error_message).slice(0, 500) : null,
-    ]
-  ).catch(() => {});
-  try {
-    // LINE config — token + imgbb key + recipient roster.
-    const cfgRes = await pool.query('SELECT * FROM line_config WHERE id = 1');
-    const cfg = cfgRes.rows[0];
-    if (!cfg || !cfg.enabled || !cfg.channel_access_token) {
-      await record('failed', 'LINE is not enabled / no channel access token');
-      await logHistory({ report_type: schedule.report_type, image_layout: schedule.image_layout, status: 'failed', error_message: 'LINE is not enabled / no channel access token' });
-      console.warn(`📅 schedule #${schedule.id}: LINE not configured — skipped`);
-      return;
-    }
-    // Resolve recipients: schedule.recipients is a CSV of LINE recipient
-    // IDs; empty → fall back to all enabled recipients in line_config
-    // (same convention as alert_rules).
-    const roster = Array.isArray(cfg.recipients) ? cfg.recipients : [];
-    let wanted = String(schedule.recipients || '').split(',').map(s => s.trim()).filter(Boolean);
-    if (wanted.length === 0) wanted = roster.filter(r => r.enabled).map(r => r.id);
-    const recipientIds = roster.filter(r => r.enabled && wanted.includes(r.id)).map(r => r.id);
-    if (recipientIds.length === 0) {
-      await record('failed', 'no enabled LINE recipients');
-      await logHistory({ report_type: schedule.report_type, image_layout: schedule.image_layout, status: 'failed', error_message: 'no enabled LINE recipients' });
-      console.warn(`📅 schedule #${schedule.id}: no recipients — skipped`);
-      return;
-    }
-
-    const title = REPORT_TITLE_TH[schedule.report_type] || schedule.report_type;
-    const brand = await getBrandForReport();
-    let png, fname, rangeFrom, rangeTo, rangeLabel;
-
-    if (schedule.report_type === 'health') {
-      // Ph.3 — render health report image (no from/to; range is "7 days ago → now"
-      // for scheduled health reports; lang defaults to 'th' since recipients are
-      // Thai users — can be made configurable per-schedule later if needed).
-      const sections = Array.isArray(schedule.health_sections) && schedule.health_sections.length
-        ? schedule.health_sections : null;
-      png = await reportRenderer.renderHealthReportImage({
-        baseUrl: `http://localhost:${PORT}`,
-        internalToken: INTERNAL_API_TOKEN,
-        brand, sections,
-        range: { preset: '7d' },
-        lang: 'th',
-      });
-      rangeFrom = new Date(Date.now() - 7 * 86400 * 1000).toISOString();
-      rangeTo   = new Date().toISOString();
-      rangeLabel = '7 วันล่าสุด';
-    } else {
-      // analytics report (daily / weekly / monthly)
-      const range = reportRenderer.computeScheduledRange(schedule.report_type);
-      rangeFrom  = range.from;
-      rangeTo    = range.to;
-      rangeLabel = range.label;
-      png = await reportRenderer.renderReportImage({
-        baseUrl: `http://localhost:${PORT}`,
-        internalToken: INTERNAL_API_TOKEN,
-        from: range.from, to: range.to,
-        brand, title, rangeLabel: range.label,
-        layout: schedule.image_layout || 'compact',
-      });
-    }
-
-    // Keep a copy on disk (record + future on-demand serving). Use the
-    // ICT date of rangeFrom so the filename reflects the report's data day
-    // for a Thai operator browsing the folder.
-    const tzForName = await getDisplayTz();
-    const fnameDate = new Date(rangeFrom).toLocaleDateString('sv', { timeZone: tzForName });
-    fname = `report_${schedule.report_type}_${fnameDate}_${Date.now()}.png`;
-    await fs.promises.writeFile(path.join(REPORTS_DIR, fname), png).catch(() => {});
-
-    const result = await lineSender.sendReportToLine({
-      token: cfg.channel_access_token,
-      imgbbKey: cfg.imgbb_api_key,
-      recipients: recipientIds,
-      pngBuffer: png,
-      caption: `📊 ${title}\n${rangeLabel}`,
-    });
-    if (result.success) {
-      await record('success', null);
-      await logHistory({
-        report_type: schedule.report_type, range_from: rangeFrom, range_to: rangeTo,
-        image_layout: schedule.image_layout || null, file_path: fname,
-        recipients_sent: recipientIds.join(','), sent_count: result.sentCount,
-        total_recipients: result.totalRecipients || recipientIds.length, status: 'success',
-      });
-      console.log(`📅 schedule #${schedule.id} (${schedule.report_type}) → sent to ${result.sentCount} LINE recipient(s)`);
-    } else {
-      const errMsg = result.error || `sent ${result.sentCount}/${result.totalRecipients}`;
-      await record('failed', errMsg);
-      await logHistory({
-        report_type: schedule.report_type, range_from: rangeFrom, range_to: rangeTo,
-        image_layout: schedule.image_layout || null, file_path: fname,
-        recipients_sent: recipientIds.join(','), sent_count: result.sentCount || 0,
-        total_recipients: result.totalRecipients || recipientIds.length,
-        status: 'failed', error_message: errMsg,
-      });
-      console.error(`📅 schedule #${schedule.id} → LINE send failed:`, result.error);
-    }
-  } catch (e) {
-    await record('failed', e.message);
-    await logHistory({ report_type: schedule.report_type, image_layout: schedule.image_layout, status: 'failed', error_message: e.message });
-    console.error(`📅 schedule #${schedule.id} failed:`, e.message);
-  }
-}
-
-// Today's day-of-month in the given timezone (1..31).
-function todayDayOfMonthInTz(tz) {
-  const ymd = new Date().toLocaleDateString('en-CA', { timeZone: tz });
-  return parseInt(ymd.slice(8, 10), 10);
-}
-// Today's day-of-week in the given timezone, 0=Mon..6=Sun (matches the
-// heatmap convention used elsewhere in the codebase). Trick: parse the
-// tz-resolved YYYY-MM-DD as UTC midnight — its getUTCDay() returns the
-// weekday of that date independent of host TZ.
-function todayDayOfWeekInTz(tz) {
-  const ymd = new Date().toLocaleDateString('en-CA', { timeZone: tz });
-  const d = new Date(ymd + 'T00:00:00Z');
-  return (d.getUTCDay() + 6) % 7;
-}
-// Is today the last day of the month in the given timezone?
-function isLastDayOfMonthInTz(tz) {
-  const ymd = new Date().toLocaleDateString('en-CA', { timeZone: tz });
-  const [y, m, d] = ymd.split('-').map(Number);
-  // JS Date trick: month m, day 0 = last day of month m-1 → so passing
-  // (y, m, 0) where m is 1-indexed gives the last day of month m.
-  const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
-  return d === lastDay;
-}
-
-async function checkReportSchedules() {
-  try {
-    const tz = await getDisplayTz();
-    const nowHHMM = new Date().toLocaleTimeString('en-GB', {
-      timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false,
-    });
-    // "today" in display tz, as YYYY-MM-DD, for the once-per-day guard.
-    const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: tz });
-
-    const { rows } = await pool.query('SELECT * FROM report_schedules WHERE enabled = true');
-    for (const s of rows) {
-      const sendHHMM = String(s.send_time).slice(0, 5);
-      if (sendHHMM !== nowHHMM) continue;
-      // Already ran today?
-      if (s.last_run_at) {
-        const ranStr = new Date(s.last_run_at).toLocaleDateString('en-CA', { timeZone: tz });
-        if (ranStr === todayStr) continue;
-      }
-      // Phase 7.4 — day-of-week gate for weekly, day-of-month gate for
-      // monthly. NULL on either column = legacy "fire every day" behaviour.
-      if ((s.report_type === 'weekly' || s.report_type === 'health') &&
-          s.send_day_of_week !== null && s.send_day_of_week !== undefined) {
-        if (todayDayOfWeekInTz(tz) !== s.send_day_of_week) continue;
-      }
-      if (s.report_type === 'monthly' && s.send_days_of_month) {
-        const todayDom = todayDayOfMonthInTz(tz);
-        const isLast = isLastDayOfMonthInTz(tz);
-        const days = String(s.send_days_of_month).split(',').map(x => x.trim()).filter(Boolean);
-        const match = days.some(spec => {
-          if (spec.toUpperCase() === 'L') return isLast;
-          const n = parseInt(spec, 10);
-          return Number.isFinite(n) && n === todayDom;
-        });
-        if (!match) continue;
-      }
-      await runScheduledReport(s);
-    }
-  } catch (e) { console.error('📅 scheduler check failed:', e.message); }
-}
-setInterval(checkReportSchedules, 60 * 1000);
+// ── Scheduler loop moved to report-worker.js ──────────────
+// runScheduledReport / checkReportSchedules / date helpers / setInterval
+// now live in src/report-worker.js (separate PM2 process).
+// This isolates Puppeteer crashes from api-server.
 
 // ── LINE Webhook (รับ User ID จากคนที่แอด OA + ส่งข้อความ) ──
 // express.json() stores req.rawBody above because HMAC-SHA256 must use raw bytes.
@@ -4314,7 +4249,7 @@ app.post('/api/line/webhook', async (req, res) => {
             [senderId]
           );
           await client.query('COMMIT');
-          if (changed && alertEngine) await alertEngine.invalidateCache();
+          if (changed) pool.query(`SELECT pg_notify('alert_rules_changed', '')`).catch(() => {});
           console.log(`🔔 LINE webhook: ${ev.type} ${sourceType} ${senderId.slice(0, 6)}… → disabled in recipients (changed=${changed})`);
         } catch (leaveErr) {
           await client.query('ROLLBACK').catch(() => {});
@@ -4341,7 +4276,7 @@ app.get('/api/alert-rules-suggestions', async (req, res) => {
       ORDER BY rule_name
     `);
     res.json(rows.map(r => r.rule_name));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { routeError(res, e, 'GET /api/alert-rules-suggestions'); }
 });
 
 // ============================================================
@@ -4390,6 +4325,7 @@ app.get('/api/faces', async (req, res) => {
              raw_json->>'hat'            AS hat,
              raw_json->>'stayDuration'   AS stay_duration,
              raw_json->>'faceScore'      AS face_score,
+             raw_json->'faceRect'        AS face_rect,
              clip_file, clip_status,
              COUNT(*) OVER() ::int       AS _total
         FROM events
@@ -4405,7 +4341,7 @@ app.get('/api/faces', async (req, res) => {
       return rest;
     }));
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    routeError(res, err, 'GET /api/faces');
   }
 });
 
@@ -4427,7 +4363,7 @@ app.get('/api/faces/summary', async (req, res) => {
       FROM events WHERE ${f.where}`, f.params);
     res.json(r.rows[0] || {});
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    routeError(res, err, 'GET /api/faces/summary');
   }
 });
 
@@ -4626,7 +4562,7 @@ app.get('/api/reports/daily', async (req, res) => {
     `, [date]);
 
     res.json({ date, totals: totals.rows[0], summary: summary.rows });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { routeError(res, err, 'GET /api/reports/daily'); }
 });
 
 app.get('/api/reports/weekly', async (req, res) => {
@@ -4659,7 +4595,7 @@ app.get('/api/reports/weekly', async (req, res) => {
     `, [endDate]);
 
     res.json({ endDate, totals: totals.rows[0], daily: daily.rows, byCamera: byCamera.rows });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { routeError(res, err, 'GET /api/reports/weekly'); }
 });
 
 // ============================================================
@@ -4729,7 +4665,7 @@ app.get('/api/events/facets', async (req, res) => {
       event_types:    types.rows.map(r => r.v),
       object_classes: classes.rows.map(r => r.v),    // Phase 6.1.8 — DB-driven class facet
     });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { routeError(res, err, 'GET /api/events/facets'); }
 });
 
 // GET /api/events/:id/appearance — IVA Pro appearance attributes for a single event
@@ -4742,12 +4678,47 @@ app.get('/api/events/:id/appearance', async (req, res) => {
               top_category, top_color_xyz, upper_color,
               bottom_category, bottom_color_xyz, lower_color,
               glasses, bag_category,
-              helmet_wear, helmet_subtype
+              helmet_wear, helmet_subtype,
+              overall_color, overall_color_xyz, color_clusters
        FROM appearances WHERE event_id = $1 LIMIT 1`,
       [req.params.id]
     );
     res.json(rows[0] || null);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { routeError(res, err, 'GET /api/events/:id/appearance'); }
+});
+
+// GET /api/events/:id/dwell — zone dwell duration for a single enter event.
+// จับคู่กับ event 'false' ตัวแรกของ (camera, rule) เดียวกันหลังเวลานี้
+// (semantics เดียวกับ /api/stats/dwell — ตัดคู่ห่างเกิน 24 ชม.)
+// คืน null เมื่อ event ไม่ใช่ FieldDetector enter หรือยังไม่มีขาออก.
+// หมายเหตุ: ไม่มี object identity ใน payload → ค่าคือ "ช่วงที่โซนมีคนอยู่"
+// ไม่ใช่ระยะเวลาของ object รายตัว
+app.get('/api/events/:id/dwell', async (req, res) => {
+  try {
+    const { rows: ev } = await pool.query(
+      `SELECT camera_id, rule_name, event_type, event_state, event_time
+       FROM events WHERE id = $1 LIMIT 1`,
+      [req.params.id]
+    );
+    const e = ev[0];
+    if (!e || e.event_type !== 'FieldDetector/ObjectsInside' || e.event_state !== 'true') {
+      return res.json(null);
+    }
+    const { rows: ex } = await pool.query(
+      `SELECT event_time AS exit_time
+       FROM events
+       WHERE camera_id = $1 AND rule_name = $2
+         AND event_type = 'FieldDetector/ObjectsInside'
+         AND event_state = 'false'
+         AND event_time > $3
+         AND event_time <= $3::timestamptz + INTERVAL '24 hours'
+       ORDER BY event_time ASC LIMIT 1`,
+      [e.camera_id, e.rule_name, e.event_time]
+    );
+    if (!ex[0]) return res.json({ dwell_sec: null, exit_time: null });  // ยังไม่ปิด
+    const dwellSec = Math.round((new Date(ex[0].exit_time) - new Date(e.event_time)) / 1000);
+    res.json({ dwell_sec: dwellSec, exit_time: ex[0].exit_time });
+  } catch (err) { routeError(res, err, 'GET /api/events/:id/dwell'); }
 });
 
 // GET /api/appearances/stats?from=ISO&to=ISO[&camera_id=]
@@ -4834,7 +4805,7 @@ app.get('/api/appearances/stats', async (req, res) => {
     _appStatsCacheAt = Date.now();
     _appStatsCacheKey = _cacheKey;
     res.json(result);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { routeError(res, err, 'GET /api/appearances/stats'); }
 });
 
 // GET /api/appearances/search — forensic search by appearance attributes
@@ -4851,8 +4822,13 @@ app.get('/api/appearances/search', async (req, res) => {
     if (top)             { args.push(top);       where.push(`a.top_category = $${args.length}`); }
     if (bottom)          { args.push(bottom);    where.push(`a.bottom_category = $${args.length}`); }
     if (hair)            { args.push(hair);      where.push(`a.hair_length = $${args.length}`); }
-    if (upper_color)     { args.push(upper_color); where.push(`a.upper_color = $${args.length}`); }
-    if (lower_color)     { args.push(lower_color); where.push(`a.lower_color = $${args.length}`); }
+    // สี: garment color (กล้อง Pro) หรือ color cluster ใดๆ ของแถว low-fidelity
+    // (migration 041/042). upper/lower ไม่ cross กันสำหรับแถว Pro;
+    // แถว low-fidelity: ใส่สองสี = ทั้งคู่ต้องอยู่ใน clusters ("คนใส่ดำ-ขาว")
+    const clusterMatch = (n) =>
+      `a.color_clusters @> jsonb_build_array(jsonb_build_object('name', $${n}::text))`;
+    if (upper_color)     { args.push(upper_color); where.push(`(a.upper_color = $${args.length} OR a.overall_color = $${args.length} OR ${clusterMatch(args.length)})`); }
+    if (lower_color)     { args.push(lower_color); where.push(`(a.lower_color = $${args.length} OR a.overall_color = $${args.length} OR ${clusterMatch(args.length)})`); }
     if (glasses === 'true')  where.push('a.glasses = TRUE');
     if (helmet  === 'true')  where.push('a.helmet_wear = TRUE');
     if (bag === 'has')      where.push('a.bag_category IS NOT NULL');
@@ -4873,6 +4849,7 @@ app.get('/api/appearances/search', async (req, res) => {
               a.bottom_category, a.bottom_color_xyz,
               a.glasses, a.bag_category,
               a.helmet_wear, a.helmet_subtype,
+              a.overall_color, a.overall_color_xyz, a.color_clusters,
               COUNT(*) OVER()::int AS _total
        FROM appearances a JOIN events e ON e.id = a.event_id
        ${clause}
@@ -4882,7 +4859,59 @@ app.get('/api/appearances/search', async (req, res) => {
     );
     res.set('X-Total-Count', rows[0]?._total || 0);
     res.json(rows.map(({ _total, ...r }) => r));
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { routeError(res, err, 'GET /api/appearances/search'); }
+});
+
+// GET /api/stats/dwell?from=ISO&to=ISO[&camera_id=..][&episodes=true][&limit=50]
+// Zone dwell time — จับคู่ FieldDetector/ObjectsInside event_state true→false
+// ต่อ (camera, rule) ด้วย window function: "คนอยู่หน้าตู้เย็นนานเท่าไหร่"
+// (Data Enrichment Ph.1, 2026-06-10). หมายเหตุ: Dahua ส่งแต่ enter (true)
+// จึงยังไม่เกิดคู่ — รองรับอัตโนมัติเมื่อ Ph.2 เพิ่ม leave ฝั่ง Dahua.
+// คู่ที่ห่างเกิน 24 ชม. ถือว่า state หลุด (กล้อง reboot ฯลฯ) — ตัดทิ้ง
+app.get('/api/stats/dwell', async (req, res) => {
+  try {
+    const { from, to } = parseRange(req.query);
+    const args = [from.toISOString(), to.toISOString()];
+    let camFilter = '';
+    if (req.query.camera_id) { args.push(req.query.camera_id); camFilter = ` AND camera_id = $${args.length}`; }
+    const baseCte = `
+      WITH z AS (
+        SELECT camera_id, rule_name, event_time, event_state,
+               LEAD(event_time)  OVER w AS next_time,
+               LEAD(event_state) OVER w AS next_state
+        FROM events
+        WHERE event_type = 'FieldDetector/ObjectsInside'
+          AND event_state IN ('true','false')
+          AND event_time >= $1 AND event_time <= $2${camFilter}
+        WINDOW w AS (PARTITION BY camera_id, rule_name ORDER BY event_time)
+      ), ep AS (
+        SELECT camera_id, rule_name, event_time AS start_time, next_time AS end_time,
+               EXTRACT(EPOCH FROM (next_time - event_time)) AS dwell_sec
+        FROM z
+        WHERE event_state = 'true' AND next_state = 'false'
+          AND next_time - event_time <= INTERVAL '24 hours'
+      )`;
+    if (req.query.episodes === 'true') {
+      const lim = Math.min(parseInt(req.query.limit) || 50, 500);
+      args.push(lim);
+      const { rows } = await pool.query(
+        `${baseCte}
+         SELECT camera_id, rule_name, start_time, end_time, ROUND(dwell_sec)::int AS dwell_sec
+         FROM ep ORDER BY start_time DESC LIMIT $${args.length}`, args);
+      return res.json(rows);
+    }
+    const { rows } = await pool.query(
+      `${baseCte}
+       SELECT camera_id, rule_name,
+              COUNT(*)::int            AS episodes,
+              ROUND(AVG(dwell_sec))::int AS avg_sec,
+              MAX(dwell_sec)::int      AS max_sec,
+              MIN(dwell_sec)::int      AS min_sec,
+              ROUND(SUM(dwell_sec))::int AS total_sec
+       FROM ep GROUP BY camera_id, rule_name
+       ORDER BY camera_id, rule_name`, args);
+    res.json(rows);
+  } catch (err) { routeError(res, err, 'GET /api/stats/dwell'); }
 });
 
 // GET /api/stats/categories?from=ISO&to=ISO[&cameras=...]
@@ -4943,7 +4972,7 @@ app.get('/api/stats/categories', async (req, res) => {
     res.json({ from: from.toISOString(), to: to.toISOString(),
                prev_from: prevFrom.toISOString(), prev_to: from.toISOString(),
                categories: rows });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { routeError(res, err, 'GET /api/stats/categories'); }
 });
 
 // GET /api/stats/timeline-v2?from=ISO&to=ISO[&category_id=X][&cameras=...]
@@ -5002,7 +5031,7 @@ app.get('/api/stats/timeline-v2', async (req, res) => {
 
     const { rows } = await pool.query(sql, params);
     res.json({ from: from.toISOString(), to: to.toISOString(), trunc, tz, buckets: rows });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { routeError(res, err, 'GET /api/stats/timeline-v2'); }
 });
 
 // GET /api/stats/per-camera-counts?kind=people|vehicle&from=ISO&to=ISO[&cameras=...]
@@ -5044,7 +5073,7 @@ app.get('/api/stats/per-camera-counts', async (req, res) => {
        ORDER BY count DESC, e.camera_id`;
     const { rows } = await pool.query(sql, params);
     res.json({ kind, from: from.toISOString(), to: to.toISOString(), per_camera: rows });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { routeError(res, err, 'GET /api/stats/per-camera-counts'); }
 });
 
 // GET /api/stats/heatmap?from=ISO&to=ISO[&category_id=X][&cameras=...]
@@ -5101,7 +5130,7 @@ app.get('/api/stats/heatmap', async (req, res) => {
 
     const { rows } = await pool.query(sql, params);
     res.json({ from: from.toISOString(), to: to.toISOString(), tz, cells: rows });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { routeError(res, err, 'GET /api/stats/heatmap'); }
 });
 
 // GET /api/stats/quiet-cameras?since_hours=24
@@ -5138,7 +5167,7 @@ app.get('/api/stats/quiet-cameras', async (req, res) => {
        ORDER BY c.id`,
       [sinceHours, cfgIds]);
     res.json({ since_hours: sinceHours, cameras: rows });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { routeError(res, err, 'GET /api/stats/quiet-cameras'); }
 });
 
 // GET /api/stats/top-rules?from=ISO&to=ISO[&limit=10][&cameras=...]
@@ -5169,7 +5198,7 @@ app.get('/api/stats/top-rules', async (req, res) => {
        LIMIT $${params.length}`;
     const { rows } = await pool.query(sql, params);
     res.json({ from: from.toISOString(), to: to.toISOString(), top: rows });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { routeError(res, err, 'GET /api/stats/top-rules'); }
 });
 
 // GET /api/stats/timeline-by-category?from=ISO&to=ISO[&cameras=...]
@@ -5230,7 +5259,7 @@ app.get('/api/stats/timeline-by-category', async (req, res) => {
     }));
 
     res.json({ from: from.toISOString(), to: to.toISOString(), trunc, tz, series });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { routeError(res, err, 'GET /api/stats/timeline-by-category'); }
 });
 
 // GET /api/stats/breakdown-v2?from=ISO&to=ISO[&cameras=...]
@@ -5265,128 +5294,17 @@ app.get('/api/stats/breakdown-v2', async (req, res) => {
        LIMIT 30`;
     const { rows } = await pool.query(sql, params);
     res.json(rows);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { routeError(res, err, 'GET /api/stats/breakdown-v2'); }
 });
 
 // ============================================================
-// Event Categories / Mapping Rules / System Settings (Stats v2)
+// Event Categories & Mapping Rules (→ src/routes/categories.js)
 // ============================================================
+require('./routes/categories')(app, pool);
 
-// GET /api/categories — list all (with rule counts)
-app.get('/api/categories', async (req, res) => {
-  try {
-    const { rows } = await pool.query(`
-      SELECT c.id, c.name, c.icon, c.color, c.kind, c.is_builtin, c.sort_order,
-             c.created_at, c.updated_at,
-             COUNT(r.id)::int AS rule_count
-        FROM event_categories c
-        LEFT JOIN event_category_rules r ON r.category_id = c.id
-        GROUP BY c.id
-        ORDER BY c.sort_order, c.id
-    `);
-    res.json(rows);
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-// POST /api/categories — create user category
-app.post('/api/categories', async (req, res) => {
-  const { name, icon, color, sort_order } = req.body || {};
-  if (!name || !name.trim()) return res.status(400).json({ error: 'name required' });
-  try {
-    const { rows } = await pool.query(
-      `INSERT INTO event_categories (name, icon, color, kind, is_builtin, sort_order)
-       VALUES ($1, $2, $3, 'event', false, COALESCE($4, 0))
-       RETURNING *`,
-      [name.trim(), icon || '🚨', color || '#5b8def', sort_order]
-    );
-    res.json(rows[0]);
-  } catch (err) {
-    if (err.code === '23505') return res.status(409).json({ error: 'name already exists' });
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// PUT /api/categories/:id — update (builtin can edit icon/color/sort_order only)
-app.put('/api/categories/:id', async (req, res) => {
-  const id = parseInt(req.params.id, 10);
-  const { name, icon, color, sort_order } = req.body || {};
-  try {
-    const cur = await pool.query('SELECT * FROM event_categories WHERE id=$1', [id]);
-    if (!cur.rows[0]) return res.status(404).json({ error: 'not found' });
-    const c = cur.rows[0];
-    const newName  = c.is_builtin ? c.name : (name?.trim() || c.name);
-    const newIcon  = icon ?? c.icon;
-    const newColor = color ?? c.color;
-    const newSort  = sort_order ?? c.sort_order;
-    const { rows } = await pool.query(
-      `UPDATE event_categories
-          SET name=$1, icon=$2, color=$3, sort_order=$4
-        WHERE id=$5 RETURNING *`,
-      [newName, newIcon, newColor, newSort, id]
-    );
-    res.json(rows[0]);
-  } catch (err) {
-    if (err.code === '23505') return res.status(409).json({ error: 'name already exists' });
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// DELETE /api/categories/:id — delete (builtin protected)
-app.delete('/api/categories/:id', async (req, res) => {
-  const id = parseInt(req.params.id, 10);
-  try {
-    const cur = await pool.query('SELECT is_builtin FROM event_categories WHERE id=$1', [id]);
-    if (!cur.rows[0]) return res.status(404).json({ error: 'not found' });
-    if (cur.rows[0].is_builtin) return res.status(403).json({ error: 'built-in category cannot be deleted' });
-    await pool.query('DELETE FROM event_categories WHERE id=$1', [id]);
-    res.json({ ok: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-// GET /api/categories/:id/rules — list mapping rules for a category
-app.get('/api/categories/:id/rules', async (req, res) => {
-  const id = parseInt(req.params.id, 10);
-  try {
-    const { rows } = await pool.query(
-      `SELECT * FROM event_category_rules WHERE category_id=$1 ORDER BY priority DESC, id`,
-      [id]
-    );
-    res.json(rows);
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-// POST /api/categories/:id/rules — add a mapping rule
-app.post('/api/categories/:id/rules', async (req, res) => {
-  const id = parseInt(req.params.id, 10);
-  const body = req.body || {};
-  const { camera_id, rule_name, event_type, object_class, priority } = body;
-  const blank = v => (v == null || v === '' ? null : v);
-  // match_state: only default to 'true' when the field was OMITTED.
-  // An explicit "" or null from the form means the user chose "any" → store NULL.
-  const matchState = ('match_state' in body) ? blank(body.match_state) : 'true';
-  try {
-    const cat = await pool.query('SELECT id FROM event_categories WHERE id=$1', [id]);
-    if (!cat.rows[0]) return res.status(404).json({ error: 'category not found' });
-    const { rows } = await pool.query(
-      `INSERT INTO event_category_rules
-         (category_id, camera_id, rule_name, event_type, object_class, match_state, priority)
-       VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, 0))
-       RETURNING *`,
-      [id, blank(camera_id), blank(rule_name), blank(event_type), blank(object_class),
-       matchState, priority]
-    );
-    res.json(rows[0]);
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-// DELETE /api/category-rules/:id — remove a mapping rule
-app.delete('/api/category-rules/:id', async (req, res) => {
-  const id = parseInt(req.params.id, 10);
-  try {
-    await pool.query('DELETE FROM event_category_rules WHERE id=$1', [id]);
-    res.json({ ok: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
+// ============================================================
+// System Settings (Stats v2)
+// ============================================================
 
 // GET /api/settings — list all settings
 app.get('/api/settings', async (req, res) => {
@@ -5395,7 +5313,7 @@ app.get('/api/settings', async (req, res) => {
     const obj = {};
     rows.forEach(r => { obj[r.key] = { value: r.value, description: r.description, updated_at: r.updated_at }; });
     res.json(obj);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { routeError(res, err, 'GET /api/settings'); }
 });
 
 // PUT /api/settings/:key — update setting (with validation)
@@ -5490,7 +5408,7 @@ app.put('/api/settings/map', auth.requireAdmin, async (req, res) => {
     _cachedMapboxToken = null; // invalidate cache
     await auth.logAudit(req.user?.id, req.user?.username, 'map_settings_token_update', null, null, getIP(req), req.headers['user-agent'], { tokenSet: !!(mapboxToken) });
     res.json({ success: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { routeError(res, err, 'PUT /api/settings/map'); }
 });
 
 app.put('/api/settings/:key', async (req, res) => {
@@ -5510,7 +5428,7 @@ app.put('/api/settings/:key', async (req, res) => {
     // Events feed reflects the change without waiting for the 60s poll.
     if (key === 'analytics_event_display') refreshAnalyticsEnabledSet();
     res.json(rows[0]);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { routeError(res, err, 'PUT /api/settings/:key'); }
 });
 
 // ============================================================
@@ -5529,12 +5447,12 @@ app.get('/api/branding', async (req, res) => {
     r.rows.forEach(row => { m[row.key] = row.value; });
     const logoPath = (m.brand_logo_path || '').trim();
     res.json({
-      name:          m.brand_name    || 'DojoJin Tech Dashboard',
+      name:          m.brand_name    || 'Vigil Platform',
       tagline:       m.brand_tagline || '',
       logo_url:      logoPath ? `/branding/${logoPath}` : null,
       primary_color: m.brand_primary_color || '#5b8def',
     });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { routeError(res, err, 'GET /api/branding'); }
 });
 
 // POST /api/branding/logo — admin only, multipart "logo"
@@ -5571,7 +5489,7 @@ app.post('/api/branding/logo', _brandUpload.single('logo'), async (req, res) => 
     res.json({ ok: true, logo_url: `/branding/${outFile}?v=${Date.now()}` });
   } catch (err) {
     console.error('logo upload:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error', code: 'ERR_INTERNAL' });
   }
 });
 
@@ -5582,7 +5500,7 @@ app.delete('/api/branding/logo', async (req, res) => {
     await pool.query(`UPDATE system_settings SET value = '' WHERE key = 'brand_logo_path'`);
     // We keep the file on disk in case someone wants to undo manually; harmless.
     res.json({ ok: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { routeError(res, err, 'DELETE /api/branding/logo'); }
 });
 
 // ============================================================
@@ -5624,14 +5542,17 @@ app.get('/api/backups', auth.requireAdminOrAuditor, (req, res) => {
       return { filename: f, size: st.size, mtime: st.mtime };
     }).sort((a, b) => b.mtime - a.mtime);
     res.json({ backups: list });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { routeError(res, e, 'GET /api/backups'); }
 });
 
 app.post('/api/backups/run', auth.requireAdmin, (req, res) => {
   const { execFile } = require('child_process');
   const script = path.join(__dirname, '..', 'scripts', 'backup.sh');
   execFile('bash', [script], { timeout: 120000 }, (err, stdout, stderr) => {
-    if (err) return res.status(500).json({ ok: false, error: (stderr || err.message || '').trim() });
+    if (err) {
+      console.error('[POST /api/backups/run] backup failed:', stderr || err.message);
+      return res.status(500).json({ ok: false, error: 'Internal server error', code: 'ERR_INTERNAL' });
+    }
     res.json({ ok: true, output: (stdout || '').trim() });
   });
 });
@@ -5712,19 +5633,51 @@ app.get('/api/health/details', auth.requireAdminOrAuditor, async (req, res) => {
         .filter(Boolean);
       const total = ids.length;
       let online = 0;
+      let dbRows = [];
       if (ids.length) {
         const r = await pool.query(`
-          SELECT COUNT(*) FILTER (
-            WHERE last_seen_at > NOW() - INTERVAL '90 seconds'
-          ) AS online
+          SELECT id, name, ip_address, last_seen_at,
+                 EXTRACT(EPOCH FROM (NOW() - last_seen_at))::int AS age_sec
           FROM cameras WHERE id = ANY($1::text[])`, [ids]);
-        online = parseInt(r.rows[0].online, 10);
+        dbRows = r.rows;
+        online = dbRows.filter(row => row.age_sec != null && row.age_sec < 90).length;
       }
+      const dbMap = new Map(dbRows.map(r => [r.id, r]));
       // offline = total - online so a config camera that has never
       // produced an event (no DB row) still counts as offline, not missing.
       result.cameras.total = total;
       result.cameras.online = online;
       result.cameras.offline = total - online;
+      result.cameras.list = (config.cameras || []).map(c => {
+        const id = c.camera_id || c.id;
+        const db = dbMap.get(id);
+        const age = db?.age_sec ?? null;
+        const status = db == null ? 'unknown' : (age != null && age < 90 ? 'online' : 'offline');
+        return {
+          id,
+          name: db?.name || id,
+          vendor: String(c.vendor || 'bosch').toLowerCase(),
+          ip: c.ip_address || db?.ip_address || null,
+          status,
+          last_seen_sec: age,
+        };
+      });
+    } catch {}
+    // media-recorder rolling-buffer freshness — segments churn every second
+    // while ffmpeg is healthy, so a buffer dir whose mtime is stale while a
+    // recorder is supposed to run means the RTSP pull is wedged (incident
+    // 2026-06-09: recording silently down ~17h, see GOTCHAS #84).
+    try {
+      const mbDir = path.join(__dirname, '..', 'media-buffer');
+      result.media_buffer = [];
+      for (const ent of await fs.promises.readdir(mbDir, { withFileTypes: true })) {
+        if (!ent.isDirectory()) continue;
+        const st = await fs.promises.stat(path.join(mbDir, ent.name));
+        result.media_buffer.push({
+          camera_id: ent.name,
+          newest_segment_sec: Math.round((Date.now() - st.mtimeMs) / 1000),
+        });
+      }
     } catch {}
     try {
       const r = await pool.query(`
@@ -5828,11 +5781,19 @@ app.get('/api/health/details', auth.requireAdminOrAuditor, async (req, res) => {
     result.storage.disk_total_gb = Math.round((sf.blocks * sf.bsize) / (1024 ** 3));
   } catch {}
 
+  // Worker health — poll each worker's /health endpoint for process-level state
+  // (db connectivity, listener status, scheduler activity). These go beyond what
+  // PM2 provides (restart count) and satisfy S3 observability requirement.
+  result.workers = {
+    alert:  await fetchWorkerHealth(ALERT_WORKER_PORT),
+    report: await fetchWorkerHealth(WORKER_PORT),
+  };
+
   // Service status via PM2 — replaces pgrep count; gives status/restarts/uptime.
   result.services = [];
   {
     const { execFileSync } = require('child_process');
-    const TRACKED = ['api-server', 'mqtt-subscriber', 'media-recorder', 'hikvision', 'dahua'];
+    const TRACKED = ['api-server', 'mqtt-subscriber', 'media-recorder', 'hikvision', 'dahua', 'alert-worker', 'report-worker'];
     try {
       const out = execFileSync('pm2', ['jlist'], { encoding: 'utf8', timeout: 5000 });
       const pm2List = JSON.parse(out);
@@ -5903,7 +5864,7 @@ app.post('/api/services/:name/:action', auth.requireAdmin, async (req, res) => {
     if (name === 'api-server' && action === 'restart') {
       try { res.json({ ok: true, action, service: name, expect_reconnect: true }); } catch {}
     } else if (err) {
-      try { res.status(500).json({ error: err.message }); } catch {}
+      try { routeError(res, err, 'POST /api/services/:name/:action'); } catch {}
     } else {
       try { res.json({ ok: true, action, service: name }); } catch {}
     }
@@ -6039,7 +6000,7 @@ app.get('/api/health/report-data/cameras', async (req, res) => {
     });
   } catch (e) {
     console.error('[health/report-data/cameras] error:', e.message);
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: 'Internal server error', code: 'ERR_INTERNAL' });
   }
 });
 
@@ -6074,7 +6035,7 @@ app.get('/api/health/report/preview', async (req, res) => {
     res.send(png);
   } catch (e) {
     console.error('[health/report/preview] error:', e.message);
-    res.status(500).json({ error: e.message });
+    routeError(res, e, 'GET /api/health/report/preview');
   }
 });
 
@@ -6101,7 +6062,7 @@ app.get('/api/health/report/pdf', async (req, res) => {
     res.send(pdf);
   } catch (e) {
     console.error('[health/report/pdf] error:', e.message);
-    res.status(500).json({ error: e.message });
+    routeError(res, e, 'GET /api/health/report/pdf');
   }
 });
 
@@ -6183,7 +6144,7 @@ app.post('/api/health/report/send-now', async (req, res) => {
       total_recipients: result.totalRecipients || recipientIds.length,
       error: result.error || null,
     });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { routeError(res, e, 'POST /api/health/report/send-now'); }
 });
 
 // Alerts: success/failed/cooldown counts over a range_hours window (default 24h)
@@ -6205,7 +6166,7 @@ app.get('/api/health/report-data/alerts', async (req, res) => {
       cooldown: parseInt(row.cooldown, 10),
       total:    parseInt(row.total,    10),
     });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { routeError(res, e, 'GET /api/health/report-data/alerts'); }
 });
 
 // ============================================================
@@ -6234,16 +6195,27 @@ async function enforceRetention() {
     );
     const days = Math.min(730, Math.max(1, parseInt(r.rows[0]?.value || '365', 10)));
     const cutoff = new Date(Date.now() - days * 86400 * 1000).toISOString();
-    await _batchDelete(
-      `DELETE FROM events WHERE id IN (
-         SELECT id FROM events WHERE event_time < $1 ORDER BY event_time LIMIT $2
-       )`,
-      [cutoff, _RETENTION_BATCH],
-      `events older than ${days} days`
-    );
+    // Explicit child-delete before events — appearances/license_plates have no FK cascade
+    // (dropped in MANUAL_partition_events_option_a.sql; required for partitioned parent).
+    let _totalEventsDeleted = 0, _evBatch;
+    do {
+      const _ids = await pool.query(
+        `SELECT id FROM events WHERE event_time < $1 ORDER BY event_time LIMIT $2`,
+        [cutoff, _RETENTION_BATCH]
+      );
+      _evBatch = _ids.rowCount;
+      if (_evBatch === 0) break;
+      const ids = _ids.rows.map(r => r.id);
+      await pool.query(`DELETE FROM appearances    WHERE event_id = ANY($1::bigint[])`, [ids]);
+      await pool.query(`DELETE FROM license_plates WHERE event_id = ANY($1::bigint[])`, [ids]);
+      const _del = await pool.query(`DELETE FROM events WHERE id = ANY($1::bigint[])`, [ids]);
+      _totalEventsDeleted += _del.rowCount;
+      if (_evBatch === _RETENTION_BATCH) await new Promise(r => setTimeout(r, 100));
+    } while (_evBatch === _RETENTION_BATCH);
+    if (_totalEventsDeleted > 0)
+      console.log(`🧹 Retention: deleted ${_totalEventsDeleted} events older than ${days} days`);
     // appearances — optional separate retention (partial anonymisation: keep event, drop biometrics)
-    // Capped at data_retention_days so it can never be LONGER than the event retention
-    // (older events cascade-delete their appearances anyway via FK ON DELETE CASCADE).
+    // Capped at data_retention_days so it can never be LONGER than the event retention.
     const arRow = await pool.query(`SELECT value FROM system_settings WHERE key='appearances_retention_days'`);
     if (arRow.rows[0]?.value) {
       const arDays = Math.min(days, Math.max(1, parseInt(arRow.rows[0].value, 10)));
@@ -6430,7 +6402,12 @@ const PORT = process.env.API_PORT || 3000;
     console.error('   Restore the latest backup or fix the migration file, then retry.');
     process.exit(1);
   }
-  server.listen(PORT, () => {
+  // SEC: bind loopback only — ทุก consumer (Cloudflare Tunnel, report-worker,
+  // dashboard same-origin, Vigil Mobile ผ่าน tunnel) เข้าทาง localhost ทั้งหมด
+  // การเปิด 0.0.0.0 ทำให้ทั้ง LAN (รวม camera subnet) ยิง API ตรงข้าม
+  // Cloudflare Access ได้ — ถ้า deployment ไหนต้องการ LAN ตรง ให้ตั้ง BIND_HOST=0.0.0.0
+  const BIND_HOST = process.env.BIND_HOST || '127.0.0.1';
+  server.listen(PORT, BIND_HOST, () => {
     console.log('');
     console.log('╔══════════════════════════════════════════════════╗');
     console.log(`║  🌐 API: http://localhost:${PORT}                   ║`);
@@ -6631,6 +6608,117 @@ async function checkOfflineCameras() {
 setInterval(checkOfflineCameras, 30 * 1000);
 // Run ครั้งแรกหลัง startup 5 วินาที
 setTimeout(checkOfflineCameras, 5000);
+
+// ============================================================
+// Recorder-stale Checker — LINE alert เมื่อ media-buffer หยุดไหล
+// (GOTCHAS #84 follow-up, 2026-06-10)
+// ------------------------------------------------------------
+// buffer dir ของกล้องที่ recorder ทำงานปกติจะ churn ทุกวินาที — ถ้า mtime
+// แช่แข็งขณะที่กล้องยัง "ออนไลน์" (events ไหลปกติ) = RTSP pull wedged
+// (เช่น LNP grant หายหลัง restart ผิดวิธี) ซึ่ง camera-offline alert จับไม่ได้
+// — failure mode เดียวกับ incident ที่เงียบไป ~17 ชม. เมื่อ 2026-06-09.
+// กล้อง offline → ข้าม (มี camera-offline alert อยู่แล้ว ไม่ส่งซ้ำสองเด้ง)
+// Alert ครั้งเดียวต่อ episode + recovery message; state ใน memory.
+// ============================================================
+const RECORDER_STALE_SEC     = 300;            // buffer แช่แข็ง ≥ 5 นาที → alert
+const RECORDER_BOOT_GRACE_MS = 3 * 60 * 1000;  // ข้ามช่วง 3 นาทีแรกหลัง api boot
+
+const _recorderStale = new Map(); // camera_id → { since: ms, alerted: bool }
+
+async function _sendRecorderStaleLine({ cameraId, kind, staleSec, camCfg, alertCfg, lineCfg, tz }) {
+  if (!lineCfg || !lineCfg.enabled || !lineCfg.channel_access_token) return;
+  const roster = Array.isArray(lineCfg.recipients) ? lineCfg.recipients : [];
+  const wanted = String((alertCfg && alertCfg.recipient_ids) || '').split(',').map(s => s.trim()).filter(Boolean);
+  const targetIds = wanted.length > 0
+    ? roster.filter(r => r.enabled && wanted.includes(r.id)).map(r => r.id)
+    : roster.filter(r => r.enabled).map(r => r.id);
+  if (targetIds.length === 0) return;
+  const camName  = camCfg ? (camCfg.camera_name || camCfg.camera_id) : cameraId;
+  const location = camCfg ? (camCfg.location || '—') : '—';
+  const timeStr  = new Date().toLocaleString('th-TH', { timeZone: tz || 'Asia/Bangkok', hour12: false });
+  const mins = Math.max(1, Math.round(staleSec / 60));
+  const text = kind === 'stale'
+    ? `🟠 การบันทึกวิดีโอหยุดทำงาน!\n📷 ${camName}\n📍 ${location}\n⏱ buffer ไม่อัปเดต ${mins} นาที (กล้องยังออนไลน์)\n🕐 ${timeStr}`
+    : `🟢 การบันทึกวิดีโอกลับมาทำงานแล้ว (หยุดไป ${mins} นาที)\n📷 ${camName}\n📍 ${location}\n🕐 ${timeStr}`;
+  for (const id of targetIds) {
+    await lineSender.pushLineMessage(lineCfg.channel_access_token, id, [{ type: 'text', text }]).catch(() => {});
+  }
+}
+
+async function checkStaleRecorders() {
+  try {
+    if (process.uptime() * 1000 < RECORDER_BOOT_GRACE_MS) return;
+    const cfgCameras = (loadCameraConfig().cameras) || [];
+    const credMap = {};
+    cfgCameras.forEach(c => { credMap[c.camera_id || c.id] = c; });
+    const ids = Object.keys(credMap).filter(Boolean);
+    if (!ids.length) return;
+
+    const [camRes, alertRes, lineRes] = await Promise.all([
+      pool.query(`
+        SELECT id, last_seen_at, enabled, paused, enable_clip_capture, enable_snapshot
+        FROM cameras WHERE id = ANY($1::text[])`, [ids]),
+      pool.query(`SELECT * FROM camera_offline_alerts WHERE camera_id = ANY($1::text[])`, [ids]),
+      pool.query(`SELECT * FROM line_config WHERE id = 1`),
+    ]);
+    const alertMap = {};
+    alertRes.rows.forEach(r => { alertMap[r.camera_id] = r; });
+    const lineCfg = lineRes.rows[0];
+    const tz = await getDisplayTz();
+    const now = Date.now();
+    const mbDir = path.join(__dirname, '..', 'media-buffer');
+
+    for (const cam of camRes.rows) {
+      // Mirror recorderNeeded() ของ media-recorder: clip capture (ทุก vendor)
+      // หรือ Dahua ที่ดึง snapshot จาก buffer; ข้าม disabled/paused
+      const vendor = String((credMap[cam.id] || {}).vendor || 'bosch').toLowerCase();
+      const needsRecorder = cam.enabled && !cam.paused &&
+        (cam.enable_clip_capture || (vendor === 'dahua' && cam.enable_snapshot));
+      const ageSec = cam.last_seen_at ? (now - new Date(cam.last_seen_at).getTime()) / 1000 : Infinity;
+      const camOnline = ageSec < OFFLINE_THRESHOLD_SEC;
+      if (!needsRecorder || !camOnline) { _recorderStale.delete(cam.id); continue; }
+
+      let mtime = 0;
+      try { mtime = (await fs.promises.stat(path.join(mbDir, cam.id))).mtimeMs; }
+      catch { /* dir ยังไม่ถูกสร้าง — นับเป็น stale */ }
+      const staleSec = mtime ? (now - mtime) / 1000 : Infinity;
+      const alertCfg = alertMap[cam.id];
+
+      if (staleSec >= RECORDER_STALE_SEC) {
+        if (!_recorderStale.has(cam.id)) _recorderStale.set(cam.id, { since: mtime || now, alerted: false });
+        const st = _recorderStale.get(cam.id);
+        if (!st.alerted) {
+          st.alerted = true;
+          console.warn(`  🟠 [${cam.id}] media-buffer stale ${Math.round(Math.min(staleSec, 86400 * 365))}s — recorder wedged?`);
+          // เคารพ enabled + quiet hours ของ camera alert config เดิม (decision #90)
+          if ((!alertCfg || alertCfg.enabled) && !(alertCfg && _camAlertInQuiet(alertCfg, tz))) {
+            _sendRecorderStaleLine({
+              cameraId: cam.id, kind: 'stale',
+              staleSec: Math.min(staleSec, 86400 * 365),
+              camCfg: credMap[cam.id], alertCfg, lineCfg, tz,
+            }).catch(() => {});
+          }
+        }
+      } else if (_recorderStale.has(cam.id)) {
+        const st = _recorderStale.get(cam.id);
+        if (st.alerted) {
+          const downSec = (now - st.since) / 1000;
+          console.log(`  🟢 [${cam.id}] media-buffer flowing again (หยุดไป ${Math.round(downSec)}s)`);
+          if ((!alertCfg || alertCfg.enabled) && !(alertCfg && _camAlertInQuiet(alertCfg, tz))) {
+            _sendRecorderStaleLine({
+              cameraId: cam.id, kind: 'recovered', staleSec: downSec,
+              camCfg: credMap[cam.id], alertCfg, lineCfg, tz,
+            }).catch(() => {});
+          }
+        }
+        _recorderStale.delete(cam.id);
+      }
+    }
+  } catch (e) {
+    console.warn('recorder-stale check error:', e.message || e);
+  }
+}
+setInterval(checkStaleRecorders, 60 * 1000);
 
 // ============================================================
 // Monitor-only camera reachability (ONVIF / Dahua)

@@ -1,7 +1,7 @@
 # REF_security-checklist.md — Security Touch-Point Checklist
 
 > **ใช้อย่างไร:** เมื่อแตะโค้ดในกลุ่มด้านล่าง → อ่าน checklist ของกลุ่มนั้นก่อนเขียนโค้ด
-> Source: audit SEC-001–SEC-011 (2026-05-28) · SEC-012 (2026-05-28) · ดู GOTCHAS.md #50–#59 + DECISIONS.md #152–#160
+> Source: audit SEC-001–SEC-011 (2026-05-28) · SEC-012 (2026-05-28) · SEC-2T-001–008 (2026-06-03/05) · ดู GOTCHAS.md #50–#59 + DECISIONS.md #152–#160, #200–#207
 > โหลดไฟล์นี้อัตโนมัติเมื่อแตะ: auth / upload / cookie / credential / docker port (CLAUDE.md Note #17)
 
 ---
@@ -91,6 +91,21 @@
 | SEC-016 | Postgres SSL | **✅ Done 2026-06-02** | `ssl=on` (TLSv1.3) via `ALTER SYSTEM` + `pg_reload_conf()` (zero-downtime); self-signed cert in data volume; `scripts/postgres-ssl-setup.sh` (idempotent, run after fresh volume); local apps unbroken (`127.0.0.1 trust`); `hostssl` enforcement deferred until remote port opens | DECISIONS #195 · REF_third-party-integration.md §3.6 |
 | SEC-017 | Mapbox token proxy | **✅ Done 2026-06-02** | `GET /api/map/tiles/mapbox/:style/:z/:x/:y.png` (auth-gated, cache-first); `/api/config` removes `mapboxToken` field (returns `mapboxAvailable` only); `dashboard.js` uses proxy URLs; zero direct `api.mapbox.com` tile requests from browser; CSP tightened | DECISIONS #197 · DECISIONS #60 |
 
+## 📋 Quick Reference: SEC-2T-001 to SEC-2T-008 (CODEX 2nd Tier Audit, 2026-06-03)
+
+> **ที่มา:** CODEX_AUDIT_2ndTier.md — 11 findings (1 High, 5 Medium, 5 Low); รีวิว 2026-06-03 (decisions #200–#202); fixes 2026-06-05
+
+| ID | หมวด | สถานะ | Fix สรุป | Commit/Reference |
+|---|---|---|---|---|
+| SEC-2T-001 | CDN / origin isolation | ✅ Done | ลบ 4 ไฟล์ที่ embed EmailJS/Materialize CDN; auth-gate `/others` default-deny; boxbox HTML ลบแล้ว | `654f74d` · decisions #201–#202 |
+| SEC-2T-002 | CSP inline scripts | ✅ Done 2026-06-05 | ลบ inline `onclick=` + `<script>` ทั้งหมดใน dashboard HTML (Pre-Phase-5 gate) — zero inline scripts | `93b1c22` · decisions #203–#207 |
+| SEC-2T-003 | God-file modularity | Planned | `api-server.js` 6,600+ บรรทัด → modular monolith; S4 route split เริ่มแล้ว (`b8122a8`) | decisions #200 · ROADMAP.md |
+| SEC-2T-004 | Error response leak | ✅ Done 2026-06-05 | `routeError()` helper — consistent `{error}` format; ป้องกัน stack trace เปิดเผย; wire ใน ~100 catch blocks | `63285f2` `f002669` |
+| SEC-2T-005 | Role policy drift | ✅ Done 2026-06-05 | Enforce viewer-forbidden บน `GET /api/line-config` | `fdc50a4` |
+| SEC-2T-006 | Plaintext cred warning | ✅ Done | `/api/health/details` warn เมื่อพบ camera credentials ยังไม่ถูกเข้ารหัส (`enc:v1:` missing) | `0a1e33d` |
+| SEC-2T-007 | Dotfiles exposure | ✅ Done | `dotfiles: 'deny'` บน `express.static` ทุก mount — ปิด `.env`/`.git` ผ่าน static path | `c04ee5a` |
+| SEC-2T-008 | /tiles/ public access | Won't Fix | `/tiles/` เป็น public static asset by design — documented non-issue | `458db17` |
+
 ---
 
-<sub>REF_security-checklist.md · DojoJin Tech Dashboard v1.5.0 · Created 2026-05-28 · Updated 2026-06-01</sub>
+<sub>REF_security-checklist.md · Vigil Platform v1.5.3 · Created 2026-05-28 · Updated 2026-06-08</sub>

@@ -1,0 +1,32 @@
+-- ============================================================
+-- Vigil Platform — Migration 040: Drop trgm GIN index on events.event_type
+-- @author Prakasit Rochanavipart (Dojo-mAn)
+-- @copyright (c) 2025-2026 Prakasit Rochanavipart. All Rights Reserved.
+-- @license Proprietary
+-- ============================================================
+-- WHY: idx_events_type_trgm (GIN gin_trgm_ops on event_type) has 1 lifetime
+--      scan and adds write overhead on every event INSERT (hot ingestion path).
+--
+--      The planner does route LIKE '%...%' through this index (Bitmap Index Scan),
+--      but idx_scan=1 proves real traffic never exercises it: %Recognition%
+--      (LPR tab) and %${type}% (event search) return 0 rows because no LPR-type
+--      events exist in the dataset. EXPLAIN shows ~3ms win on a fully-cached
+--      42MB table with 0 matching rows — noise, not signal.
+--      METRIC_EVENT_FILTER uses NOT LIKE '%Aggregation%' — a negation the
+--      planner cannot route through any GIN index regardless.
+--
+--      When events are partitioned (~500K rows trigger), the partition
+--      migration script (MANUAL_partition_events_option_a.sql) recreates
+--      this index on the new partitioned table automatically. If fuzzy search
+--      is needed before that point, recreate with CREATE INDEX CONCURRENTLY.
+--
+--      pg_trgm extension is left in place (zero maintenance cost; the
+--      partition migration still references it).
+--
+-- SAFETY: idempotent (DROP INDEX IF EXISTS). Not CONCURRENTLY because
+--         migrate.js wraps every migration in BEGIN...COMMIT and
+--         CONCURRENTLY is prohibited inside a transaction block.
+--         Lock is instant on boot, before serving traffic.
+-- ============================================================
+
+DROP INDEX IF EXISTS idx_events_type_trgm;

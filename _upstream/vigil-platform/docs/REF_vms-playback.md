@@ -4,7 +4,7 @@
 > Primary source: **Qognify SGS v7.2** (Gateway Service REST). Same API surface for
 > SeeTec / Qognify / Coda Video (HxGN dC3 Video) — lineage of the same product.
 > Status: **PLANNED** — no production code written yet.
-> Last updated: 2026-06-04 · Author: Prakasit Rochanavipart (Dojo-mAn)
+> Last updated: 2026-06-08 · Author: Prakasit Rochanavipart (Dojo-mAn)
 
 ---
 
@@ -160,7 +160,7 @@ Camera mapping in `cameras-config.json`:
 ```js
 // src/services/qognify-sgs-adapter.js
 // ============================================================
-// DojoJin Tech Dashboard — Qognify SGS REST Adapter
+// Vigil Platform — Qognify SGS REST Adapter
 // @author Prakasit Rochanavipart (Dojo-mAn)
 // @copyright (c) 2025-2026 ... All Rights Reserved.
 // @license Proprietary
@@ -473,4 +473,4 @@ Recommend **on-demand proxy** as the default for v1 — simplest, no migration r
 
 ---
 
-*REF_vms-playback.md · DojoJin Tech Dashboard · 2026-06-04*
+*REF_vms-playback.md · Vigil Platform · 2026-06-08*

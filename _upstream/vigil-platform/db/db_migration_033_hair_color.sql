@@ -1,5 +1,5 @@
 -- ============================================================
--- DojoJin Tech Dashboard — Migration 033: hair_color (named)
+-- Vigil Platform — Migration 033: hair_color (named)
 -- @author Prakasit Rochanavipart (Dojo-mAn)
 -- @copyright (c) 2025-2026 DojoJin Tech. All Rights Reserved.
 -- @license Proprietary

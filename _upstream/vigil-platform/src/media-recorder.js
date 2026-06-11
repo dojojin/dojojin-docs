@@ -1,5 +1,5 @@
 // ============================================================
-// DojoJin Tech Dashboard — Media Recorder (Phase 6.1)
+// Vigil Platform — Media Recorder (Phase 6.1)
 // Server-side RTSP rolling buffer for pre-alarm clip capture
 // ============================================================
 // @author    Prakasit Rochanavipart (Dojo-mAn)
@@ -39,6 +39,15 @@ const CONFIG_FILE = path.join(__dirname, '..', 'cameras-config.json');
 const CLEANUP_INTERVAL_MS = 5_000;
 const CAMERA_REFRESH_MS   = 30_000;
 const FFMPEG_RESTART_MS   = 5_000;
+// Backoff ceiling for a camera that keeps dying right after spawn (off /
+// unreachable) — a flat 5s loop flooded ~72k log lines in 17h (2026-06-09).
+const FFMPEG_RESTART_MAX_MS = 60_000;
+
+// Camera credentials must never reach the logs: ffmpeg prints the full
+// input URL (rtsp://user:pass@host) into stderr on connect errors.
+function redactCreds(s) {
+  return String(s).replace(/(rtsp:\/\/[^:/@\s]+:)[^@\s]+@/g, '$1***@');
+}
 
 if (!fs.existsSync(BUFFER_DIR)) fs.mkdirSync(BUFFER_DIR, { recursive: true });
 if (!fs.existsSync(MEDIA_DIR))  fs.mkdirSync(MEDIA_DIR,  { recursive: true });
@@ -77,6 +86,8 @@ const pool = new Pool({
   database: process.env.DB_NAME,
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
+  max: 2,
+  application_name: 'media-recorder',
 });
 
 // ============================================================
@@ -170,19 +181,27 @@ function spawnRecorder(cam) {
   const proc = spawn('ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'] });
   proc.stderr.on('data', d => {
     const txt = d.toString().trim();
-    if (txt) console.error(`[ffmpeg ${cam.camera_id}] ${txt}`);
+    if (txt) console.error(`[ffmpeg ${cam.camera_id}] ${redactCreds(txt)}`);
   });
   proc.on('exit', code => {
-    console.warn(`[recorder] ffmpeg exit cam=${cam.camera_id} code=${code} — restart in ${FFMPEG_RESTART_MS/1000}s`);
     const slot = recorders.get(cam.camera_id);
     if (!slot || slot.proc !== proc) return;
     slot.proc = null;
+    // A run shorter than 60s counts toward the failure streak; a long run resets it.
+    const lived = Date.now() - (slot.startedAt || 0);
+    slot.failStreak = lived < 60_000 ? (slot.failStreak || 0) + 1 : 0;
+    const delay = Math.min(FFMPEG_RESTART_MS * (2 ** slot.failStreak), FFMPEG_RESTART_MAX_MS);
+    console.warn(`[recorder] ffmpeg exit cam=${cam.camera_id} code=${code} — restart in ${delay/1000}s`);
     slot.restartTimer = setTimeout(() => {
       if (recorders.has(cam.camera_id)) spawnRecorder(cam);
-    }, FFMPEG_RESTART_MS);
+    }, delay);
   });
 
-  recorders.set(cam.camera_id, { proc, dir, restartTimer: null, signature: recorderSignature(cam) });
+  const prev = recorders.get(cam.camera_id);
+  recorders.set(cam.camera_id, {
+    proc, dir, restartTimer: null, signature: recorderSignature(cam),
+    startedAt: Date.now(), failStreak: prev?.failStreak || 0,
+  });
   console.log(`[recorder] ▶ started ${cam.camera_id} pid=${proc.pid}`);
 }
 
@@ -241,7 +260,8 @@ async function syncRecorders() {
       SELECT id AS camera_id, ip_address, clip_pre_sec, clip_post_sec,
              enable_clip_capture, enable_snapshot
         FROM cameras
-       WHERE enable_clip_capture = TRUE OR enable_snapshot = TRUE
+       WHERE enabled = TRUE
+         AND (enable_clip_capture = TRUE OR enable_snapshot = TRUE)
     `);
     rows = r.rows.filter(recorderNeeded);
   } catch (e) {
