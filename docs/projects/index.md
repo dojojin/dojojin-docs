@@ -12,3 +12,9 @@ An on-premise CCTV analytics platform with multi-vendor camera support, real-tim
 ## AI OCR Pipeline
 
 - [AI OCR Pipeline](./ai-ocr-pipeline) — Automated document extraction via Google Apps Script *(Paused)*
+
+## AI Stack (Local LLM)
+
+A self-hosted AI inference stack running entirely on consumer GPU hardware — no cloud subscriptions, no data leaving the machine.
+
+- [AI Stack](./ai-stack) — Ollama, Open WebUI, SearXNG, Continue.dev, and model selection for a 6 GB VRAM GPU
