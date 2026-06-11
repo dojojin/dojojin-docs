@@ -9,7 +9,7 @@ Vigil Platform is a self-hosted CCTV analytics system built for organizations th
 
 The name comes from the English word *vigil* — a period of watchful wakefulness. That is what the platform does: monitor every camera around the clock, detect events, notify the right people, and record everything automatically, without requiring a human to watch at all times.
 
-**Current version:** v1.5.1 — production-ready, deployed in live environments.
+**Current version:** v1.5.3 — production-ready, deployed in live environments.
 
 ---
 
@@ -69,6 +69,7 @@ Events are stored with full metadata and are searchable, filterable, and paginat
 - Top rules and quietest cameras
 - CSV export
 - Click-to-drill-down on any chart element into the raw event list
+- **Zone Dwell Time** — stat card showing how long objects remained inside a defined zone (FieldDetector events); duration is also shown inline in event detail modals
 
 **Density Over Time** tracks people-count aggregations (from compatible cameras) and displays trends with median smoothing pushed via WebSocket.
 
@@ -80,6 +81,8 @@ Event categories and their icons and colors are configurable by administrators.
 
 **Camera Offline Alerts** — When a camera transitions to offline, a LINE notification is sent with the camera name and how long it has been unreachable. Repeat interval, escalation, and recovery notifications are configurable.
 
+**Recorder Wedge Detection** — When the pre-alarm recording buffer stops advancing for more than 5 minutes, a LINE notification is sent automatically. This detects silent recorder failures — where the service is running but clips are no longer being written — before they are discovered during an incident review.
+
 **Analytics Reports** — Four report types (daily, weekly, monthly, custom range) rendered as PDF or PNG. Reports are delivered automatically to LINE on a schedule and retained for 90 days in Report History.
 
 **Health Report** — System-wide status report rendered as a PNG image with five configurable sections: camera uptime summary, event volume, disk usage, alert activity, and image quality assessment (bright/dark/blurry/scene-change per camera over 24 hours). The banner automatically flags when more than 50% of cameras are offline or disk usage exceeds 85%.
@@ -87,6 +90,21 @@ Event categories and their icons and colors are configurable by administrators.
 ### Face Capture (Hikvision)
 
 For Hikvision cameras with Face Capture capability, Vigil captures and stores face crops alongside the full background image. Each face record includes demographic attributes detected by the camera firmware: approximate age range, gender, emotion, and attributes such as mask, glasses, or hat. Images are stored locally on the server — no cloud storage. A filterable gallery and per-face detail modal are available in the dashboard.
+
+### Snapshot Overlays
+
+Event snapshots can display bounding-box and zone geometry overlays drawn directly on the image. The overlay is rendered client-side using coordinates captured by the camera at the time of the event:
+
+- **Dahua** — face and FieldDetector events include person bounding boxes
+- **Hikvision** — Smart Events include bounding boxes and zone polygons
+
+Per-camera toggles in the camera settings allow operators to enable or disable overlay rendering independently for bounding boxes and zone outlines. Overlay controls are shown only for vendors that supply coordinate data.
+
+### Appearance Search (Bosch IVA)
+
+For sites running Bosch cameras with IVA Pro firmware, Vigil captures and indexes clothing color data for every detected person. Each appearance record stores a full color-cluster breakdown — dominant and secondary colors — enabling two-tone clothing searches directly from the Events and Appearances pages.
+
+Cameras running standard (non-Pro) IVA firmware are also supported at reduced fidelity: a single dominant color is captured per person, enabling broad color-based filtering even without the Pro license.
 
 ### Pre-Alarm Video Clips
 
@@ -180,7 +198,7 @@ Vigil Platform is organized into four layers:
 
 Vigil Platform underwent a formal security audit covering the full codebase: backend API, frontend, database, and infrastructure. The audit followed the OWASP Top 10 methodology and included PDPA compliance verification.
 
-**17 security issues were identified and all 17 have been resolved.**
+**A formal multi-round security audit was conducted. All identified security issues have been resolved.**
 
 ### Authentication and Authorization
 

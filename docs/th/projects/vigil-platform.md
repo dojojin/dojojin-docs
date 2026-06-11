@@ -9,7 +9,7 @@ Vigil Platform คือระบบ CCTV analytics แบบ self-hosted สำ
 
 ชื่อ Vigil มาจากภาษาอังกฤษ หมายถึงการเฝ้าระวังอย่างตื่นตัว นั่นคือสิ่งที่แพลตฟอร์มนี้ทำ: ติดตามกล้องทุกตัวตลอด 24 ชั่วโมง ตรวจจับ event แจ้งเตือนคนที่ใช่ และบันทึกทุกอย่างโดยอัตโนมัติ โดยไม่ต้องมีคนนั่งเฝ้าตลอดเวลา
 
-**เวอร์ชันปัจจุบัน:** v1.5.1 — production-ready, deploy ในสภาพแวดล้อมจริงแล้ว
+**เวอร์ชันปัจจุบัน:** v1.5.3 — production-ready, deploy ในสภาพแวดล้อมจริงแล้ว
 
 ---
 
@@ -69,6 +69,7 @@ Event ถูกเก็บพร้อม metadata ครบ สามารถ
 - Top rules และกล้องที่เงียบที่สุด
 - Export CSV
 - Click-to-drill-down บน chart element ใด ๆ เพื่อดู event list ดิบ
+- **Zone Dwell Time** — stat card แสดงระยะเวลาที่วัตถุอยู่ภายใน zone ที่กำหนด (FieldDetector events); ระยะเวลาแสดงใน event detail modal ด้วย
 
 **Density Over Time** ติดตาม aggregation จำนวนคน (จากกล้องที่รองรับ) และแสดง trend พร้อม median smoothing ส่งผ่าน WebSocket
 
@@ -78,6 +79,8 @@ Event ถูกเก็บพร้อม metadata ครบ สามารถ
 
 **Camera Offline Alert** — เมื่อกล้องออฟไลน์ จะส่ง LINE notification พร้อมชื่อกล้องและเวลาที่ไม่สามารถเข้าถึงได้ ตั้งค่า repeat interval, escalation, และการแจ้งกู้คืนได้
 
+**Recorder Wedge Detection** — เมื่อ buffer บันทึกก่อน event หยุดอัปเดตนานกว่า 5 นาที จะส่ง LINE notification อัตโนมัติ ตรวจจับ recorder ที่ขัดข้องแบบเงียบ — service ยังทำงานอยู่แต่ไม่ได้บันทึก clip — ก่อนที่จะพบปัญหาในระหว่างการทบทวนเหตุการณ์
+
 **Analytics Report** — รายงาน 4 ประเภท (รายวัน, รายสัปดาห์, รายเดือน, ช่วงกำหนดเอง) render เป็น PDF หรือ PNG ส่งอัตโนมัติไปยัง LINE ตามกำหนดและเก็บประวัติ 90 วัน
 
 **Health Report** — รายงานสถานะระบบทั้งหมด render เป็น PNG พร้อม 5 ส่วนที่ตั้งค่าได้: สรุป uptime กล้อง, ปริมาณ event, การใช้ disk, กิจกรรม alert, และการประเมินคุณภาพภาพ banner แจ้งอัตโนมัติเมื่อกล้องออฟไลน์เกิน 50% หรือ disk เกิน 85%
@@ -85,6 +88,21 @@ Event ถูกเก็บพร้อม metadata ครบ สามารถ
 ### Face Capture (Hikvision)
 
 สำหรับกล้อง Hikvision ที่มีความสามารถ Face Capture Vigil จับและเก็บ face crop พร้อมภาพพื้นหลังเต็มรูป แต่ละ face record มี demographic attribute ที่ firmware ของกล้องตรวจจับ: ช่วงอายุโดยประมาณ, เพศ, อารมณ์, และ attribute เช่น หน้ากาก, แว่น, หรือหมวก ภาพเก็บใน server ของลูกค้า — ไม่ใช้ cloud storage มีแกลเลอรี่ที่กรองได้และ face detail modal ใน dashboard
+
+### Snapshot Overlay
+
+Snapshot ของ event แสดง overlay bounding-box และ geometry ของ zone วาดตรงบนภาพ overlay render ฝั่ง client โดยใช้ coordinate ที่กล้องจับได้ ณ เวลาที่เกิด event:
+
+- **Dahua** — event ประเภท face และ FieldDetector มี bounding box รอบตัวคน
+- **Hikvision** — Smart Events มี bounding box และ polygon ของ zone
+
+ตั้งค่าต่อกล้องได้อิสระว่าจะเปิด/ปิด overlay ของ bounding box และ zone outline โดยปุ่ม toggle แสดงเฉพาะยี่ห้อที่ส่งข้อมูล coordinate มาเท่านั้น
+
+### Appearance Search (Bosch IVA)
+
+สำหรับ site ที่ใช้กล้อง Bosch ที่มี IVA Pro firmware Vigil จับและ index ข้อมูลสีเสื้อผ้าของทุกคนที่ตรวจจับได้ แต่ละ appearance record เก็บ color cluster ครบชุด — สีหลักและสีรอง — สามารถค้นหาแบบ two-tone clothing ได้จากหน้า Events และ Appearances โดยตรง
+
+กล้องที่รัน IVA firmware มาตรฐาน (ไม่ใช่ Pro) รองรับด้วยแม้ความละเอียดลดลง: จับสีเด่นหนึ่งสีต่อคน ช่วยให้กรองตามสีได้กว้างๆ แม้ไม่มี Pro license
 
 ### Pre-Alarm Video Clip
 
@@ -178,7 +196,7 @@ Vigil Platform แบ่งเป็น 4 layer:
 
 Vigil Platform ผ่านการ audit ความปลอดภัยอย่างเป็นทางการครอบคลุม codebase ทั้งหมด: backend API, frontend, database, และ infrastructure การ audit ใช้วิธีการตาม OWASP Top 10 และรวมถึงการตรวจสอบ PDPA compliance
 
-**พบปัญหาความปลอดภัย 17 รายการ และแก้ไขครบทั้ง 17 รายการแล้ว**
+**ดำเนินการ security audit หลายรอบอย่างเป็นทางการ ปัญหาความปลอดภัยที่พบทั้งหมดได้รับการแก้ไขครบถ้วนแล้ว**
 
 ### Authentication และ Authorization
 
