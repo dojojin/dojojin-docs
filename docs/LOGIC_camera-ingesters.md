@@ -4,7 +4,7 @@
 > Hikvision ISAPI, Dahua CGI, generic ONVIF, pre-alarm clip capture,
 > snapshot logic, and camera lifecycle decisions.
 > Parent index: DECISIONS.md
-> Last updated: 2026-05-26 · v1.5.0
+> Last updated: 2026-06-08 · v1.5.0
 
 ---
 
@@ -64,7 +64,7 @@ Earlier belief that IVA Basic was hardware-incapable of object classification wa
 
 **#112 — MQTT broker swapped Mosquitto 2.0 → EMQX 5.8**
 Mosquitto 2.x strict validator rejects MQTT 3.1 packets from older Bosch FW (8000i IVA Basic). No config flag to relax. EMQX 5.8 is more lenient. After swap: 8000i went 0 → 4 events in first 2 minutes. All other cameras unchanged.
-EMQX ports: MQTT `:1883`, WS `:8083`, dashboard `:18083` (default `admin/public` — change in production).
+EMQX ports: MQTT `:1883` (all-interfaces, AUTHN enforced), dashboard `:18083` (localhost-only). WS `:8083` disabled (SEC-001 Phase 2). Default admin password overridden via `EMQX_DASHBOARD__DEFAULT_PASSWORD` in `.env`.
 EMQX default ACL denies `subscribe #` for non-localhost — subscriber uses specific patterns (`+/onvif-ej/...`) which pass.
 
 > STUBBORN_FACT: Mosquitto 2.x cannot be configured to accept old-firmware Bosch packets. The fix is EMQX. GOTCHAS #33.

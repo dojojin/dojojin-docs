@@ -1,5 +1,5 @@
 // ============================================================
-// DojoJin Tech Dashboard — Server-side Report Renderer
+// Vigil Platform — Server-side Report Renderer
 // @author    Prakasit Rochanavipart (Dojo-mAn)
 // @copyright (c) 2025-2026 Prakasit Rochanavipart. All Rights Reserved.
 // @license   Proprietary
@@ -92,7 +92,7 @@ async function gatherReportData({ baseUrl, internalToken, from, to, cameras }) {
 // detail (breakdown 15 / quiet cameras) lives in the PDF / 'full' image.
 function renderReportCompactHtml(data, { brand = {}, title, rangeLabel }) {
   const accent = brand.primary_color || '#5b8def';
-  const brandName = brand.name || 'DojoJin Tech Dashboard';
+  const brandName = brand.name || 'Vigil Platform';
 
   const cats = (data.cats?.categories) || [];
   const top  = ((data.top?.top) || []).slice(0, 5);
@@ -154,6 +154,13 @@ function renderReportCompactHtml(data, { brand = {}, title, rangeLabel }) {
 // --no-sandbox: the renderer feeds its OWN trusted HTML (never arbitrary
 // web content), and the eventual Linux production host commonly needs it.
 let _browserPromise = null;
+
+// Serialize Puppeteer renders: only one _withPage body runs at a time per
+// process. Prevents concurrent HTTP requests (e.g. /api/reports/pdf and
+// /api/health/report/pdf arriving simultaneously) from opening multiple
+// Chromium pages in parallel and spiking memory.
+let _renderTail = Promise.resolve();
+
 function _getBrowser() {
   if (_browserPromise) return _browserPromise;
   _browserPromise = puppeteer
@@ -212,21 +219,31 @@ async function _resetBrowserPool(reason) {
 
 async function _withPage(fn, opts = {}) {
   const retries = Math.max(0, opts.retries || 0);
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    const browser = await _getBrowser();
-    const page = await browser.newPage();
-    try {
-      return await fn(page);
-    } catch (err) {
-      if (attempt < retries && _isPuppeteerProtocolTimeout(err)) {
+  // Acquire render slot: wait for the previous render to finish, then extend
+  // the chain so the next caller waits for this one.
+  const ticket = _renderTail;
+  let release;
+  _renderTail = new Promise(r => { release = r; });
+  await ticket;
+  try {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      const browser = await _getBrowser();
+      const page = await browser.newPage();
+      try {
+        return await fn(page);
+      } catch (err) {
+        if (attempt < retries && _isPuppeteerProtocolTimeout(err)) {
+          await _closePageQuietly(page);
+          await _resetBrowserPool(err.message);
+          continue;
+        }
+        throw err;
+      } finally {
         await _closePageQuietly(page);
-        await _resetBrowserPool(err.message);
-        continue;
       }
-      throw err;
-    } finally {
-      await _closePageQuietly(page);
     }
+  } finally {
+    release(); // Always release — prevents deadlock even when fn() throws.
   }
 }
 
@@ -466,7 +483,7 @@ function renderHealthReportHtml(data, { brand = {}, sections, range, lang = 'th'
   const L = HR_LABELS[lang] || HR_LABELS.th;
   const enabled = new Set(normalizeHealthSections(sections));
   const accent = brand.primary_color || '#5b8def';
-  const brandName = brand.name || 'DojoJin Tech Dashboard';
+  const brandName = brand.name || 'Vigil Platform';
   const h = data.health || {};
   const locale = lang === 'en' ? 'en-US' : 'th-TH';
   const dateLabel = new Date().toLocaleDateString(locale, { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
@@ -676,7 +693,7 @@ function _renderHealthReportSvg(data, { brand = {}, sections, range, lang = 'th'
   const L = HR_LABELS[lang] || HR_LABELS.th;
   const enabled = new Set(normalizeHealthSections(sections));
   const accent = brand.primary_color || '#5b8def';
-  const brandName = brand.name || 'DojoJin Tech Dashboard';
+  const brandName = brand.name || 'Vigil Platform';
   const h = data.health || {};
   const c = data.cameras;
   const locale = lang === 'en' ? 'en-US' : 'th-TH';

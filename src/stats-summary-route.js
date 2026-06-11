@@ -1,5 +1,5 @@
 // ============================================================
-// DojoJin Tech Dashboard — Executive Summary Endpoint
+// Vigil Platform — Executive Summary Endpoint
 // @author    Prakasit Rochanavipart (Dojo-mAn)
 // @copyright (c) 2025-2026 Prakasit Rochanavipart. All Rights Reserved.
 // @license   Proprietary

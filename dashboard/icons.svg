@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" style="display:none">
   <!--
-    DojoJin Tech Dashboard — SVG Icon Sprite
+    Vigil Platform — SVG Icon Sprite
     Phase 0 skeleton — icons added incrementally per DESIGN.md §4 (decision #143)
     Usage: <svg><use href="#icon-NAME"/></svg>
     All paths use fill="currentColor" or stroke="currentColor" — color from CSS token

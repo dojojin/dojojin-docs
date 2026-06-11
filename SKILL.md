@@ -1,4 +1,4 @@
-# SKILL.md — DojoJin Tech Dashboard Operations
+# SKILL.md — Vigil Platform Operations
 
 > Operator's core playbook: mental model, mapping recipes, branding,
 > health check overview, and feature summaries.
@@ -7,7 +7,7 @@
 > **SQL snippets + service commands** → `docs/REF_operator-sql.md`
 > **Design rationale** → `docs/LOGIC_*.md` files
 >
-> Last updated: 2026-05-26 · v1.5.0
+> Last updated: 2026-06-08 · v1.5.3
 
 ---
 
@@ -27,6 +27,8 @@
 12. [Auditor role](#12-auditor-role-read-only)
 13. [License notes (Phase 8)](#13-license-operator-notes-phase-8)
 14. [Dahua snapshot notes](#14-dahua-snapshot-notes)
+15. [Camera Pause](#15-camera-pause)
+16. [Runtime stack reference](#16-runtime-stack-reference)
 
 ---
 
@@ -62,7 +64,7 @@
 
 ### Stats drill-down sanity check
 
-When a Stats visual links to `เหตุการณ์ (Live)`, compare the source endpoint
+When a Stats visual links to Events (Live), compare the source endpoint
 and target endpoint scopes, not only the visible label.
 
 | Source visual | Source API | Target must include |
@@ -112,7 +114,7 @@ The Events page paginates server-side, so all drill filters must reach
 | Field | Value |
 |---|---|
 | Camera | `(any)` |
-| Rule Name | `ห้ามคนเข้า` *(your IVA rule name)* |
+| Rule Name | `ห้ามคนเข้า` *(your IVA rule name — "No Entry" in this example)* |
 | Event Type | `FieldDetector/ObjectsInside` |
 | Object Class | `(any)` |
 | State | `true (enter)` |
@@ -160,14 +162,39 @@ event_type=LineDetector/Crossed, object_class=Vehicle,    state=(any)
 
 Quick lookup of keys:
 
+**Data retention**
+
 | Key | Default | Effect |
 |---|---|---|
-| `data_retention_days` | `365` | Daily DELETE of old events |
-| `snapshot_retention_days` | `30` | Daily file unlink of old snapshots |
+| `data_retention_days` | `365` | Daily DELETE of old events (max 730) |
+| `snapshot_retention_days` | `30` | Daily file unlink of old snapshot images (max 365) |
+| `clip_retention_days` | `30` | Daily file unlink of pre-alarm video clips (max 90) |
+| `appearances_retention_days` | `30` | Days of appearance attribute data (gender/colour/clothing) before anonymisation; must be ≤ `data_retention_days` (max 730) |
+
+**Stats / display**
+
+| Key | Default | Effect |
+|---|---|---|
 | `display_timezone` | `Asia/Bangkok` | Day-boundary alignment for all stats |
-| `brand_name` | `DojoJin Tech Dashboard` | Product name everywhere |
-| `brand_primary_color` | `#5b8def` | CSS `--accent` color |
-| `analytics_event_display` | `ImageTooBright,ImageTooBlurry,ImageTooDark,GlobalSceneChange` | Which automation events shown in Stats/feed |
+| `counter_dedup_mode` | `state` | People/vehicle counter dedup — `state` (enter-only via state=true), `object_window` (object-ID window), `none` (count every row) |
+| `comparison_mode` | `rolling` | Period comparison in stats — `rolling` (last N days) or `calendar` (same month last year) |
+| `custom_range_max_days` | `365` | Max span for custom date-range picker |
+| `analytics_event_display` | `ImageTooBright,ImageTooBlurry,ImageTooDark,GlobalSceneChange` | CSV of camera-automation event types shown in Stats/Events feed (others hidden but still stored) |
+
+**Branding**
+
+| Key | Default | Effect |
+|---|---|---|
+| `brand_name` | `Vigil Platform` | Product name in sidebar, login, disclaimer, PDF header |
+| `brand_tagline` | `CCTV Analytics Suite` | Subtitle shown under brand name |
+| `brand_logo_path` | `''` | Path under `/branding/` (e.g. `logo.png`); empty = default SVG placeholder |
+| `brand_primary_color` | `#5b8def` | CSS `--accent` color across all UI |
+
+**Map**
+
+| Key | Default | Effect |
+|---|---|---|
+| `mapbox_token` | `''` | Mapbox public token (`pk.…`) for detailed tile layers; empty = OSM tiles only. Set via Settings → Map |
 
 ---
 
@@ -187,7 +214,7 @@ Quick lookup of keys:
 
 Settings → ⚙️ System → 🎨 Branding (admin only):
 - Upload logo (PNG/JPG/WebP/SVG, max 5MB) → auto-resize 256×256 PNG
-- Edit name + tagline + accent color
+- Edit name (`brand_name`), tagline (`brand_tagline`), accent color (`brand_primary_color`)
 
 ```bash
 # API — upload logo
@@ -212,12 +239,20 @@ Sidebar → **💓 Health Check** (admin only). Auto-refreshes every 15s.
 | 🗄️ Database | Postgres latency, total events, 1h/24h event rate |
 | 📡 MQTT Pipeline | Last event timestamp, age, status (`healthy`/`idle`/`stale`) |
 | 📷 Cameras | online/offline counts (heartbeat <90s) |
-| 💾 Storage | Snapshot file count + size, disk free/total |
-| ⚙️ Service Processes | Per-service instance count — `1x` OK / `0x` down / `>1` ⛔ DUPLICATE |
-| ⚙️ API Server | Process uptime, RSS memory, WebSocket clients |
-| 🖥️ Host | Hostname, platform, RAM, load avg |
+| ⚙️ Service Processes | PM2 status per worker (`online`/`stopped`/`errored`); uptime; restart count `↺N` (yellow = has restarted); **Restart** button for all 5 controllable workers + **Stop/Start** (except api-server); 7 workers display status but only 5 have action buttons: api-server/mqtt-subscriber/media-recorder/hikvision/dahua (alert-worker + report-worker = status display only) |
+| 📸 Camera Image Quality (24h) | Per-camera auto-analytics count: `too_bright` / `too_blurry` / `too_dark` / `scene_change` — high count = dirty lens / focus drift / changing light / possible obstruction |
+| ⚡ Camera Automation Triggers (24h) | Per-camera Digital Input + Relay event counts + latest trigger time (this event group is hidden in Stats per `analytics_event_display`, but shown here to confirm whether the relay fired today) |
+| 💾 Storage | Snapshot files/size · Clip files/size/count-24h/oldest · disk free/total · retention days (events/snapshots/clips) |
+| ⚙️ API Server | Process uptime, Node version, PID, RSS memory, Heap used, WebSocket clients |
+| 🖥️ Host | Hostname, platform, Total/Free RAM, used %, load avg (1m) |
 
-Status thresholds: MQTT stale >1hr, memory >85%, disk >90%.
+**Status thresholds (level → badge color):**
+
+| Metric | warn 🟡 | err 🔴 |
+|---|---|---|
+| MQTT | `idle` 5min–1hr | `stale` > 1hr |
+| Memory | > 70% | > 85% |
+| Disk | > 75% | > 90% |
 
 ```bash
 curl -H "Cookie: <session>" http://localhost:3000/api/health/details | jq
@@ -237,85 +272,85 @@ Reports tab → 5 types: **Daily / Weekly / Monthly / Custom / 🏥 Health**
 | Custom | from+to, capped by `custom_range_max_days` |
 | 🏥 Health | 24h/7d/30d/custom — see §11 |
 
-**Scheduled delivery (Phase 7.3):** Settings → 🔔 LINE → 📅 ตั้งค่าส่งอัตโนมัติ. Each schedule generates PNG → LINE via imgbb. `send_day_of_week` gates weekly; `send_days_of_month` gates monthly. Every fire logged to `report_history` — see §10. LINE delivery rules live in `docs/LOGIC_line-notifications.md`.
+**Scheduled delivery (Phase 7.3):** Settings → 🔔 LINE → Scheduled Delivery. Each schedule generates PNG → LINE via imgbb. `send_day_of_week` gates weekly; `send_days_of_month` gates monthly. Every fire logged to `report_history` — see §10. LINE delivery rules live in `docs/LOGIC_line-notifications.md`.
 
-**Analytics report export:** click 📥 ดาวน์โหลด PDF → Puppeteer renders A4 PDF (Thai fonts, text selectable).
+**Analytics report export:** click Export PDF → Puppeteer renders A4 PDF (Thai fonts, text selectable).
 
 ---
 
 ## 8. Language / i18n (Thai / English)
 
-Dashboard เป็น 2 ภาษา — engine: `dashboard/i18n.js` (vanilla, ไม่มี dep). Thai = source, English = translation layer.
+The dashboard is bilingual — engine: `dashboard/i18n.js` (vanilla, no dependencies). Thai is the source language; English is the translation layer.
 
-**สลับภาษา:** ปุ่ม `ไทย / EN` ในเมนูผู้ใช้, login, disclaimer → เก็บใน `localStorage.dashboard_lang` → reload หนึ่งครั้ง.
+**Switch language:** click the `ไทย / EN` toggle in the user menu, login page, or disclaimer page → saved to `localStorage.dashboard_lang` → one page reload.
 
-**เพิ่ม string ใหม่:**
-1. เพิ่ม key ใน `dashboard/i18n.js` — **ทั้ง `th` และ `en` block** (ขาดข้างเดียว = fallback เงียบ)
+**Adding a new string:**
+1. Add the key to `dashboard/i18n.js` — **both `th` and `en` blocks** (missing one side = silent fallback)
 2. Static markup → `data-i18n` / `data-i18n-html` / `data-i18n-ph` / `data-i18n-title`
 3. JS dynamic → `I18N.t('key', fallback)`
-4. datetime input ใหม่ → register id ใน `_DT_*_IDS` ด้วย (GOTCHAS #35)
+4. New datetime input → register its id in the `_DT_*_IDS` registry too (GOTCHAS #64, #65)
 
-**ตรวจ string หลุด:**
+**Check for leaked strings:**
 ```bash
 grep -rn '[฀-๿]' dashboard/index.html dashboard/dashboard.js | grep -v 'data-i18n'
 ```
 
-**รายงาน export:** analytics report = ไทยเสมอ (Puppeteer context ใหม่ไม่รู้ภาษา). Health report = ตามภาษาที่เลือก (`HR_LABELS.{th,en}` dict ใน `report-renderer.js`).
+**Report exports:** analytics report is always Thai (Puppeteer runs in a fresh context with no language setting). Health report follows the selected language (`HR_LABELS.{th,en}` dict in `report-renderer.js`).
 
 ---
 
 ## 9. Camera Offline Alerts (Ph.1)
 
-LINE แจ้งเตือนเมื่อกล้องหายจาก heartbeat — config ระดับต่อกล้อง. Detailed delivery/recipient behavior lives in `docs/LOGIC_line-notifications.md`.
+LINE notification when a camera drops off the heartbeat — configured per camera. Detailed delivery/recipient behavior lives in `docs/LOGIC_line-notifications.md`.
 
-Settings → ⚙️ ตั้งค่ากล้อง → edit camera → ส่วน "การแจ้งเตือนเมื่อกล้องออฟไลน์":
+Settings → Camera Settings → edit camera → "Camera Offline Alerts" section:
 
-| field | default | หมายเหตุ |
+| Field | Default | Notes |
 |---|---|---|
-| `enabled` | false | เปิด/ปิด alert ต่อกล้อง |
-| `notify_after_sec` | 300 | offline เกินกี่วินาทีถึงแจ้งครั้งแรก |
-| `escalate_interval_min` | 60 | เตือนซ้ำทุกกี่นาที (ถ้ายัง offline) |
-| `escalate_once` | false | ☑ "แจ้งครั้งเดียว" — ซ่อน interval field |
-| `quiet_from` / `quiet_to` | NULL | quiet hours (HH:MM) |
+| `enabled` | false | Enable/disable alert per camera |
+| `notify_after_sec` | 300 | Seconds offline before first notification |
+| `escalate_interval_min` | 60 | Repeat alert every N minutes while still offline |
+| `escalate_once` | false | Check "Alert once only" — hides the interval field |
+| `quiet_from` / `quiet_to` | NULL | Quiet hours (HH:MM) |
 
-Status Log: Settings → ⚙️ ตั้งค่ากล้อง → แท็บ "📋 Status Log" → ทุก online↔offline transition 90 วันล่าสุด.
+Status Log: Settings → Camera Settings → "Status Log" tab → all online↔offline transitions for the last 90 days.
 
-Recovery alert ส่งครั้งเดียวเมื่อกล้องกลับมา online (timestamp + offline duration).
+A recovery alert is sent once when the camera comes back online (includes timestamp + offline duration).
 
 ---
 
 ## 10. Report History (Ph.2)
 
-ทุกครั้งที่รายงานถูกส่ง (อัตโนมัติ + manual) บันทึกใน `report_history` table.
+Every report delivery (scheduled and manual) is recorded in the `report_history` table.
 
-**เข้าถึง:** Settings → 🔔 LINE → แท็บ "📜 ประวัติรายงาน" → paginated table.
+**Access:** Settings → 🔔 LINE → Report History tab → paginated table.
 
-| ปุ่ม | งาน |
+| Button | Action |
 |---|---|
-| ▶ Run Now | fire schedule นั้นทันที (async — ผลโผล่ใน history เมื่อเสร็จ) |
-| ⬇ PNG | download image file |
-| ⬇ Export CSV | 200 row ล่าสุด |
+| ▶ Run Now | Fire that schedule immediately (async — result appears in history when complete) |
+| ⬇ PNG | Download the image file |
+| ⬇ Export CSV | Last 200 rows |
 
-**Retention:** rows 90 วัน, PNG files 30 วัน.
+**Retention:** rows kept 90 days; PNG files kept 30 days.
 
 ---
 
 ## 11. System Health Report (Ph.3)
 
-Reports tab → dropdown → **🏥 รายงานสุขภาพระบบ**
+Reports tab → dropdown → **🏥 System Health Report**
 
 4 toggleable sections: cameras, alerts, storage, system.
 
-| ปุ่ม | งาน |
+| Button | Action |
 |---|---|
-| 👁 ดู Preview | render PNG inline |
-| 📄 ดาวน์โหลด PDF | A4 + page numbers (Puppeteer) |
-| 📥 ดาวน์โหลด PNG | 720px-wide (LINE-friendly) |
-| 📤 ส่งเข้า LINE ทันที | admin — ส่งหา recipients ที่เลือก, log ลง report_history |
+| 👁 Preview | Render PNG inline |
+| 📄 Download PDF | A4 + page numbers (Puppeteer) |
+| 📥 Download PNG | 720px-wide (LINE-friendly) |
+| 📤 Send to LINE | Admin — sends to selected recipients, logs to report_history |
 
 Range picker: 24h / 7d / 30d / custom.
 
-Offline camera row แสดง: `📅 เพิ่มเข้าระบบ` + `💓 Heartbeat ล่าสุด` + `🖼 Frame ล่าสุด` (จาก `events.has_snapshot` / `snapshot_filename`; `raw_json->>'_snapshot'` ยังเป็น legacy fallback)
+Offline camera row shows: date added to system + latest heartbeat timestamp + latest frame (from `events.has_snapshot` / `snapshot_filename`; `raw_json->>'_snapshot'` remains a legacy fallback).
 
 Warning banners: offline >50%, disk >85%, RAM >85%.
 
@@ -323,54 +358,54 @@ Warning banners: offline >50%, disk >85%, RAM >85%.
 
 ## 12. Auditor role (read-only)
 
-`auditor` — ดูได้ทุกหน้า แต่ POST/PUT/DELETE/PATCH ถูก block server-side ด้วย 403 `read_only`.
+`auditor` — can view all pages, but POST/PUT/DELETE/PATCH are blocked server-side with 403 `read_only`.
 
-สร้าง: Settings → 👤 ผู้ใช้งาน → "+ เพิ่มผู้ใช้" → role = `auditor`.
+Create: Settings → Users → "+ Add User" → role = `auditor`.
 
-Auditor เห็น: ทุกหน้ารวม Settings, Health Check, Audit Log, Report History.
-Auditor ไม่สามารถ: เปลี่ยน config, settings, ลบ/เพิ่มข้อมูลใดๆ.
+Auditor can see: all pages including Settings, Health Check, Audit Log, Report History.
+Auditor cannot: change config, settings, or add/delete any data.
 
 Camera Audit Log core (migration 024):
-- `audit_log.target_camera_id` ใช้ filter เหตุการณ์ตามกล้อง
-- บันทึก add/edit/delete camera, offline-alert settings, และ group assignment/removal
-- details ของ camera audit redact `username` / `password`
-- UI: History → Audit Log → filter ตาม Action + Camera
+- `audit_log.target_camera_id` filters audit events by camera
+- Records add/edit/delete camera, offline-alert settings, and group assignment/removal
+- Camera audit details redact `username` / `password`
+- UI: History → Audit Log → filter by Action + Camera
 
 ---
 
 ## 13. License operator notes (Phase 8)
 
-ดูสถานะ: Settings → 🔐 License.
+View status: Settings → 🔐 License.
 
-| status | ผลกระทบ |
+| Status | Effect |
 |---|---|
-| `ACTIVE` | ทำงานปกติ |
-| `WARN_30D` / `WARN_7D` | banner เตือนสีเหลือง |
-| `GRACE` | read-only 7 วัน + banner แดง |
-| `EXPIRED` / `TRIAL_EXPIRED` | hard read-only |
-| `INVALID` | writes blocked |
+| `ACTIVE` | Normal operation |
+| `WARN_30D` / `WARN_7D` | Yellow warning banner |
+| `GRACE` | Read-only for 7 days + red banner |
+| `EXPIRED` / `TRIAL_EXPIRED` | Hard read-only |
+| `INVALID` | Writes blocked |
 
-**Activate:** Settings → 🔐 License → paste JWT → save → verify ภายใน 60 วินาที (cache).
+**Activate:** Settings → 🔐 License → paste JWT → save → verified within 60 seconds (cache).
 
-**Force re-check:** restart api-server หรือกด "🔄 Refresh license".
+**Force re-check:** restart api-server or click "🔄 Refresh license".
 
-> License JWT เก็บใน `system_settings.license_key` (DB) — ไม่ใช่ไฟล์. ดู `docs/LOGIC_license.md` สำหรับ rationale เต็ม.
+> License JWT is stored in `system_settings.license_key` (DB) — not in a file. See `docs/LOGIC_license.md` for full rationale.
 
 ---
 
 ## 14. Dahua snapshot notes
 
-Dahua VCA events ใช้ `src/ingesters/dahua-cgi.js` ผ่าน eventManager CGI.
-Snapshot ของ Dahua ไม่พึ่ง `snapshot.cgi` เป็นหลัก เพราะช้าและมักพลาดคนเดินเร็ว.
+Dahua VCA events use `src/ingesters/dahua-cgi.js` via the eventManager CGI.
+Dahua snapshots do not rely primarily on `snapshot.cgi` because it is slow and often misses fast-moving subjects.
 
 Current snapshot flow:
 
-1. ใช้ `snapManager` event JPEG ถ้ากล้องส่งให้
-2. ถ้าไม่มี ใช้ RTSP rolling buffer burst scoring รอบ server receive time
-3. ถ้า first pass เป็น `low_confidence` / `missing` / `failed` หรือยังเขียน status ไม่ทันตอน `clip_done`, clip resolver จะ retry แล้วเลือกภาพจาก `media/<eventId>.mp4`
-4. Single RTSP fallback และ live CGI fallback ถือเป็น `low_confidence` เพื่อให้ clip resolver แก้ต่อได้
+1. Use `snapManager` event JPEG if the camera includes one
+2. If unavailable, use RTSP rolling buffer burst scoring around the server receive time
+3. If the first pass is `low_confidence` / `missing` / `failed`, or the status has not been written by the time `clip_done` fires, the clip resolver retries and selects a frame from `media/<eventId>.mp4`
+4. Single RTSP fallback and live CGI fallback are treated as `low_confidence` so the clip resolver can continue
 
-ตรวจผล:
+Inspect results:
 
 ```sql
 SELECT
@@ -386,10 +421,79 @@ ORDER BY event_time DESC
 LIMIT 20;
 ```
 
-ถ้า `BMA-EAST_DAHUA_CAM01` พลาดภาพอีก ให้ดู `DahuaProblem.MD` ก่อนแก้ code.
-สถานะที่ควรเห็นบ่อยหลัง fix: `dahua-clip-resolver / ok` หรือ
-`dahua-rtsp-buffer-best / ok`. `missing` มักหมายถึง clip/buffer failed.
+If `BMA-EAST_DAHUA_CAM01` is still missing frames, read `DahuaProblem.MD` before touching code.
+Expected statuses after the fix: `dahua-clip-resolver / ok` or
+`dahua-rtsp-buffer-best / ok`. `missing` typically means clip/buffer failed.
 
 ---
 
-<sub>**SKILL.md** v1.5.0 — slim core · Detailed content in `docs/REF_*` · DojoJin Tech Dashboard · Updated 2026-05-24</sub>
+## 15. Camera Pause
+
+Temporarily stop receiving events and alerts from a camera without removing it from the system. Suitable for maintenance work or temporary area shutdowns.
+
+**Enable:** Settings → Camera Settings → select camera → toggle "Pause"
+
+| Behavior | Detail |
+|---|---|
+| MQTT ingest | `mqtt-subscriber.js` drops events from paused cameras (no new rows in `events`) |
+| Snapshot capture | Disabled (no images saved) |
+| LINE alerts | Disabled (offline alerts and event alerts are not sent) |
+| Heartbeat tracking | Still active — camera continues to count as online/offline normally |
+| Dashboard feed | New events do not appear while paused |
+| Audit log | Pause/resume recorded with timestamp and the admin who acted |
+
+**Resume:** toggle back — events that occurred during the pause are permanently lost (no backfill).
+
+---
+
+## 16. Runtime Stack Reference
+
+Quick reference for ops / troubleshooting — current versions as of v1.5.3
+
+| Component | Version | Notes |
+|---|---|---|
+| Node.js | v22.22.3 LTS | EOL Apr 2027; `.zshrc` + launchd plist point to `node@22` |
+| PM2 | 7.0.1 | 7 workers; config: `ecosystem.config.js` |
+| EMQX | 5.8.9 | Port `0.0.0.0:1883` (AUTHN on); Dashboard `127.0.0.1:18083` |
+| PostgreSQL | 16.14 | `127.0.0.1:5432`; data: `vigil_postgres_data` volume |
+| Puppeteer | 25.1.0 | Chrome 149.0.7827.22 (bundled, `~/.cache/puppeteer`) |
+| npm packages | 278 total | `npm audit`: 0 vulnerabilities (checked 2026-06-07) |
+
+**PM2 quick commands:**
+
+```bash
+pm2 list                            # status of all workers
+pm2 logs <name> --lines 50          # recent logs
+pm2 restart ecosystem.config.js     # rolling restart all workers
+pm2 env 0                           # show node_version used by worker
+pm2 save                            # persist list → launchd resurrect on reboot
+```
+
+**services.sh wrapper** (equivalent to pm2 but wraps ecosystem.config.js):
+
+```bash
+scripts/services.sh start           # pm2 start ecosystem.config.js
+scripts/services.sh restart         # pm2 restart ecosystem.config.js
+scripts/services.sh stop            # pm2 stop ecosystem.config.js
+```
+
+**npm test** (run from project root `~/vigil-platform`):
+
+```bash
+npm test
+# → node --test test/*.test.js   (43 tests: color-utils, crypto-creds, helpers, alert-engine)
+```
+
+**Docker quick commands:**
+
+```bash
+docker ps                           # container status
+docker exec vigil-emqx emqx ctl status    # EMQX version + node
+docker exec vigil-postgres psql -U vigil_sql -d vigil_platform -c "SELECT version();"
+```
+
+**Latest CVE audit:** 2026-06-07 — 0 confirmed CVE; details in `public/others/vigil-docs-v2/05-security.html`
+
+---
+
+<sub>**SKILL.md** v1.5.3 — slim core · Detailed content in `docs/REF_*` · Vigil Platform · Updated 2026-06-08</sub>

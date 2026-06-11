@@ -1,5 +1,5 @@
 <!-- ============================================================ -->
-<!-- DojoJin Tech Dashboard — Database Schema Reference          -->
+<!-- Vigil Platform — Database Schema Reference          -->
 <!-- @author Prakasit Rochanavipart (Dojo-mAn)                   -->
 <!-- @copyright (c) 2025-2026 All Rights Reserved.               -->
 <!-- @license Proprietary                                         -->
@@ -8,7 +8,7 @@
 # Database Schema Reference — PostgreSQL
 
 > **วัตถุประสงค์:** เอกสารอ้างอิงสำหรับ DBA, ทีม integration, หรือ 3rd party ที่ต้องการเชื่อมต่อ / อ่านข้อมูลจากฐานข้อมูลนี้  
-> Last updated: 2026-05-27 · Version: v1.5.0  
+> Last updated: 2026-06-08 · Version: v1.5.0  
 > Source of truth: `db/init.sql` + migration files `db/db_migration_*.sql`
 
 ---
@@ -354,7 +354,7 @@ Key/value store สำหรับ settings และ white-label branding
 | `comparison_mode` | `rolling` | `rolling` / `calendar` |
 | `custom_range_max_days` | `365` | max span ของ date range picker |
 | `analytics_event_display` | CSV of camera-auto types | types ที่แสดงใน Events feed |
-| `brand_name` | `DojoJin Tech Dashboard` | ชื่อ product (white-label) |
+| `brand_name` | `Vigil Platform` | ชื่อ product (white-label) |
 | `brand_tagline` | `CCTV Analytics Suite` | subtitle |
 | `brand_logo_path` | `` (empty) | path ไฟล์โลโก้ |
 | `brand_primary_color` | `#5b8def` | accent color หลัก |
@@ -617,7 +617,20 @@ GROUP BY status;
 | migration_025 | `events`: backfill + index `snapshot_filename`, `has_snapshot` |
 | migration_026 | `line_config`: เพิ่ม `oa_basic_id` |
 | migration_027 | **Third-party views + role** — `v_*_public` (11 views) + `third_party_readonly` NOLOGIN role |
+| migration_028 | `pending_recipients`: เพิ่ม `status = 'blocked'` (permanent soft-block) |
+| migration_029 | `system_settings`: เพิ่ม `mapbox_token` row (Map Settings page, decision #171) |
+| migration_030 | `pg_trgm` GIN index บน `events.event_type` (NOT LIKE '%Aggregation%' optimization) |
+| migration_031 | `appearances`: เพิ่ม IVA Pro columns — `hair_length`, `top_category`, `bottom_category`, `glasses`, `helmet_wear`, `object_class` |
+| migration_032 | `v_appearances_public`: อัปเดตให้รวม IVA Pro columns จาก migration_031 |
+| migration_033 | `appearances`: เพิ่ม `hair_color` (named string — human-readable จาก XYZ raw) |
+| migration_034 | `system_settings`: เพิ่ม `appearances_retention_days` row |
+| migration_035 | `appearances`: drop `snapshot_b64` column (never read; wasted disk) |
+| migration_036 | `license_plates`: เพิ่ม `vehicle_type`, `vehicle_color`, `vehicle_brand` (multi-vendor ANPR) |
+| migration_037 | `cameras`: เพิ่ม `paused` flag (maintenance mode) |
+| migration_038 | `cameras`: drop dead columns `http_password` + `rtsp_url` (decision #193, SEC-015) |
+| migration_039 | Drop dead GIN index `idx_events_raw_gin` on `events.raw_json` (0 lifetime scans) |
+| migration_040 | Drop trgm GIN index `idx_events_type_trgm` on `events.event_type` (1 lifetime scan, decision perf audit 2026-06-06) |
 
 ---
 
-<sub>End of REF_database-schema.md · DojoJin Tech Dashboard v1.5.0 · 2026-05-27</sub>
+<sub>End of REF_database-schema.md · Vigil Platform v1.5.3 · 2026-06-08</sub>

@@ -1,5 +1,5 @@
 // ============================================================
-// DojoJin Tech Dashboard — Single-instance guard
+// Vigil Platform — Single-instance guard
 // ============================================================
 // @author    Prakasit Rochanavipart (Dojo-mAn)
 // @contact   prakasit@dojojin.tech | https://dojojin.tech/

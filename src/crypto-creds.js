@@ -1,5 +1,5 @@
 // ============================================================
-// DojoJin Tech Dashboard — Camera Credential Encryption
+// Vigil Platform — Camera Credential Encryption
 // @author Prakasit Rochanavipart (Dojo-mAn)
 // @copyright (c) 2025-2026 Prakasit Rochanavipart. All Rights Reserved.
 // @license Proprietary

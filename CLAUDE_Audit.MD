@@ -1,6 +1,6 @@
 # CLAUDE_Audit.MD — Security Audit Index
 
-> **สารบัญรายงาน Security Audit** ของ DojoJin Tech Dashboard
+> **สารบัญรายงาน Security Audit** ของ Vigil Platform
 > Date: 2026-05-27 · Auditor: Claude Sonnet 4.6 · Version: v1.5.0
 > Method: Static code analysis ตาม Working Agreement #1 (Fact / Opinion แยก) + live runtime checks ที่ทำได้ปลอดภัย
 >
@@ -91,4 +91,4 @@
 
 ---
 
-<sub>End of CLAUDE_Audit.MD index · DojoJin Tech Dashboard v1.5.0 · 2026-05-27</sub>
+<sub>End of CLAUDE_Audit.MD index · Vigil Platform v1.5.0 · 2026-06-08</sub>

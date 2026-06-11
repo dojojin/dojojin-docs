@@ -1,11 +1,11 @@
-# DECISIONS — DojoJin Tech Dashboard
+# DECISIONS — Vigil Platform
 
 > **Index file** — design decisions ย้ายไป `docs/LOGIC_*.md` แล้ว.
 > ไฟล์นี้เป็น index + quick-lookup เท่านั้น.
 > สำหรับ rationale เต็ม → เปิดไฟล์ LOGIC ที่ระบุ.
 >
 > Companion to: CLAUDE.md · GOTCHAS.md · ARCHITECTURE.md · DESIGN.md
-> Last updated: 2026-06-03 · v1.5.1 (decisions #200–#202 added)
+> Last updated: 2026-06-08 · v1.5.3 (Phase 2 doc sync — #152/#160 EMQX exception)
 
 ---
 
@@ -188,7 +188,7 @@ Live Dahua snapshot timing / recovery log:
 
 ### Security Fixes 2026-05-28 (#152–#153)
 
-- **#152** SEC-001 Phase 1: bind EMQX ports (1883/8083/18083) ไปที่ `127.0.0.1` แทน `0.0.0.0` — เหตุผล: anonymous MQTT publish จาก LAN ทำให้ attacker inject payload เข้า DB ได้ (chain → SEC-002 XSS); Phase 2 (ENABLE_AUTHN) รอ provision MQTT creds ในกล้อง Bosch ก่อน
+- **#152** SEC-001 Phase 1: bind EMQX ports (1883/8083/18083) ไปที่ `127.0.0.1` แทน `0.0.0.0` — เหตุผล: anonymous MQTT publish จาก LAN ทำให้ attacker inject payload เข้า DB ได้ (chain → SEC-002 XSS); **Phase 2 ✅ DONE** (2026-05-28): dual-bind + AUTHN enforced (GOTCHAS #50, decision #164); **Phase 3** (2026-06-07): dual-bind → `0.0.0.0:1883` (network resilience — IP hardcode พังเมื่อเปลี่ยน LAN/VPN); WS :8083 disabled; AUTHN = security boundary (GOTCHAS #50 Phase 3)
 - **#153** SEC-002: `escapeHtml()` ทุก MQTT/DB-sourced field ใน `renderEvents` + `renderSnapshots` (grid + list); `snapshot_file` URL path → `encodeURIComponent()` — เหตุผล: `rule_name`/`camera_id`/`object_class`/`snapshot_source`/`event_type` เป็น attacker-controlled ผ่าน SEC-001; `renderMedia` มี escapeHtml ครบอยู่แล้วไม่ต้องแตะ
 - **#154** SEC-003: `GET /api/cameras` role-based redact — `role === 'admin'` → plaintext (ต้อง prefill `frmCamPass`); viewer/auditor → `_redactCameraAudit()` (`password = '***'`); ฟังก์ชัน `_redactCameraAudit` มีอยู่แล้วแต่ถูกใช้แค่ใน audit log path → ขยายมาใช้ที่ response
 
@@ -199,7 +199,7 @@ Live Dahua snapshot timing / recovery log:
 - **#157** SEC-004: `must_change_password` (และ security flag ชนิดเดียวกัน) ต้อง enforce ที่ server middleware — `requireAuth` + allowlist path; ห้าม rely on client redirect เท่านั้น. เหตุผล: token เก่ายัง valid → client bypass ได้
 - **#158** SEC-005: ทุก file upload endpoint ต้อง validate **magic bytes** ก่อน accept — MIME type จาก `Content-Type` header เป็น client-controlled ปลอมได้; magic bytes ใน buffer ปลอมไม่ได้โดยไม่ทำให้ไฟล์ใช้งานไม่ได้. เหตุผล: librsvg CVE path เปิดถ้า SVG ผ่าน MIME-only check
 - **#159** SEC-010: login/logout ต้องใช้ **cookie flag builder เดียวกัน** (ตรวจ HTTPS + push Secure/SameSite); hardcode string แยกทำให้ flags drift เมื่อแก้ฝั่งใดฝั่งหนึ่ง. เหตุผล: logout ขาด Secure + SameSite ทั้งที่ login ตั้งครบ
-- **#160** SEC-001/011 generalized: ทุก docker internal service ใช้ `"127.0.0.1:PORT:PORT"` ไม่ใช่ `"PORT:PORT"` (0.0.0.0); secret ใน compose ใช้ `${VAR:?msg}` เท่านั้น (ค่าจริงใน gitignored `.env`). เหตุผล: Docker default = bind all interfaces → expose LAN/WAN โดยไม่ตั้งใจ
+- **#160** SEC-001/011 generalized: ทุก docker internal service ใช้ `"127.0.0.1:PORT:PORT"` ไม่ใช่ `"PORT:PORT"` (0.0.0.0); secret ใน compose ใช้ `${VAR:?msg}` เท่านั้น (ค่าจริงใน gitignored `.env`). เหตุผล: Docker default = bind all interfaces → expose LAN/WAN โดยไม่ตั้งใจ. **ยกเว้น EMQX MQTT :1883** — `"1883:1883"` (all-interfaces) ได้เมื่อ `ENABLE_AUTHN=true` บังคับ credentials ทุก client (decision #152 Phase 3, 2026-06-07)
 
 ### Camera Grouping Map Filter + Live Pulse + Legend Scaling (#155–#156, #161–#163)
 
@@ -300,7 +300,12 @@ The following decisions are small enough to live here rather than in a LOGIC fil
 | #200 | **Modular Monolith over Full Microservices** — ระบบมี 5-process SOA ผ่าน PM2 + pg_notify อยู่แล้ว (mqtt-subscriber, media-recorder, hikvision, dahua แยกแล้ว); inter-process comm = pg_notify ไม่ใช่ shared memory; deployment model = 1 host/customer → ไม่ได้ประโยชน์จาก scale service แยก; "monolith" ที่แท้จริงคือ `api-server.js` god-file 6,615 บรรทัด → แก้ด้วย opportunistic route module extraction (`src/routes/*.routes.js`) ไม่ใช่ process split; full microservices = distributed transaction overhead ไม่จำเป็น + ขัด deployment model; MAINT-2T-001 จาก CODEX audit corroborate แนวทางนี้ | [`microservice_plan.md`](microservice_plan.md) |
 | #201 | **Phase ordering: security fixes ก่อน refactor** — security items ที่อิสระจาก route refactor (lockfile, PM2 docs, .DS_Store, cred-guard) ต้องทำก่อนเสมอ ไม่รอ Phase A; SEC-2T-001 (/others origin) + SEC-2T-002 (CSP enforce) ต้องทำก่อน route split เสมอ เพราะ origin isolation เป็น prerequisite ที่แยกอิสระ; SEC-2T-002 ตาม SEC-2T-001 ไม่ใช่ตาม refactor (ถ้า /others ย้าย origin → CSP strict ได้ทันที); ลำดับ: Phase 0 (parallel, immediate) → Phase 1 (origin fix) → Phase 2 (route split + security merges) | [`microservice_plan.md`](microservice_plan.md) · `CODEX_AUDIT_2ndTier.md` |
 | #202 | **SEC-2T-001 approach — delete unused + auth-gate remaining** — ตรวจพบ 4 จาก 10 ไฟล์ใน `public/others/` มี CDN third-party; 4 ไฟล์ไม่ได้ใช้แล้ว (`index.html` EmailJS, `vss_v1.html` Materialize, `partners.html`, `reference-projects.html`) → ลบทิ้ง (CDN risk EmailJS + Materialize หายทันที); `boxbox-th/en.html` (Cytoscape CDN) ยังใช้งานอยู่ → auth-gate (ไม่ต้องการ public จริง เป็น diagram เทคนิค); ตัดสินใจไม่ self-host CDN ก่อน เพราะ same-origin localStorage ยังอ่านได้อยู่ดีถ้าไม่ auth-gate; Option B (self-host) แก้ CDN supply chain แต่ไม่แก้ origin isolation | `public/others/` · [`microservice_plan.md`](microservice_plan.md) Phase 1a |
+| #203 | **CSP violation reporter เป็น burn-down metric ก่อน migrate** — เพิ่ม `POST /api/csp-report` endpoint + log ทุก directive/blocked/source ลง stderr (pm2 logs) ก่อนทำ migration ใดๆ; ทำให้เห็น ground-truth violation count จาก browser จริง ไม่ใช่แค่ grep source; ใช้ `Content-Security-Policy-Report-Only` header (Report-Only) เพื่อไม่ block ผู้ใช้ระหว่าง migration; ลำดับ: reporter → enforce `/others` (ไม่มี inline) → migrate dashboard ไปเรื่อยๆ จนไม่มี violation | commits `0661b31` `959c52c` · CHANGELOG 2026-06-05 |
+| #204 | **Global dispatcher pattern สำหรับ dynamic innerHTML handlers** — handlers ที่อยู่ใน JS template literals (set via innerHTML) ต้องใช้ event delegation ไม่ใช่ direct `addEventListener` เพราะ element ถูก re-create ทุกครั้งที่ render; pattern: `document.addEventListener('click', e => { const action = e.target.closest('[data-action]')?.dataset.action; ACTION_MAP[action]?.(el, e) })` + `ACTION_MAP` object keyed by action name; non-click events (change/input/submit ฯลฯ) ใช้ `data-trigger` + แยก dispatcher ต่างหาก; ข้อดี: handler เป็น pure function ทดสอบได้, permission gate ทำใน 1 จุด (ก่อน dispatch), ไม่ต้องจัดการ re-bind หลัง innerHTML update | `dashboard.js _bindDynamicHandlers` · CHANGELOG 2026-06-05 |
+| #205 | **img onerror → data-err + window capture listener** — `onerror=` attribute ใน HTML ที่ set via innerHTML โดน `script-src-attr` block เช่นกัน; ใช้ `window.addEventListener('error', fn, true)` (capture phase — `true` จำเป็นเพราะ `error` event ไม่ bubble จาก `<img>`); เพิ่ม `data-err` vocab บน img element: `hide / dim / cam-placeholder / cam-span / face-noimg / no-img`; handler เดียวที่ root ทำงานให้ทุก img ในทุก dynamic section — ไม่ต้อง re-bind หลัง re-render; pattern นี้ reusable: เพิ่ม vocab ใหม่ใน switch case ได้โดยไม่แตะ template | `dashboard.js _bindDynamicHandlers` · GOTCHAS #79 · CHANGELOG 2026-06-05 |
+| #206 | **Externalize inline `<script>` blocks** — `script-src-elem` block inline `<script>` ที่ไม่มี `src=` (ต่างจาก `script-src-attr` ที่ block event handler attribute); fix: ย้าย script content ออกเป็นไฟล์ `.js` แยก + ใช้ `<script src="/file.js">` แทน; 4 ไฟล์ที่ externalize: `theme-init.js` (FOUC guard, ต้องรันก่อน CSS), `login.js`, `disclaimer.js`, `report-print.js` (Puppeteer render target — Chrome headless ก็ respect CSP); ทั้ง 4 ไฟล์ serve ผ่าน `express.static(dashboard/)` ที่มีอยู่แล้ว ไม่ต้องเพิ่ม route | commits `93b1c22` · CHANGELOG 2026-06-05 |
+| #207 | **CSP connect-src: allowlist cloudflareinsights.com** — CF analytics beacon (`static.cloudflareinsights.com`) ถูก allowlist ใน `script-src` แล้ว แต่เมื่อ beacon โหลดแล้วมัน POST telemetry ไปยัง `cloudflareinsights.com` (ไม่มี `static.` prefix) ผ่าน fetch — ต้องเพิ่มใน `connect-src` ด้วย; เป็น 3rd-party telemetry POST — platform ใช้ CF Tunnel อยู่แล้ว → เป็น intentional decision ที่รับรู้แล้ว; ถ้า PDPA-sensitive ให้ drop CF analytics module แทนการ restrict | `src/api-server.js` · CHANGELOG 2026-06-05 |
 
 ---
 
-<sub>End of DECISIONS.md (index) · Companion to CLAUDE.md · Updated 2026-06-03 (decisions #152–#202)</sub>
+<sub>End of DECISIONS.md (index) · Companion to CLAUDE.md · Updated 2026-06-08 (decisions #152–#207)</sub>

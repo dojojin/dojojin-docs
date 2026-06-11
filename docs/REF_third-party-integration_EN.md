@@ -1,5 +1,5 @@
 <!-- ============================================================ -->
-<!-- DojoJin Tech Dashboard — Third-Party Integration Guide (EN) -->
+<!-- Vigil Platform — Third-Party Integration Guide (EN) -->
 <!-- @copyright (c) 2025-2026 Prakasit Rochanavipart             -->
 <!-- @license Proprietary                                         -->
 <!-- ============================================================ -->
@@ -11,7 +11,7 @@
 > 2. **3rd-party integration engineers** (Sections 4–7, 9–10) building dashboards or analytics on top of the platform's data.
 >
 > **Status:** Standalone reference — distribute freely to authorized 3rd parties.
-> **Last updated:** 2026-05-27 · Schema baseline: migration 027
+> **Last updated:** 2026-06-08 · Schema baseline: migration 027
 > **Companion document:** [REF_database-schema_EN.md](REF_database-schema_EN.md) — full table-by-table column reference.
 
 ---
@@ -545,4 +545,4 @@ DROP VIEW IF EXISTS
 
 ---
 
-<sub>End of REF_third-party-integration_EN.md · DojoJin Tech Dashboard · 2026-05-27</sub>
+<sub>End of REF_third-party-integration_EN.md · Vigil Platform · 2026-06-08</sub>

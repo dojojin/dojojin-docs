@@ -1,5 +1,5 @@
 -- ============================================================
--- DojoJin Tech Dashboard — Database Initialization Script
+-- Vigil Platform — Database Initialization Script
 -- ============================================================
 -- @author    Prakasit Rochanavipart (Dojo-mAn)
 -- @contact   prakasit@dojojin.tech | https://dojojin.tech/
@@ -89,6 +89,11 @@ CREATE TABLE IF NOT EXISTS cameras (
   clip_pre_sec        INT     DEFAULT 10,       -- pre-alarm window (1..60)
   clip_post_sec       INT     DEFAULT 5,        -- post-alarm window (0..30)
 
+  -- Migration 043 — client-side snapshot overlay (SVG from raw_json coords;
+  -- ไม่เกี่ยวกับ enable_vca_overlay ซึ่งเผากรอบลงไฟล์รูปฝั่งกล้อง Bosch)
+  overlay_show_bbox   BOOLEAN DEFAULT true,     -- กรอบวัตถุ (Dahua BBox / Hik faceRect)
+  overlay_show_zone   BOOLEAN DEFAULT true,     -- polygon โซนของ rule (Dahua DetectRegion)
+
   -- Audit
   created_at      TIMESTAMPTZ DEFAULT NOW(),
   updated_at      TIMESTAMPTZ DEFAULT NOW()
@@ -146,8 +151,6 @@ CREATE INDEX IF NOT EXISTS idx_events_class ON events(object_class);
 CREATE INDEX IF NOT EXISTS idx_events_camera_time ON events(camera_id, event_time DESC);
 CREATE INDEX IF NOT EXISTS idx_events_has_snapshot_time ON events(event_time DESC) WHERE has_snapshot = TRUE;
 CREATE INDEX IF NOT EXISTS idx_events_camera_snapshot_time ON events(camera_id, event_time DESC) WHERE has_snapshot = TRUE;
-CREATE INDEX IF NOT EXISTS idx_events_raw_gin ON events USING GIN (raw_json);
-
 -- ── Table: appearances ──────────────────────────────────────
 -- รายละเอียดบุคคล/ยานพาหนะที่ตรวจจับได้ (จาก IVA Pro)
 CREATE TABLE IF NOT EXISTS appearances (
@@ -185,6 +188,11 @@ CREATE TABLE IF NOT EXISTS appearances (
   helmet_wear       BOOLEAN,
   helmet_subtype    VARCHAR(40),
   vest_style        VARCHAR(40),
+  -- Dominant whole-object color จากกล้อง IVA non-Pro (migration 041)
+  overall_color     VARCHAR(20),
+  overall_color_xyz VARCHAR(30),
+  -- ColorCluster ครบชุด [{xyz,name,weight}] เรียงตาม weight (migration 042)
+  color_clusters    JSONB,
   -- Raw attribute JSON (สำหรับ attributes อื่นๆ)
   attributes      JSONB DEFAULT '{}'::jsonb,
 
@@ -538,7 +546,7 @@ INSERT INTO system_settings (key, value, description) VALUES
   ('comparison_mode',         'rolling',       'rolling | calendar.'),
   ('custom_range_max_days',   '365',           'Max span for custom date range picker.'),
   -- Branding (white-label)
-  ('brand_name',              'DojoJin Tech Dashboard', 'Product name shown in sidebar, login, disclaimer and PDF report header.'),
+  ('brand_name',              'Vigil Platform', 'Product name shown in sidebar, login, disclaimer and PDF report header.'),
   ('brand_tagline',           'CCTV Analytics Suite',   'Short subtitle under the brand name.'),
   ('brand_logo_path',         '',                       'Path under /branding/ (e.g. logo.png). Empty = fall back to default emoji.'),
   ('brand_primary_color',     '#5b8def',                'Single accent colour applied across the dashboard.')

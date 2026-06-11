@@ -1,5 +1,5 @@
 <!-- ============================================================ -->
-<!-- DojoJin Tech Dashboard — Third-Party DB Integration Guide   -->
+<!-- Vigil Platform — Third-Party DB Integration Guide   -->
 <!-- @author Prakasit Rochanavipart (Dojo-mAn)                   -->
 <!-- @copyright (c) 2025-2026 All Rights Reserved.               -->
 <!-- @license Proprietary                                         -->
@@ -8,7 +8,7 @@
 # Third-Party Database Integration Guide
 
 > **Audience:** ฝ่าย ops ของเรา (Section 2–3, 8) + ทีม integration ของ 3rd party (Section 4–7, 9–10)
-> Last updated: 2026-05-27 · Schema baseline: migration 027
+> Last updated: 2026-06-08 · Schema baseline: migration 027
 > Pre-req docs: [REF_database-schema.md](REF_database-schema.md) — schema reference เต็ม
 
 ---
@@ -522,4 +522,4 @@ DROP VIEW IF EXISTS
 
 ---
 
-<sub>End of REF_third-party-integration.md · DojoJin Tech Dashboard v1.5.0 · 2026-05-27</sub>
+<sub>End of REF_third-party-integration.md · Vigil Platform v1.5.0 · 2026-06-08</sub>

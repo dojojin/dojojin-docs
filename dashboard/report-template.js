@@ -1,5 +1,5 @@
 // ============================================================
-// DojoJin Tech Dashboard — Shared Report Template (Phase 7.3)
+// Vigil Platform — Shared Report Template (Phase 7.3)
 // @author    Prakasit Rochanavipart (Dojo-mAn)
 // @copyright (c) 2025-2026 Prakasit Rochanavipart. All Rights Reserved.
 // @license   Proprietary
@@ -24,7 +24,7 @@
   // and brand ({ name, tagline, logo_url, primary_color }).
   function buildReportHtml(d, brand) {
     brand = brand || {};
-    const brandName    = brand.name    || 'DojoJin Tech Dashboard';
+    const brandName    = brand.name    || 'Vigil Platform';
     const brandTagline = brand.tagline || '';
     const brandLogoUrl = brand.logo_url ? `${brand.logo_url}?v=${Date.now()}` : null;
     const accent       = brand.primary_color || '#5b8def';
@@ -42,7 +42,7 @@
           <div style="text-align:right;font-size:11px;color:#718096">
             <div style="font-weight:700;color:#2d3748">${esc(brandName)}</div>
             ${brandTagline ? `<div style="font-size:10px;color:#a0aec0">${esc(brandTagline)}</div>` : ''}
-            <div style="margin-top:3px">${esc(I18N.t('rt.generatedAt').replace('{d}', new Date().toLocaleString('th-TH', { hour12: false })))}</div>
+            <div style="margin-top:3px">${esc(I18N.t('rt.generatedAt').replace('{d}', new Date().toLocaleString(((typeof I18N !== 'undefined' && I18N.getLang()) || 'th') === 'th' ? 'th-TH' : 'en-GB', { hour12: false })))}</div>
           </div>
         </div>
       </div>`;
@@ -207,9 +207,10 @@
     if (!ctx || typeof Chart === 'undefined') return;
     if (_trendChart) { _trendChart.destroy(); _trendChart = null; }
     const fmt = b => {
-      const dt = new Date(b);
-      if (trunc === 'hour') return dt.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', hour12: false });
-      return dt.toLocaleDateString('th-TH', { day: '2-digit', month: 'short' });
+      const dt  = new Date(b);
+      const loc = ((typeof I18N !== 'undefined' && I18N.getLang()) || 'th') === 'th' ? 'th-TH' : 'en-GB';
+      if (trunc === 'hour') return dt.toLocaleTimeString(loc, { hour: '2-digit', minute: '2-digit', hour12: false });
+      return dt.toLocaleDateString(loc, { day: '2-digit', month: 'short' });
     };
     _trendChart = new Chart(ctx, {
       type: 'bar',

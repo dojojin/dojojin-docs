@@ -1,5 +1,5 @@
 -- ============================================================
--- DojoJin Tech Dashboard — Migration 017: Auditor role
+-- Vigil Platform — Migration 017: Auditor role
 -- ------------------------------------------------------------
 -- Adds a 3rd user role 'auditor' (ผู้ตรวจสอบระบบ): can VIEW every
 -- page incl. Settings, but cannot write anything (enforced server-
