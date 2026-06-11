@@ -1,4 +1,4 @@
-# 🖥️ DojoJin Tech Dashboard — Hardware Sizing Guide
+# 🖥️ Vigil Platform — Hardware Sizing Guide
 
 คู่มือการเลือก Hardware สำหรับ DojoJin Tech CCTV Dashboard — multi-vendor (Bosch / Hikvision / Dahua / ONVIF)
 รองรับกล้องตั้งแต่ **100 ถึง 3,000 ตัว**
@@ -30,7 +30,7 @@ When assumptions change, update this guide first. Use the spreadsheet only as th
 | ตัวแปร | ค่า | ที่มา |
 |--------|----:|-------|
 | **B_event** = bytes per event ใน Postgres | **~850 B** | วัดจริง: `pg_total_relation_size('events') / row_count` (table 620 B + indexes 207 B + 5% bloat) |
-| **B_snap** = ขนาด snapshot เฉลี่ย | **~160 KB** | วัดจริง: 410 MB ÷ 2,665 ไฟล์ (Bosch ONVIF JPEG 1080p) |
+| **B_snap** = ขนาด snapshot เฉลี่ย | **~640 KB** | recalibrated 2026-05-21 (GOTCHAS #40): JpegSize param ถูก remove → native capture ใหญ่ขึ้น 4-6× (ข้อมูลเดิม ~160 KB จาก 410 MB ÷ 2,665 ไฟล์ก่อน patch) |
 | **R_snap** = % event ที่มี snapshot | **~80%** | events ที่ผ่าน filter (MotionAlarm/JobState/Aggregation โดน drop ก่อน insert/capture) |
 | **P_factor** = peak / average ratio | **5×** | business-hour burst (8:00-18:00) |
 | **Net_event** = MQTT payload เฉลี่ย | **~3 KB** | event JSON (post-stripLargeStrings) |
@@ -61,7 +61,7 @@ EventsPerSec_avg = EventsPerDay / 86400
 EventsPerSec_pk  = EventsPerSec_avg × 5
 
 DBSize_year     = EventsPerDay × 365 × 850 B
-SnapshotSize_30 = EventsPerDay × 0.8 × 30 × 160 KB
+SnapshotSize_30 = EventsPerDay × 0.8 × 30 × 640 KB
 MqttNetworkPeak = EventsPerSec_pk × 3 KB × 8 bits = bps  (event metadata only)
 
 # 🆕 Phase 6.1 — Pre-alarm video clip
@@ -237,7 +237,7 @@ Standard 200 events/cam/day × 30-day retention:
 │  1× Server (Bare Metal / VM / NUC)    │
 │  ├─ EMQX 5.8 broker (Docker)          │
 │  ├─ PostgreSQL 16 (Docker)            │
-│  ├─ Node.js: subscriber + api         │
+│  ├─ Node.js: 7 workers (PM2)          │
 │  ├─ Node.js: media-recorder 🆕        │
 │  ├─ ffmpeg × ~30 (clip-enabled cams)  │
 │  ├─ Cloudflared tunnel                │
@@ -254,7 +254,7 @@ Standard 200 events/cam/day × 30-day retention:
 | **RAM** | **24 GB** DDR4/DDR5 (เดิม 16 GB) | +5 GB สำหรับ 30 ffmpeg subprocesses + Node.js + DB |
 | **Boot/OS** | 256 GB NVMe | ไม่ต้อง RAID |
 | **DB Volume** | 500 GB NVMe (Samsung 980 Pro หรือ Crucial P3 Plus) | DB+WAL+indexes |
-| **Snapshot Volume** | 1 TB SATA SSD | 30d retention = ~80 GB |
+| **Snapshot Volume** | 2 TB SATA SSD | 30d retention = ~307 GB (100×200×0.8×30×640 KB) |
 | **🆕 Clip Volume** | **2 TB SATA SSD หรือ HDD** | 30d × 30% cams × 200 ev × 3.5 MB ≈ ~500 GB |
 | **🆕 Buffer Volume** | (อยู่บน Boot/OS NVMe) | Rolling buffer transient ~225 MB total |
 | **Network** | **1 Gbps Ethernet** (full-duplex) | RTSP pull 30 cams × 2 Mbps = ~60 Mbps in (เดิม 0.5 Mbps trivial) |
@@ -265,8 +265,8 @@ Standard 200 events/cam/day × 30-day retention:
 ```ini
 # EMQX 5.8 — emqx.conf (HOCON) หรือ env vars ใน docker-compose
 listeners.tcp.default.max_connections = 5000
-# anonymous mode (match prior Mosquitto allow_anonymous):
-#   EMQX_LISTENERS__TCP__DEFAULT__ENABLE_AUTHN=false
+# NOTE: ENABLE_AUTHN=false คือ historical config (pre-SEC-001 Phase 2)
+# Production ใช้ AUTHN=true — credentials required สำหรับทุก client (ดู docker-compose.yml)
 # EMQX persist sessions/retained-messages ให้เองโดย default
 
 # postgresql.conf
@@ -907,7 +907,7 @@ MA (ต่อปี) = rate × (HW + SW + Implementation)
 
 ### EMQX (broker)
 - เปลี่ยนจาก Mosquitto 2.0 → **EMQX 5.8** (2026-05-19, decision #112) — Mosquitto 2.x strict validator reject MQTT 3.1 packets ของ Bosch firmware เก่า (8000i IVA Basic ไป 0 → 4 events/2min หลัง swap)
-- EMQX ports: MQTT `:1883`, WS `:8083`, dashboard `:18083` (default `admin/public` — เปลี่ยนใน production)
+- EMQX ports: MQTT `:1883` (all-interfaces, AUTHN enforced), dashboard `:18083` (localhost-only); WS `:8083` ถูก disable (SEC-001 Phase 2)
 - per-session queue ปรับที่ `mqtt.max_mqueue_len` (default พอสำหรับ G1-G2; เพิ่มเป็น 10000 ที่ G3+)
 - EMQX clustering เป็น native — G4/G5 ใช้ 3-node cluster แทน broker เดี่ยว
 - EMQX default file-ACL deny `subscribe #` สำหรับ non-localhost — subscriber ใช้ pattern เฉพาะ (`+/onvif-ej/...`) จึงผ่าน
@@ -918,9 +918,9 @@ MA (ต่อปี) = rate × (HW + SW + Implementation)
 - รวมเดิน 8GB RAM ก็เหลือเฟือสำหรับ G1
 
 ### Snapshot disk growth
-- Bosch FLEXIDOME 8100i → ~155 KB/JPEG (1080p, IR mode lower)
+- Bosch FLEXIDOME 8100i → ~640 KB/JPEG หลัง 2026-05-21 (GOTCHAS #40: JpegSize param removed → native capture 4-6× ใหญ่ขึ้น; ค่าเดิม ~155 KB ใช้ไม่ได้แล้ว)
 - 80% ของ events ใน `events` table มี snapshot file (MotionAlarm/JobState filtered ก่อน)
-- Default retention 30 days = ~80 GB/100 cams ที่ standard rate
+- Default retention 30 days = ~320 GB/100 cams ที่ standard rate (100×200×0.8×30×640 KB)
 
 ---
 
@@ -940,7 +940,7 @@ MA (ต่อปี) = rate × (HW + SW + Implementation)
 - Events/day: 250 × 200 = 50,000 events/day
 - Peak EPS: 50,000 / 86400 × 5 = **~3 EPS** (เบามาก)
 - DB/year: 50,000 × 365 × 850 B ≈ **15 GB/year**
-- Snapshot: 50,000 × 0.8 × 30 × 160 KB ≈ **190 GB**
+- Snapshot: 50,000 × 0.8 × 30 × 640 KB ≈ **768 GB**
 
 *🆕 Phase 6.1 — Clip + RTSP overhead:*
 - Clip-enabled cams: **35**
@@ -951,12 +951,12 @@ MA (ต่อปี) = rate × (HW + SW + Implementation)
 - ffmpeg CPU: 35 × 4% = **~1.4 cores**
 
 **Total storage requirement:**
-- Snapshot 30d: 190 GB
+- Snapshot 30d: 768 GB
 - Clip 30d: 515 GB
 - DB 1yr: 15 GB (หรือ ~45 GB ถ้าเก็บ 3 ปี)
-- **รวม ~720 GB → 2 TB SSD เผื่อ headroom**
+- **รวม ~1.3 TB → 4 TB SSD เผื่อ headroom**
 
-**แนะนำ:** Group 2 (1U server) — Xeon E-2486, **48 GB RAM**, 2× 1 TB NVMe (DB) + 2 TB SSD (Snapshot+Clip), 1 GbE → upfront ~210K, MA 42K/yr
+**แนะนำ:** Group 2 (1U server) — Xeon E-2486, **48 GB RAM**, 2× 1 TB NVMe (DB) + 4 TB SSD (Snapshot+Clip), 1 GbE → upfront ~210K, MA 42K/yr
 
 > ถ้าลูกค้าตัดสินใจเปิด clip ทั้ง 250 cams = ~3.7 TB clips + 500 Mbps RTSP → ต้อง upgrade ไป G3 (2-server) แทน
 
@@ -1033,5 +1033,5 @@ Hardware sizing ด้านบนตอบ "เครื่องพอไห�
 
 ---
 
-<sub>Document v3.2 (canonical hardware sizing + high-level TCO, 2026-05-26) · DojoJin Tech Dashboard v1.5
+<sub>Document v3.2 (canonical hardware sizing + high-level TCO, 2026-06-08) · Vigil Platform v1.5
 Owner: Prakasit Rochanavipart · prakasit@dojojin.tech</sub>

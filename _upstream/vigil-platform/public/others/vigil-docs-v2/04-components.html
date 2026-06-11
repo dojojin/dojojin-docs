@@ -15,11 +15,12 @@
 <button id="ham">☰</button>
 
 <div class="main">
-<!-- SOURCE: ARCHITECTURE.md · src/api-server.js (RBAC roles) · cameras-config.json | Update: new vendor, new service, RBAC role added -->
+<!-- SOURCE: ARCHITECTURE.md · src/api-server.js (RBAC roles) · cameras-config.json · ecosystem.config.js | Update: new vendor, new service, RBAC role added -->
 <h1 class="ph">04 องค์ประกอบระบบ</h1>
 
 <h2>ภาพรวมสถาปัตยกรรม (Architecture Overview)</h2>
-<p>Vigil Platform ประกอบด้วย 4 ชั้นหลัก: <strong>Ingestion</strong> (รับเหตุการณ์จากกล้อง), <strong>Backend API</strong> (ประมวลผล แจ้งเตือน สถิติ), <strong>Database</strong> (เก็บข้อมูล), และ <strong>Frontend</strong> (dashboard + mobile app)</p>
+<p>Vigil Platform ประกอบด้วย 4 ชั้นหลัก: <strong>Ingestion</strong> (รับเหตุการณ์จากกล้อง), <strong>Backend API</strong> (ประมวลผล สถิติ), <strong>Worker Processes</strong> (แจ้งเตือน + รายงาน), <strong>Database</strong> (เก็บข้อมูล), และ <strong>Frontend</strong> (dashboard + mobile app)</p>
+<p>ระบบทำงานเป็น <strong>7 PM2 processes</strong> แยกกัน — ถ้า Chrome/Puppeteer ของ report-worker crash หรือ LINE timeout ใน alert-worker จะไม่กระทบ api-server หรือ MQTT ingester</p>
 
 <div class="feat-grid">
   <div class="card">
@@ -52,12 +53,19 @@
     <p><strong>Express.js REST API</strong></p>
     <ul>
       <li>ค้นหาเหตุการณ์ เส้นเวลา สถิติ</li>
-      <li>เอนจิน Alert rule</li>
-      <li>ส่งการแจ้งเตือน LINE</li>
-      <li>สร้างรายงาน (PNG วิเคราะห์)</li>
       <li>ยืนยันตัวตนผู้ใช้ (JWT + session)</li>
       <li>RBAC (admin viewer auditor)</li>
-      <li>Health check endpoint</li>
+      <li>Health check + Service Management UI</li>
+      <li>Proxy สำหรับ on-demand report run</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>Worker Processes (PM2)</h3>
+    <p><strong>Isolated background workers</strong></p>
+    <ul>
+      <li><strong>alert-worker</strong> — รับ <code>pg_notify alert_event</code> → ประมวล rule → ส่ง LINE + push แยกจาก MQTT ingester</li>
+      <li><strong>report-worker</strong> — scheduler รายงาน (60s tick) + on-demand HTTP <code>127.0.0.1:3001</code> — crash isolation ถ้า Puppeteer/Chrome พัง</li>
     </ul>
   </div>
 
@@ -92,10 +100,10 @@
     <ul>
       <li><strong>EMQX</strong> (สำหรับ Bosch MQTT)</li>
       <li><strong>Redis</strong> (session cache real-time pub/sub)</li>
-      <li><strong>PM2</strong> (จัดการ process รีสตาร์ทอัตโนมัติ)</li>
+      <li><strong>PM2</strong> (7 workers: api-server, mqtt-subscriber, hikvision-isapi, dahua-cgi, media-recorder, report-worker, alert-worker)</li>
       <li><strong>Cloudflare Tunnel</strong> (reverse proxy)</li>
       <li><strong>LINE API</strong> (bot webhook)</li>
-      <li><strong>Puppeteer</strong> (health report PDF/PNG)</li>
+      <li><strong>Puppeteer</strong> (health report PDF/PNG — ใน report-worker)</li>
     </ul>
   </div>
 </div>
@@ -106,9 +114,9 @@
 <pre>กล้อง → [Bosch MQTT | Hik ISAPI | Dahua HTTP] → Ingester Node.js
         → ตรวจสอบ + ดาวน์โหลด snapshot/บทตัดใบหน้า
         → INSERT INTO ตารางเหตุการณ์
-        → เผยแพร่ไปยังช่อง Redis (real-time)
-        → ทำให้กฎ alert ทำงาน (ถ้าตรงกัน)
-        → ส่งการแจ้งเตือน LINE (ถ้าเปิดใช้)
+        → เผยแพร่ไปยังช่อง Redis (real-time → dashboard WS)
+        → pg_notify alert_event → alert-worker (process แยก)
+             → ตรวจ alert rules → ส่ง LINE + Push (ถ้าตรงกัน)
         → Return 200 OK</pre>
 
 <h3>Frontend Real-time (WebSocket)</h3>
@@ -120,11 +128,16 @@
 
 <h3>สร้างรายงาน</h3>
 <pre>ผู้ใช้คลิก "สร้างรายงานสุขภาพ"
-         → Backend สร้าง SVG template (_svgSafeText ลบ emoji)
+         → api-server สร้าง SVG template (_svgSafeText ลบ emoji)
          → Sharp (librsvg) render SVG → PNG (ไม่มี emoji = ไม่ abort)
          → ส่งลิงก์ดาวน์โหลด
          → PNG หมดอายุหลังจาก 24 ชั่วโมง (cleanup job)
-หมายเหตุ: รายงาน PDF วิเคราะห์ใช้ Puppeteer — path แยกต่างหาก</pre>
+
+ผู้ใช้คลิก "Run Now" / Scheduled Report
+         → api-server proxy → report-worker (HTTP 127.0.0.1:3001)
+         → report-worker ใช้ Puppeteer render HTML → PDF/PNG
+         → ถ้า Chrome crash → PM2 restart เฉพาะ report-worker
+            api-server ยังออนไลน์ปกติ</pre>
 
 <h2>เทคโนโลยีสแต็ก</h2>
 

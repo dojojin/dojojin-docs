@@ -1,5 +1,5 @@
 // ============================================================
-// DojoJin Tech Dashboard — Authentication Module
+// Vigil Platform — Authentication Module
 // ============================================================
 // @author    Prakasit Rochanavipart (Dojo-mAn)
 // @contact   prakasit@dojojin.tech | https://dojojin.tech/

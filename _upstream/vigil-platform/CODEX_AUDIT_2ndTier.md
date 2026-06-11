@@ -5,6 +5,12 @@
 > Repository: `vigil-platform`
 > Scope: static source review, selected local runtime probes, documentation
 > consistency review, security-first risk assessment. No secrets were printed.
+>
+> Recheck date: 2026-06-07
+> Recheck result: most second-tier findings are now closed or intentionally
+> accepted/deferred. The main remaining work is residual browser third-party
+> script exposure, full API error-response cleanup, and continued incremental
+> `api-server.js` route extraction.
 
 ---
 
@@ -30,6 +36,41 @@ upload magic-byte validation are present.
 **Opinion:** Treat the `/others` same-origin issue as the highest-priority fix
 before wider exposure. It is not just "public marketing pages"; it shares the
 same origin and browser storage namespace as the CCTV dashboard.
+
+---
+
+## Recheck Update — 2026-06-07
+
+**Fact:** `/others/*` is no longer public in the current runtime behavior. Local
+unauthenticated probes to `/others/vendor-comparison.html` and
+`/others/vigil-docs-v2/index.html` returned `302` to `/disclaimer.html`, not
+`200 OK`. `PUBLIC_PREFIXES` no longer includes `/others/`; `/others` access
+falls through the static auth middleware unless explicitly allowlisted.
+
+**Fact:** The high-value public-page CDN path from the original finding is
+closed: the EmailJS, Materialize, and Cytoscape `/others` HTML files called out
+in this audit are gone. Remaining `/others` pages use local scripts/assets and
+are auth-gated by default.
+
+**Fact:** CSP is now enforced via `Content-Security-Policy`, and the dashboard
+scan found no inline event handlers or inline `<script>` blocks. The policy
+still allows `style-src 'unsafe-inline'` and allows `cdn.jsdelivr.net` for
+dashboard/report libraries.
+
+**Fact:** `src/package-lock.json` is tracked, `.DS_Store` files are gone, static
+mounts use `dotfiles: 'deny'`, PM2 docs were updated, and
+`GET /api/line-config` is now `admin`/`auditor` only.
+
+**Fact:** `src/helpers/routeError.js` exists and is widely wired; no raw
+`res.status(500).json({ error: err.message })` / `e.message` pattern remains in
+the searched route files. Some `400` validation responses still return
+`e.message` and should be reviewed route-by-route.
+
+**Opinion:** The original P0/P1 `/others` issue can be treated as closed for
+the public unauthenticated path. The remaining browser risk should be tracked as
+a separate hardening item: self-host or pin third-party dashboard libraries
+currently loaded from `cdn.jsdelivr.net` while the dashboard still uses browser
+storage bearer tokens.
 
 ---
 
@@ -100,29 +141,45 @@ Not performed:
 
 | ID | Severity | Area | Status | Finding |
 |---|---:|---|---|---|
-| SEC-2T-001 | High | Browser/session | Open | Public same-origin `/others` pages load third-party scripts while dashboard bearer token is in browser storage. |
-| SEC-2T-002 | Medium | Browser hardening | Open | CSP is Report-Only and still allows inline scripts. |
-| SEC-2T-003 | Medium | Supply chain | Open | `package-lock.json` exists locally but is ignored/untracked; installs are not reproducible from Git. |
-| SEC-2T-004 | Medium | API error handling | Open | Many routes return raw `err.message` / `e.message` to authenticated clients. |
-| SEC-2T-005 | Low-Medium | Access control / privacy | Review | `GET /api/line-config` exposes masked LINE config plus recipient roster to any authenticated role. |
-| SEC-2T-006 | Low | Credential hardening | Accepted risk / improve | Camera credential encryption tolerates plaintext fallback if `CAMERA_SECRET_KEY` is missing. |
-| SEC-2T-007 | Low | Public static hygiene | Open | `.DS_Store` files exist under public trees; local probe did not serve `/others/.DS_Store`, but cleanup/deploy hygiene should remove them. |
-| SEC-2T-008 | Low | Public surface | Review | `/tiles/` is public; acceptable if map cache is non-sensitive, risky if tile coverage reveals site location. |
-| OPS-2T-001 | Medium | Operations docs | Open | `README.md` and `service_start.md` still tell operators to use `npm run start:all`, which now only prints a PM2 warning. |
-| DB-2T-001 | Medium | Migration safety | Guard | Future large-table indexes must keep using the documented concurrent/manual path to avoid production locks. |
-| MAINT-2T-001 | Medium | Maintainability | Accepted debt | `src/api-server.js` remains monolithic, increasing regression risk for security changes. |
+| SEC-2T-001 | High | Browser/session | Closed primary / residual hardening | `/others/*` is auth-gated and called-out CDN files were removed. Remaining work: self-host/pin dashboard CDN libraries because bearer tokens remain in browser storage. |
+| SEC-2T-002 | Medium | Browser hardening | Closed baseline / residual hardening | CSP is enforced and inline dashboard scripts/handlers are removed. Remaining work: reduce `style-src 'unsafe-inline'` and third-party dashboard library allowlists. |
+| SEC-2T-003 | Medium | Supply chain | Closed for runtime | `src/package-lock.json` is tracked. Root lockfile remains ignored because root package has no runtime dependencies. |
+| SEC-2T-004 | Medium | API error handling | Partial | 500-path raw error leaks are fixed through `routeError()`. Remaining work: review user-facing `400` validation messages route-by-route. |
+| SEC-2T-005 | Low-Medium | Access control / privacy | Closed | `GET /api/line-config` now requires `admin` or `auditor`. |
+| SEC-2T-006 | Low | Credential hardening | Partial / accepted risk | Health warning for plaintext camera credentials exists. Strict write-blocking when `CAMERA_SECRET_KEY` is missing is deferred. |
+| SEC-2T-007 | Low | Public static hygiene | Closed | `.DS_Store` files were removed, `.gitignore` covers them, and static mounts deny dotfiles. |
+| SEC-2T-008 | Low | Public surface | Deferred / accepted by design | `/tiles/` remains public by decision; map overlays and camera data remain API-gated. |
+| OPS-2T-001 | Medium | Operations docs | Closed | `README.md` and `service_start.md` now point operators to PM2 / `scripts/services.sh`; `start:all` only emits a warning. |
+| DB-2T-001 | Medium | Migration safety | Guard / deferred to future schema work | Documented as a migration review guard; apply on future large-table index migrations. |
+| MAINT-2T-001 | Medium | Maintainability | Accepted debt / in progress | Large `api-server.js` remains, but `routeError()` exists and route extraction has started with `src/routes/categories.js`. |
 
 ---
 
 ## Detailed Findings
 
+Note: the `Original evidence` blocks below preserve the 2026-06-03 audit trail.
+The `Recheck 2026-06-07` blocks and the Findings Summary table are the current
+status.
+
 ### SEC-2T-001 — Public same-origin `/others` pages can become token-exfiltration surface
 
 Severity: **High**
 
-Status: **Open**
+Status: **Closed primary / residual hardening**
 
-Evidence:
+Recheck 2026-06-07:
+
+- Current unauthenticated runtime probes to `/others/vendor-comparison.html` and
+  `/others/vigil-docs-v2/index.html` returned `302` to `/disclaimer.html`.
+- `PUBLIC_PREFIXES` no longer includes `/others/`; `/others` is default-deny
+  unless an explicit allowlist is added.
+- The previously cited public CDN pages (`index.html`, `vss_v1.html`,
+  `boxbox-th.html`, `boxbox-en.html`) are no longer present.
+- Residual hardening remains because the authenticated dashboard still loads
+  libraries from `cdn.jsdelivr.net` while bearer tokens remain in browser
+  storage.
+
+Original evidence (2026-06-03):
 
 - `src/api-server.js` public allowlist includes exact `/others` and strict
   `/others/` public prefix.
@@ -169,17 +226,26 @@ Recommendation:
    do not break the current Safari ITP auth decision casually. Any auth redesign
    must respect the existing multi-layer auth constraints.
 
-Suggested priority: **P0/P1 before external exposure**.
+Suggested priority: **Closed for `/others`; P2 residual dashboard CDN hardening**.
 
 ---
 
-### SEC-2T-002 — CSP is Report-Only and allows inline scripts
+### SEC-2T-002 — CSP enforcement and residual browser hardening
 
 Severity: **Medium**
 
-Status: **Open**
+Status: **Closed baseline / residual hardening**
 
-Evidence:
+Recheck 2026-06-07:
+
+- `src/api-server.js` now sends enforced `Content-Security-Policy`, not
+  `Content-Security-Policy-Report-Only`.
+- Search found no inline `onclick=`/`onload=`/`onerror=`/inline `<script>` in
+  `dashboard/index.html`, `dashboard/login.html`, or `public/others`.
+- Residual policy debt: `style-src 'unsafe-inline'` remains and dashboard/report
+  scripts still allow `cdn.jsdelivr.net`.
+
+Original evidence (2026-06-03):
 
 - `src/api-server.js` sets `Content-Security-Policy-Report-Only`, not enforced
   `Content-Security-Policy`.
@@ -204,7 +270,7 @@ Recommendation:
 3. Remove third-party scripts from same-origin public pages or self-host them.
 4. Switch from Report-Only to enforced CSP after staged testing.
 
-Suggested priority: **P1 after `/others` origin decision**.
+Suggested priority: **P2 residual CSP tightening after library self-hosting**.
 
 ---
 
@@ -212,9 +278,16 @@ Suggested priority: **P1 after `/others` origin decision**.
 
 Severity: **Medium**
 
-Status: **Open**
+Status: **Closed for runtime dependencies**
 
-Evidence:
+Recheck 2026-06-07:
+
+- `git ls-files` lists `src/package-lock.json`.
+- `.gitignore` explicitly unignores `!src/package-lock.json`.
+- Root `package-lock.json` remains ignored; root `package.json` currently has no
+  runtime dependencies.
+
+Original evidence (2026-06-03):
 
 - `package-lock.json` and `src/package-lock.json` exist in the working tree.
 - `git status --short --ignored package-lock.json src/package-lock.json` shows
@@ -242,7 +315,7 @@ Recommendation:
 4. Add a lightweight dependency audit step to the release checklist. Network
    scans should be explicit because this repo is production/security sensitive.
 
-Suggested priority: **P1/P2**.
+Suggested priority: **Closed; keep using `npm ci` for runtime deploys**.
 
 ---
 
@@ -250,9 +323,19 @@ Suggested priority: **P1/P2**.
 
 Severity: **Medium**
 
-Status: **Open**
+Status: **Partial**
 
-Evidence:
+Recheck 2026-06-07:
+
+- `src/helpers/routeError.js` exists and returns a generic
+  `{ error: 'Internal server error', code: 'ERR_INTERNAL' }`.
+- No searched `500` route pattern still returns `err.message` / `e.message` to
+  clients.
+- Remaining review: several `400` validation responses still return
+  `e.message`; some are intentionally user-actionable, but sensitive routes
+  should be reviewed individually.
+
+Original evidence (2026-06-03):
 
 - `rg` found many `res.status(500).json({ error: err.message })` and
   `res.status(500).json({ error: e.message })` patterns in `src/api-server.js`.
@@ -278,7 +361,7 @@ Recommendation:
 3. Prioritize backup, settings, line-config, map, service, media, and report
    routes first.
 
-Suggested priority: **P2**.
+Suggested priority: **P2 cleanup for remaining validation messages**.
 
 ---
 
@@ -286,9 +369,15 @@ Suggested priority: **P2**.
 
 Severity: **Low-Medium**
 
-Status: **Review**
+Status: **Closed**
 
-Evidence:
+Recheck 2026-06-07:
+
+- `GET /api/line-config` now uses `auth.requireAdminOrAuditor`.
+- Non-admin viewer access to the full recipient roster is no longer allowed by
+  this route.
+
+Original evidence (2026-06-03):
 
 - Global `/api` middleware requires authentication for `/api/line-config`.
 - `requireAdminForWrites('/')` makes non-GET methods admin-only.
@@ -313,7 +402,7 @@ Recommendation:
 2. Consider a separate redacted `GET /api/line-recipients` endpoint for UI
    pickers with only fields required by the role.
 
-Suggested priority: **P3 unless customer privacy policy is strict**.
+Suggested priority: **Closed**.
 
 ---
 
@@ -321,9 +410,17 @@ Suggested priority: **P3 unless customer privacy policy is strict**.
 
 Severity: **Low**
 
-Status: **Accepted risk / improve**
+Status: **Partial / accepted risk**
 
-Evidence:
+Recheck 2026-06-07:
+
+- `/api/health/details` now reports `security.plaintext_creds` by reading the
+  raw camera config and warning when stored credentials are not `enc:v1:`.
+- Strictly blocking new plaintext writes when `CAMERA_SECRET_KEY` is missing is
+  still deferred; `encryptCred()` intentionally tolerates plaintext fallback for
+  migration/rollback compatibility.
+
+Original evidence (2026-06-03):
 
 - `src/crypto-creds.js` uses AES-256-GCM for `enc:v1:` credential values.
 - `decryptCred()` intentionally passes plaintext values through for incremental
@@ -346,7 +443,7 @@ Recommendation:
 3. Keep tolerant read path if required for rollback, but make new writes strict
    in production mode.
 
-Suggested priority: **P3**.
+Suggested priority: **P3 deferred strict-write mode**.
 
 ---
 
@@ -354,9 +451,16 @@ Suggested priority: **P3**.
 
 Severity: **Low**
 
-Status: **Open hygiene**
+Status: **Closed**
 
-Evidence:
+Recheck 2026-06-07:
+
+- `find . -name .DS_Store` returned no files.
+- `.gitignore` includes `.DS_Store` and `.DS_Store?`.
+- `express.static` mounts for branding, `/others`, and dashboard assets set
+  `dotfiles: 'deny'`.
+
+Original evidence (2026-06-03):
 
 - Local files found:
   - `./.DS_Store`
@@ -380,7 +484,7 @@ Recommendation:
 3. Consider explicitly setting `dotfiles: 'ignore'` or `dotfiles: 'deny'` on
    public `express.static` mounts for clarity.
 
-Suggested priority: **P3**.
+Suggested priority: **Closed**.
 
 ---
 
@@ -388,9 +492,15 @@ Suggested priority: **P3**.
 
 Severity: **Low**
 
-Status: **Review / accept or gate**
+Status: **Deferred / accepted by design**
 
-Evidence:
+Recheck 2026-06-07:
+
+- `/tiles/` remains in `PUBLIC_PREFIXES`.
+- ROADMAP marks this as accepted/public by design: cached tile PNGs are public,
+  while camera overlays and camera data remain behind authenticated APIs.
+
+Original evidence (2026-06-03):
 
 - `PUBLIC_PREFIXES` includes `/tiles/`.
 - Comments describe cached map tiles as non-sensitive.
@@ -409,7 +519,7 @@ Recommendation:
    route.
 3. If accepted, document `/tiles/` as intentionally public static cache.
 
-Suggested priority: **P3**.
+Suggested priority: **Deferred unless a customer classifies tile coverage as sensitive**.
 
 ---
 
@@ -417,9 +527,16 @@ Suggested priority: **P3**.
 
 Severity: **Medium**
 
-Status: **Open**
+Status: **Closed**
 
-Evidence:
+Recheck 2026-06-07:
+
+- `README.md` and `service_start.md` now document PM2 /
+  `./scripts/services.sh` as the normal service lifecycle path.
+- Remaining `src/package.json` `start:all` / `start:full` scripts only print a
+  PM2 warning and do not claim to start the stack.
+
+Original evidence (2026-06-03):
 
 - `src/package.json` now makes `start:all` and `start:full` print a PM2
   management warning instead of starting services.
@@ -444,7 +561,7 @@ Recommendation:
    all.
 3. Add a short "PM2 migration complete" note near old development commands.
 
-Suggested priority: **P2**.
+Suggested priority: **Closed**.
 
 ---
 
@@ -452,9 +569,16 @@ Suggested priority: **P2**.
 
 Severity: **Medium**
 
-Status: **Guard**
+Status: **Guard / deferred to future schema work**
 
-Evidence:
+Recheck 2026-06-07:
+
+- `GOTCHAS.md` documents the production-lock rule for large-table
+  `CREATE INDEX` operations.
+- This remains a review guard for future migrations, not a current open code
+  fix.
+
+Original evidence (2026-06-03):
 
 - `GOTCHAS.md` already documents production lock incidents and migration
   constraints.
@@ -472,7 +596,7 @@ Recommendation:
 2. Add migration review checklist item: "large table index? CONCURRENTLY path?"
 3. Prefer preflight row-count checks for high-volume tables.
 
-Suggested priority: **P2 for future schema work**.
+Suggested priority: **Apply during future schema/migration reviews**.
 
 ---
 
@@ -480,9 +604,16 @@ Suggested priority: **P2 for future schema work**.
 
 Severity: **Medium**
 
-Status: **Accepted debt**
+Status: **Accepted debt / in progress**
 
-Evidence:
+Recheck 2026-06-07:
+
+- `src/api-server.js` remains large and security-sensitive.
+- Mitigation has started: `src/helpers/routeError.js` exists, and
+  `src/routes/categories.js` is the first route module extraction.
+- Continue opportunistic route extraction only when touching each subsystem.
+
+Original evidence (2026-06-03):
 
 - `src/api-server.js` contains auth, static serving, camera config, map, LINE,
   reports, branding, backup, service management, health, media, and background
@@ -529,27 +660,29 @@ Suggested priority: **P3, incremental only**.
 
 ## Recommended Remediation Order
 
-1. **P0/P1 — Isolate `/others` from dashboard origin.** Move public pages to a
-   separate host/origin or auth-gate them. Remove third-party JS from same-origin
-   public pages if separation cannot be done immediately.
-2. **P1 — CSP hardening.** Split public/authenticated CSP policy, remove inline
-   scripts where feasible, then enforce CSP instead of Report-Only.
-3. **P1/P2 — Commit runtime lockfile.** Stop ignoring the runtime
-   `src/package-lock.json`; use `npm ci` for deploy/release.
-4. **P2 — Sanitize API error responses.** Introduce a small route error helper
-   and prioritize sensitive endpoints first.
-5. **P2 — Fix PM2 documentation drift.** Update `README.md` and
-   `service_start.md` so operators do not use disabled `npm run start:all`.
-6. **P3 — Public/static hygiene.** Remove `.DS_Store`, add ignore rule, and make
-   static dotfile handling explicit.
-7. **P3 — Least-privilege review.** Decide if non-admin users should see LINE
-   recipient roster and public `/tiles/` cache.
+Updated 2026-06-07:
+
+1. **P2 — Self-host or pin dashboard third-party libraries.** The original
+   public `/others` issue is closed, but authenticated dashboard pages still
+   load JavaScript from `cdn.jsdelivr.net` while bearer tokens remain in browser
+   storage.
+2. **P2 — Finish API error-response cleanup.** `routeError()` fixed the raw 500
+   path; review remaining `400` validation messages in sensitive routes.
+3. **P2/P3 — Tighten residual CSP.** After self-hosting libraries, remove
+   dashboard `cdn.jsdelivr.net` script/style allowances where possible and reduce
+   `style-src 'unsafe-inline'`.
+4. **P3 — Decide strict camera-credential write mode.** Health warnings exist;
+   strict `CAMERA_SECRET_KEY` write enforcement remains deferred.
+5. **P3 — Continue opportunistic route extraction.** Keep `api-server.js`
+   shrinking through route modules when touching subsystems.
+6. **Future schema work — keep DB index guard active.** Any large-table index
+   migration must explicitly consider the concurrent/manual path.
 
 ---
 
 ## Validation Notes
 
-Validated:
+Validated in original 2026-06-03 audit:
 
 - Previous audit findings were rechecked against current source.
 - Docker/EMQX current configuration was inspected.
@@ -560,6 +693,20 @@ Validated:
 - `package-lock.json` and `src/package-lock.json` are ignored/untracked.
 - PM2/startup documentation drift was confirmed by source search.
 - Upload magic-byte validation exists for branding logo upload.
+
+Revalidated on 2026-06-07:
+
+- Local unauthenticated `/others/vendor-comparison.html` returned `302` to
+  `/disclaimer.html`.
+- Local unauthenticated `/others/vigil-docs-v2/index.html` returned `302` to
+  `/disclaimer.html`.
+- Local unauthenticated `/api/auth/me` returned `401`.
+- `src/package-lock.json` is tracked.
+- No `.DS_Store` files were found by `find . -name .DS_Store`.
+- `node --check src/api-server.js`
+- `node --check src/helpers/routeError.js`
+- `node --check src/routes/categories.js`
+- `node --test test/*.test.js` passed 43/43 tests.
 
 Not validated:
 
@@ -573,9 +720,9 @@ Not validated:
 
 ## Final Opinion
 
-The system has moved from "basic security gaps" to "origin/session isolation and
-operational hardening" as the primary risk category. Backend access control is
-substantially better than the first audit, but same-origin public HTML plus
-browser-stored bearer token is a high-value attack path. Fixing that architecture
-boundary will reduce the largest current risk without requiring a broad backend
-rewrite.
+As of the 2026-06-07 recheck, the original public `/others` same-origin path is
+closed in practice: unauthenticated public pages no longer execute under the
+dashboard origin. The highest remaining browser risk is narrower: authenticated
+dashboard pages still depend on third-party CDN JavaScript while bearer tokens
+exist in browser storage. Backend hardening has improved materially, but API
+error cleanup and route extraction should continue incrementally.

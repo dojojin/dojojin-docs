@@ -1,10 +1,10 @@
-# GOTCHAS — DojoJin Tech Dashboard
+# GOTCHAS — Vigil Platform
 
 > Companion to [CLAUDE.md](CLAUDE.md). Known issues / quirks / footguns
 > to watch for. Each entry comes from a real incident — preserve the
 > wording, don't re-discover the same bug.
 > See also: [DECISIONS.md](DECISIONS.md) (why things are the way they are).
-> Last updated: 2026-05-29
+> Last updated: 2026-06-09
 
 ---
 
@@ -290,6 +290,12 @@
     → enter printed credentials in camera web UI (Broker `192.168.10.31`, Port `1883`).
     **Fresh-volume note:** `EMQX_DASHBOARD__DEFAULT_PASSWORD` only works on fresh volumes —
     rotate existing via API (`POST /api/v5/users/admin/change_pwd`).
+    **Phase 3** (2026-06-07, network resilience): dual-bind `192.168.10.31:1883` +
+    `127.0.0.1:1883` เปลี่ยนเป็น `"1883:1883"` (all-interfaces `0.0.0.0`) เพราะ IP hardcode
+    พังเมื่อ operator เปลี่ยน LAN, ใช้ VPN, หรือ interface เปลี่ยน. Security compensation:
+    `ENABLE_AUTHN=true` บังคับ credentials ทุก client — anonymous publish chain ปิดแล้ว.
+    Dashboard `:18083` ยังคง `127.0.0.1`-only เสมอ. Broker address สำหรับกล้อง = LAN IP ของ
+    server จริง (ดูจาก `ip a`/`ifconfig`) — ไม่ hardcode `192.168.10.31` ใน client config.
 
 51. **SEC-002: ทุก field จาก events/cameras/MQTT ต้องผ่าน escapeHtml ก่อน inject ใน innerHTML** — 2026-05-28:
     `renderEvents`, `renderSnapshots` (grid + list) ใช้ template literal โดยไม่ escape `rule_name`,
@@ -328,7 +334,8 @@
     **Rule:** login/logout ต้องใช้ helper function เดียวกัน build cookie flags — ห้าม inline string แยก.
 
 57. **ทุก internal Docker service ต้อง bind 127.0.0.1 ไม่ใช่ 0.0.0.0 (generalized จาก SEC-001 + SEC-011)** — 2026-05-28: EMQX (#50) และ Postgres ต่างก็ bind `0.0.0.0` ตาม Docker default → expose ออก LAN/WAN โดยไม่ตั้งใจ.
-    **Rule:** ทุก port ใน `docker-compose.yml` ที่ไม่ต้องรับจากเครือข่ายภายนอก → ใช้ `"127.0.0.1:PORT:PORT"` เสมอ (ไม่ใช่ `"PORT:PORT"`). ถ้าต้องรับจาก LAN ใช้ `"<LAN_IP>:PORT:PORT"` ไม่ใช่ wildcard.
+    **Rule:** ทุก port ใน `docker-compose.yml` ที่ไม่ต้องรับจากเครือข่ายภายนอก → ใช้ `"127.0.0.1:PORT:PORT"` เสมอ (ไม่ใช่ `"PORT:PORT"`). ถ้าต้องรับจาก LAN ใช้ LAN IP หรือ `0.0.0.0` **พร้อม AUTHN/credentials enforcement** — ห้ามใช้ wildcard กับ service ที่มี anonymous access.
+    **ยกเว้น: EMQX MQTT `:1883`** — ใช้ `"1883:1883"` (all-interfaces) ได้เมื่อ `ENABLE_AUTHN=true` บังคับ credentials ทุก client (ดู GOTCHAS #50 Phase 3, 2026-06-07).
     Secret ใน compose ใช้ `${VAR:?error msg}` เสมอ — ค่าจริงไปอยู่ใน `.env` (gitignored). ดู GOTCHAS #50 (EMQX) + decisions #157–#160.
 
 58. **Live Pulse WS event ถึง frontend ก่อน snapshot save — `snapshot_file` เป็น null เสมอ** — 2026-05-28:
@@ -594,4 +601,106 @@
 
 ---
 
-<sub>End of GOTCHAS.md · Companion to CLAUDE.md · Updated 2026-06-03</sub>
+79. **`img` error event ไม่ bubble — ต้องใช้ capture phase** — 2026-06-05:
+    `onerror=` attribute บน `<img>` โดน CSP `script-src-attr` block เมื่อ set via innerHTML
+    แก้ด้วย `window.addEventListener('error', handler, **true**)` (argument ที่ 3 = useCapture)
+    **เหตุผลที่ต้อง capture:** `error` event จาก `<img>` ไม่ bubble ขึ้น DOM tree — ถ้าใช้ bubbling
+    (`false`) event จะไม่มีวันถึง `window` เลย; capture phase ดัก event ขาลงได้ก่อน target
+    Pattern: เพิ่ม `data-err="vocab"` บน img element แทน inline handler; handler เดียวที่ root
+    ตรวจ `e.target.tagName === 'IMG' && e.target.dataset.err` แล้ว switch ตาม vocab
+    **Vocab ปัจจุบัน:** `hide` · `dim` · `cam-placeholder` · `cam-span` · `face-noimg` · `no-img`
+    ดู decision #205 · commit `93b1c22`
+
+---
+
+80. **CSP `img-src` wildcard ไม่ match bare hostname** — 2026-06-05:
+    `https://*.tile.openstreetmap.org` ใน CSP **ไม่ match** `https://tile.openstreetmap.org`
+    (bare host ไม่มี subdomain) — ต้องใส่ทั้งสองรูปแบบแยกกัน:
+    `img-src ... https://tile.openstreetmap.org https://*.tile.openstreetmap.org`
+    กฎเดียวกันใช้กับทุก domain ใน CSP: `*.example.com` = subdomain เท่านั้น ไม่รวม `example.com`
+    ตรวจสอบได้ใน `pm2 logs api-server | grep CSP-REPORT` — จะเห็น `img-src blocked=https://tile...`
+    ดู decision #207 (context: OSM tile) · commit `93b1c22`
+
+81. **EMQX docker-compose port-bind แก้แล้ว แต่ camera ยัง connect ไม่ได้ — ต้อง `--force-recreate`** — 2026-06-05:
+    `docker-compose.yml` ระบุ dual-bind `127.0.0.1:1883` + `192.168.10.31:1883` ถูกต้อง แต่ถ้า container
+    ถูก create ก่อนที่จะเพิ่ม binding นั้น — `docker compose up -d` จะ skip recreate (image unchanged,
+    config diff ไม่ trigger restart ในทุก version). ผล: EMQX bind แค่ `127.0.0.1:1883` → camera ใน LAN
+    publish ไม่ได้ → ไม่มี events. วิธีแก้: `docker compose up -d --force-recreate emqx`.
+    **ประเด็นที่ทำให้หาไม่เจอนาน:** dashboard แสดงกล้อง "Online" เพราะ `last_seen_at` อัปเดตจาก
+    ONVIF recording-status poll (HTTP SOAP) ซึ่งไปคนละ path กับ MQTT — poll สำเร็จ = Online, แต่
+    MQTT ล้มเหลวเงียบๆ อยู่ข้างหลัง. เพราะฉะนั้น "Online + ไม่มี events" = ตรวจ EMQX binding ก่อน.
+    ทดสอบ MQTT ได้ด้วย: `docker exec vigil-emqx emqx_ctl clients list | grep cam-bosch`
+    **หมายเหตุ 2026-06-07:** dual-bind `127.0.0.1:1883` + `192.168.10.31:1883` ถูกแก้เป็น
+    `"1883:1883"` (all-interfaces) แล้ว — GOTCHAS #50 Phase 3. `--force-recreate` ยังใช้ได้
+    แต่ตรวจ AUTHN credentials ด้วย (`emqx_ctl authn user_id cam-<id>`).
+
+84. **macOS Local Network Privacy (LNP) บล็อก third-party binary จาก camera subnet — root cause จริงของ #82/#83** — 2026-06-10:
+    macOS เก็บ Local Network permission เป็น per-binary / per-app record ใน
+    `/Library/Preferences/com.apple.networkextension.plist`. process ที่ binary ไม่มี record
+    **และ** responsible app (Terminal/iTerm/launchd/tmux ที่เป็นต้นทาง spawn) ไม่มี grant
+    → unicast ไป secondary-NIC subnet (en17) ถูกปัดเงียบเป็น `EHOSTUNREACH` / `No route to host`
+    โดย **ไม่มี prompt** (background context ไม่ trigger dialog).
+    **Evidence matrix (ทดสอบจริง จาก shell เดียวกัน):** curl/nc (Apple binary, exempt) ✅ ·
+    node@20 (มี binary record ใน plist) ✅ · node@22 + ffmpeg 8.1.1 (ไม่มี record) ❌ ·
+    ffmpeg → en0 subnet ✅ (default-route subnet ไม่โดน gate แบบเดียวกัน).
+    **แก้ความเข้าใจเดิม:** "node v20 vs v22" ใน #83 คือความต่างของ LNP record ไม่ใช่ libuv;
+    "TCC ruled out" ใน #82 สรุปผิดเพราะใช้ curl (exempt) เป็น control.
+    **Incident จริง:** media-recorder (ffmpeg) เข้า RTSP ไม่ได้ ~17 ชม. (9 มิ.ย. 09:00 → 10 มิ.ย. 03:00)
+    — media-buffer ว่าง = clip capture หายเงียบทั้งวัน, error log โต ~72k บรรทัด (44MB)
+    เพราะ restart loop คงที่ 5s ไม่มี backoff.
+    **Fix (primary, 2026-06-10):** restart PM2 ใต้ `scripts/VigilPM2.app` — app ถือ
+    Local Network grant ของตัวเอง (พิสูจน์เทียบ control ที่ยังโดน block + รอด
+    nehelper/mDNSResponder state reload) → ลูกทุกตัวสืบ grant ไม่ขึ้นกับ binary path:
+    ```
+    open scripts/VigilPM2.app          # manual restart (เงียบ ไม่มีหน้าต่าง, log ที่ /tmp/vigilpm2.log)
+    ```
+    `pm2.dojojin.plist` ชี้ app นี้แล้ว (boot path ทดสอบ end-to-end 2026-06-10).
+    **Fallback** ถ้า app เสีย grant (เช่นหลัง macOS update): `open -a Terminal
+    scripts/pm2-lan-safe-restart.command` (Terminal.app มี record ถาวรใน networkextension.plist).
+    **กับดักซ้ำ:** (1) restart PM2 จาก tmux / ssh / Claude shell ตรงๆ = เสีย grant เงียบๆ —
+    ใช้ app เสมอ (2) `brew upgrade ffmpeg|node` เปลี่ยน Cellar path → per-binary record หาย
+    (app wrapper ไม่กระทบ แต่ pin ไว้แล้วกันเหนียว) (3) หลัง reboot จริงครั้งแรก ให้ดู
+    `media_buffer` ใน health ยืนยันว่า grant ของ app คงอยู่ (LNP store ของ unsigned app
+    อ่านตรงไม่ได้ — ยืนยันได้จากพฤติกรรมเท่านั้น).
+    **Diagnostic:** `sudo defaults read /Library/Preferences/com.apple.networkextension.plist | grep -i <binary>`
+    **Detection:** `/api/health/details` → `media_buffer[].newest_segment_sec` (ค่าสูงผิดปกติ = recorder wedged)
+    **Production Linux:** ไม่มี LNP — ปัญหานี้เป็น macOS-only.
+
+83. **Node.js v22 (libuv 1.52) EHOSTUNREACH บน secondary-NIC route หลัง LAN re-plug บน macOS** — 2026-06-09:
+    ⚠️ **superseded by #84 (2026-06-10)** — root cause จริงคือ macOS LNP per-binary record ไม่ใช่ libuv;
+    interpreter pin node@20 ยังใช้ได้เพราะ node@20 **มี** LNP record อยู่แล้ว (ไม่ใช่เพราะ libuv version).
+    **Update 2026-06-10 (A1+A6):** ทั้ง 7 apps ย้ายเป็น node@24 LTS แล้ว — `interpreter` อยู่ใน `base`
+    ของ ecosystem.config.js; reachability มาจาก VigilPM2.app grant (#84) ไม่ใช่ตัว runtime.
+    กล้อง Hikvision/Dahua ต้องการ connect ผ่าน en17 (192.168.10.x) ซึ่งเป็น secondary interface — ไม่ใช่ default
+    route (en0). Node.js v22 ด้วย libuv 1.52 fail ด้วย `connect EHOSTUNREACH` ไปยังทุก host บน
+    en17 subnet หลังจาก interface ถูก unplug แล้วเสียบใหม่ ทั้งที่ `ping` / `nc` / `curl` / Node.js v20
+    เชื่อมได้ปกติ. root cause อยู่ใน libuv ระดับ OS-socket-layer บน macOS — ยังไม่ได้ filed เป็น upstream bug.
+    **Symptom:** `EHOSTUNREACH` ทุก 30s ใน hikvision/dahua error log แม้ network ดี; `pm2 restart` ไม่ช่วย;
+    fresh `node` (v20) จาก terminal เชื่อมได้.
+    **Fix (ecosystem.config.js):**
+    ```js
+    interpreter: '/opt/homebrew/opt/node@20/bin/node',  // api-server, hikvision, dahua entries
+    ```
+    แล้ว `pm2 delete <app> && pm2 start ecosystem.config.js --only <app> && pm2 save`
+    (ต้องใช้ delete+start ไม่ใช่ restart — restart ไม่ re-read interpreter จาก config).
+    **Scope:** hikvision/dahua (continuous polling) + api-server (snapshot-probe admin endpoint).
+    media-recorder, mqtt-subscriber, report-worker, alert-worker ไม่ทำ node-level TCP ไปยัง camera IP.
+    **Production Linux:** ปัญหานี้ไม่มี — Linux ไม่มี TCC และ libuv routing behavior ต่างกัน.
+
+82. **PM2 daemon เริ่มโดย launchd → child process ไม่มี macOS Local Network TCC permission** — 2026-06-05:
+    ⚠️ **ทฤษฎีนี้ถูกตั้งแต่แรก — ดู #84 (2026-06-10)** กลไกจริงคือ macOS Local Network Privacy.
+    หมายเหตุ forensic: บันทึก "RULED OUT" เมื่อ 2026-06-09 เป็นการสรุปผิด เพราะใช้ curl เป็น control
+    ซึ่งเป็น Apple platform binary ที่ exempt จาก LNP. `pm2 kill && resurrect` จาก Terminal ใช้ได้จริง
+    เพราะลูกสืบ grant ของ Terminal.app — ตรงตามทฤษฎีเดิมของ entry นี้.
+    --- บันทึกต้นฉบับ (historical) ---
+    เมื่อ PM2 daemon ถูกเริ่มโดย launchd (จาก `~/Library/LaunchAgents/pm2.dojojin.plist`) child processes
+    ทั้งหมดที่ PM2 spawn (api-server, mqtt-subscriber ฯลฯ) inherit TCC context ของ launchd ซึ่งไม่มี
+    Local Network permission. ผล: `EHOSTUNREACH` ทุก HTTP connection ไป camera IP แม้ terminal node/curl
+    ถึงได้ปกติ. `sd_status=unreachable` + `has_snapshot=false` บน detection events ทุกตัว.
+    ยืนยันด้วย: nohup node (Terminal-spawned) → REACH; pm2 start test.js → EHOSTUNREACH.
+    **Real fix:** ดู #83 — interpreter: node@20 ใน ecosystem.config.js
+    **Production Linux:** ปัญหานี้ไม่มี — Linux ไม่มี TCC system, launchd-parented process เข้าถึง LAN ได้ปกติ.
+
+---
+
+<sub>End of GOTCHAS.md · Companion to CLAUDE.md · Updated 2026-06-10</sub>

@@ -46,3 +46,31 @@ echo "[$(date '+%F %T')] ✓ Done. Size: ${SIZE}"
 # Retention prune
 PRUNED=$(find "${BACKUP_DIR}" -maxdepth 1 -name 'vigil_platform_*.dump' -mtime "+${RETAIN_DAYS}" -print -delete | wc -l | tr -d ' ')
 echo "[$(date '+%F %T')] ✓ Pruned ${PRUNED} dump(s) older than ${RETAIN_DAYS} day(s)"
+
+# ── Offsite: Google Drive ผ่าน rclone crypt (A4, 2026-06-10) ────────────
+# Tier 1 เท่านั้น: dump วันนี้ + config bundle (secrets/branding/licenses/plists).
+# เข้ารหัสฝั่ง client ด้วย rclone crypt remote "gdrive-crypt" → Drive เห็นแต่ ciphertext.
+# Restore เครื่องใหม่ต้องใช้ CRYPT_PASSWORD/CRYPT_SALT (เก็บใน password manager ของ owner).
+# rclone ล้มเหลว (offline ฯลฯ) = warn อย่างเดียว — local backup ต้องไม่พังตาม.
+RCLONE_REMOTE="${RCLONE_REMOTE:-gdrive-crypt}"
+OFFSITE_RETAIN_DAYS="${OFFSITE_RETAIN_DAYS:-30}"
+RCLONE_BIN="$(command -v rclone || echo /opt/homebrew/bin/rclone)"
+if [ -x "$RCLONE_BIN" ] && "$RCLONE_BIN" listremotes 2>/dev/null | grep -q "^${RCLONE_REMOTE}:"; then
+  BUNDLE="$BACKUP_DIR/config-snapshot_${TS}.tar.gz"
+  tar czf "$BUNDLE" -C "$REPO_ROOT" \
+    .env cameras-config.json camera-groups.json config branding licenses-issued \
+    -C "$HOME/Library/LaunchAgents" pm2.dojojin.plist com.dojojin.dashboard.backup.plist \
+    2>/dev/null || echo "[$(date '+%F %T')] ⚠ config bundle: some paths missing (continuing)"
+  if "$RCLONE_BIN" copy "$OUT" "${RCLONE_REMOTE}:dumps/" --drive-chunk-size 64M 2>/dev/null \
+     && "$RCLONE_BIN" copy "$BUNDLE" "${RCLONE_REMOTE}:config/" 2>/dev/null; then
+    echo "[$(date '+%F %T')] ✓ Offsite: uploaded dump + config bundle → ${RCLONE_REMOTE}"
+  else
+    echo "[$(date '+%F %T')] ⚠ Offsite upload FAILED — local backup still OK" >&2
+  fi
+  rm -f "$BUNDLE"
+  # Drive-side retention
+  "$RCLONE_BIN" delete "${RCLONE_REMOTE}:dumps/"  --min-age "${OFFSITE_RETAIN_DAYS}d" 2>/dev/null || true
+  "$RCLONE_BIN" delete "${RCLONE_REMOTE}:config/" --min-age "${OFFSITE_RETAIN_DAYS}d" 2>/dev/null || true
+else
+  echo "[$(date '+%F %T')] ⚠ rclone/remote '${RCLONE_REMOTE}' not available — skipped offsite" >&2
+fi

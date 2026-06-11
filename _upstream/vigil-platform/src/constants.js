@@ -1,5 +1,5 @@
 // ============================================================
-// DojoJin Tech Dashboard — Shared Constants
+// Vigil Platform — Shared Constants
 // @author    Prakasit Rochanavipart (Dojo-mAn)
 // @copyright (c) 2025-2026 Prakasit Rochanavipart. All Rights Reserved.
 // @license   Proprietary

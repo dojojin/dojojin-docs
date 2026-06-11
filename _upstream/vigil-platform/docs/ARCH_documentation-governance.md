@@ -1,11 +1,11 @@
-# ARCH_documentation-governance — DojoJin Tech Dashboard
+# ARCH_documentation-governance — Vigil Platform
 
 > **Doc Registry & Governance** — Single source of truth for documentation
 > management. Every file, what it owns, what it must NOT contain, and when
 > to load it.
 >
 > Living Docs system adapted from: https://github.com/Diew/living-docs
-> Last updated: 2026-05-27 · v1.7.0
+> Last updated: 2026-06-08 · v1.7.0
 
 ---
 
@@ -33,6 +33,7 @@ Every file that an agent should know about. If a file is NOT here, it does not e
 | `docs/REF_troubleshooting.md` | `REF_` | Troubleshooting §8.1–§8.22, camera lifecycle add/remove/replace | SQL snippets (→ REF_operator-sql.md), design rationale (→ LOGIC files) | Debugging, camera management ops |
 | `docs/REF_operator-sql.md` | `REF_` | Daily-ops SQL snippets, system settings reference, service control commands, npm scripts | Troubleshooting steps (→ REF_troubleshooting.md) | SQL queries, service start/stop, settings lookup |
 | `SKILL.md` | `REF_` — Core operator playbook | Mental model (§1), Bosch event shape (§2), mapping recipes (§3), branding (§5), health check (§6), reports overview (§7), i18n (§12), Ph.1–Ph.3 overviews (§13–§15), auditor role (§16), license notes (§17) | Detailed troubleshooting (→ REF_troubleshooting.md), SQL snippets (→ REF_operator-sql.md) | First-time operator orientation, mapping recipes, branding setup |
+| `SKILL-TH.md` | `REF_` — Operator playbook (Thai) | Same content as SKILL.md — Thai prose with English technical terms preserved + `>` remark explanations for each concept (PM2, MQTT, RTSP, JWT, Docker, etc.) | Any content not in SKILL.md — add to SKILL.md first, then mirror here | Thai-speaking operator orientation; Thai-language reference for all operator tasks |
 | `ROADMAP.md` | `REFACTOR_TODO` equivalent | Pending work, operational Ph.1–Ph.6, strategic direction, future versions | Completed work (→ CHANGELOG.md), design rationale (→ LOGIC files) | Planning sessions, next-task selection |
 | `CHANGELOG.md` | Completed work log | Shipped features by version, recent updates timeline | Pending work (→ ROADMAP.md), design rationale (→ LOGIC files) | Onboarding; "what shipped when" questions |
 | `HARDWARE_SIZING_GUIDE.md` | `REF_` — Infrastructure sizing | Hardware specs G1–G5, capacity calculations, clip sizing, deployment profiles (A/B/C), MA & SLA tier model, software scale-up plan, high-level TCO | Feature behavior, code patterns, operator SQL, detailed worksheet formulas | Pre-sales, architecture sizing, hardware decisions |
@@ -40,6 +41,7 @@ Every file that an agent should know about. If a file is NOT here, it does not e
 | `service_start.md` | `REF_` — Daily ops | Start/stop/restart commands, Docker health checks, backup/restore commands | Code architecture, design decisions | Daily service management, incident recovery |
 | `docs/REF_database-schema.md` | `REF_` — DB reference | Full schema (all tables/columns/indexes), PostgreSQL user & role overview, security/impact analysis, example queries | Migration rationale (→ LOGIC_infra-ops.md), operator SQL recipes (→ REF_operator-sql.md), 3rd-party setup steps (→ REF_third-party-integration.md) | DBA onboarding, schema lookup, security review of DB access |
 | `docs/REF_third-party-integration.md` | `REF_` — 3rd-party integration | View catalog (`v_*_public`), ops setup (CREATE USER + GRANT role + pg_hba + docker bind + SSL + audit), 3rd-party connection guide, query do/don't, PDPA & DPA, change policy, decommissioning | Full base-table column list (→ REF_database-schema.md) | Onboarding a new 3rd-party partner, migration 027 rollout, PDPA review of partner access, schema change comms |
+| `docs/REF_api-reference.md` | `REF_` — REST API reference | All REST API endpoints (126 routes across 22 groups) — auth levels, request params, response shapes, WebSocket protocol, service management rules | Feature behavior (→ LOGIC files), SQL snippets (→ REF_operator-sql.md), DB schema detail (→ REF_database-schema.md) | API endpoint work, mobile app development (vigil-mobile), third-party REST integration |
 | `docs/REF_face-recognition.md` | `REF_` — Face Recognition plan | Architecture options (A/B/C), recommended approach (InsightFace server-side), DB schema (`known_persons`, `face_recognition_results`, pgvector), Python service code, hardware sizing, Mac dev setup, CPU→GPU migration path, PDPA considerations, implementation phases FR.1–FR.4 | Camera ingester internals (→ LOGIC_camera-ingesters.md), Face Capture parsing (→ LOGIC_face-capture.md) | Planning / starting any Face Recognition work |
 | `docs/LOGIC_nlq-search.md` | `LOGIC_` — NLQ feature spec | Natural Language Query to structured JSON filter; Unified Forensic Search page concept; Phase 0–2 plan; Claude Haiku API adapter code; Ollama + Typhoon2 local adapter code; known gaps (multi-camera appearances, LPR endpoint missing); cost comparison | Camera ingester logic (→ LOGIC_camera-ingesters.md), DB schema (→ REF_database-schema.md) | Any work on NLQ / Forensic Search / AI query parsing |
 | `docs/REF_vms-playback.md` | `REF_` — VMS playback integration plan | On-demand RTSP proxy architecture; Qognify SGS REST API v7.2 adapter code; provider interface contract (vendor-neutral); camera mapping via cameras-config.json; JPEG frame fallback + HLS proxy paths; Phase 0–5 implementation plan; critical traps (XML body, auth encoding, RTSP TTL, self-signed certs) | Camera ingester logic (→ LOGIC_camera-ingesters.md), DB schema (→ REF_database-schema.md) | Any work on VMS playback / Qognify SGS / on-demand video retrieval |
@@ -77,9 +79,11 @@ Every file that an agent should know about. If a file is NOT here, it does not e
 | Service start/stop/recovery | + `service_start.md` |
 | Planning / next feature | + `ROADMAP.md` |
 | "What shipped when" | + `CHANGELOG.md` |
-| Mapping recipe / operator orientation | + `SKILL.md` |
+| Mapping recipe / operator orientation (English) | + `SKILL.md` |
+| Mapping recipe / operator orientation (Thai) | + `SKILL-TH.md` |
 | 3rd party partner onboarding / DB integration rollout | + `docs/REF_third-party-integration.md` (+ `docs/REF_database-schema.md` for column-level lookup) |
 | DBA onboarding / schema lookup / DB security review | + `docs/REF_database-schema.md` |
+| API endpoint work / mobile app (vigil-mobile) / REST integration | + `docs/REF_api-reference.md` |
 | Adding / moving docs | `docs/ARCH_documentation-governance.md` (this file) |
 | Scope unclear | `docs/ARCH_documentation-governance.md` first |
 | Updating customer-facing vigil-docs-v2 | `public/others/vigil-docs-v2/` — see "vigil-docs-v2 update trigger" in Maintenance Rules |
@@ -110,7 +114,9 @@ One file owns each rule. No rule should appear in full in more than one file. Li
 | Known failures, real incidents, footguns | `GOTCHAS.md` |
 | Troubleshooting steps, camera lifecycle ops | `docs/REF_troubleshooting.md` |
 | SQL snippets, service commands, settings reference | `docs/REF_operator-sql.md` |
-| Mapping recipes, operator orientation | `SKILL.md` |
+| REST API endpoint reference — all routes, auth levels, params, response shapes, WebSocket | `docs/REF_api-reference.md` |
+| Mapping recipes, operator orientation (English) | `SKILL.md` |
+| Mapping recipes, operator orientation (Thai) | `SKILL-TH.md` |
 | Pending work, strategic direction | `ROADMAP.md` |
 | Completed features timeline | `CHANGELOG.md` |
 | Hardware sizing constants and high-level TCO | `HARDWARE_SIZING_GUIDE.md` |
@@ -242,6 +248,7 @@ Critical decisions that must never be reversed without explicit owner approval.
 |---|---|---|---|
 | `DECISIONS.md` | ~150 (index only) | ✅ Healthy | Was 1,400 → split into LOGIC files |
 | `SKILL.md` | ~400 (core only) | ✅ Healthy | Troubleshooting + SQL extracted to REF files |
+| `SKILL-TH.md` | ~400 | ✅ Healthy | New 2026-06-07; Thai-language mirror of SKILL.md — update both whenever SKILL.md changes |
 | `ARCHITECTURE.md` | ~220 | ✅ Healthy | System map only; command/detail moved to LOGIC/REF docs |
 | `DESIGN.md` | ~240 | ✅ Healthy | New 2026-05-27; UI design system canonical (GUIDE_) |
 | `docs/LOGIC_line-notifications.md` | ~250 | ✅ Healthy | Canonical LINE subsystem doc |
@@ -256,6 +263,7 @@ Critical decisions that must never be reversed without explicit owner approval.
 | `docs/REF_operator-sql.md` | ~250 | ✅ Healthy | — |
 | `docs/REF_database-schema.md` | ~350 | ✅ Healthy | New 2026-05-27; full schema + impact analysis (3rd-party setup moved to REF_third-party-integration.md) |
 | `docs/REF_third-party-integration.md` | ~450 | ✅ Healthy | New 2026-05-27; companion to migration 027 |
+| `docs/REF_api-reference.md` | ~1510 | ✅ Healthy | New 2026-06-07; comprehensive 22-section REST API reference; intentionally structured — split only if a section becomes a standalone concern |
 | `GOTCHAS.md` | ~400 | ⚠️ Watch | Each entry self-contained — OK for now |
 | `CHANGELOG.md` | ~500 | ✅ Acceptable | Append-only log, not a rule source |
 | `HARDWARE_SIZING_GUIDE.md` | ~850 | ⚠️ Watch | Single canonical pre-sales doc; split only if one section becomes active implementation work |
@@ -336,4 +344,4 @@ Update docs **on explicit human request**, not automatically after every task:
 
 ---
 
-*v1.7.0 — 2026-05-27 · DojoJin Tech Dashboard · Living Docs adapted from github.com/Diew/living-docs*
+*v1.7.0 — 2026-06-08 · Vigil Platform · Living Docs adapted from github.com/Diew/living-docs*

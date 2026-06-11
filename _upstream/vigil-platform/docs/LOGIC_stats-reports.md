@@ -4,7 +4,7 @@
 > Puppeteer rendering, scheduled report configuration, and i18n decisions.
 > LINE delivery behavior lives in `docs/LOGIC_line-notifications.md`.
 > Parent index: DECISIONS.md
-> Last updated: 2026-05-27 · v1.5.0
+> Last updated: 2026-06-08 · v1.5.0
 
 ---
 

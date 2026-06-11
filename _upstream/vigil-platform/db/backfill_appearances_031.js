@@ -1,5 +1,5 @@
 // ============================================================
-// DojoJin Tech Dashboard — Backfill appearances (one-off, migration 031)
+// Vigil Platform — Backfill appearances (one-off, migration 031)
 // @author Prakasit Rochanavipart (Dojo-mAn)
 // @copyright (c) 2025-2026 DojoJin Tech. All Rights Reserved.
 // @license Proprietary

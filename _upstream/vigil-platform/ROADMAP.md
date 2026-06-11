@@ -1,9 +1,9 @@
-# ROADMAP — DojoJin Tech Dashboard
+# ROADMAP — Vigil Platform
 
 > Companion to [CLAUDE.md](CLAUDE.md). Pending work + strategic
 > directions. For shipped work see [CHANGELOG.md](CHANGELOG.md);
 > for design rationale see [DECISIONS.md](DECISIONS.md).
-> Last updated: 2026-06-03
+> Last updated: 2026-06-08
 
 ---
 
@@ -43,17 +43,18 @@ Canonical behavior and shipped implementation details live in [docs/LOGIC_line-n
 
 **Phase 1 — Origin Isolation** *(ก่อน refactor เสมอ)*
 - [x] ~~`SEC-2T-001` (partial)~~ — ลบ `index.html`, `partners.html`, `reference-projects.html`, `vss_v1.html` (2026-06-03); CDN risk ของ EmailJS + Materialize หายแล้ว
-- [ ] `SEC-2T-001` (remaining) — auth-gate `boxbox-th.html` + `boxbox-en.html` (Cytoscape CDN ยังอยู่)
-- [ ] `SEC-2T-002` — CSP enforce (หลัง Phase 1a เท่านั้น)
+- [x] ~~`SEC-2T-001` (remaining)~~ — `boxbox-th.html` + `boxbox-en.html` **ลบแล้ว** ✅ (2026-06-05); Cytoscape CDN risk หมดไปพร้อมกับไฟล์
+- [x] ~~`SEC-2T-002`~~ — **✅ DONE 2026-06-05** (commit `93b1c22` + Phase 5): `/others/*` CSP enforced — no `unsafe-inline` script-src; dashboard CSP enforced (`Content-Security-Policy`) — zero inline scripts/handlers
 
 **Phase 2 — Route Module Split** *(= Microservice Phase A, opportunistic)*
-- [ ] สร้าง `src/helpers/routeError.js` ก่อน (SEC-2T-004)
+- [x] ~~สร้าง `src/helpers/routeError.js` ก่อน (SEC-2T-004)~~ — ✅ DONE 2026-06-05; wired 5 routes (api/users, auth/sessions, eula/status, line-config, line-config/quota)
 - [ ] Extract route groups เมื่อแตะแต่ละ subsystem → `src/routes/*.routes.js`
-- [ ] Merge `SEC-2T-005` (line-config role) + `SEC-2T-008` (tiles) ระหว่างทาง
+- [x] ~~`SEC-2T-008` (tiles auth-gate)~~ — **✅ WON'T FIX / public by design** (2026-06-05): `/tiles/` ให้ผ่าน PUBLIC_PREFIXES; กระเบื้องเป็น PNG เฉย, overlay ของกล้องถูก gate ที่ `/api/cameras`; ค่าใช้จ่ายถ้า gate = getUserFromToken DB query × 100+ tiles/view; fingerprint risk (tile set เปิดเผยพื้นที่ monitor) — ยอมรับเพราะ weak recon; สอดคล้องกับ SEC-2T-001 (JS = gate, PNG = ไม่ gate)
+- [x] ~~Merge `SEC-2T-005` (line-config role) ระหว่างทาง~~ — ✅ DONE 2026-06-05 (commit `fdc50a4`)
 
 **Phase 3 — Extract Heavy Workers** *(= Microservice Phase B, หลัง Phase 2 stable)*
-- [ ] `alert-worker` (alert-engine + line-sender + push-sender) ผ่าน pg_notify
-- [ ] `report-worker` (report-renderer) ผ่าน job queue table
+- [x] ~~`alert-worker` (alert-engine + line-sender + push-sender) ผ่าน pg_notify~~ — ✅ DONE 2026-06-06 (commit `79abb51`): alert-engine ย้ายออกจาก mqtt-subscriber → standalone PM2 process; LISTEN `alert_event` + `alert_rules_changed`; E2E verified (real MQTT → pg_notify → alert_logs delta=1)
+- [x] ~~`report-worker` (report-renderer) ผ่าน job queue table~~ — ✅ DONE 2026-06-06 (commits `27b4a23` `85da151`): scheduler loop ย้ายออกจาก api-server → standalone PM2 process; HTTP endpoint `127.0.0.1:3001/run/:id` สำหรับ on-demand run; api-server proxy + 503 fallback; launchd autostart verified
 
 **Phase 4 — API Gateway** *(optional, เฉพาะถ้า multi-host จริง)*
 
@@ -127,10 +128,121 @@ endpoint เดิม. LLM ไม่แตะ SQL โดยตรง.
 ---
 
 ### High priority (next session candidates)
-- [x] ~~**PM2 production setup**~~ — done 2026-06-03 (DECISIONS #198 #199). concurrently replaced; 5 workers autostart; boot plist installed; Service Management UI shipped.
+- [x] ~~**PM2 production setup**~~ — done 2026-06-03 (DECISIONS #198 #199). concurrently replaced; 7 workers autostart (alert-worker + report-worker added 2026-06-06); boot plist installed; Service Management UI shipped.
 - [x] ~~**License key system**~~ — done Phase 8.0 + 8.1 (2026-05-19); see decisions #100–#108 and "Phase 8 — License MVP + EULA" Completed Features
 - [ ] **Source-code protection** (Phase A: obfuscation + Node SEA binary) — design captured in "🔐 Strategic direction" roadmap section below; deferred until after first 1–2 customer pilots
 - [x] ~~**Full platform rename**~~ `bosch-mqtt-dashboard/` → `vigil-platform/` — done 2026-05-29. Phase 1: file edits 26 files (commit `175cfab`); Phase 2A: DB+Docker migration — pg_dump → vigil-postgres fresh init → pg_restore (7 cameras / 51,322 events verified); Phase 2B: folder mv + GitHub rename + git remote + services start + launchd backup reloaded; Phase 3: grep clean (carve-outs intact), all services up. Rollback dump: `backups/pre-vigil-rename-20260529_124719.dump`.
+
+### System Audit 2026-06-10 — Action items + Incident record
+
+> Audit 2 รอบในวันเดียว: รอบแรก (A1-A7) หลังแก้ EHOSTUNREACH รอบสอง (Fable 5,
+> ลึกกว่า) **เจอ incident กำลัง active**: clip recording ล่มเงียบ ~17 ชม. →
+> นำไปสู่ root cause จริงของ #82/#83 ทั้งหมด = **macOS Local Network Privacy**
+> (**GOTCHAS #84** คือ entry หลัก). สุขภาพระบบส่วนอื่นดี: 7 workers stable,
+> DB 55MB/71k events healthy, npm audit 0 vuln, EMQX bcrypt auth,
+> retention ครบทุกชั้น, dead index = 0, backup dump รายวันทำงาน.
+
+**✅ เสร็จแล้ว (commits: `bbdd1b2`→`8d3c65a`, 2026-06-10):**
+- [x] **Incident clip-recording** — แก้ + verify (54 segments/นาที, error 0 บรรทัด);
+      root cause = LNP per-binary record; fix = PM2 ใต้ Terminal.app (GOTCHAS #84)
+- [x] **Preventive ชุดใหญ่** (commit `50c1710`): media-recorder กรอง `enabled=TRUE` /
+      ffmpeg backoff 5s→60s / `redactCreds()` กัน password รั่วลง log
+      (+ 2026-06-10: purge log เก่า rotated ที่มี RTSP password plaintext ค้าง —
+      ตรวจซ้ำทั้ง `~/.pm2/logs/` แล้วไม่เหลือไฟล์ที่มี creds) /
+      `media_buffer[].newest_segment_sec` ใน `/api/health/details` (detect wedge) /
+      `scripts/pm2-lan-safe-restart.command` / GOTCHAS #84 / service_start.md
+- [x] **1-A boot path** — `pm2.dojojin.plist` ใหม่ = `open -a Terminal <script>`
+      (ทดสอบ end-to-end: launchd → Terminal → resurrect → ffmpeg ได้ grant;
+      plist เดิม backup ที่ `/tmp/pm2.dojojin.plist.bak`; **โบนัส:** plist เดิมมี
+      PATH node@22 นำหน้า = ต้นตอ daemon resolve v22 — หายไปพร้อมกัน)
+- [x] **brew pin node@20 + ffmpeg** — กัน upgrade เปลี่ยน Cellar path → LNP record หาย
+- [x] **A2 pm2-logrotate** (10M / retain 14 / compress)
+- [x] **A5 error logging** — `alert-engine.js` + `mqtt-subscriber.js` ไม่ log บรรทัดว่างอีก
+      (commit `ec5cb9a`) + ลบ media-buffer dir เก่า 5 ตัว (รวม typo `ฺBOSCH_8000i_01`)
+- [x] **A7 verify health endpoint** — minted temp session: `cameras.list` 7 ตัว +
+      `media_buffer[]` ทำงานจริง (ลบ session ทิ้งแล้ว)
+- [x] **S-NEW1 bind 127.0.0.1** (commit `8d3c65a`) — ปิด LAN ยิง API ตรงข้าม
+      Cloudflare Access; `BIND_HOST` override ใน .env.example; verify: LAN refused,
+      tunnel ปกติ (Vigil Mobile ไม่ยิง LAN ตรง — ยืนยันแล้ว)
+
+**✅ A4 — Backup offsite (Tier 1) — done 2026-06-10:**
+- [x] rclone → Google Drive (`gdrive:` scope drive.file, บัญชี 5TB) + **crypt layer**
+      (`gdrive-crypt` — ชื่อไฟล์+เนื้อหาเข้ารหัสฝั่ง client, CRYPT_PASSWORD/SALT
+      อยู่กับ owner ใน password manager — ขาดรหัส = restore เครื่องใหม่ไม่ได้)
+      · `backup.sh` ต่อท้าย: upload dump วันนี้ + config bundle (.env, cameras-config,
+      camera-groups, config/, branding/, licenses-issued/, plists ×2) → `dumps/` + `config/`
+      retention ฝั่ง Drive 30 วัน · rclone fail = warn ไม่ล้ม local backup
+      · verified: upload จริง + raw Drive เป็น ciphertext + round-trip checksum ตรง 100%
+      · Tier 3 (snapshots/media ~320MB/วัน) ตัดสินใจไม่ขึ้น Drive — retention ในตัวพอ
+- [ ] (ค้างจาก A4 เดิม) **Time Machine destination พัง** (Code 17) — ฝั่งเจ้าของซ่อม/เปลี่ยน disk
+
+**🔜 ค้างอยู่:**
+- [x] ~~**A1 + A6 — runtime เดียว node@24 LTS ครบ 7 apps**~~ — done 2026-06-10
+      (ทำคู่กันหลัง 1-B เปิดทาง): `interpreter` ย้ายเข้า `base` ใน ecosystem.config.js =
+      `/opt/homebrew/opt/node@24/bin/node` (v24.16.0) ทุกตัว · repro 2 ชั้นก่อนอัป:
+      node@24 จาก tmux → EHOSTUNREACH (control), ใต้ PM2/app grant → HTTP 200 ·
+      verify หลังอัป: กล้องครบ, buffer 55 seg/นาที, api 401 ปกติ, dump.pm2 full path ·
+      `brew pin node@24` (unpin node@20 — เก็บไว้เป็น fallback ยังไม่ uninstall) ·
+      VigilPM2.app PATH → node@24 · **ปิดทั้ง EOL (A6) + mqtt-subscriber latent
+      Bosch HTTP (A1) + interpreter drift ในคราวเดียว**
+- [~] **A3 — Disk เต็ม** — ฝั่ง project ทำแล้ว 2026-06-10: purge ข้อมูล พ.ค. ทั้งหมด
+      ตามคำสั่งเจ้าของ (events 53,367 แถว + snapshots 8,911 ไฟล์/2.6GB + clips 4,181
+      ไฟล์/9.8GB + reports 32 ไฟล์ + thumbs) → คืน ~13GB, disk เหลือ 58GB (~87%);
+      DB rows กู้ได้จาก dump 2026-06-10 03:14, ไฟล์สื่อกู้ไม่ได้ —
+      ตัวกินหลักที่เหลือ: `~/Library` 209GB + `~/Parallels` 35GB (ฝั่งเจ้าของ)
+- [x] ~~**1-B — Wrapper app ถาวร**~~ — done 2026-06-10: `scripts/VigilPM2.app`
+      (LSUIElement, multicast+Bonjour trigger, log /tmp/vigilpm2.log) ถือ LN grant เอง —
+      พิสูจน์เทียบ control (tmux ยังโดน block) + รอด nehelper/mDNSResponder reload;
+      `pm2.dojojin.plist` ชี้ app แล้ว boot path ทดสอบ end-to-end.
+      **เหลือเช็คครั้งเดียว:** หลัง reboot จริงครั้งถัดไป ดู `media_buffer` ใน health
+      ว่า grant คงอยู่ (LNP store ของ unsigned app อ่านตรงไม่ได้)
+- [x] ~~**S-NEW2 — `chmod 600 .env`**~~ — done 2026-06-10 (`-rw-------`); ทุก service
+      รันเป็น user `dojojin` (เจ้าของไฟล์) จึงไม่กระทบการอ่านตอน boot
+- [x] ~~**LINE alert เมื่อ `media_buffer` stale > 5 นาที**~~ — done 2026-06-10:
+      `checkStaleRecorders()` ใน api-server (รอบ 60s) — mirror `recorderNeeded()`,
+      ข้ามกล้อง offline/paused (กัน LINE สองเด้ง), boot grace 3 นาที, alert ครั้งเดียว
+      ต่อ episode + recovery, เคารพ enabled/quiet hours ของ camera alert เดิม;
+      repro จริง: stop recorder → 🟠 ที่ 325s, start → 🟢 ใน 5s (duration ถูกต้อง)
+
+### Data Enrichment จากกล้องที่มีอยู่ (plan 2026-06-10)
+
+> ที่มา: investigation payload 3100i + เทียบเอกสาร Bosch "IVA Pro Integration Support"
+> (ยืนยัน: Direction/geometry ไม่มาทาง MQTT ของ Bosch โดย design; Duration ไม่มี field
+> — Loitering เป็น trigger; Dahua ส่ง Direction+BoundingBox มาแล้วแต่ยังไม่ใช้)
+
+- [ ] **Ph.0 — Config กล้อง (ฝั่งเจ้าของ, ศูนย์โค้ด):** rule แยกทิศบน 3100i (วิธีทางการ
+      ของ Bosch) · เสียบ BOSCH_8100i กลับ (Appearance เต็มชุดไหลทันที) · เปิด Appearance
+      ใน 8000i config · (เลือกได้) เพิ่ม task Crowd/Start-stop บน 3100i
+- [x] ~~**Ph.1 — Dwell time จากคู่ `IsInside` true→false**~~ — done 2026-06-10:
+      `GET /api/stats/dwell` (summary + episodes) — window-function pairing บน
+      `event_state`, ตัดคู่ห่าง >24 ชม.; verified ข้อมูลจริง: "คนเปิดตู้เย็น" 50 ครั้ง/3วัน
+      เฉลี่ย 2s สูงสุด 21s. **Follow-up:** Stats UI card ✅ done 2026-06-10
+      (card "เวลาอยู่ในโซน" หน้า Statistics — ตาราง per camera+rule, group filter
+      ฝั่ง client) · เหลือ alert "อยู่นานผิดปกติ" — gate: ต้อง repro long dwell
+      (>5 นาที) หน้ากล้องก่อน เพื่อพิสูจน์ pairing + เห็น distribution ตั้ง threshold
+      (หมายเหตุ: Dahua ยังไม่มีคู่ — ส่งแต่ enter, รอ Ph.2)
+- [x] ~~**Ph.2 — Dahua Direction + BoundingBox**~~ — done 2026-06-10:
+      พบ bug แฝง — dahua-cgi hardcode `event_state='true'` ทุก event ทั้งที่กล้องส่ง
+      Enter(541)/Leave(318) → map Enter→true, Leave→false (convention เดียวกับ Bosch;
+      Leave จะถูกซ่อนจาก Events list แบบเดียวกับ Bosch leave) · modal เพิ่ม field
+      "ทิศทาง" (เข้าโซน/ออกจากโซน, i18n ครบ) · BoundingBox อยู่ใน raw_json อยู่แล้ว
+      (overlay บน snapshot ✅ done 2026-06-10: `attachSnapOverlay()` วาด BBox +
+      DetectRegion polygon บน event modal + faceRect บน Face modal ของ Hikvision —
+      SVG normalized 0–1, contain-aware) · verified live: คนเดินผ่านจริง →
+      `/api/stats/dwell` ได้ Dahua pairs ทันที (Intrusion Detection 64s/69s สองกล้อง)
+      · **Hikvision Smart Events ✅ live 2026-06-11**: เปิด Intrusion+Line Crossing
+      บนกล้องจริง → `detectionRegions` เข้าครบ (points grid 0–1000 + targetRect 0–1
+      ของตัวคนที่ trigger) → overlay ต่อเข้า `attachSnapOverlay()` แล้ว (zone toggle
+      คุม polygon/เส้น, bbox toggle คุม targetRect) · gotcha ที่เจอ: UI กล้องต้อง
+      กด Save ใน Rule tab ให้ rule `enabled=true` จริง — เปิดสวิตช์ใหญ่อย่างเดียว
+      event ไม่ยิง (ตรวจผ่าน `/ISAPI/Smart/FieldDetection/1`)
+- [x] ~~**Ph.3 — ColorCluster ครบ 2-3 สี + weight**~~ — done 2026-06-10: migration 042
+      `color_clusters JSONB` [{xyz,name,weight}] เรียง weight (cap 4) · search สองสี
+      ผ่าน JSONB containment (`upper_color=Black&lower_color=White` = ทั้งคู่ต้องอยู่ใน
+      clusters; ไม่ cross upper/lower ของแถวกล้อง Pro) · chips โชว์ ≤3 สีพร้อมสี่เหลี่ยมสี ·
+      verified live: แถวจริง Black 43%/Brown 19%/White 11% — ค้นดำ+ขาวเจอ, ดำ+แดงว่าง
+- [ ] **Ph.4 — ONVIF RTSP metadata ingester (Bosch geometry)** — ⏸ defer รอ signal
+      ลูกค้า (ingester ใหม่ทั้งตัว; Ph.2 ให้ geometry จาก Dahua ฟรีก่อนแล้ว)
 
 ### Phase 7 follow-ups (audited 2026-05-15)
 - [x] ~~**Puppeteer browser pool**~~ — done 2026-05-15 (commit `36475d2`). Module-level `_getBrowser()` launches Chromium once, `_withPage()` opens a fresh page per render and closes it on exit. `disconnected` event triggers transparent relaunch on next call. `SIGINT`/`SIGTERM` close the pool cleanly. Verified: render 1=1419ms (cold), 2=159ms, 3=152ms — **~9× faster warm**. See decision #95.
@@ -244,9 +356,9 @@ endpoint เดิม. LLM ไม่แตะ SQL โดยตรง.
 
 ### Service Management UI (PM2-gated — Start/Stop/Restart per service)
 - [x] ~~**Phase 1: PM2 setup**~~ — done 2026-06-03 (DECISIONS #198)
-  - ✅ `ecosystem.config.js` สร้างแล้ว (root; 5 apps; cwd:src/; autorestart; min_uptime:10s)
+  - ✅ `ecosystem.config.js` สร้างแล้ว (root; 7 apps; cwd:src/; autorestart; min_uptime:10s)
   - ✅ `scripts/services.sh` ปรับเป็น PM2 thin-wrapper (start/stop/restart/status/logs)
-  - ✅ Live cutover เสร็จ: PM2 v7.0.1 installed; 5/5 online; `pm2 save` done; ↺=0 ทุกตัว
+  - ✅ Live cutover เสร็จ: PM2 v7.0.1 installed; 7/7 online (incl. alert-worker, report-worker 2026-06-06); `pm2 save` done; ↺=0 ทุกตัว
   - ✅ `pm2 startup` — `pm2.dojojin.plist` installed ใน `~/Library/LaunchAgents/`; autostart on boot
 
 - [x] ~~**Phase 2: Service Management UI**~~ — done 2026-06-03 (DECISIONS #199)
@@ -258,9 +370,110 @@ endpoint เดิม. LLM ไม่แตะ SQL โดยตรง.
   - ✅ PostgreSQL/EMQX/cloudflared: ออกนอก scope (self-heal via `restart:unless-stopped`; docker socket = root-eq)
   - ✅ Browser verify passed: Health card renders, Restart hikvision OK, audit_log row confirmed, responsive ≤768px OK
 
+### Performance & Sustainability Optimization (audit 2026-06-06)
+
+> ตรวจสอบจาก `pg_stat_user_tables`, pool config จริง, และ file analysis — ทุก item มี Fact รองรับ
+
+**Performance — ลำดับ impact สูง → ต่ำ**
+
+- [x] ~~**P1 — ตั้ง `max:` บน pg Pool ทุก worker**~~ — **DONE 2026-06-06** (commit `3be5bbb`)
+  - api-server: `max:15`; alert-worker: `max:3`; report-worker: `max:3`; media-recorder: `max:2`; mqtt-subscriber: `max:5`; hikvision-isapi: `max:3`; dahua-cgi: `max:3` → รวม **34 connections**
+  - `application_name` ครบทุก 7 worker — ระบุตัวเองใน `pg_stat_activity`
+  - `max_connections=100`; headroom **~63** connections (หลัง superuser reserve 3)
+
+- [ ] **P2 — Cache `system_settings` ใน api-server** *(effort ~1-2 ชั่วโมง, risk ต่ำ)*
+  - ปัจจุบัน: `pg_stat` นับ **27,240 seq_scans** บน system_settings (index = 0) — ทุก request ยิง `SELECT WHERE key=` ซ้ำ
+  - Keys ที่โดนซ้ำ: `display_timezone`, `analytics_event_display`, `brand_%`, `data_retention_days`, `snapshot_retention_days`, `clip_retention_days`, `mapbox_token`
+  - เสนอ: Map cache TTL 60s — `getSystemSetting(key)` helper แทน query ตรงๆ — ลด DB round-trip ได้ ~80%
+
+- [x] ~~**P3 — Drop `idx_events_raw_gin` (GIN, 0 scans)**~~ — **DONE 2026-06-06** (commit `9df3731`, migration 039)
+  - `idx_events_raw_gin` ลบแล้ว ✓; ไม่มี endpoint JSONB full-text search
+- [x] ~~**P3b — Drop `idx_events_type_trgm` (trigram, 1 scan)**~~ — **DONE 2026-06-06** (migration 040)
+  - idx_scan=1 ตลอดชีวิต; `LIKE '%Recognition%'` (LPR tab) คืน 0 rows — ไม่มี LPR events ใน dataset
+  - partition migration (`MANUAL_partition_events_option_a.sql`) recreates index บน `events_new` อัตโนมัติ
+
+- [x] ~~**P4 — Puppeteer render queue**~~ — **DONE 2026-06-06** (commit `71c9392`)
+  - `_renderTail` promise-chain mutex ใน `report-renderer.js:162` — serialize renders 1 at a time
+  - `_withPage()` await ticket ก่อนรัน, `release()` เมื่อ page closed (ป้องกัน concurrent render race)
+
+**Sustainability — medium/long term**
+
+- [x] **S1 — Test harness (node:test runner)** ⭐ *ความเสี่ยงสูงที่สุด* — **DONE 2026-06-06** (commit `778b114`)
+  - 43 tests ใน 4 ไฟล์: `color-utils`, `crypto-creds`, `helpers/routeError`, `alert-engine` (matchRule + isInCooldown)
+  - Zero devDependency: ใช้ `node:test` + `node:assert/strict` ที่ built-in ใน Node 22
+  - ทุก test value ยืนยันจาก live DB / source code จริง ไม่ใช้ magic number
+
+- [ ] **S2 — `events` table partitioning** *(แผน+script DONE commit `b8f6557`; migration รอ trigger ~500K rows)*
+  - **สถานะปัจจุบัน (2026-06-06):** 63,102 rows (~53K พ.ค. / ~10K มิ.ย.), 42 MB (`pg_total_relation_size`: heap 27 MB + 8 indexes) — ยังปลอดภัย
+  - **Growth rate:** ~50K rows/เดือน (ปัจจุบัน); 1.8M rows/year ที่ 100 cameras
+  - **Trigger point:** วางแผนรัน migration ก่อน table ถึง **~500K rows** (~9 เดือนที่ rate ปัจจุบัน) — ไม่เร่งด่วน แต่ต้องออกแบบไว้ก่อนถึง
+
+  **🔵 Fact — blockers ที่ verify จากจริง PG 16.13 (rolled-back transactions, 2026-06-06):**
+
+  1. **Composite PK บังคับ** — `PARTITION BY RANGE(event_time)` ทำให้ PK ต้องรวม partition key:
+     ```
+     ERROR: unique constraint on partitioned table must include all partitioning columns
+     DETAIL: PRIMARY KEY constraint on table "_test_events" lacks column "event_time"
+     ```
+     → PK จะต้องเปลี่ยนเป็น `PRIMARY KEY (id, event_time)`
+
+  2. **FK บน `id` อย่างเดียว reject** — หลัง PK กลายเป็น composite, FK ที่อ้างแค่ `id` ล้มเลว:
+     ```
+     ERROR: there is no unique constraint matching given keys for referenced table "_pe"
+     ```
+     → ผลกระทบกับ:
+     - `appearances.event_id BIGINT REFERENCES events(id) ON DELETE CASCADE`
+     - `license_plates.event_id BIGINT REFERENCES events(id) ON DELETE CASCADE`
+
+  3. **Retention cascade dependency** — `api-server.js:6155` ใช้ `ON DELETE CASCADE` เพื่อ clean `appearances` และ `license_plates` อัตโนมัติ; ถ้า FK หลุด retention จะต้องแก้ด้วย
+
+  **🟡 Opinion — สองตัวเลือก:**
+
+  **Option A — Drop FK ชั่วคราว แล้ว partition `events` อย่างเดียว**
+  - Drop FK บน appearances + license_plates
+  - แปลง events เป็น partitioned table (pg_partman หรือ manual monthly partitions)
+  - Retention ต้องเพิ่ม explicit `DELETE FROM appearances WHERE event_id = ANY(deleted_ids)` แทน cascade
+  - ✅ ทำได้ใน 1 migration file; ✅ appearances/license_plates ยังเป็น plain heap
+  - ⚠️ สูญ referential integrity; ⚠️ retention code ต้องแก้ด้วย (2 DELETE ก่อน 1 event DELETE)
+
+  **Option B — เก็บ FK ไว้โดยเพิ่ม `event_time` ใน child tables (ไม่ต้อง partition children)**
+  - เพิ่มคอลัมน์ `event_time` ใน appearances + license_plates (denormalize)
+  - เปลี่ยน FK เป็น composite: `FOREIGN KEY (event_id, event_time) REFERENCES events(id, event_time)`
+  - PG 12+ รองรับ FK จาก plain heap table → partitioned parent โดยตรง — ไม่จำเป็นต้อง partition children ด้วย
+  - ✅ referential integrity ยังครบ; ✅ `ON DELETE CASCADE` ยังทำงาน; ✅ retention code ไม่ต้องแก้
+  - ⚠️ INSERT appearances/license_plates ต้องส่ง event_time ด้วยทุกครั้ง; ⚠️ migration ใหญ่กว่า Option A
+
+  **คำแนะนำ:** เริ่มด้วย Option A — appearances + license_plates ยังเล็ก (FK drop = safe); แก้ retention code ไม่ซับซ้อน; Option B เหมาะเมื่อ appearances โตถึงระดับที่ต้องการ partition scan เองด้วย
+
+  **Migration script พร้อมแล้ว:** `db/MANUAL_partition_events_option_a.sql` (Option A, MANUAL_ prefix — ไม่ auto-run; commit `b8f6557`)
+
+  **ขั้นตอนจริงเมื่อถึง trigger point:**
+  1. **PostgreSQL ไม่มี in-place `ALTER TABLE ... PARTITION BY`** — ต้อง:
+     - สร้าง `events_new` เป็น partitioned parent (+ monthly child partitions)
+     - Copy rows: `INSERT INTO events_new SELECT * FROM events`
+     - Swap: rename `events` → `events_old`, rename `events_new` → `events`
+     - Drop `events_old` หลังยืนยัน — นี่คือ data migration ไม่ใช่แค่ DDL
+  2. ~~ถ้าเลือก Option A: แก้ `src/api-server.js` retention ให้ explicit delete appearances/license_plates ก่อน event delete~~ — **✅ แก้แล้วใน commit `b8f6557`** (`enforceRetention()` explicit-deletes appearances + license_plates ก่อน events แล้ว)
+  3. ถ้าเลือก Option B: เพิ่ม `event_time` column ใน appearances + license_plates + เปลี่ยน FK เป็น composite
+  4. ทดสอบ retention flow บน staging + ตรวจ row count ก่อน/หลัง swap
+  5. **ห้ามรัน migration นี้โดยไม่ `pg_dump` ก่อน** — copy-and-swap window = ความเสี่ยงสูงสุด
+
+- [x] **S3 — Worker /health HTTP endpoints** — **DONE 2026-06-06** (commit `c7e306f`)
+  - alert-worker: `GET /health` บน port 3002 (loopback) — ok, uptime, pid, memory, db.latency, listener.connected
+  - report-worker: `GET /health` บน port 3001 — ok, uptime, pid, memory, db.latency, scheduler.last_check_at
+  - api-server: `/api/health/details` aggregate workers จากทั้งสอง port แล้ว
+
+- [x] **S4 — Route split (MAINT-2T-001)** — *template split เสร็จ 2026-06-06 commit `b8122a8`*
+  - สร้าง `src/routes/` + factory pattern (`module.exports = function(app, pool) {}`)
+  - ย้าย 7 routes categories & mapping-rules ออกจาก api-server.js (-111 lines)
+  - smoke-tested: 401/200/404/403 (requireAdminForWrites ยังทำงาน) ✓
+  - ที่เหลือ: opportunistic ตาม WA#2 — ทำเมื่อแตะ subsystem นั้น
+
+---
+
 ### Nice-to-have
 - [ ] **UI design-system migration (opportunistic)** — `DESIGN.md` ปักธงไว้ว่า dashboard เดิม hardcode CSS + ใช้ emoji เป็น UI แพร่หลาย (sidebar/sub-tabs/buttons). ทยอยแทนด้วย design tokens + SVG icon sprite **เฉพาะตอนแตะจุดนั้น** — ห้าม big-bang sweep. ตัวเลือกแยก (deferred, decision #142): full palette re-theme / visual overhaul เป็นงานก้อนใหญ่ของมันเอง ทำเมื่อ design tokens เสถียรแล้ว
-- [ ] PostgreSQL connection pool tuning for >1000 cameras
+- [ ] PostgreSQL connection pool tuning for >1000 cameras — ดู P1/S2 ใน Performance & Sustainability section ด้านบน
 - [x] ~~Backup automation (currently manual `pg_dump`)~~ — done in Phase 6.1.10 (daily launchd → `backups/*.dump`, 14-day retention)
 - [ ] Off-host backup copy (rclone → R2/B2) — deferred; set up per customer deployment
 - [ ] Alert escalation (if not acknowledged in N minutes → escalate)
@@ -571,41 +784,22 @@ explicit column list ไม่รั่วข้อมูลใหม่ออ�
 > วิเคราะห์แล้วว่าต้องทำแต่ยังไม่ถึงเวลา / ต้องรอข้อมูลเพิ่ม — บันทึกไว้เพื่อไม่ต้องวิเคราะห์ซ้ำ
 > Full checklist: `docs/REF_security-checklist.md` (SEC-014–SEC-017)
 
-### SEC-013 — chmod 600 cameras-config.json (ควรทำทันที)
-**ปัญหา:** `cameras-config.json` เก็บ username/password/mqtt_password กล้องทุกตัว;
-permissions เป็น `-rw-r--r--` (world-readable); gitignored แล้ว แต่ local-other-user อ่านได้
-
-**Fix:** 1 คำสั่ง — ไม่แตะโค้ด
-```bash
-chmod 600 cameras-config.json
-```
-**เหตุที่ยัง deferred:** รอเจ้าของรัน (ไม่ใช่งาน CI/CD — ต้องทำที่ deployment จริง)
+### ✅ SEC-013 — chmod 600 cameras-config.json
+**Done 2026-06-05:** `-rw-------` verified — `cameras-config.json` มี permissions 600 แล้ว; อ่านได้เฉพาะ owner.
 ดู DECISIONS #191 · GOTCHAS #69
 
 ---
 
-### SEC-014 — Camera credential at-rest encryption
-**ปัญหาที่แก้:** ถ้า `cameras-config.json` รั่ว (backup share, support handoff, laptop สูญหาย)
-→ attacker ได้ username/password กล้องทุกตัวทันที
+### ✅ SEC-014 — Camera credential at-rest encryption
+**Done 2026-06-05:** `src/crypto-creds.js` — AES-256-GCM, `enc:v1:` prefix, key จาก `CAMERA_SECRET_KEY` ใน `src/.env`.
+ทุก 4 ingesters ใช้ `decryptCamCreds()` ก่อนสร้าง auth header:
+- `mqtt-subscriber.js` (line 33, 57)
+- `src/ingesters/hikvision-isapi.js` (line 31, 592)
+- `src/ingesters/dahua-cgi.js` (line 53, 1160)
+- `src/media-recorder.js` (line 33, 57)
+- `api-server.js` (line 188) import `encryptCamCreds` — encrypt on save
 
-**วิธี:** AES-256-GCM encrypt ค่า `password` + `mqtt_password` ก่อน save ลงไฟล์;
-decrypt ก่อนใช้ใน ingester; key เก็บใน `src/.env` (CAMERA_SECRET_KEY=<32-byte hex>)
-
-**ไฟล์ที่ต้องแตะ:**
-- `src/mqtt-subscriber.js` — decrypt ก่อนสร้าง Basic auth + ONVIF header
-- `src/ingesters/hikvision-isapi.js` — เดียวกัน
-- `src/ingesters/dahua-cgi.js` — เดียวกัน
-- `src/api-server.js` — encrypt ก่อน write mqtt_password กลับไฟล์ (regenerate flow)
-- migration utility — encrypt credentials เดิมที่อยู่ในไฟล์แล้ว
-
-**ข้อจำกัด:** ถ้า attacker อ่าน filesystem ได้ครบ (host compromise) → ได้ทั้ง key + ciphertext
-→ ต้องการ external secret store (Vault/AWS SM) ถึงจะป้องกันได้จริง
-
-**เงื่อนไขที่ควรทำ:**
-- เจ้าของยืนยัน threat model: กังวลเรื่อง "leaked backup/config share" → Tier 2 นี้เพียงพอ
-- ถ้ากังวลเรื่อง "host compromise" → ต้องไปถึง Tier 3 (external secret store)
-
-**เหตุที่ defer:** รอ threat-model decision จากเจ้าของก่อนลงมือ (medium effort + recurring complexity)
+**ข้อจำกัดที่รับรู้:** host compromise → attacker ได้ key+ciphertext ทั้งคู่ → Tier 3 (external secret store) ถ้าต้องการป้องกัน host compromise จริง
 ดู DECISIONS #192
 
 ---
@@ -633,4 +827,4 @@ Local apps unbroken. **Remaining:** `hostssl` enforcement in `pg_hba.conf` (scop
 
 ---
 
-<sub>End of ROADMAP.md · Companion to CLAUDE.md · Updated 2026-06-02</sub>
+<sub>End of ROADMAP.md · Companion to CLAUDE.md · Updated 2026-06-08</sub>

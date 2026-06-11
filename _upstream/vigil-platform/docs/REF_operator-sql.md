@@ -4,7 +4,7 @@
 > §11 (Service control), §13–§16 (Ph.1–Ph.3 + Auditor ops).
 > For troubleshooting steps → REF_troubleshooting.md
 > For category mapping recipes → SKILL.md §3
-> Last updated: 2026-05-24 · v1.5.0
+> Last updated: 2026-06-08 · v1.5.0
 
 ---
 
@@ -21,7 +21,7 @@ Edit via UI: Settings → ⚙️ System (admin only), or via SQL below.
 | `comparison_mode` | `rolling` | `rolling \| calendar` | KPI comparison window (only `rolling` wired today) |
 | `counter_dedup_mode` | `state` | `state \| object_window \| none` | Reserved; only `state` honoured currently |
 | `custom_range_max_days` | `365` | `1..730` | Cap on Custom date-range modal in Stats |
-| `brand_name` | `DojoJin Tech Dashboard` | 1..100 chars | Product name in sidebar/login/disclaimer/PDF |
+| `brand_name` | `Vigil Platform` | 1..100 chars | Product name in sidebar/login/disclaimer/PDF |
 | `brand_tagline` | `CCTV Analytics Suite` | ≤200 chars | Subtitle under brand name |
 | `brand_logo_path` | `''` | `[A-Za-z0-9._-]+` or empty | File under `/branding/` — auto-resized 256×256 PNG |
 | `brand_primary_color` | `#5b8def` | `#RRGGBB` | Single accent color (CSS `--accent`) |
@@ -269,7 +269,8 @@ docker exec vigil-emqx emqx ctl subscriptions list
 docker run --rm --network host eclipse-mosquitto:2.0 \
   mosquitto_sub -h localhost -t '+/onvif-ej/#' -W 30 -F '[%I] %t'
 
-# EMQX web dashboard (change admin/public in production)
+# EMQX web dashboard — password set via EMQX_DASHBOARD_PASSWORD in .env
+# (not 'admin/public' — that default is overridden at container start)
 open http://localhost:18083
 ```
 

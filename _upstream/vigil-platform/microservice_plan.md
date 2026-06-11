@@ -1,6 +1,6 @@
 # Master Plan — Modular Refactor + Security Hardening
 
-> สถานะ: **Phase 0 + 1a ✅ DONE · Phase 1b ⚡ Partial · Phase 2+ Deferred** · อัปเดต: 2026-06-04
+> สถานะ: **Phase 0 + 1 + 3 (workers) ✅ DONE · Phase 2/4 Deferred** · อัปเดต: 2026-06-07
 > ที่มา: codebase analysis + advisor review + CODEX_AUDIT_2ndTier.md + verify จาก code จริง 2026-06-04
 > SEC-2T-001 decision: **ลบ** `index.html`, `partners.html`, `reference-projects.html`, `vss_v1.html` (ไม่ได้ใช้แล้ว) — CDN risk หายไปด้วย; `boxbox-*.html` auth-gated แล้ว (Option C)
 
@@ -33,7 +33,7 @@
 
 ---
 
-### Phase 1 — Origin Isolation ✅ 1a DONE · 🔒 1b Blocked
+### Phase 1 — Origin Isolation ✅ DONE (2026-06-05)
 
 #### Phase 1a — SEC-2T-001: แก้ /others origin risk ✅ DONE (verified 2026-06-04)
 
@@ -46,7 +46,7 @@
 | ~~`vss_v1.html`~~ | Materialize CSS+JS | ✅ ลบแล้ว |
 | ~~`partners.html`~~ | ไม่มี | ✅ ลบแล้ว |
 | ~~`reference-projects.html`~~ | ไม่มี | ✅ ลบแล้ว |
-| `boxbox-th.html`, `boxbox-en.html` | Cytoscape + Dagre (jsdelivr) | ✅ auth-gated |
+| ~~`boxbox-th.html`~~, ~~`boxbox-en.html`~~ | Cytoscape + Dagre (jsdelivr) | ✅ ลบแล้ว (2026-06-05) |
 
 **Code ที่ยืนยัน (src/api-server.js):**
 ```javascript
@@ -58,12 +58,12 @@ const OTHERS_PUBLIC_PREFIXES = [];        // ไม่มี prefix ที่ pu
 - [x] `/others` ถูกนำออกจาก `PUBLIC_PREFIXES` แล้ว
 - [x] `OTHERS_PUBLIC = new Set([])` — default-deny ทุกไฟล์
 
-#### Phase 1b — SEC-2T-002: CSP enforce — ⚡ Partial Done (2026-06-04)
+#### Phase 1b — SEC-2T-002: CSP enforce — ✅ DONE (2026-06-05)
 
-- [x] แยก CSP header: `/others/*` → `Content-Security-Policy` (enforced); dashboard → `Report-Only`
-- [ ] ลบ `unsafe-inline` จาก `/others` script-src → ต้องย้าย boxbox DATA block เป็น external JSON ก่อน
-- [ ] เปลี่ยน dashboard เป็น `Content-Security-Policy` (enforce) → ต้องแทน `onclick=` 189 จุดด้วย `addEventListener` (opportunistic, Phase 2+)
-- [ ] test ว่าไม่มี console CSP violation บน dashboard หลัง enforce
+- [x] แยก CSP header: `/others/*` → `Content-Security-Policy` (enforced); dashboard → `Content-Security-Policy` (enforced — Phase 5 ✅)
+- [x] ลบ `unsafe-inline` จาก `/others` script-src → boxbox DATA block ย้ายเป็น external JSON แล้ว; "No inline scripts remain" (api-server.js line ~124)
+- [x] เปลี่ยน dashboard เป็น `Content-Security-Policy` (enforce) — Phase 5 ✅ 2026-06-05 (commit `5532915`)
+- [x] test ว่าไม่มี console CSP violation บน dashboard หลัง enforce ✅
 
 ---
 
@@ -90,11 +90,11 @@ src/
 ```
 
 **Steps (ทำตามลำดับ):**
-- [ ] สร้าง `src/helpers/routeError.js` ก่อน (SEC-2T-004)
+- [x] ~~สร้าง `src/helpers/routeError.js` ก่อน (SEC-2T-004)~~ — ✅ DONE 2026-06-05
 - [ ] เริ่มจาก route group ที่มี bug หรือ feature ที่ต้องแตะอยู่แล้ว
 - [ ] smoke test หลัง extract แต่ละ module (ไม่ batch ทั้งหมด)
 - [ ] ตัดสินใจ `GET /api/line-config` role policy (SEC-2T-005) เมื่อแตะ alerts/reports routes
-- [ ] ตัดสินใจ `/tiles/` auth-gate (SEC-2T-008) เมื่อแตะ map routes
+- [x] ~~ตัดสินใจ `/tiles/` auth-gate (SEC-2T-008)~~ — ✅ WON'T FIX / public by design (2026-06-05)
 
 **เงื่อนไข gate:**
 - [ ] Phase 0 ครบทุก task
@@ -103,17 +103,19 @@ src/
 
 ---
 
-### Phase 3 — Extract Heavy Workers (= Microservice Phase B)
+### Phase 3 — Extract Heavy Workers ✅ DONE (workers shipped 2026-06-06, different arch)
 
-**ทำหลัง Phase 2 stable ≥ 2 สัปดาห์ใน production**
+**หมายเหตุ:** implementation เบี่ยงจากแผนเดิม — alert-worker ใช้ `LISTEN alert_event`
+(ไม่ใช่ `new_event`); report-worker ใช้ HTTP endpoint แทน job queue table
 
-- [ ] ออกแบบ job queue schema (`report_jobs` table)
-- [ ] สร้าง `src/alert-worker.js` — LISTEN `new_event` → alert rules → line/push
-- [ ] สร้าง `src/report-worker.js` — LISTEN `report_job` → render → save
-- [ ] เพิ่ม 2 entries ใน `ecosystem.config.js`
-- [ ] ลบ `require('./alert-engine')` / `require('./report-renderer')` ออกจาก api-server
-- [ ] DB migration checklist: ทุก index ใน job queue table → `CREATE INDEX CONCURRENTLY` (DB-2T-001)
-- [ ] verify PM2 restart ทั้ง 7 process ได้โดยไม่มี error
+- [x] ✅ สร้าง `src/alert-worker.js` — LISTEN `alert_event` + `alert_rules_changed` (2026-06-06)
+- [x] ✅ สร้าง `src/report-worker.js` — HTTP endpoint `127.0.0.1:3001/run/:id` (2026-06-06)
+- [x] ✅ เพิ่ม 2 entries ใน `ecosystem.config.js` (7 workers verified 2026-06-06)
+- [x] ✅ ลบ `require('./alert-engine')` ออกจาก api-server (done)
+- [x] ✅ verify PM2 restart ทั้ง 7 process — launchd verified after reboot 2026-06-06
+- [ ] `require('./report-renderer')` ยังอยู่ใน api-server (lines 4081/5854/5883/5915) — deferred
+- ~~ออกแบบ job queue schema (`report_jobs` table)~~ → approach เปลี่ยน: HTTP trigger แทน
+- ~~DB migration checklist สำหรับ job queue~~ → ไม่มี job queue table (ไม่ต้องทำ)
 
 ---
 
@@ -134,12 +136,16 @@ src/
 | `media-recorder` | `src/media-recorder.js` | 504 |
 | `hikvision` | `src/ingesters/hikvision-isapi.js` | — |
 | `dahua` | `src/ingesters/dahua-cgi.js` | — |
+| `alert-worker` | `src/alert-worker.js` | — (Phase 3 ✅ 2026-06-06) |
+| `report-worker` | `src/report-worker.js` | — (Phase 3 ✅ 2026-06-06) |
 
 ### Inter-process Communication: PostgreSQL LISTEN/NOTIFY (decoupled แล้ว)
 
 - `mqtt-subscriber.js:609` → `pg_notify('new_event', id)` หลัง INSERT
 - `mqtt-subscriber.js:661` → `pg_notify('event_for_clip', id)` → media-recorder
+- `mqtt-subscriber.js` → `pg_notify('alert_event', payload)` → alert-worker (Phase 3 ✅)
 - `api-server.js:976` → `LISTEN new_event` + `LISTEN clip_done` → WebSocket broadcast
+- `api-server.js` → HTTP `POST 127.0.0.1:3001/run/:id` → report-worker (Phase 3 ✅)
 
 ไม่มี shared memory หรือ HTTP call ระหว่าง process
 
@@ -191,7 +197,7 @@ Route domains: `/api/auth` · `/api/cameras` · `/api/events` · `/api/stats` ·
 
 ---
 
-### Phase 1 — Origin Isolation ✅ 1a DONE · 🔒 1b Blocked
+### Phase 1 — Origin Isolation ✅ DONE (2026-06-05)
 **ความเสี่ยง: กลาง | ต้องตัดสินใจก่อน | ทำก่อน Phase 2 เสมอ**
 
 SEC-2T-001 และ SEC-2T-002 ต้องทำตามลำดับนี้ — **002 ตาม 001 ไม่ใช่ตาม refactor**
@@ -211,15 +217,15 @@ SEC-2T-001 และ SEC-2T-002 ต้องทำตามลำดับนี
 | C | Auth-gate `/others` ทั้งหมด | ✅ Done |
 
 - [x] **ตัดสินใจตัวเลือก C** — `OTHERS_PUBLIC = new Set([])` + `/others` นำออกจาก `PUBLIC_PREFIXES`
+- [x] `boxbox-th.html` + `boxbox-en.html` ลบแล้ว (2026-06-05) — Cytoscape CDN risk eliminated
 
-#### Phase 1b — SEC-2T-002: CSP enforce — ⚡ Partial Done (2026-06-04)
+#### Phase 1b — SEC-2T-002: CSP enforce — ✅ DONE (2026-06-05)
 
-`/others/*` → `Content-Security-Policy` enforced แล้ว (2026-06-04)
-Dashboard → ยังเป็น `Report-Only` — blocked โดย `onclick=` 189 จุด + theme init inline script
+`/others/*` + dashboard → ทั้งคู่ `Content-Security-Policy` enforced แล้ว (Phase 5 ✅ 2026-06-05)
+Dashboard: zero inline scripts/handlers; `Content-Security-Policy` enforce (commit `5532915`)
 
 - [x] แยก CSP header per route (`src/api-server.js` บรรทัด ~115)
-- [ ] ลบ `unsafe-inline` จาก `/others` script-src → ย้าย boxbox DATA block เป็น external JSON
-- [ ] dashboard enforce → แทน `onclick=` attrs ด้วย `addEventListener` (opportunistic, Phase 2+)
+- [x] dashboard enforce → Phase 5 ✅ 2026-06-05 (commit `5532915`)
 
 ---
 
@@ -241,7 +247,7 @@ src/
     stats.routes.js
     reports.routes.js
     alerts.routes.js
-    map.routes.js        ← + SEC-2T-008 (tiles auth-gate ถ้าตัดสินใจ)
+    map.routes.js        ← SEC-2T-008 ตัดสินใจแล้ว: public by design
     health.routes.js
     license.routes.js
   helpers/
@@ -254,13 +260,13 @@ src/
 |---|---|---|
 | SEC-2T-004 | `routeError()` helper — log server, generic code ให้ client | `helpers/routeError.js` → ใช้ทุก route |
 | SEC-2T-005 | ตัดสินใจ role policy ของ `GET /api/line-config` | `routes/alerts.routes.js` |
-| SEC-2T-008 | ตัดสินใจ auth-gate `/tiles/` | `routes/map.routes.js` |
+| ~~SEC-2T-008~~ | ~~ตัดสินใจ auth-gate `/tiles/`~~ | ✅ WON'T FIX — public by design (2026-06-05) |
 
 **เงื่อนไขก่อนเริ่ม Phase 2:**
 - [x] Phase 0 ครบ (verified 2026-06-04)
 - [x] Phase 1a ตัดสินใจแล้ว — Option C: fully auth-gated (verified 2026-06-04)
 - [ ] ตกลง naming convention (`auth.routes.js` vs `authRouter.js`)
-- [ ] ออกแบบ `routeError(res, err, context)` interface
+- [x] ~~ออกแบบ `routeError(res, err, context)` interface~~ — ✅ format B: `{ error: 'Internal server error', code: 'ERR_INTERNAL' }`
 
 **จุดตัดสินใจสำคัญ — ยังเปิดอยู่:**
 
@@ -280,10 +286,10 @@ src/
 แยก `alert-engine + line-sender + push-sender` และ `report-renderer` ออกเป็น process แยก
 สื่อสารผ่าน `pg_notify` pattern ที่มีอยู่แล้ว
 
-| Worker | วิธี decouple | PM2 entry ใหม่ |
-|---|---|---|
-| `alert-engine` + `line-sender` + `push-sender` | LISTEN `new_event` | `alert-worker` |
-| `report-renderer` | Job queue table → LISTEN `report_job` | `report-worker` |
+| Worker | วิธี decouple | PM2 entry ใหม่ | สถานะ |
+|---|---|---|---|
+| `alert-engine` + `line-sender` + `push-sender` | LISTEN `alert_event` + `alert_rules_changed` | `alert-worker` | ✅ DONE 2026-06-06 |
+| `report-renderer` | HTTP endpoint `127.0.0.1:3001/run/:id` | `report-worker` | ✅ DONE 2026-06-06 |
 
 **Security merge:**
 - DB-2T-001 — เพิ่ม migration checklist item: "large table index → `CREATE INDEX CONCURRENTLY`" เมื่อออกแบบ job queue schema
@@ -314,9 +320,9 @@ Add nginx หรือ lightweight gateway ข้างหน้า
 ```
 Phase 0  ✅ DONE (2026-06-04)
 Phase 1a ✅ DONE (2026-06-04) — Option C: fully auth-gated
-Phase 1b ⚡ Partial — /others enforced ✅; dashboard blocked โดย onclick= 189 จุด
+Phase 1b ✅ DONE (2026-06-05) — /others + dashboard both enforced; unsafe-inline script-src removed
 Phase 2  ⏳ Gate เปิดแล้ว — opportunistic เมื่อแตะ route นั้น
-Phase 3  ⏳ รอ Phase 2 stable ≥ 2–4 สัปดาห์
+Phase 3  ✅ DONE (2026-06-06) — workers shipped; `report-renderer` ยังใน api-server (deferred)
 Phase 4  ⏳ Optional — ทำเมื่อมี multi-host จริง
 ```
 
@@ -329,7 +335,7 @@ Phase 4  ⏳ Optional — ทำเมื่อมี multi-host จริง
 3. **เหตุผลหลักของ Microservice**: ไฟล์ใหญ่ / fault isolation / scale แยก / multi-host?  
    → กำหนดว่า Phase 3 และ 4 จำเป็นจริงหรือไม่ (ยังเปิดอยู่)
 4. **Phase 2 naming**: route modules ใช้ชื่อ file แบบไหน? (`auth.routes.js` vs `authRouter.js`)
-5. **`routeError()` interface**: response error code format เป็นอะไร?
+5. ~~**`routeError()` interface**: response error code format เป็นอะไร?~~ → ✅ format B confirmed + implemented
 
 ---
 

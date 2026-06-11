@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Vigil Platform — Live Docs v1.5.1</title>
+  <title>Vigil Platform — Live Docs v1.5.3</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -15,9 +15,9 @@
 <button id="ham">☰</button>
 
 <div class="main">
-<!-- SOURCE: CLAUDE.md §Project Purpose · CHANGELOG.md · ROADMAP.md | Update: version bump or major feature ship -->
+<!-- SOURCE: CLAUDE.md §Project Purpose · CHANGELOG.md · ROADMAP.md | Update: version bump or major feature ship | Last sync: 2026-06-07 -->
 <div class="hero">
-  <h1>Vigil Platform v1.5.1</h1>
+  <h1>Vigil Platform v1.5.3</h1>
   <p>ฐานความรู้ด้านเทคนิคและเอกสารสดใจ</p>
 </div>
 
@@ -100,11 +100,11 @@
 <h2>สถิติสรุป</h2>
 <div class="krow">
   <div class="kpi">
-    <div class="kn">20</div>
+    <div class="kn">21</div>
     <div class="kl">ตารางฐานข้อมูล</div>
   </div>
   <div class="kpi">
-    <div class="kn">30+</div>
+    <div class="kn">40+</div>
     <div class="kl">DB Migrations</div>
   </div>
   <div class="kpi">
@@ -165,6 +165,16 @@
 <td>2026-06-03</td>
 <td>Security hardening (SEC-014–017): camera cred encryption, drop dead DB columns, PostgreSQL SSL, Mapbox tile proxy; Camera Pause/Maintenance Mode; Light Mode UI; PM2 process manager (replace concurrently, autostart on boot); Service Management UI (Restart/Stop/Start per-service, admin-only, audit log); Appearances Analytics (gender, clothing, hair, glasses, helmet, bag, vehicle)</td>
 </tr>
+<tr>
+<td><strong>v1.5.2</strong></td>
+<td>2026-06-06</td>
+<td>report-worker: แยก scheduled-report loop ออกจาก api-server เป็น PM2 process ต่างหาก (crash isolation — Chrome/Puppeteer crash ใน worker ไม่กระทบ API); Run Now proxy endpoint (<code>POST /run/:id</code> loopback); PM2 6 processes; launchd autostart verified after reboot</td>
+</tr>
+<tr>
+<td><strong>v1.5.3</strong></td>
+<td>2026-06-06</td>
+<td>alert-worker: แยก alert-engine ออกจาก mqtt-subscriber → PM2 7 workers (LINE/push failure ไม่กระทบ MQTT ingest); CSP hardening (390 inline handlers removed, Phase 5-ready); Perf &amp; Sustainability audit: pool sizing, Puppeteer render queue, dead DB index removal, 43-test harness, events partition plan, S3 worker health endpoints, S4 route split; node:test suite; 2026-06-07: CVE audit round 4 + runtime upgrade (Node 22 LTS, EMQX 5.8.9, pg/ws/Puppeteer updates, EMQX port binding resilience)</td>
+</tr>
 </tbody>
 </table>
 
@@ -216,7 +226,7 @@
 </tr>
 <tr>
 <td>05-security.html</td>
-<td>2026-06-04</td>
+<td>2026-06-07</td>
 <td><span class="badge b-green">ปัจจุบัน</span></td>
 </tr>
 <tr>
@@ -268,7 +278,7 @@
 </table>
 
 <div class="ref">
-  <p>Vigil Platform v1.5.1 · Self-hosted CCTV Analytics Platform for Asia · Live Docs · ©2025-2026 DojoJin Tech · Proprietary License</p>
+  <p>Vigil Platform v1.5.3 · Self-hosted CCTV Analytics Platform for Asia · Live Docs · ©2025-2026 DojoJin Tech · Proprietary License</p>
 </div>
 </div>
 </div>

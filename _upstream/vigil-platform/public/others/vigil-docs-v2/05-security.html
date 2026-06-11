@@ -19,7 +19,7 @@
 <h1 class="ph">05 Audit ความปลอดภัย (Security Audit)</h1>
 
 <h2>เส้นเวลา Audit</h2>
-<p>Vigil Platform ผ่านการตรวจสอบความปลอดภัย (internal security audit) รอบแรกเมื่อ 2026-05-28 ครอบคลุม 17 จุด (SEC-001–017) ทุกจุดได้รับการแก้ไขแล้วภายใน v1.5.1</p>
+<p>Vigil Platform ผ่านการตรวจสอบความปลอดภัย (internal security audit) 4 รอบครอบคลุม 25 จุด (SEC-001–017 + SEC-2T-001–008) ทุกจุดได้รับการแก้ไขแล้วภายใน v1.5.3 และมีการตรวจสอบ CVE / Dependency Audit เพิ่มเติมในรอบที่ 4 (2026-06-07) พร้อมอัปเกรด runtime stack ทั้งหมด</p>
 
 <table>
 <thead>
@@ -43,6 +43,18 @@
 <td>Camera credentials at-rest dead DB columns Postgres SSL Mapbox token proxy</td>
 <td>SEC-014–017 (4 findings ทั้งหมดแก้ไขแล้ว)</td>
 </tr>
+<tr>
+<td><strong>รอบ 3</strong></td>
+<td>2026-06-03 / 05</td>
+<td>CDN supply chain CSP inline scripts error response leak role drift dotfiles plaintext cred warning</td>
+<td>SEC-2T-001–008 (7 fixed, 1 won't-fix by design)</td>
+</tr>
+<tr>
+<td><strong>รอบ 4</strong></td>
+<td>2026-06-07</td>
+<td>CVE / Dependency Audit — Node.js EOL, npm packages, Docker images, runtime stack, EMQX network resilience</td>
+<td>0 confirmed CVE หลังอัปเกรด — Node 22 LTS, EMQX 5.8.9, PG 16.14, Puppeteer 25 / Chrome 149</td>
+</tr>
 </tbody>
 </table>
 
@@ -51,7 +63,7 @@
 <div class="card">
   <h3>SEC-001–006: Infrastructure & Ingest</h3>
   <ul>
-    <li><strong>SEC-001:</strong> MQTT port wildcard bind → แก้ไข: bind ไป <code>127.0.0.1:1883</code> + rotate รหัสผ่าน EMQX</li>
+    <li><strong>SEC-001:</strong> MQTT port wildcard bind → แก้ไข: EMQX AUTHN บังคับ credentials ทุก client; port binding อัปเดตเป็น <code>0.0.0.0:1883</code> (resilient ต่อการเปลี่ยน network) + rotate รหัสผ่าน EMQX</li>
     <li><strong>SEC-002:</strong> Stored XSS ผ่าน MQTT/DB fields ใน DOM → แก้ไข: <code>escapeHtml()</code> ทุก dynamic fields</li>
     <li><strong>SEC-003:</strong> Credentials รั่วไหลใน API response (non-admin) → แก้ไข: ซ่อนรหัสผ่านสำหรับ non-admin roles</li>
     <li><strong>SEC-004:</strong> Auth bypass เมื่อ <code>must_change_password=true</code> → แก้ไข: บังคับ flag ที่ middleware ไม่ใช่แค่ login page</li>
@@ -80,12 +92,95 @@
 </div>
 
 <div class="card">
-  <h3>SEC-014–017: Credential Encryption DB Cleanup & Proxy (รอบ 2)</h3>
+  <h3>SEC-014–017: Credential Encryption DB Cleanup &amp; Proxy (รอบ 2)</h3>
   <ul>
     <li><strong>SEC-014:</strong> Camera credentials เก็บ plaintext ใน <code>cameras-config.json</code> → แก้ไข: เข้ารหัส AES-256-GCM (<code>enc:v1:</code> format) decrypt-at-load</li>
     <li><strong>SEC-015:</strong> Dead columns (<code>http_password</code>, <code>rtsp_url</code>) ในตาราง cameras → แก้ไข: migration 038 ลบ dead columns</li>
     <li><strong>SEC-016:</strong> PostgreSQL ไม่มี TLS → แก้ไข: <code>ssl=on</code> (TLSv1.3) ผ่าน <code>ALTER SYSTEM</code> zero-downtime</li>
     <li><strong>SEC-017:</strong> Mapbox token เปิดเผยต่อเบราว์เซอร์ (network tab) → แก้ไข: backend proxy <code>/api/map/tiles/mapbox/:style/:z/:x/:y.png</code> (auth-gated cache-first)</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h3>SEC-2T-001–008: CDN, CSP, Error Leak &amp; Role Drift (รอบ 3)</h3>
+  <ul>
+    <li><strong>SEC-2T-001:</strong> ไฟล์ static ใช้ CDN ภายนอก (EmailJS, Materialize) → แก้ไข: ลบไฟล์ที่ไม่จำเป็น + auth-gate <code>/others</code> default-deny</li>
+    <li><strong>SEC-2T-002:</strong> Inline <code>onclick=</code> / <code>&lt;script&gt;</code> ใน dashboard HTML ทำให้ CSP ไม่เข้มงวดได้ → แก้ไข: ย้ายทั้งหมดเป็น data-action dispatcher (zero inline scripts)</li>
+    <li><strong>SEC-2T-004:</strong> Error response เปิดเผย stack trace หรือ internal path → แก้ไข: <code>routeError()</code> helper — ตอบ <code>{error}</code> สม่ำเสมอ ไม่มี stack trace</li>
+    <li><strong>SEC-2T-005:</strong> <code>GET /api/line-config</code> ไม่บังคับ role → แก้ไข: viewer ถูกบล็อก เฉพาะ admin เท่านั้น</li>
+    <li><strong>SEC-2T-006:</strong> Camera credentials ที่ยังเป็น plaintext ไม่มีการแจ้งเตือน → แก้ไข: <code>/api/health/details</code> warn เมื่อพบ credentials ที่ยังไม่เข้ารหัส</li>
+    <li><strong>SEC-2T-007:</strong> <code>express.static</code> อาจเปิดเผย dotfiles (<code>.env</code>, <code>.git</code>) → แก้ไข: <code>dotfiles: 'deny'</code> ทุก static mount</li>
+  </ul>
+</div>
+
+<h2>CVE / Dependency Audit (2026-06-07)</h2>
+<p>ตรวจสอบ CVE และ dependency ของระบบทั้งหมด ด้วย <code>npm audit</code>, NVD, GitHub Security Advisories และ Docker image history ผลลัพธ์: <strong>0 confirmed CVE</strong> หลังอัปเกรด runtime stack</p>
+
+<div class="card">
+  <h3>ผลการตรวจสอบ npm packages (278 packages)</h3>
+  <p><code>npm audit</code> รายงาน <strong>0 vulnerabilities</strong> ทุก severity level (info / low / moderate / high / critical) ยืนยันด้วย Snyk และ GitHub Advisory database</p>
+  <table>
+  <thead><tr><th>Package</th><th>Version</th><th>สถานะ</th></tr></thead>
+  <tbody>
+  <tr><td>express</td><td>5.2.1</td><td><span class="badge b-green">Clean</span></td></tr>
+  <tr><td>ws</td><td>8.21.0</td><td><span class="badge b-green">Clean</span> (อัปเกรดจาก 8.20.1 — patch CVE-2024-37890 DoS)</td></tr>
+  <tr><td>multer</td><td>2.1.1</td><td><span class="badge b-green">Clean</span> (patch CVE-2026-3520 stack overflow)</td></tr>
+  <tr><td>puppeteer</td><td>25.1.0</td><td><span class="badge b-green">Clean</span> (อัปเกรดจาก 24.43.1; Chrome 148 → 149.0.7827.22)</td></tr>
+  <tr><td>pg</td><td>8.21.0</td><td><span class="badge b-green">Clean</span> (อัปเกรดจาก 8.20.0)</td></tr>
+  <tr><td>sharp</td><td>0.34.5 / libvips 8.17.3</td><td><span class="badge b-green">Clean</span> (rebuild for Node 22)</td></tr>
+  <tr><td>jose</td><td>6.2.3</td><td><span class="badge b-green">Clean</span></td></tr>
+  <tr><td>mqtt</td><td>5.15.1</td><td><span class="badge b-green">Clean</span></td></tr>
+  <tr><td>cors</td><td>2.8.6</td><td><span class="badge b-green">Clean</span></td></tr>
+  <tr><td>bcryptjs</td><td>3.0.3</td><td><span class="badge b-green">Clean</span></td></tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h3>Runtime Stack Upgrade</h3>
+  <table>
+  <thead><tr><th>Component</th><th>ก่อน</th><th>หลัง</th><th>เหตุผล</th></tr></thead>
+  <tbody>
+  <tr>
+    <td><strong>Node.js</strong></td>
+    <td>v20.20.2 <span class="badge b-red">EOL</span></td>
+    <td>v22.22.3 LTS <span class="badge b-green">Active</span></td>
+    <td>Node 20 EOL Apr 30, 2026 — ไม่มี security patch ใหม่แล้ว</td>
+  </tr>
+  <tr>
+    <td><strong>EMQX</strong></td>
+    <td>5.8.6 / Mar 2025 image</td>
+    <td>5.8.9 / Dec 2025 image <span class="badge b-green">Updated</span></td>
+    <td>Image อายุ 15 เดือน; 5.8.6 → 5.8.9 มี 3 patch releases</td>
+  </tr>
+  <tr>
+    <td><strong>PostgreSQL</strong></td>
+    <td>16.x / Apr 2026 image</td>
+    <td>16.14 / May 2026 image <span class="badge b-green">Updated</span></td>
+    <td>Pull latest patch image; ยืนยัน version จาก <code>SELECT version()</code></td>
+  </tr>
+  <tr>
+    <td><strong>PM2 + Workers</strong></td>
+    <td>Node 20 runtime</td>
+    <td>Node 22 runtime <span class="badge b-green">Updated</span></td>
+    <td>Daemon kill + restart ใหม่จาก ecosystem.config.js; .zshrc + launchd plist อัปเดตแล้ว</td>
+  </tr>
+  </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h3>EMQX Network Resilience (SEC-001 ปรับปรุง)</h3>
+  <p>ปัญหา: EMQX bind กับ IP เฉพาะ (<code>192.168.10.31:1883</code>) ทำให้ container ไม่ start เมื่อ network interface ไม่มี (เช่น ย้ายที่ / เปลี่ยน LAN)</p>
+  <p>แก้ไข: เปลี่ยน port binding เป็น <code>0.0.0.0:1883</code> — EMQX start ได้ทุก network; security ยังคงอยู่ผ่าน EMQX AUTHN (credentials บังคับทุก client, SEC-001 Phase 2)</p>
+  <p>ผลลัพธ์: เมื่อ camera LAN กลับมา กล้องและ mqtt-subscriber.js reconnect อัตโนมัติโดยไม่ต้อง restart ใดๆ</p>
+</div>
+
+<div class="sbox">
+  <h4>สถานะ EOL ที่ต้องติดตาม</h4>
+  <ul>
+    <li><strong>EMQX 5.8 OSS EOL:</strong> ก.พ. 2026 — ไม่มี security release ใหม่ใน 5.8.x แล้ว; plan upgrade เป็น 5.9+ ในอนาคต</li>
+    <li><strong>Node.js 22 LTS EOL:</strong> Apr 30, 2027 (~10 เดือน) — ติดตาม; plan migrate ไป Node 24 LTS ใน Q1 2027</li>
   </ul>
 </div>
 
@@ -127,8 +222,8 @@
 </tr>
 <tr>
 <td>A6: Vulnerable Components</td>
-<td><span class="badge b-amber">ติดตาม</span></td>
-<td>Automated dependency scanning (npm audit snyk)</td>
+<td><span class="badge b-green">ปลอดภัย</span></td>
+<td>CVE Audit 2026-06-07: npm audit 0 vulns (278 packages); Node 22 LTS; EMQX 5.8.9; PG 16.14; Puppeteer 25 / Chrome 149</td>
 </tr>
 <tr>
 <td>A7: Authentication Failures</td>
@@ -196,6 +291,22 @@
 <tr>
 <td>Prototype pollution</td>
 <td>Input validation Object.create(null) สำหรับ data objects</td>
+</tr>
+<tr>
+<td>Node.js EOL runtime (CVE exposure)</td>
+<td>อัปเกรดจาก v20 (EOL) → v22.22.3 LTS (EOL Apr 2027); PM2 workers + launchd อัปเดตครบ</td>
+</tr>
+<tr>
+<td>ws DoS (CVE-2024-37890)</td>
+<td>อัปเกรด ws 8.20.1 → 8.21.0 (patch header overflow DoS)</td>
+</tr>
+<tr>
+<td>Outdated Docker images</td>
+<td>EMQX 5.8.6 (Mar 2025) → 5.8.9 (Dec 2025); PostgreSQL pull → 16.14 (May 2026 build)</td>
+</tr>
+<tr>
+<td>Puppeteer / Chromium lag</td>
+<td>อัปเกรด Puppeteer 24.43.1 → 25.1.0; Chrome 148.0.7778.97 → 149.0.7827.22</td>
 </tr>
 </tbody>
 </table>

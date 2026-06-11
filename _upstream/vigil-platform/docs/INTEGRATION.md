@@ -1,7 +1,7 @@
 # Executive Summary — Integration Guide
 
 > สำหรับเอา Executive Summary page เข้าระบบ `dashboard.dojojin.tech` ที่มีอยู่
-> Last updated: 2026-05-11
+> Last updated: 2026-06-08
 
 ---
 
@@ -264,4 +264,4 @@ function showPage(name) {
 
 ---
 
-<sub>End of INTEGRATION.md · Generated for DojoJin Tech Dashboard v1.0.0+</sub>
+<sub>End of INTEGRATION.md · Generated for Vigil Platform v1.0.0+</sub>

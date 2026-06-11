@@ -1,5 +1,5 @@
 // ============================================================
-// DojoJin Tech Dashboard — License Module
+// Vigil Platform — License Module
 // ============================================================
 // @author    Prakasit Rochanavipart (Dojo-mAn)
 // @contact   prakasit@dojojin.tech | https://dojojin.tech/

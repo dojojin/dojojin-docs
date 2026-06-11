@@ -1,4 +1,4 @@
-# ARCHITECTURE — DojoJin Tech Dashboard
+# ARCHITECTURE — Vigil Platform
 
 > **System map only.** This file describes the current component shape,
 > data boundaries, schema groups, and non-negotiable architecture invariants.
@@ -6,7 +6,7 @@
 > live in the linked LOGIC/REF docs.
 >
 > Companion to [CLAUDE.md](CLAUDE.md) · [docs/ARCH_documentation-governance.md](docs/ARCH_documentation-governance.md)
-> Last updated: 2026-05-27
+> Last updated: 2026-06-08
 
 ---
 
@@ -61,12 +61,14 @@ Event-to-operator target: camera event to dashboard/LINE notification in under 2
 
 | Component | Role | Canonical Detail |
 |---|---|---|
-| `src/api-server.js` | Express API, auth gate, WebSocket bridge, report scheduler, health endpoints, static serving | [docs/LOGIC_auth-security.md](docs/LOGIC_auth-security.md), [docs/LOGIC_stats-reports.md](docs/LOGIC_stats-reports.md) |
-| `src/mqtt-subscriber.js` | Bosch MQTT ingestion, snapshot capture, alert hook, `pg_notify` event push | [docs/LOGIC_camera-ingesters.md](docs/LOGIC_camera-ingesters.md) |
+| `src/api-server.js` | Express API, auth gate, WebSocket bridge, health endpoints, static serving | [docs/LOGIC_auth-security.md](docs/LOGIC_auth-security.md), [docs/LOGIC_stats-reports.md](docs/LOGIC_stats-reports.md) |
+| `src/mqtt-subscriber.js` | Bosch MQTT ingestion, snapshot capture, `pg_notify` event/alert dispatch | [docs/LOGIC_camera-ingesters.md](docs/LOGIC_camera-ingesters.md) |
 | `src/ingesters/hikvision-isapi.js` | Hikvision ISAPI Alert Stream ingestion, Smart Events, Face Capture | [docs/LOGIC_camera-ingesters.md](docs/LOGIC_camera-ingesters.md), [docs/LOGIC_face-capture.md](docs/LOGIC_face-capture.md) |
 | `src/ingesters/dahua-cgi.js` | Dahua CGI event ingestion, clip/snapshot resolver path | [docs/LOGIC_camera-ingesters.md](docs/LOGIC_camera-ingesters.md), [DahuaProblem.MD](DahuaProblem.MD) |
 | `src/media-recorder.js` | Rolling RTSP buffers and pre/post-event clip dump | [docs/LOGIC_camera-ingesters.md](docs/LOGIC_camera-ingesters.md) |
-| `src/alert-engine.js` | LINE rule matching, cooldown, quiet hours, alert logging | [docs/LOGIC_line-notifications.md](docs/LOGIC_line-notifications.md) |
+| `src/alert-worker.js` | Alert engine process — LINE rule matching, cooldown, quiet hours; subscribes `pg_notify('alert_event', 'alert_rules_changed')` | [docs/LOGIC_line-notifications.md](docs/LOGIC_line-notifications.md) |
+| `src/report-worker.js` | Report scheduler loop; HTTP endpoint `127.0.0.1:3001/run/:id` for on-demand triggers | [docs/LOGIC_stats-reports.md](docs/LOGIC_stats-reports.md) |
+| `src/alert-engine.js` | LINE rule matching logic (library module, required by alert-worker) | [docs/LOGIC_line-notifications.md](docs/LOGIC_line-notifications.md) |
 | `src/line-sender.js` | LINE push/reply API, imgbb upload, Flex message builders | [docs/LOGIC_line-notifications.md](docs/LOGIC_line-notifications.md) |
 | `src/report-renderer.js` | Puppeteer PDF/PNG orchestration | [docs/LOGIC_stats-reports.md](docs/LOGIC_stats-reports.md) |
 | `dashboard/` | Vanilla JS SPA, reports UI/template, i18n dictionaries | [SKILL.md](SKILL.md), [GOTCHAS.md](GOTCHAS.md) |
@@ -78,11 +80,11 @@ Event-to-operator target: camera event to dashboard/LINE notification in under 2
 
 | Layer | Current Choice |
 |---|---|
-| Backend runtime | Node.js 18+ |
+| Backend runtime | Node.js 22 LTS (v22.22.3) |
 | API framework | Express 5 |
 | Realtime | `ws` WebSocket + PostgreSQL `LISTEN/NOTIFY` |
 | Database | PostgreSQL 16 in Docker |
-| MQTT broker | EMQX 5.8 in Docker |
+| MQTT broker | EMQX 5.8.9 in Docker (TCP `:1883` all-interfaces, AUTHN enforced; dashboard `:18083` localhost-only) |
 | Frontend | Vanilla JavaScript, no framework/build step |
 | Maps | OpenLayers 9 with CartoDB fallback and optional Mapbox |
 | Charts | Chart.js 4 |
@@ -99,7 +101,7 @@ Event-to-operator target: camera event to dashboard/LINE notification in under 2
 1. Vendor-specific ingester normalizes camera event into the shared `events` table.
 2. Ingester emits `pg_notify('new_event', event_id)` so `api-server.js` can push the full row to WebSocket clients.
 3. Ingester emits `pg_notify('event_for_clip', payload)` for media-recorder where clip capture is enabled.
-4. Ingester calls `alertEngine.onEvent()` when the event has a `rule_name`.
+4. Ingester emits `pg_notify('alert_event', payload)` so `alert-worker.js` can evaluate LINE alert rules independently.
 5. Snapshots are stored locally and referenced through `events.snapshot_filename` / `has_snapshot`, kept in sync with `raw_json->>'_snapshot'`.
 
 ### Dashboard Realtime
@@ -114,7 +116,7 @@ Stats and Reports share data paths and rendering primitives. Scheduled reports r
 
 ## Database Map
 
-Current public schema: 20 base tables.
+Current public schema: 21 base tables.
 
 | Group | Tables | Notes |
 |---|---|---|
@@ -124,7 +126,7 @@ Current public schema: 20 base tables.
 | LINE alerts | `line_config`, `alert_rules`, `alert_logs`, `pending_recipients` | LINE config/rules/logs and admin-approved recipient onboarding |
 | Reports | `report_schedules`, `report_history` | Scheduled delivery config and send history |
 | Camera operations | `camera_status_log`, `camera_offline_alerts` | Heartbeat transition history and offline/recovery alert config |
-| Auth/audit | `users`, `sessions`, `audit_log` | Admin/viewer/auditor roles; user/session/camera-targeted audit trail |
+| Auth/audit | `users`, `sessions`, `audit_log`, `push_tokens` | Admin/viewer/auditor roles; user/session/camera-targeted audit trail; mobile push device tokens |
 | Settings/migrations | `system_settings`, `schema_migrations` | Key/value settings and migration tracking |
 
 Schema evolution rules:
@@ -189,6 +191,9 @@ See [docs/ARCH_documentation-governance.md](docs/ARCH_documentation-governance.m
 | Migrations, backup/restore, service lifecycle, branding | [docs/LOGIC_infra-ops.md](docs/LOGIC_infra-ops.md) |
 | Troubleshooting | [docs/REF_troubleshooting.md](docs/REF_troubleshooting.md) |
 | SQL snippets and settings reference | [docs/REF_operator-sql.md](docs/REF_operator-sql.md) |
+| REST API reference — all endpoints, auth levels, params, response shapes, WebSocket | [docs/REF_api-reference.md](docs/REF_api-reference.md) |
+| Operator playbook (English) — mapping recipes, settings, health check, runtime stack | [SKILL.md](SKILL.md) |
+| Operator playbook (Thai) — same content, Thai prose + English technical terms with remarks | [SKILL-TH.md](SKILL-TH.md) |
 | Daily start/stop/recovery | [service_start.md](service_start.md) |
 | Pending work | [ROADMAP.md](ROADMAP.md) |
 | Completed work | [CHANGELOG.md](CHANGELOG.md) |
@@ -196,4 +201,4 @@ See [docs/ARCH_documentation-governance.md](docs/ARCH_documentation-governance.m
 
 ---
 
-<sub>End of ARCHITECTURE.md · Companion to CLAUDE.md · Updated 2026-05-27</sub>
+<sub>End of ARCHITECTURE.md · Companion to CLAUDE.md · Updated 2026-06-08</sub>

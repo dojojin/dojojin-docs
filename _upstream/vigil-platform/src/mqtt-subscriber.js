@@ -1,5 +1,5 @@
 // ============================================================
-// DojoJin Tech Dashboard — MQTT Subscriber
+// Vigil Platform — MQTT Subscriber
 // CCTV Analytics & Management Suite
 // ============================================================
 // @author    Prakasit Rochanavipart (Dojo-mAn)
@@ -27,11 +27,6 @@ const crypto = require('crypto');
 require('dotenv').config();
 require('./singleton')('mqtt-subscriber');   // refuse to run a second copy
 
-// 🆕 Alert engine (LINE notifications)
-let alertEngine;
-try { alertEngine = require('./alert-engine'); } catch (e) {
-  console.warn('🔔 Alert engine not available:', e.message);
-}
 
 // ============================================================
 // Filter Config — events ที่ ignore (ไม่บันทึก)
@@ -117,6 +112,8 @@ const pool = new Pool({
   database: process.env.DB_NAME,
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
+  max: 5,
+  application_name: 'mqtt-subscriber',
 });
 
 // บังคับ session ทุก connection ให้ใช้ UTC — กันปัญหา timezone mismatch
@@ -367,11 +364,6 @@ client.on('connect', () => {
   console.log(`║  🚫 Ignored events: ${IGNORED_EVENT_TYPES.join(', ').padEnd(28, ' ')} ║`);
   console.log('╚══════════════════════════════════════════════════╝');
 
-  // 🆕 Init alert engine
-  if (alertEngine) {
-    try { alertEngine.init(pool); } catch (e) { console.warn('🔔 Alert engine init error:', e.message); }
-  }
-
   // 🆕 SD status poller (Bosch RCP+ 0x0CB5)
   setTimeout(pollAllSdStatus, 5000);
   setInterval(pollAllSdStatus, SD_POLL_INTERVAL_MS);
@@ -416,7 +408,9 @@ client.on('message', async (topic, payload, packet) => {
   } catch (err) { console.error('Parse:', err.message); }
 });
 
-client.on('error', (err) => console.error('❌ MQTT:', err.message));
+// err.message อาจว่างตอน broker teardown — fallback เป็น code/error เต็ม
+// เพื่อไม่ให้ log บรรทัดว่าง (incident 2026-06-07, audit A5)
+client.on('error', (err) => console.error('❌ MQTT:', err.message || err.code || err));
 
 // ============================================================
 // Process Message
@@ -611,7 +605,11 @@ async function processMessage(topic, msg) {
 
   if (category === 'RuleEngine') {
     const obj = msg.Data?.Object?.Object;
-    if (obj?.Appearance?.HumanFace || obj?.Appearance?.HumanBody) {
+    // HumanFace/HumanBody = IVA Pro attributes เต็มชุด (8x00i);
+    // Class+Color อย่างเดียว = generic IVA metadata (เช่น 3100i) → เก็บเป็นแถว
+    // low-fidelity (dominant color) ให้ Person Data ค้นแบบหยาบได้
+    if (obj?.Appearance?.HumanFace || obj?.Appearance?.HumanBody ||
+        (obj?.Appearance?.Class && obj?.Appearance?.Color)) {
       await extractAppearance(eventId, cameraId, objectId, obj.Appearance, snapshotFilename);
     }
     if (msg.Data?.LicensePlateInfo) {
@@ -619,25 +617,24 @@ async function processMessage(topic, msg) {
     }
   }
 
-  // 🆕 Alert engine hook — เช็ค rules + ส่ง LINE notification (async, ไม่ block)
-  if (alertEngine && ruleName) {
-    // Enrich with camera_name + location from cameras-config.json so the
-    // LINE message can show the real camera name + install location
-    // instead of the raw camera_id. cameraMap is the config object keyed
-    // by camera_id (see loadConfig).
+  // 🔔 Notify alert-worker via pg_notify (async, ไม่ block ingestion)
+  if (ruleName) {
     const camCfg = cameraMap[cameraId] || {};
-    alertEngine.onEvent({
-      event_id: eventId,
-      camera_id: cameraId,
-      camera_name: camCfg.camera_name || cameraId,
-      location: camCfg.location || null,
-      rule_name: ruleName,
-      event_type: eventType,
-      object_class: objectClass,
-      likelihood,
-      event_time: eventTime,
-      snapshot_filename: snapshotFilename,
-    }).catch(err => console.error('🔔 Alert error:', err.message));
+    pool.query(
+      `SELECT pg_notify('alert_event', $1)`,
+      [JSON.stringify({
+        event_id:          eventId,
+        camera_id:         cameraId,
+        camera_name:       camCfg.camera_name || cameraId,
+        location:          camCfg.location || null,
+        rule_name:         ruleName,
+        event_type:        eventType,
+        object_class:      objectClass,
+        likelihood,
+        event_time:        eventTime,
+        snapshot_filename: snapshotFilename,
+      })]
+    ).catch(err => console.error('🔔 pg_notify alert_event error:', err.message));
   }
 
   // 🎬 Notify media-recorder for pre-alarm clip capture (Phase 6.1).
@@ -731,14 +728,34 @@ async function extractAppearance(eventId, cameraId, objectId, appearance, snapsh
     const topXyz    = colorStr(clothing.Tops?.Color);
     const bottomXyz = colorStr(clothing.Bottoms?.Color);
     const hairXyz   = colorStr(face.Hair?.Color);
+    // Whole-object colour clusters — generic IVA metadata ที่กล้อง non-Pro
+    // (เช่น 3100i) แนบมากับทุก detection: เก็บครบทุก cluster เรียงตาม weight
+    // (Ph.3, migration 042); overall_* = cluster อันดับ 1 สำหรับ display หลัก
+    let overallXyz = null, colorClusters = null;
+    const clusters = appearance.Color?.ColorCluster;
+    if (clusters) {
+      const arr = (Array.isArray(clusters) ? clusters : [clusters])
+        .filter(cl => cl?.Color)
+        .map(cl => {
+          const xyz = `${cl.Color['@X']},${cl.Color['@Y']},${cl.Color['@Z']}`;
+          return { xyz, name: xyzToColorName(xyz), weight: parseFloat(cl.Weight ?? '0') || 0 };
+        })
+        .sort((a, b) => b.weight - a.weight)
+        .slice(0, 4);
+      if (arr.length) {
+        colorClusters = JSON.stringify(arr);
+        overallXyz = arr[0].xyz;
+      }
+    }
     await pool.query(
       `INSERT INTO appearances
        (event_id, camera_id, object_id, object_class, confidence,
         gender, hair_length, hair_color_xyz,
         top_category, top_color_xyz, bottom_category, bottom_color_xyz,
         glasses, bag_category, helmet_wear, helmet_subtype, vest_style,
-        upper_color, lower_color, hair_color)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
+        upper_color, lower_color, hair_color,
+        overall_color, overall_color_xyz, color_clusters)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)`,
       [eventId, cameraId, objectId, objectClass, confidence,
        face.Gender||null, face.Hair?.Length||null, hairXyz,
        clothing.Tops?.Category||null,    topXyz,
@@ -746,7 +763,8 @@ async function extractAppearance(eventId, cameraId, objectId, appearance, snapsh
        face.Accessory?.Opticals?.Wear==='true', body.Belonging?.Bag?.Category||null,
        face.Accessory?.Helmet?.Wear==='true', face.Accessory?.Helmet?.Subtype||null,
        clothing.Tops?.Style||null,
-       xyzToColorName(topXyz), xyzToColorName(bottomXyz), xyzToColorName(hairXyz)]
+       xyzToColorName(topXyz), xyzToColorName(bottomXyz), xyzToColorName(hairXyz),
+       xyzToColorName(overallXyz), overallXyz, colorClusters]
     );
   } catch (e) {
     console.error(`[appearance] extractAppearance failed (event ${eventId}, camera ${cameraId}): ${e.message}`);
