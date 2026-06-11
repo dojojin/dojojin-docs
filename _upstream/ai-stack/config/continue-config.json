@@ -1,0 +1,31 @@
+{
+  "//": "ai-stack — Continue.dev config (Phase B). ติดตั้งไปที่ ~/.continue/config.json",
+  "//models": "ต่อ Ollama local 127.0.0.1:11434 — ฟรี ออฟไลน์ (ดู docs/LOGIC_model-selection.md)",
+  "models": [
+    {
+      "title": "Qwen2.5 Coder 7B (chat)",
+      "provider": "ollama",
+      "model": "qwen2.5-coder:7b",
+      "apiBase": "http://127.0.0.1:11434"
+    },
+    {
+      "title": "Qwen2.5 7B (general / แปล)",
+      "provider": "ollama",
+      "model": "qwen2.5:7b",
+      "apiBase": "http://127.0.0.1:11434"
+    }
+  ],
+  "tabAutocompleteModel": {
+    "title": "Qwen2.5 Coder 3B (autocomplete)",
+    "provider": "ollama",
+    "model": "qwen2.5-coder:3b",
+    "apiBase": "http://127.0.0.1:11434"
+  },
+  "embeddingsProvider": {
+    "//": "เปิดใช้ถ้าได้ดึง nomic-embed-text (ROADMAP backlog)",
+    "provider": "ollama",
+    "model": "nomic-embed-text",
+    "apiBase": "http://127.0.0.1:11434"
+  },
+  "//cloud": "อยากสลับไป cloud ตอนงานยาก: เพิ่ม model ที่นี่ (เช่น provider anthropic + apiKey)"
+}

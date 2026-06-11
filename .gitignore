@@ -10,3 +10,5 @@ _upstream/vigil-mobile/dist/
 _upstream/vigil-mobile/.expo/
 _upstream/vigil-mobile/android/
 _upstream/vigil-mobile/ios/
+_upstream/ai-stack/node_modules/
+_upstream/ai-stack/.env
