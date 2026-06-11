@@ -12,3 +12,9 @@
 ## AI OCR Pipeline
 
 - [AI OCR Pipeline](./ai-ocr-pipeline) — ดึงข้อมูลเอกสารอัตโนมัติผ่าน Google Apps Script *(หยุดพัฒนาชั่วคราว)*
+
+## AI Stack (Local LLM)
+
+ระบบ AI inference แบบ self-hosted รันทั้งหมดบน consumer GPU — ไม่มี cloud subscription ไม่มีข้อมูลออกนอกเครื่อง
+
+- [AI Stack](./ai-stack) — Ollama, Open WebUI, SearXNG, Continue.dev และการเลือกโมเดลสำหรับ GPU VRAM 6 GB
