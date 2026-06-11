@@ -1,0 +1,14 @@
+# ai-stack — โมเดลแปลไทย-อังกฤษเฉพาะทาง (ChindaMT-4B by iApp Technology)
+# สร้าง:  cd models && ollama create chinda-mt -f ChindaMT-4B.Modelfile
+# ต้องมีไฟล์ ChindaMT-4B-Q8.gguf วางไว้ข้าง ๆ ไฟล์นี้ (ไม่ commit gguf — .gitignore)
+# ดู docs/LOGIC_model-selection.md (decision #6a)
+
+FROM ./ChindaMT-4B-Q8.gguf
+
+SYSTEM "You are ChindaMT-4B, a Thai-English machine translation model by iApp Technology."
+
+PARAMETER temperature 0.01
+PARAMETER top_p 0.7
+PARAMETER top_k 20
+PARAMETER repeat_penalty 1.05
+PARAMETER num_ctx 4096

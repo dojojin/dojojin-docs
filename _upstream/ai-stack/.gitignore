@@ -1,0 +1,19 @@
+# secrets / env
+.env
+*.local
+
+# โมเดลขนาดใหญ่ — ห้าม commit เข้า git (ใหญ่เกิน, ดึงเองด้วย ollama/วาง gguf)
+*.gguf
+*.bin
+*.safetensors
+
+# backup ก่อน init (เก็บ local ไม่ขึ้น repo)
+.backup-pre-init-*/
+
+# python
+__pycache__/
+*.pyc
+
+# os / editor
+.DS_Store
+*.swp

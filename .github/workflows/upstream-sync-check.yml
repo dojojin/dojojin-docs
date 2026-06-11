@@ -21,7 +21,7 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
-      - name: Configure SSH agent
+      - name: Configure SSH agent (private repos)
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: |
@@ -46,6 +46,7 @@ jobs:
           git config user.email "actions@github.com"
           git config user.name "GitHub Actions"
 
+      # ─── vigil-platform (private, SSH) ───────────────────────────────────
       - name: Detect vigil-platform drift
         id: platform_drift
         run: |
@@ -73,6 +74,7 @@ jobs:
             echo "local_sha=$EMBEDDED_SHA" >> "$GITHUB_OUTPUT"
           fi
 
+      # ─── vigil-mobile (private, SSH) ─────────────────────────────────────
       - name: Detect vigil-mobile drift
         id: mobile_drift
         run: |
@@ -100,17 +102,38 @@ jobs:
             echo "local_sha=$EMBEDDED_SHA" >> "$GITHUB_OUTPUT"
           fi
 
+      # ─── ai-stack (public, HTTPS, SHA-file method) ───────────────────────
+      - name: Detect ai-stack drift
+        id: ai_stack_drift
+        run: |
+          REMOTE_SHA=$(git ls-remote https://github.com/dojojin/ai-stack.git HEAD | awk '{print $1}')
+          echo "Remote ai-stack HEAD: $REMOTE_SHA"
+
+          LOCAL_SHA=$(cat _upstream/.ai-stack-sha 2>/dev/null || echo "none")
+          echo "Local ai-stack SHA: $LOCAL_SHA"
+
+          if [ "$REMOTE_SHA" != "$LOCAL_SHA" ]; then
+            echo "drifted=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "drifted=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "remote_sha=$REMOTE_SHA" >> "$GITHUB_OUTPUT"
+          echo "local_sha=$LOCAL_SHA" >> "$GITHUB_OUTPUT"
+
+      # ─── Exit early if nothing drifted ───────────────────────────────────
       - name: Exit if no drift
         if: |
           steps.platform_drift.outputs.drifted == 'false' &&
-          steps.mobile_drift.outputs.drifted == 'false'
-        run: |
-          echo "No upstream changes detected. Nothing to do."
+          steps.mobile_drift.outputs.drifted == 'false' &&
+          steps.ai_stack_drift.outputs.drifted == 'false'
+        run: echo "No upstream changes detected. Nothing to do."
 
+      # ─── Create sync branch ───────────────────────────────────────────────
       - name: Create sync branch
         if: |
           (steps.platform_drift.outputs.drifted == 'true' ||
-           steps.mobile_drift.outputs.drifted == 'true') &&
+           steps.mobile_drift.outputs.drifted == 'true' ||
+           steps.ai_stack_drift.outputs.drifted == 'true') &&
           inputs.dry_run != true
         run: |
           BRANCH="upstream-sync/$(date +%Y-%m-%d)-${{ github.run_id }}"
@@ -119,6 +142,7 @@ jobs:
           echo "SYNC_BRANCH=$BRANCH" >> "$GITHUB_ENV"
           echo "PRE_SYNC_SHA=$PRE_SYNC_SHA" >> "$GITHUB_ENV"
 
+      # ─── Pull vigil-platform ─────────────────────────────────────────────
       - name: Pull vigil-platform subtree
         if: |
           steps.platform_drift.outputs.drifted == 'true' &&
@@ -131,6 +155,7 @@ jobs:
             --squash \
             -m "chore(upstream): pull vigil-platform $(date +%Y-%m-%d) [CI]"
 
+      # ─── Pull vigil-mobile ───────────────────────────────────────────────
       - name: Pull vigil-mobile subtree
         if: |
           steps.mobile_drift.outputs.drifted == 'true' &&
@@ -143,10 +168,25 @@ jobs:
             --squash \
             -m "chore(upstream): pull vigil-mobile $(date +%Y-%m-%d) [CI]"
 
+      # ─── Pull ai-stack (public, rsync) ────────────────────────────────────
+      - name: Pull ai-stack
+        if: |
+          steps.ai_stack_drift.outputs.drifted == 'true' &&
+          inputs.dry_run != true
+        run: |
+          git clone --depth 1 --branch main \
+            https://github.com/dojojin/ai-stack.git /tmp/ai-stack-clone
+          rsync -a --delete --exclude='.git' /tmp/ai-stack-clone/ _upstream/ai-stack/
+          echo "${{ steps.ai_stack_drift.outputs.remote_sha }}" > _upstream/.ai-stack-sha
+          git add _upstream/ai-stack/ _upstream/.ai-stack-sha
+          git commit -m "chore(upstream): pull ai-stack $(date +%Y-%m-%d) [CI] [${{ steps.ai_stack_drift.outputs.remote_sha }}]"
+
+      # ─── Generate PR body ─────────────────────────────────────────────────
       - name: Generate diff summary
         if: |
           (steps.platform_drift.outputs.drifted == 'true' ||
-           steps.mobile_drift.outputs.drifted == 'true') &&
+           steps.mobile_drift.outputs.drifted == 'true' ||
+           steps.ai_stack_drift.outputs.drifted == 'true') &&
           inputs.dry_run != true
         id: diff_summary
         run: |
@@ -182,6 +222,18 @@ jobs:
               echo '```'
               echo ''
             fi
+            if [ "${{ steps.ai_stack_drift.outputs.drifted }}" = "true" ]; then
+              echo '### ai-stack changes'
+              echo ''
+              echo "Previously synced: \`${{ steps.ai_stack_drift.outputs.local_sha }}\`"
+              echo "Current remote HEAD: \`${{ steps.ai_stack_drift.outputs.remote_sha }}\`"
+              echo ''
+              echo '**Files changed:**'
+              echo '```'
+              git diff --stat "$PRE_SYNC_SHA" HEAD -- _upstream/ai-stack/ 2>/dev/null | head -40 || true
+              echo '```'
+              echo ''
+            fi
             echo '---'
             echo ''
             echo '## Next steps'
@@ -197,17 +249,20 @@ jobs:
             echo 'HEREDOC'
           } >> "$GITHUB_OUTPUT"
 
+      # ─── Push + open PR ───────────────────────────────────────────────────
       - name: Push sync branch
         if: |
           (steps.platform_drift.outputs.drifted == 'true' ||
-           steps.mobile_drift.outputs.drifted == 'true') &&
+           steps.mobile_drift.outputs.drifted == 'true' ||
+           steps.ai_stack_drift.outputs.drifted == 'true') &&
           inputs.dry_run != true
         run: git push origin "$SYNC_BRANCH"
 
       - name: Open draft PR
         if: |
           (steps.platform_drift.outputs.drifted == 'true' ||
-           steps.mobile_drift.outputs.drifted == 'true') &&
+           steps.mobile_drift.outputs.drifted == 'true' ||
+           steps.ai_stack_drift.outputs.drifted == 'true') &&
           inputs.dry_run != true
         run: |
           gh pr create \
@@ -218,6 +273,7 @@ jobs:
             --head "$SYNC_BRANCH" \
             --label "upstream-sync"
 
+      # ─── Dry run summary ─────────────────────────────────────────────────
       - name: Dry run summary
         if: inputs.dry_run == true
         run: |
@@ -228,3 +284,6 @@ jobs:
           echo "vigil-mobile drifted: ${{ steps.mobile_drift.outputs.drifted }}"
           echo "  remote: ${{ steps.mobile_drift.outputs.remote_sha }}"
           echo "  local:  ${{ steps.mobile_drift.outputs.local_sha }}"
+          echo "ai-stack drifted: ${{ steps.ai_stack_drift.outputs.drifted }}"
+          echo "  remote: ${{ steps.ai_stack_drift.outputs.remote_sha }}"
+          echo "  local:  ${{ steps.ai_stack_drift.outputs.local_sha }}"

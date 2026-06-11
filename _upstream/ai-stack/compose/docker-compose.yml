@@ -1,0 +1,30 @@
+# ai-stack — Open WebUI (Phase B)
+# หน้าแชตแบบ ChatGPT ต่อ Ollama บน host. เข้าใช้: http://localhost:3000
+# ดู docs/ARCH_stack-overview.md
+
+services:
+  openwebui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: openwebui
+    restart: always
+    ports:
+      - "3000:8080"
+    environment:
+      # ต่อกลับ Ollama ที่รันบน host (systemd) ผ่าน host-gateway
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      # ปิดสมัครสมาชิกเปิดกว้าง — ครั้งแรกสมัคร admin แล้วล็อก (ปลอดภัยขึ้น)
+      - ENABLE_SIGNUP=false
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    volumes:
+      - openwebui:/app/backend/data
+
+  # ── อย่าเปิด cloudflared container ที่นี่ ── (GOTCHAS #2, decision #10, STUBBORN_FACT)
+  # host รัน cloudflared-dojojin.service (systemd) อยู่แล้ว — เปิด container ซ้ำ
+  # = tunnel เดียวกัน split-brain → 502 เป็นช่วง ๆ. ดู dojojin-site/DEPLOYMENT.md
+  # cloudflared:
+  #   image: cloudflare/cloudflared:latest
+  #   ...
+
+volumes:
+  openwebui:
