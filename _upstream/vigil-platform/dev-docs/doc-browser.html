@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>เอกสารทั้งหมด — Dev Portal</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="overlay"></div>
+<div class="layout">
+<nav class="nav" id="nav"></nav>
+<button id="ham">☰</button>
+
+<div class="main">
+<h1 class="ph">เอกสารทั้งหมด — Doc Browser</h1>
+
+<p>รายการเอกสารที่ curated ทั้งหมดในโปรเจกต์ (ยกเว้น AI-internal / audit artifacts) — กดที่ชื่อไฟล์เพื่อเปิดใน viewer</p>
+
+<div class="ibox">
+  <h4>ต้องเปิดผ่าน local server</h4>
+  <p>ต้องรัน <code>python3 -m http.server 8081 --directory /Users/dojojin/vigil-platform</code> ก่อน แล้วเข้า <code>http://localhost:8081/dev-docs/</code></p>
+</div>
+
+<h2>Core Architecture</h2>
+<table>
+<thead><tr><th>ไฟล์</th><th>สิ่งที่อยู่ข้างใน</th><th>Role</th></tr></thead>
+<tbody>
+<tr>
+  <td><a href="md-viewer.html?src=../ARCHITECTURE.md">ARCHITECTURE.md</a></td>
+  <td>Owner context · architecture · tech stack · DB schema groups · code patterns · critical ops · commercial info</td>
+  <td><span class="badge b-blue">ARCH_</span></td>
+</tr>
+<tr>
+  <td><a href="md-viewer.html?src=../DESIGN.md">DESIGN.md</a></td>
+  <td>Design system — tokens (tri-layer) · type scale · spacing · elevation · icon/SVG · Chart/Map/Report theming · component patterns</td>
+  <td><span class="badge b-green">GUIDE_</span></td>
+</tr>
+<tr>
+  <td><a href="md-viewer.html?src=../DECISIONS.md">DECISIONS.md</a></td>
+  <td>Decision index #1–#199 — อ่านก่อน second-guess อะไรในโปรเจกต์</td>
+  <td><span class="badge b-amber">LOGIC_</span></td>
+</tr>
+<tr>
+  <td><a href="md-viewer.html?src=../GOTCHAS.md">GOTCHAS.md</a></td>
+  <td>Known issues / quirks / footguns (#1–#84) — ทุก entry มาจาก incident จริง</td>
+  <td><span class="badge b-red">INCIDENT_</span></td>
+</tr>
+<tr>
+  <td><a href="md-viewer.html?src=../docs/ARCH_documentation-governance.md">ARCH_documentation-governance.md</a></td>
+  <td>Registry ของทุกไฟล์ · task→load mapping · STUBBORN_FACT index · maintenance rules</td>
+  <td><span class="badge b-blue">Registry</span></td>
+</tr>
+</tbody>
+</table>
+
+<h2>LOGIC — ทำไมต้องเป็นแบบนี้</h2>
+<table>
+<thead><tr><th>ไฟล์</th><th>สิ่งที่อยู่ข้างใน</th></tr></thead>
+<tbody>
+<tr>
+  <td><a href="md-viewer.html?src=../docs/LOGIC_auth-security.md">LOGIC_auth-security.md</a></td>
+  <td>Triple-layer auth · RBAC · WS verifyClient · security audit SEC-001–011</td>
+</tr>
+<tr>
+  <td><a href="md-viewer.html?src=../docs/LOGIC_camera-ingesters.md">LOGIC_camera-ingesters.md</a></td>
+  <td>Bosch MQTT / Hikvision ISAPI / Dahua CGI / ONVIF — factory pattern, clip capture</td>
+</tr>
+<tr>
+  <td><a href="md-viewer.html?src=../docs/LOGIC_infra-ops.md">LOGIC_infra-ops.md</a></td>
+  <td>Schema migrations · service lifecycle · retention · deployment · scale-up plan</td>
+</tr>
+<tr>
+  <td><a href="md-viewer.html?src=../docs/LOGIC_stats-reports.md">LOGIC_stats-reports.md</a></td>
+  <td>Stats aggregation · Puppeteer reports · density · analyticsEventClause()</td>
+</tr>
+<tr>
+  <td><a href="md-viewer.html?src=../docs/LOGIC_line-notifications.md">LOGIC_line-notifications.md</a></td>
+  <td>LINE alert rules · imgbb · quiet hours · recipient onboarding</td>
+</tr>
+<tr>
+  <td><a href="md-viewer.html?src=../docs/LOGIC_map-features.md">LOGIC_map-features.md</a></td>
+  <td>Map page (OpenLayers) · camera grouping · Live Pulse · improvement backlog</td>
+</tr>
+<tr>
+  <td><a href="md-viewer.html?src=../docs/LOGIC_license.md">LOGIC_license.md</a></td>
+  <td>Ed25519 JWT license · fingerprint · keygen setup · enforcement flow</td>
+</tr>
+</tbody>
+</table>
+
+<h2>REF — ข้อมูลอ้างอิง</h2>
+<table>
+<thead><tr><th>ไฟล์</th><th>สิ่งที่อยู่ข้างใน</th></tr></thead>
+<tbody>
+<tr>
+  <td><a href="md-viewer.html?src=../docs/REF_api-reference.md">REF_api-reference.md</a></td>
+  <td>Full REST API — 126 routes / 22 groups · auth levels · request params · response shapes · WebSocket protocol</td>
+</tr>
+<tr>
+  <td><a href="md-viewer.html?src=../docs/REF_database-schema.md">REF_database-schema.md</a></td>
+  <td>Full DB schema — ทุก table / column / index · PostgreSQL credentials · impact analysis · example queries</td>
+</tr>
+<tr>
+  <td><a href="md-viewer.html?src=../docs/REF_troubleshooting.md">REF_troubleshooting.md</a></td>
+  <td>Troubleshooting steps §8.1–§8.18 — events / camera / LINE / storage / Puppeteer</td>
+</tr>
+<tr>
+  <td><a href="md-viewer.html?src=../docs/REF_security-checklist.md">REF_security-checklist.md</a></td>
+  <td>Security audit checklist SEC-001–011 — auth / upload / cookie / credential / docker port</td>
+</tr>
+<tr>
+  <td><a href="md-viewer.html?src=../docs/REF_operator-sql.md">REF_operator-sql.md</a></td>
+  <td>SQL snippets สำหรับ operator — event queries · stats · maintenance</td>
+</tr>
+<tr>
+  <td><a href="md-viewer.html?src=../docs/REF_third-party-integration.md">REF_third-party-integration.md</a></td>
+  <td>Third-party DB integration — v_*_public views · ops setup · PDPA · change policy</td>
+</tr>
+<tr>
+  <td><a href="md-viewer.html?src=../docs/REF_face-recognition.md">REF_face-recognition.md</a></td>
+  <td>Face Recognition (PLANNED) — options A/B/C · InsightFace · pgvector · hardware sizing</td>
+</tr>
+</tbody>
+</table>
+
+<h2>Operations &amp; Operator Playbook</h2>
+<table>
+<thead><tr><th>ไฟล์</th><th>สิ่งที่อยู่ข้างใน</th></tr></thead>
+<tbody>
+<tr>
+  <td><a href="md-viewer.html?src=../service_start.md">service_start.md</a></td>
+  <td>Daily start / stop / health check / troubleshoot manual</td>
+</tr>
+<tr>
+  <td><a href="md-viewer.html?src=../SKILL.md">SKILL.md</a></td>
+  <td>Operator's playbook (English) — mental model, mapping recipes, settings, branding, reports, i18n, license</td>
+</tr>
+<tr>
+  <td><a href="md-viewer.html?src=../SKILL-TH.md">SKILL-TH.md</a></td>
+  <td>Operator's playbook (Thai) — เนื้อหาเหมือน SKILL.md, prose ภาษาไทย</td>
+</tr>
+<tr>
+  <td><a href="md-viewer.html?src=../HARDWARE_SIZING_GUIDE.md">HARDWARE_SIZING_GUIDE.md</a></td>
+  <td>Hardware sizing per camera count (G1–G5) + software scale-up plan</td>
+</tr>
+</tbody>
+</table>
+
+<h2>Planning &amp; History</h2>
+<table>
+<thead><tr><th>ไฟล์</th><th>สิ่งที่อยู่ข้างใน</th></tr></thead>
+<tbody>
+<tr>
+  <td><a href="md-viewer.html?src=../CHANGELOG.md">CHANGELOG.md</a></td>
+  <td>Completed features by version (v1.2 → v1.5) + recent updates timeline</td>
+</tr>
+<tr>
+  <td><a href="md-viewer.html?src=../ROADMAP.md">ROADMAP.md</a></td>
+  <td>Pending work · operational roadmap Ph.1–Ph.6 · strategic direction</td>
+</tr>
+<tr>
+  <td><a href="md-viewer.html?src=../README.md">README.md</a></td>
+  <td>User-facing project intro (v1.5.0) · Quick Start · Installation steps</td>
+</tr>
+</tbody>
+</table>
+
+<div class="ref">
+  <p><a href="index.html">← กลับ Navigator</a> · รายการนี้ curated จาก CLAUDE.md Documentation Map · อัปเดต: <code>docs/ARCH_documentation-governance.md</code></p>
+</div>
+</div>
+</div>
+
+<script src="nav.js"></script>
+</body>
+</html>

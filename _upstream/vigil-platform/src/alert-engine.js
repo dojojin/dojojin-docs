@@ -74,7 +74,20 @@ function matchRule(rule, event) {
   if (rule.rule_names && rule.rule_names.length > 0) {
     if (!rule.rule_names.includes(event.rule_name)) return false;
   }
+  // list_types ว่าง = match ทุก list type (รวมถึง event ที่ไม่มี list_type)
+  if (rule.list_types && rule.list_types.length > 0) {
+    if (!rule.list_types.includes(event.list_type)) return false;
+  }
   return true;
+}
+
+// ── Likelihood guard (migration 045) ────────────────────────
+// กรอง ghost detection (เช่น 0.34 หลัง GlobalSceneChange). event ที่ไม่มี
+// likelihood (Hikvision/Dahua) ผ่านเสมอ — threshold ใช้กับ Bosch ที่ส่งค่ามา
+function belowMinLikelihood(rule, event) {
+  if (!rule.min_likelihood) return false;
+  const lh = parseFloat(event.likelihood);
+  return Number.isFinite(lh) && lh < rule.min_likelihood;
 }
 
 // ── Cooldown check ──────────────────────────────────────────
@@ -107,6 +120,12 @@ function isWithinQuietHours(rule) {
     : (now >= from || now < to);       // crosses midnight, e.g. 22:00–06:00
 }
 
+// Bosch detection events that edge-config-agent captures a snapshot for
+function _snapshotExpected(event) {
+  const et = event.event_type || '';
+  return et.includes('ObjectDetection') || et.includes('LineDetector') || et.includes('FieldDetector');
+}
+
 // ── Main event handler ──────────────────────────────────────
 async function onEvent(event) {
   // Refresh cache ถ้านานเกิน TTL (กัน timer พลาด)
@@ -118,9 +137,11 @@ async function onEvent(event) {
   // อิสระจาก LINE channel on/off. ว่าง = ไม่ส่ง (สมมาตรกับ LINE recipients).
   // push-sender มี cooldown 20s/หัวข้อในตัว จึงไม่พึ่ง isInCooldown ของ LINE.
   for (const rule of rulesCache) {
+    if (rule.dwell_threshold_sec) continue;   // dwell rule — ยิงจาก checkDwellRules ไม่ใช่ต่อ event
     const pushUsers = rule.push_user_ids || [];
     if (pushUsers.length === 0) continue;     // ไม่เลือกผู้รับ = ไม่ส่ง
     if (!matchRule(rule, event)) continue;
+    if (belowMinLikelihood(rule, event)) continue;
     if (isWithinQuietHours(rule)) continue;
     pushSender.notifyAlert(pool, {
       id:          event.event_id,
@@ -132,6 +153,19 @@ async function onEvent(event) {
     break; // ส่ง push ครั้งเดียวต่อ event แม้ match หลาย rule
   }
 
+  // Bosch snapshots arrive ~1s after the event via a separate MQTT message.
+  // Wait briefly so LINE includes the image (mobile push already fired above).
+  if (!event.snapshot_filename && _snapshotExpected(event)) {
+    const DEADLINE = Date.now() + 6000;
+    while (Date.now() < DEADLINE) {
+      await new Promise(r => setTimeout(r, 500));
+      const r = await pool.query(
+        `SELECT snapshot_filename FROM events WHERE id = $1`, [event.event_id]);
+      const f = r.rows[0]?.snapshot_filename;
+      if (f) { event.snapshot_filename = f; break; }
+    }
+  }
+
   if (!configCache || !configCache.enabled || !configCache.channel_access_token) {
     return; // LINE ปิดอยู่ — skip silently (push ส่งไปแล้วด้านบน)
   }
@@ -139,7 +173,12 @@ async function onEvent(event) {
   if (rulesCache.length === 0) return; // ไม่มี rule
 
   for (const rule of rulesCache) {
+    if (rule.dwell_threshold_sec) continue;   // dwell rule — ยิงจาก checkDwellRules ไม่ใช่ต่อ event
     if (!matchRule(rule, event)) continue;
+    if (belowMinLikelihood(rule, event)) {
+      await logAttempt(rule, event, 'low_likelihood_skip', null, 0, 0, '');
+      continue;
+    }
 
     // Quiet hours — skip (and log) if NOW is INSIDE the configured quiet
     // window. Checked before cooldown: no point tracking cooldown for an
@@ -225,12 +264,160 @@ async function logAttempt(rule, event, status, errorMsg, recipientCount, duratio
   }
 }
 
+// ── Dwell alert "อยู่นานผิดปกติ" (migration 044) ─────────────
+// rule ที่ตั้ง dwell_threshold_sec: ไม่ยิงต่อ event — ตัวนี้เช็คว่ามี
+// "open episode" (FieldDetector/ObjectsInside ขา true ล่าสุดที่ยังไม่มี
+// false ตามมา) ค้างนานเกิน threshold แล้วยิง LINE ระหว่างที่คนยังอยู่.
+// cooldown ของ rule = ระยะเตือนซ้ำขณะ episode ยังเปิดอยู่.
+// เรียกจาก alert-worker เท่านั้น (ห้ามใส่ใน init() — engine นี้ถูก init
+// ในหลาย process: api-server/ingesters ด้วย จะยิงซ้ำกันเอง)
+function _fmtDurationTh(sec) {
+  if (sec < 60) return `${sec} วินาที`;
+  if (sec < 3600) return `${Math.floor(sec / 60)} นาที ${sec % 60} วินาที`;
+  return `${Math.floor(sec / 3600)} ชม. ${Math.floor((sec % 3600) / 60)} นาที`;
+}
+
+async function checkDwellRules() {
+  const dwellRules = rulesCache.filter(r => r.dwell_threshold_sec > 0);
+  if (dwellRules.length === 0) return;
+  if (!configCache || !configCache.enabled || !configCache.channel_access_token) return;
+
+  let episodes;
+  try {
+    // open episode ต่อ (camera, rule): row ล่าสุดใน 24 ชม. เป็น true =
+    // ยังมีคนอยู่ (cutoff 24 ชม. เดียวกับ /api/stats/dwell กัน state หลุด)
+    const { rows } = await pool.query(`
+      WITH latest AS (
+        SELECT DISTINCT ON (e.camera_id, e.rule_name)
+               e.id, e.camera_id, e.rule_name, e.event_state, e.event_time,
+               e.snapshot_filename
+        FROM events e
+        WHERE e.event_type = 'FieldDetector/ObjectsInside'
+          AND e.event_state IN ('true','false')
+          AND e.event_time > NOW() - INTERVAL '24 hours'
+        ORDER BY e.camera_id, e.rule_name, e.event_time DESC
+      )
+      SELECT l.*, c.name AS camera_name, c.location_label AS location,
+             EXTRACT(EPOCH FROM (NOW() - l.event_time))::int AS open_sec
+      FROM latest l
+      LEFT JOIN cameras c ON c.id = l.camera_id
+      WHERE l.event_state = 'true'`);
+    episodes = rows;
+  } catch (e) {
+    console.error('🔔 Dwell check query error:', e.message || e);
+    return;
+  }
+  if (episodes.length === 0) return;
+
+  for (const rule of dwellRules) {
+    for (const ep of episodes) {
+      if (ep.open_sec < rule.dwell_threshold_sec) continue;
+      const event = {
+        event_id:          ep.id,
+        camera_id:         ep.camera_id,
+        camera_name:       ep.camera_name || ep.camera_id,
+        location:          ep.location || null,
+        rule_name:         ep.rule_name,
+        event_type:        'DwellTooLong',
+        event_time:        ep.event_time,
+        snapshot_filename: ep.snapshot_filename || null,
+        duration_text:     _fmtDurationTh(ep.open_sec),
+      };
+      if (!matchRule(rule, event)) continue;
+      if (isWithinQuietHours(rule)) continue;     // ไม่ log — loop ทุกนาทีจะ spam alert_logs
+      if (isInCooldown(rule)) continue;           // เตือนซ้ำเมื่อพ้น cooldown ถ้ายังอยู่
+
+      const allRecipients = configCache.recipients || [];
+      const targetIds = rule.recipient_ids || [];
+      const recipients = allRecipients.filter(r => r.enabled && targetIds.includes(r.id));
+      if (recipients.length === 0) continue;
+
+      const startMs = Date.now();
+      let result;
+      try {
+        result = await lineSender.sendAlert({
+          rule, event, recipients,
+          token: configCache.channel_access_token,
+          imgbbKey: configCache.imgbb_api_key,
+        });
+      } catch (e) {
+        result = { success: false, error: e.message, messageText: '', sentCount: 0 };
+      }
+      if (result.success || result.sentCount > 0) {
+        try {
+          await pool.query(
+            'UPDATE alert_rules SET last_triggered_at = NOW(), trigger_count = trigger_count + 1 WHERE id = $1',
+            [rule.id]
+          );
+          rule.last_triggered_at = new Date().toISOString();
+          rule.trigger_count = (rule.trigger_count || 0) + 1;
+        } catch {}
+      }
+      await logAttempt(rule, event, result.success ? 'success' : 'failed',
+        result.error, result.sentCount || 0, Date.now() - startMs, result.messageText || '');
+    }
+  }
+}
+
+// ── Edge stale alert ─────────────────────────────────────────
+// ตรวจ edge_status ทุก 5 นาที — ส่ง LINE ถ้า site ขาดการติดต่อเกิน threshold
+const _edgeAlertLastSent = new Map(); // site_id → timestamp
+const EDGE_ALERT_COOLDOWN_MS = 4 * 60 * 60 * 1000; // 4h ไม่แจ้งซ้ำ
+
+async function checkEdgeStale() {
+  if (!configCache || !configCache.enabled || !configCache.channel_access_token) return;
+  const allRecipients = (configCache.recipients || []).filter(r => r.enabled);
+  if (allRecipients.length === 0) return;
+
+  const STALE_SEC = parseInt(process.env.EDGE_HEARTBEAT_STALE_SEC || '180', 10);
+  let rows;
+  try {
+    const { rows: r } = await pool.query(`
+      SELECT site_id, last_seen_at,
+             extract(epoch from (now() - last_seen_at))::int AS stale_sec,
+             bridge_remote, bridge_local, disk_free_gb, disk_total_gb
+      FROM edge_status
+      WHERE last_seen_at < now() - ($1 || ' seconds')::interval
+    `, [STALE_SEC]);
+    rows = r;
+  } catch (e) { console.error('[alert-engine] checkEdgeStale query:', e.message); return; }
+
+  for (const site of rows) {
+    const last = _edgeAlertLastSent.get(site.site_id) || 0;
+    if (Date.now() - last < EDGE_ALERT_COOLDOWN_MS) continue;
+
+    const minAgo = Math.round(site.stale_sec / 60);
+    const disk   = (site.disk_free_gb !== null && site.disk_total_gb !== null)
+      ? `\nDisk: ${site.disk_free_gb}/${site.disk_total_gb} GB`
+      : '';
+    const text = `⚠️ Edge [${site.site_id.toUpperCase()}] ขาดการติดต่อ ${minAgo} นาที\nBridge remote=${site.bridge_remote || '?'} local=${site.bridge_local || '?'}${disk}`;
+
+    let sent = false;
+    for (const r of allRecipients) {
+      try {
+        await lineSender.pushLineMessage(
+          configCache.channel_access_token, r.id,
+          [{ type: 'text', text }]
+        );
+        sent = true;
+      } catch (e) { console.warn(`[alert-engine] edge stale LINE ${r.id}:`, e.message); }
+    }
+    if (sent) {
+      _edgeAlertLastSent.set(site.site_id, Date.now());
+      console.log(`[alert-engine] edge stale alert sent: ${site.site_id} (${minAgo}m)`);
+    }
+  }
+}
+
 module.exports = {
   init,
   shutdown,
   onEvent,
   invalidateCache,
+  checkDwellRules,
+  checkEdgeStale,
   // exported for unit tests (pure functions — no DB/network deps)
   matchRule,
   isInCooldown,
+  belowMinLikelihood,
 };

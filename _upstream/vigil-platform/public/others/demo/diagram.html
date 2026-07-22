@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vigil Platform — ANPR System: Topology, Capabilities &amp; Edge Plan</title>
+<link rel="stylesheet" href="diagram.css">
+</head>
+<body>
+
+<!-- ═══════════════ HEADER ═══════════════ -->
+<header>
+  <div class="wrap doc-meta">
+    <div>
+      <div class="doc-id">VIGIL-ARCH-004 <span>/ ANPR SYSTEM — TOPOLOGY · CAPABILITIES · EDGE PLAN</span></div>
+      <h1>ระบบ <em>ANPR</em> — ผังการเชื่อมต่อจริง &amp; ความสามารถทั้งหมด</h1>
+      <p class="subtitle">
+        เอกสารอ้างอิงจาก <b>การติดตั้งจริง ณ ปัจจุบัน</b> (MacBook central + VSS LAN + N150 edge POC) —
+        ผังการไหลข้อมูล · แต่ละ process ทำอะไร · ตาราง XML ที่กล้อง ANPR ผลิตได้ทั้งหมด (probe จริง 76,333 events) ·
+        และแผนสถาปัตยกรรมอนาคต N150 Edge → WireGuard → Cloud
+      </p>
+    </div>
+    <div class="meta-table">
+      <div><span>Central</span><b>MacBook · 8 PM2 proc</b></div>
+      <div><span>Edge POC</span><b>Minix N150 · vss.dojojin.tech</b></div>
+      <div><span>ANPR cam</span><b>Hikvision iDS-2CD9396</b></div>
+      <div><span>Data basis</span><b>76,333 events จริง</b></div>
+      <div><span>Vendors</span><b>Bosch · Hikvision · Dahua</b></div>
+    </div>
+  </div>
+</header>
+
+<!-- ═══════════════ NAV ═══════════════ -->
+<nav>
+  <div class="wrap nav-inner">
+    <a href="#asis">01 · Topology ปัจจุบัน</a>
+    <a href="#systems">02 · แต่ละระบบทำอะไร</a>
+    <a href="#connect">03 · การเชื่อมต่อ/Vendor</a>
+    <a href="#xml">04 · ตาราง XML เต็ม</a>
+    <a href="#storage">05 · Storage จริง</a>
+    <a href="#future">06 · แผน Edge→Cloud</a>
+  </div>
+</nav>
+
+<!-- ═══════════════ 01 — AS-IS TOPOLOGY ═══════════════ -->
+<section id="asis">
+<div class="wrap">
+  <div class="sec-label">01 — Topology ปัจจุบัน (As-Is)</div>
+  <h2>ผังการเชื่อมต่อจริง ณ ตอนนี้ — VSS = Edge site</h2>
+  <p class="lede">
+    VSS เป็น <b>edge site จริงแล้ว</b> ไม่ใช่ single-box — กล้อง 8 ตัว (192.168.10.x) เข้า <b>N150</b> (192.168.10.30,
+    <code>EDGE_MODE=1</code>): Hik/Dahua ถูก N150 poll, Bosch publish เข้า <b>NanoMQ</b> บน N150, FaceReg push เข้า FAS.
+    ingester ทุกตัว <b>ไม่เขียน Postgres local</b> — publish เข้า NanoMQ → <code>edge-bridge (edge-vss)</code> → WSS →
+    <b>MacBook central</b> (EMQX → mqtt-subscriber → Postgres). ภาพเก็บที่ N150 (Tier-2), central ดึง on-demand ผ่าน proxy.
+    Main Site (ภูเก็ต 10.x) push ผ่าน Cloudflare — ตอนนี้ <b>paused</b>.
+  </p>
+
+  <div class="diagram-frame">
+  <svg viewBox="0 0 1120 470" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker id="aC" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#0D7C72"/></marker>
+      <marker id="aA" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#B87010"/></marker>
+      <marker id="aG" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#1A7A3A"/></marker>
+      <marker id="aV" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#5C4ECC"/></marker>
+      <marker id="aB" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#1A5FAB"/></marker>
+    </defs>
+
+    <!-- Zones -->
+    <rect x="14" y="44" width="300" height="312" rx="10" fill="rgba(13,124,114,.04)" stroke="#C8D4E8"/>
+    <text x="164" y="65" text-anchor="middle" font-size="11" fill="#0D7C72" class="mono-t" letter-spacing="1.5">VSS SITE — N150 EDGE · LAN 192.168.10.x</text>
+
+    <rect x="14" y="372" width="300" height="84" rx="10" fill="rgba(192,57,43,.04)" stroke="#C8D4E8"/>
+    <text x="164" y="392" text-anchor="middle" font-size="11" fill="#C0392B" class="mono-t" letter-spacing="1.2">MAIN SITE — ภูเก็ต 10.x (paused)</text>
+
+    <rect x="330" y="44" width="150" height="412" rx="10" fill="rgba(184,112,16,.04)" stroke="#C8D4E8"/>
+    <text x="405" y="65" text-anchor="middle" font-size="11" fill="#B87010" class="mono-t" letter-spacing="1.5">TRANSPORT</text>
+
+    <rect x="496" y="44" width="404" height="412" rx="10" fill="rgba(92,78,204,.04)" stroke="#C8D4E8"/>
+    <text x="698" y="65" text-anchor="middle" font-size="11" fill="#5C4ECC" class="mono-t" letter-spacing="1.5">MACBOOK — CENTRAL (cloud role)</text>
+
+    <rect x="916" y="44" width="190" height="412" rx="10" fill="rgba(26,95,171,.04)" stroke="#C8D4E8"/>
+    <text x="1011" y="65" text-anchor="middle" font-size="11" fill="#1A5FAB" class="mono-t" letter-spacing="1.5">OUTPUT</text>
+
+    <!-- VSS cameras -->
+    <rect x="28" y="80" width="272" height="56" rx="6" fill="#FFF" stroke="#5A6480" stroke-width="1"/>
+    <text x="42" y="100" font-size="11.5" font-weight="600" fill="#1A2033">8 กล้อง @ 192.168.10.x</text>
+    <text x="42" y="116" font-size="10" fill="#5A6480">Bosch×3 (MQTT) · Hik×2 + Dahua×2 (poll)</text>
+    <text x="42" y="129" font-size="10" fill="#5A6480">FaceReg .235 (face-push)</text>
+
+    <!-- N150 box -->
+    <rect x="28" y="150" width="272" height="196" rx="8" fill="#FFF" stroke="#0D7C72" stroke-width="1.4"/>
+    <text x="164" y="171" text-anchor="middle" font-size="12.5" font-weight="700" fill="#0D7C72">N150 · 192.168.10.30 · EDGE_MODE=1</text>
+    <line x1="40" y1="180" x2="288" y2="180" stroke="#E8EBF3"/>
+    <text x="164" y="199" text-anchor="middle" font-size="10.5" fill="#1A2033">hikvision / dahua → poll (ISAPI/CGI)</text>
+    <text x="164" y="217" text-anchor="middle" font-size="10.5" fill="#B87010">Bosch → publish เข้า NanoMQ :1883</text>
+    <text x="164" y="235" text-anchor="middle" font-size="10.5" fill="#5C4ECC">FaceReg → FAS :3010</text>
+    <rect x="52" y="246" width="224" height="34" rx="5" fill="rgba(13,124,114,.06)" stroke="#0D7C72" stroke-width="1"/>
+    <text x="164" y="267" text-anchor="middle" font-size="11" font-weight="600" fill="#0D7C72">NanoMQ :1883 (ไม่มี Postgres local)</text>
+    <text x="164" y="298" text-anchor="middle" font-size="10.5" fill="#1A2033">ingesters publish → NanoMQ (EDGE_MODE)</text>
+    <rect x="52" y="308" width="224" height="30" rx="5" fill="rgba(92,78,204,.06)" stroke="#5C4ECC" stroke-width="1"/>
+    <text x="164" y="328" text-anchor="middle" font-size="10.5" font-weight="600" fill="#5C4ECC">edge-bridge (edge-vss) · ภาพ→NVMe Tier-2</text>
+
+    <!-- Main site -->
+    <rect x="28" y="406" width="272" height="40" rx="6" fill="#FFF" stroke="#C0392B" stroke-width="1"/>
+    <text x="42" y="424" font-size="10.5" font-weight="600" fill="#C0392B">HIK-V_LPR01 (ANPR) · ป่าตอง face</text>
+    <text x="42" y="438" font-size="9.5" fill="#5A6480">10.x · push_only → Cloudflare (paused)</text>
+
+    <!-- Transport -->
+    <rect x="342" y="150" width="126" height="56" rx="6" fill="#FFF" stroke="#B87010" stroke-width="1.2" stroke-dasharray="4 3"/>
+    <text x="405" y="172" text-anchor="middle" font-size="10.5" font-weight="600" fill="#B87010">WSS bridge</text>
+    <text x="405" y="187" text-anchor="middle" font-size="8.5" fill="#5A6480">dashboard.dojojin.tech</text>
+    <text x="405" y="199" text-anchor="middle" font-size="8.5" fill="#5A6480">/mqtt · user edge-vss</text>
+
+    <rect x="342" y="408" width="126" height="40" rx="6" fill="#FFF" stroke="#0D7C72" stroke-width="1" stroke-dasharray="4 3"/>
+    <text x="405" y="426" text-anchor="middle" font-size="10" font-weight="600" fill="#0D7C72">Cloudflare</text>
+    <text x="405" y="439" text-anchor="middle" font-size="8.5" fill="#5A6480">tunnel (Main push)</text>
+
+    <!-- Central -->
+    <rect x="510" y="90" width="180" height="44" rx="6" fill="#FFF" stroke="#B87010" stroke-width="1.3"/>
+    <text x="600" y="110" text-anchor="middle" font-size="12" font-weight="600" fill="#B87010">EMQX :1883 (Docker)</text>
+    <text x="600" y="125" text-anchor="middle" font-size="9.5" fill="#5A6480">รับจาก bridge + Main push</text>
+
+    <rect x="510" y="148" width="180" height="40" rx="6" fill="#FFF" stroke="#1A5FAB" stroke-width="1.2"/>
+    <text x="600" y="166" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1A5FAB">mqtt-subscriber</text>
+    <text x="600" y="180" text-anchor="middle" font-size="9.5" fill="#5A6480">handleEdgeEvent → DB</text>
+
+    <rect x="510" y="202" width="180" height="44" rx="6" fill="#FFF" stroke="#1A7A3A" stroke-width="1.3"/>
+    <text x="600" y="222" text-anchor="middle" font-size="12" font-weight="600" fill="#1A7A3A">PostgreSQL</text>
+    <text x="600" y="237" text-anchor="middle" font-size="9.5" fill="#5A6480">events · license_plates · faces</text>
+
+    <rect x="510" y="260" width="180" height="56" rx="6" fill="#FFF" stroke="#1A5FAB" stroke-width="1.1"/>
+    <text x="600" y="279" text-anchor="middle" font-size="10.5" fill="#1A5FAB">api-server :3000 · alert-worker :3002</text>
+    <text x="600" y="295" text-anchor="middle" font-size="10.5" fill="#1A5FAB">report-worker :3001</text>
+    <text x="600" y="309" text-anchor="middle" font-size="9.5" fill="#5A6480">lpr-receiver :3003 (Main push)</text>
+
+    <rect x="510" y="330" width="180" height="50" rx="6" fill="#F0F4FA" stroke="#9AA3BB" stroke-width="1" stroke-dasharray="4 3"/>
+    <text x="600" y="349" text-anchor="middle" font-size="9.5" fill="#5A6480">snapshot proxy → vss.dojojin.tech</text>
+    <text x="600" y="363" text-anchor="middle" font-size="9" fill="#9AA3BB">Tier-2: ดึงภาพจาก N150 on-demand</text>
+    <text x="600" y="375" text-anchor="middle" font-size="9" fill="#9AA3BB">(api-server.js:463 try-local→proxy)</text>
+
+    <rect x="510" y="396" width="180" height="48" rx="6" fill="#FFF" stroke="#9AA3BB" stroke-width="1" stroke-dasharray="3 3"/>
+    <text x="600" y="414" text-anchor="middle" font-size="9.5" fill="#5A6480">hikvision/dahua ingester (รัน)</text>
+    <text x="600" y="428" text-anchor="middle" font-size="9" fill="#C0392B">เข้ากล้อง .10.x ไม่ถึง (คนละ subnet)</text>
+    <text x="600" y="440" text-anchor="middle" font-size="9" fill="#9AA3BB">→ vestigial ควร disable</text>
+
+    <!-- Outputs -->
+    <rect x="928" y="100" width="166" height="36" rx="5" fill="#FFF" stroke="#1A5FAB" stroke-width="1.2"/>
+    <text x="1011" y="123" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1A5FAB">Dashboard</text>
+    <rect x="928" y="148" width="166" height="36" rx="5" fill="#FFF" stroke="#1A7A3A" stroke-width="1.2"/>
+    <text x="1011" y="171" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1A7A3A">LINE Alert</text>
+    <rect x="928" y="196" width="166" height="36" rx="5" fill="#FFF" stroke="#5C4ECC" stroke-width="1.2"/>
+    <text x="1011" y="219" text-anchor="middle" font-size="11.5" font-weight="600" fill="#5C4ECC">Mobile Push</text>
+    <rect x="928" y="244" width="166" height="36" rx="5" fill="#FFF" stroke="#1A5FAB" stroke-width="1"/>
+    <text x="1011" y="267" text-anchor="middle" font-size="11" fill="#1A5FAB">Reports PDF/PNG</text>
+
+    <!-- ARROWS -->
+    <!-- cameras → N150 -->
+    <line x1="164" y1="136" x2="164" y2="148" stroke="#0D7C72" stroke-width="1.6" marker-end="url(#aC)" class="flow-anim"/>
+    <!-- N150 bridge → WSS -->
+    <line x1="300" y1="323" x2="405" y2="206" stroke="#0D7C72" stroke-width="1.6" marker-end="url(#aC)" class="flow-anim"/>
+    <!-- WSS → EMQX -->
+    <line x1="468" y1="178" x2="508" y2="120" stroke="#B87010" stroke-width="1.6" marker-end="url(#aA)" class="flow-anim"/>
+    <!-- Main push → Cloudflare → EMQX -->
+    <line x1="300" y1="424" x2="340" y2="424" stroke="#0D7C72" stroke-width="1.2" marker-end="url(#aC)" opacity=".5"/>
+    <line x1="468" y1="424" x2="600" y2="134" stroke="#0D7C72" stroke-width="1.1" marker-end="url(#aC)" opacity=".35"/>
+    <!-- EMQX → mqtt-sub → PG → workers -->
+    <line x1="600" y1="134" x2="600" y2="146" stroke="#1A5FAB" stroke-width="1.4" marker-end="url(#aB)"/>
+    <line x1="600" y1="188" x2="600" y2="200" stroke="#1A7A3A" stroke-width="1.4" marker-end="url(#aG)"/>
+    <line x1="600" y1="246" x2="600" y2="258" stroke="#1A5FAB" stroke-width="1.3" marker-end="url(#aB)"/>
+    <!-- PG → outputs -->
+    <line x1="690" y1="222" x2="926" y2="118" stroke="#1A5FAB" stroke-width="1.1" marker-end="url(#aB)" opacity=".5"/>
+    <line x1="690" y1="224" x2="926" y2="166" stroke="#1A7A3A" stroke-width="1.1" marker-end="url(#aG)" opacity=".45"/>
+    <line x1="690" y1="226" x2="926" y2="214" stroke="#5C4ECC" stroke-width="1" marker-end="url(#aV)" opacity=".4"/>
+    <!-- proxy back to N150 -->
+    <line x1="510" y1="350" x2="302" y2="300" stroke="#9AA3BB" stroke-width="1" stroke-dasharray="3 3" marker-end="url(#aC)" opacity=".5"/>
+
+    <text x="240" y="270" font-size="9" fill="#0D7C72" class="mono-t">EDGE_MODE=1</text>
+    <text x="352" y="240" font-size="8.5" fill="#9AA3BB" class="mono-t">forwarded=137</text>
+  </svg>
+  </div>
+  <div class="legend">
+    <span><i style="border-color:#0D7C72"></i> Edge ingest → NanoMQ → bridge</span>
+    <span><i style="border-color:#B87010"></i> MQTT (Bosch / EMQX)</span>
+    <span><i style="border-color:#1A7A3A"></i> DB / LINE</span>
+    <span><i style="border-color:#5C4ECC"></i> Face / Mobile</span>
+    <span><i style="border-color:#9AA3BB"></i> proxy / vestigial</span>
+  </div>
+
+  <div class="note green">
+    <b>VSS = edge จริง (ยืนยันจาก N150):</b> <code>EDGE_MODE=1</code> · <code>EDGE_SITE_ID=vss</code> · NanoMQ รัน (ไม่มี EMQX บน N150) ·
+    bridge <code>remote=up forwarded=137 dropped=0</code>. กล้องทุกตัวเข้า N150 → NanoMQ → bridge → central EMQX —
+    <b>N150 เป็น ingest จุดเดียวของ VSS</b>.
+  </div>
+
+  <div class="note">
+    <b>Double-ingest = ความเสี่ยงต่ำ:</b> MacBook อยู่ subnet 192.168.31.x เข้ากล้อง 192.168.10.x ไม่ถึง → ingester hikvision/dahua
+    บน MacBook poll ไม่ได้ (vestigial — ควร disable). เส้นทางเดียวที่ VSS event เข้า central = ผ่าน <code>edge-vss</code> bridge.
+  </div>
+</div>
+</section>
+
+<!-- ═══════════════ 02 — WHAT EACH SYSTEM DOES ═══════════════ -->
+<section id="systems">
+<div class="wrap">
+  <div class="sec-label">02 — แต่ละระบบทำอะไร</div>
+  <h2>Process ทั้ง 8 ตัวบน MacBook (PM2)</h2>
+  <p class="lede">แต่ละ process แยกกันชัด — crash ตัวเดียวไม่ล้มทั้งระบบ. <code>lpr-receiver</code> แยกออกมาเพราะเป็น gov-critical (forward ต้องไม่ขาด)</p>
+
+  <div class="tbl-wrap">
+  <table>
+    <thead>
+      <tr><th>#</th><th>Process</th><th>Script</th><th>หน้าที่</th><th>Port</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>1</td><td><span class="tag blue">api-server</span></td><td class="mono">src/api-server.js</td><td>REST API + WebSocket backend ของ dashboard · LISTEN pg notify → broadcast</td><td class="mono">3000</td></tr>
+      <tr><td>2</td><td><span class="tag amber">mqtt-subscriber</span></td><td class="mono">src/mqtt-subscriber.js</td><td>รับ event จาก EMQX (Bosch) → แปลงเป็น row ใน PostgreSQL · จัดการ snapshot</td><td class="mono">—</td></tr>
+      <tr><td>3</td><td><span class="tag violet">media-recorder</span></td><td class="mono">src/media-recorder.js</td><td>ดึง RTSP 24/7 จากกล้อง clip-enabled → buffer สำหรับคลิป pre-alarm</td><td class="mono">—</td></tr>
+      <tr><td>4</td><td><span class="tag cyan">hikvision</span></td><td class="mono">ingesters/hikvision-isapi.js</td><td>poll ISAPI alertStream — smart events + face + people counting</td><td class="mono">—</td></tr>
+      <tr><td>5</td><td><span class="tag green">dahua</span></td><td class="mono">ingesters/dahua-cgi.js</td><td>poll CGI eventManager — VCA events + RTSP frame extract</td><td class="mono">—</td></tr>
+      <tr><td>6</td><td><span class="tag blue">report-worker</span></td><td class="mono">src/report-worker.js</td><td>render report พื้นหลัง (Puppeteer + sharp) PDF/PNG · health endpoint</td><td class="mono">3001</td></tr>
+      <tr><td>7</td><td><span class="tag amber">alert-worker</span></td><td class="mono">src/alert-worker.js</td><td>alert engine — รัน rule, ส่ง LINE, dwell loop, <b>edge-stale check (EM6)</b></td><td class="mono">3002</td></tr>
+      <tr><td>8</td><td><span class="tag violet">lpr-receiver</span></td><td class="mono">src/lpr-receiver.js</td><td><b>standalone</b> รับ LPR/face HTTP push · bind 127.0.0.1 · รอด api-server restart</td><td class="mono">3003</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="note cyan">
+    <b>Runtime:</b> Node 24 LTS (Homebrew pin) · PM2 boot ผ่าน launchd → Terminal.app (จำเป็นเพราะ macOS Local Network Privacy — GOTCHAS #84) ·
+    Dahua ingester จะ crash-loop ถ้าไม่มีกล้อง Dahua (GOTCHAS #100)
+  </div>
+
+  <h3 class="sub">หัวใจร่วม — lpr-core.js</h3>
+  <div class="grid-3">
+    <div class="card"><div class="card-head"><div class="dot violet"></div><h3>Parse</h3></div><p>แกะ ANPR XML → field ทั้งหมด (plate, confidence, vehicle, behavioral, bbox, province)</p></div>
+    <div class="card"><div class="card-head"><div class="dot green"></div><h3>Resize</h3></div><p>ย่อ scene image 1080p/q80 (~150KB) ก่อนเก็บ · plate crop ไม่ย่อ · raw bytes forward CIB ก่อนย่อ</p></div>
+    <div class="card"><div class="card-head"><div class="dot amber"></div><h3>Dedup + Route</h3></div><p>กัน burst 3s/(camera,plate) · insert DB · trigger watchlist alert · pg_notify live tile</p></div>
+  </div>
+</div>
+</section>
+
+<!-- ═══════════════ 03 — CONNECTION PER VENDOR ═══════════════ -->
+<section id="connect">
+<div class="wrap">
+  <div class="sec-label">03 — การเชื่อมต่อต่อ Vendor</div>
+  <h2>แต่ละยี่ห้อต่อยังไง — และต้องการ Edge ไหม</h2>
+
+  <div class="tbl-wrap">
+  <table>
+    <thead>
+      <tr><th>Vendor</th><th>โหมด</th><th>Protocol</th><th>ทิศทาง</th><th>Process</th><th>Snapshot</th><th>Edge?</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><span class="tag cyan">Hikvision ITC</span><br><span style="font-size:11px;color:var(--dim)">ANPR / smart / face</span></td>
+        <td><b>HTTP Push</b><br><span style="font-size:11px;color:var(--dim)">กล้องส่งเอง</span></td>
+        <td class="mono">multipart/mixed<br>+ XML</td>
+        <td>กล้อง → Vigil</td>
+        <td class="mono">lpr-receiver<br>:3003</td>
+        <td>embedded ใน body<br><span style="font-size:11px;color:var(--dim)">plate + scene</span></td>
+        <td><span class="cond">push ผ่าน tunnel ได้ — ไม่บังคับ edge</span></td>
+      </tr>
+      <tr>
+        <td><span class="tag amber">Bosch FLEXIDOME</span><br><span style="font-size:11px;color:var(--dim)">VCA / Recognition</span></td>
+        <td><b>MQTT Pub</b><br><span style="font-size:11px;color:var(--dim)">publish เอง</span></td>
+        <td class="mono">MQTT/TCP<br>{cam}/onvif-ej/#</td>
+        <td>กล้อง → EMQX → Vigil</td>
+        <td class="mono">mqtt-subscriber</td>
+        <td>base64 ใน payload<br><span style="font-size:11px;color:var(--dim)">+ HTTP fallback</span></td>
+        <td><span class="cond">NanoMQ + bridge ถ้า edge</span></td>
+      </tr>
+      <tr>
+        <td><span class="tag green">Dahua WizSense</span><br><span style="font-size:11px;color:var(--dim)">VCA / SMD</span></td>
+        <td><b>CGI Long-poll</b><br><span style="font-size:11px;color:var(--dim)">Vigil ดึง</span></td>
+        <td class="mono">HTTP GET<br>eventManager.cgi</td>
+        <td>Vigil ← กล้อง (pull)</td>
+        <td class="mono">dahua-cgi</td>
+        <td>snapManager CGI<br><span style="font-size:11px;color:var(--dim)">/ snapshot.cgi</span></td>
+        <td><span class="yes">ต้อง LAN/VPN ถึงกล้อง</span></td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="note">
+    <b>Camera identity (Hikvision):</b> resolve camera_id จาก <code>macAddress</code> ใน XML ก่อน ถ้าไม่เจอค่อย fallback <code>ipAddress</code> —
+    เพราะ Cloudflare tunnel ปิดบัง source IP จริง ทำให้ IP-based identity ไม่ทำงาน
+  </div>
+</div>
+</section>
+
+<!-- ═══════════════ 04 — FULL XML TABLE ═══════════════ -->
+<section id="xml">
+<div class="wrap">
+  <div class="sec-label">04 — ตาราง XML ที่กล้อง ANPR ผลิตได้จริง</div>
+  <h2>Hikvision ITC ANPR — ทุก field ใน XML</h2>
+  <p class="lede">
+    Probe จากกล้อง <code>iDS-2CD9396-HIS</code> (HIK-V_LPR01, ท่าฉัตรไชย) — <b>76,333 events จริง</b>.
+    คอลัมน์ "เก็บ?" = Vigil บันทึกลง DB หรือไม่ · "ข้อมูลจริง" = สถิติจาก production.
+    กล้องตัวนี้ <b>หันท้ายรถ (rear-facing)</b> → field พฤติกรรมคนขับเป็น unknown เกือบหมด (มองไม่เห็นห้องคนขับ).
+  </p>
+
+  <div class="tbl-wrap">
+  <table>
+    <thead>
+      <tr><th>XML field</th><th>ความหมาย</th><th>ค่าที่เป็นไปได้</th><th>เก็บ?</th><th>ข้อมูลจริง (76k)</th></tr>
+    </thead>
+    <tbody>
+      <tr class="grp-row"><td colspan="5">— ป้ายทะเบียน (Plate) —</td></tr>
+      <tr><td class="mono">licensePlate</td><td>เลขทะเบียน</td><td>String</td><td><span class="yes">✓ plate_number</span></td><td>ภูเก็ต/พังงา</td></tr>
+      <tr><td class="mono">confidenceLevel</td><td>% ความมั่นใจรวม</td><td>0–100</td><td><span class="yes">✓ confidence</span></td><td>85–90 ปกติ</td></tr>
+      <tr><td class="mono">plateCharBelieve</td><td>% มั่นใจ <b>ราย​ตัวอักษร</b></td><td class="mono">"92,92,92,…"</td><td><span class="no">✗ raw_json</span></td><td>มีทุก event — ใช้กรอง low-char ได้</td></tr>
+      <tr><td class="mono">plateColor</td><td>สีป้าย</td><td>white/yellow/green/red/blue/black/colorful/orange</td><td><span class="cond">~ raw_json</span></td><td>white 85% · yellow 6%</td></tr>
+      <tr><td class="mono">plateType</td><td>รหัสประเภทป้าย</td><td>1=ขาว · 12=มอ'ไซค์ · 3=เขียว · 32=ชั่วคราว · 34=ราชการ · 21=รถใหญ่ · 2=เหลือง · 6=น้ำเงิน · 99=อื่น</td><td><span class="cond">~ raw_json</span></td><td>1→41% · 12→17% · 3→16%</td></tr>
+      <tr><td class="mono">licenseBright</td><td>ความสว่างผิวป้าย</td><td>0–255</td><td><span class="no">✗</span></td><td>ไม่มีประโยชน์</td></tr>
+
+      <tr class="grp-row"><td colspan="5">— ยานพาหนะ (Vehicle) —</td></tr>
+      <tr><td class="mono">vehicleType</td><td>ประเภทรถ</td><td>SUVMPV · pickupTruck · vehicle · twoWheelVehicle · van · truck · largeBus · threeWheelVehicle · pedestrian</td><td><span class="yes">✓ vehicle_type</span></td><td>SUV 21% · pickup 20% · มอ'ไซค์ 17%</td></tr>
+      <tr><td class="mono">color</td><td>สีรถ</td><td>white/black/gray/blue/red/yellow/green/brown/purple/unknown</td><td><span class="yes">✓ vehicle_color</span></td><td>white 31% · black 21% · gray 20%</td></tr>
+      <tr><td class="mono">vehicleLogoRecog</td><td>รหัสยี่ห้อ</td><td>Integer (1036,1053,1060,… · 0=unknown)</td><td><span class="yes">✓ vehicle_brand</span></td><td>เลขรหัส — ยังไม่มี lookup</td></tr>
+
+      <tr class="grp-row"><td colspan="5">— ตำแหน่ง &amp; ทิศทาง (Position/Direction) —</td></tr>
+      <tr><td class="mono">line / laneNo</td><td>เลขเลน</td><td class="mono">"1","2","3"</td><td><span class="cond">~ raw_json</span></td><td>มีทุก event</td></tr>
+      <tr><td class="mono">direction</td><td>ทิศเทียบกล้อง</td><td>reverse / forward</td><td><span class="cond">~ raw_json</span></td><td><b>reverse 99.98%</b> (rear-facing)</td></tr>
+      <tr><td class="mono">detectDir</td><td>รหัสทิศ (int)</td><td>2</td><td><span class="no">✗</span></td><td>ซ้ำกับ direction</td></tr>
+      <tr><td class="mono">tailandStateID</td><td>รหัสจังหวัด</td><td>1–77 → TH_PROVINCE</td><td><span class="yes">✓ region</span></td><td>ภูเก็ต/พังงา/กทม.</td></tr>
+      <tr><td class="mono">PlateRect (X/Y/W/H)</td><td>กรอบป้ายในภาพ</td><td>pixel int</td><td><span class="yes">✓ bbox_*</span></td><td>4 คอลัมน์</td></tr>
+
+      <tr class="grp-row"><td colspan="5">— การฝ่าฝืน (Violation) — กล้องนี้ยังไม่เปิดใช้ —</td></tr>
+      <tr><td class="mono">speedLimit</td><td>ความเร็วจำกัด</td><td>int km/h</td><td><span class="no">✗</span></td><td>70 (คงที่)</td></tr>
+      <tr><td class="mono">illegalCode</td><td>รหัสผิดกฎ</td><td>0=ปกติ · ≠0=ผิด</td><td><span class="no">✗</span></td><td><b>0 ทุก event</b></td></tr>
+      <tr><td class="mono">illegalName / Description</td><td>ชื่อ/คำอธิบาย</td><td>"Normal" · "Speeding" · …</td><td><span class="no">✗</span></td><td><b>"Normal" ทุก event</b></td></tr>
+
+      <tr class="grp-row"><td colspan="5">— พฤติกรรมคนขับ (Driver Behavior) ⚠️ rear-facing = unknown เกือบหมด —</td></tr>
+      <tr><td class="mono">helmet</td><td>ใส่หมวกกันน็อค</td><td>yes / no / unknown</td><td><span class="yes">✓ raw_json</span></td><td><b>no=3,967 · yes=9,802</b> (เห็นจากท้าย)</td></tr>
+      <tr><td class="mono">nonMotorManned</td><td>มีผู้ซ้อนท้าย</td><td>yes / no / unknown</td><td><span class="yes">✓ raw_json</span></td><td><b>yes=2,751</b> (เห็นจากท้าย)</td></tr>
+      <tr><td class="mono">uphone</td><td>ใช้โทรศัพท์</td><td>yes / no / unknown</td><td><span class="yes">✓ raw_json</span></td><td><b>yes=0</b> (มุมไม่เห็นมือ)</td></tr>
+      <tr><td class="mono">pilotsafebelt · vicepilotsafebelt</td><td>คาดเข็มขัด</td><td>on / off / unknown</td><td><span class="no">✗</span></td><td>unknown ทุก event</td></tr>
+      <tr><td class="mono">smoking · playMobilePhone</td><td>สูบบุหรี่/เล่นมือถือ</td><td>yes / no / unknown</td><td><span class="no">✗</span></td><td>unknown ทุก event</td></tr>
+      <tr><td class="mono">pilotsunvisor · vicepilotsunvisor</td><td>ที่บังแดด</td><td>yes / no / unknown</td><td><span class="no">✗</span></td><td>unknown ทุก event</td></tr>
+      <tr><td class="mono">pilotmask · vicepilotMask · nonMotorMask</td><td>สวมหน้ากาก</td><td>yes / no / unknown</td><td><span class="no">✗</span></td><td>unknown ทุก event</td></tr>
+      <tr><td class="mono">frontChild</td><td>เด็กเบาะหน้า</td><td>yes / no / unknown</td><td><span class="no">✗</span></td><td>unknown ทุก event</td></tr>
+
+      <tr class="grp-row"><td colspan="5">— เครื่องหมาย/ของในรถ (Markings) — มองจากท้ายไม่เห็น —</td></tr>
+      <tr><td class="mono">dangmark</td><td>ป้ายวัตถุอันตราย</td><td>yes / no / unknown</td><td><span class="no">✗</span></td><td>unknown</td></tr>
+      <tr><td class="mono">envprosign</td><td>ป้ายมาตรฐานไอเสีย</td><td>yes / no / unknown</td><td><span class="no">✗</span></td><td>unknown</td></tr>
+      <tr><td class="mono">pendant · tissueBox · perfumeBox · decoration · label · pdvs</td><td>ของแขวน/ของในรถ</td><td>yes / no / unknown</td><td><span class="no">✗</span></td><td>unknown</td></tr>
+
+      <tr class="grp-row"><td colspan="5">— Metadata —</td></tr>
+      <tr><td class="mono">macAddress</td><td>MAC กล้อง</td><td>hex</td><td><span class="no">✗ (lookup)</span></td><td>08:3b:c1:92:ae:60</td></tr>
+      <tr><td class="mono">ipAddress</td><td>IP กล้อง</td><td>dotted</td><td><span class="no">✗ (fallback)</span></td><td>10.11.100.4</td></tr>
+      <tr><td class="mono">dateTime</td><td>เวลา event</td><td>ISO8601 +tz</td><td><span class="yes">✓ event_time</span></td><td>นาฬิกากล้อง</td></tr>
+      <tr><td class="mono">country</td><td>รหัสประเทศ</td><td>64=Thailand</td><td><span class="yes">✓ raw_json</span></td><td>64 คงที่</td></tr>
+      <tr><td class="mono">activePostCount</td><td>เลขนับ event สะสม</td><td>int</td><td><span class="no">✗</span></td><td>ลำดับ event</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="grid" style="margin-top:24px">
+    <div class="card"><div class="card-head"><div class="dot green"></div><h3>เก็บแล้ว</h3></div>
+      <p>plate · confidence · country · region · vehicleType · vehicleColor · vehicleBrand · direction · laneNo · helmet · nonMotorManned · bbox(X/Y/W/H) · raw XML (2000 ตัวแรก)</p></div>
+    <div class="card"><div class="card-head"><div class="dot amber"></div><h3>เก็บได้อนาคต</h3></div>
+      <p><code>plateCharBelieve</code> — กรอง min-char confidence (ตัดถ้าตัวอักษรไหน &lt;60%) · <code>illegalCode/Name</code> — เมื่อเปิด violation detection ที่กล้อง</p></div>
+    <div class="card"><div class="card-head"><div class="dot red"></div><h3>ทิ้งโดยตั้งใจ</h3></div>
+      <p>field พฤติกรรม (seatbelt/smoking/phone/mask/sunvisor) = unknown เพราะ rear-facing · markings ในรถ มองไม่เห็น · detectType/speedLimit/licenseBright คงที่</p></div>
+  </div>
+
+  <div class="note violet">
+    <b>บทเรียนสำคัญ:</b> field พฤติกรรมที่ได้จริง (<code>helmet</code> · <code>nonMotorManned</code>) มาจากการที่มองเห็น <b>ท้าย</b>มอเตอร์ไซค์ —
+    ส่วน <code>uphone</code>=0, seatbelt=unknown เพราะมุมไม่เห็นห้องคนขับ. <b>มุมติดตั้ง = ตัวกำหนดว่าได้ field ไหนจริง</b> ไม่ใช่สเปกกล้อง
+  </div>
+</div>
+</section>
+
+<!-- ═══════════════ 05 — STORAGE REALITY ═══════════════ -->
+<section id="storage">
+<div class="wrap">
+  <div class="sec-label">05 — Storage จากข้อมูลจริง</div>
+  <h2>ภาระ storage จริง — LPR scene กิน 96%</h2>
+  <p class="lede">วัดจาก production 24 ชม. (9 กล้อง active, 1 LPR gate ท่าฉัตรไชย คุมโหลด) — รวม 40,390 ไฟล์/วัน</p>
+
+  <div class="stat-strip">
+    <div class="stat red"><div class="big">972 KB</div><div class="lbl">LPR scene เฉลี่ย/รูป (ตัวการหลัก)</div></div>
+    <div class="stat red"><div class="big">18 GB</div><div class="lbl">/วัน จาก LPR scene อย่างเดียว (96%)</div></div>
+    <div class="stat amber"><div class="big">18,868</div><div class="lbl">LPR scene/วัน จาก gate เดียว</div></div>
+    <div class="stat cyan"><div class="big">~1 KB</div><div class="lbl">LPR plate crop (เล็กมาก)</div></div>
+  </div>
+
+  <h3 class="sub">ขนาดภาพเฉลี่ยตามชนิด (จริง)</h3>
+  <div class="tbl-wrap">
+  <table>
+    <thead><tr><th>ชนิดภาพ</th><th>ขนาด</th><th>นับ/วัน</th><th>รวม/วัน</th><th>% storage</th></tr></thead>
+    <tbody>
+      <tr><td><b>LPR scene</b> (ภาพรวมทั้งรถ)</td><td class="mono">972 KB</td><td class="mono">18,868</td><td class="mono">18.0 GB</td><td><span class="tag red">96%</span></td></tr>
+      <tr><td>Event/object snap</td><td class="mono">367 KB</td><td class="mono">2,671</td><td class="mono">0.50 GB</td><td><span class="tag gray">2.7%</span></td></tr>
+      <tr><td>Face (full+crop+ref)</td><td class="mono">375/46/44 KB</td><td class="mono">~890</td><td class="mono">0.20 GB</td><td><span class="tag gray">1.1%</span></td></tr>
+      <tr><td>Body appearance</td><td class="mono">89 KB</td><td class="mono">~17,900*</td><td class="mono">0.045 GB</td><td><span class="tag gray">0.2%</span></td></tr>
+      <tr><td>LPR plate crop</td><td class="mono">1 KB</td><td class="mono">รวมข้างบน</td><td class="mono">—</td><td><span class="tag gray">~0%</span></td></tr>
+      <tr style="background:var(--panel2)"><td><b>รวม</b></td><td></td><td class="mono"><b>40,390</b></td><td class="mono"><b>18.69 GB/วัน</b></td><td><b>100%</b></td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3 class="sub">N150 512GB เก็บได้กี่วัน (usable ~410GB)</h3>
+  <div class="tbl-wrap">
+  <table>
+    <thead><tr><th>สถานการณ์</th><th>RAW (972KB scene)</th><th>+ Resize ~150KB</th><th>หมายเหตุ</th></tr></thead>
+    <tbody>
+      <tr><td>โหลดปัจจุบัน (1 gate + 8 กล้อง)</td><td class="mono">~22 วัน</td><td><span class="yes">~150+ วัน</span></td><td>resize ลด 6–8 เท่า</td></tr>
+      <tr><td>เบา (1 busy + 4 LPR + 15 face + 180 object)</td><td class="mono">~11 วัน</td><td class="mono">~48 วัน</td><td>—</td></tr>
+      <tr><td>หนัก (5 busy gates)</td><td class="mono"><span class="cond">~4 วัน</span></td><td class="mono">~22 วัน</td><td>ต้องดิสก์ใหญ่ขึ้น (1TB) หรือลดกล้อง</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="note red">
+    <b>ข้อสรุป:</b> resize/recompress scene เป็น <b>1080p/q80 (~150KB)</b> = บังคับ ไม่ใช่ทางเลือก —
+    เปลี่ยน 512GB จาก "ไม่กี่วัน" เป็น "หลายสัปดาห์–เดือน". ทำแล้วใน <code>lpr-core.resizeScene</code> + ตั้งค่าได้ใน Settings›LPR (default 1080p/q80)
+  </div>
+</div>
+</section>
+
+<!-- ═══════════════ 06 — FUTURE PLAN ═══════════════ -->
+<section id="future">
+<div class="wrap">
+  <div class="sec-label">06 — แผนอนาคต</div>
+  <h2>N150 Edge → WireGuard → Cloud (Multi-Site)</h2>
+  <p class="lede">
+    ย้ายจาก single-box ไปเป็น <b>edge ต่อ site + cloud กลาง</b>.
+    กล้องอยู่หลัง edge (N150), edge ต่อ cloud ผ่าน <b>WireGuard</b> (ไม่ใช่ Cloudflare tunnel สำหรับ cloud).
+    ภาพ full-res เก็บที่ edge — ขึ้น cloud เฉพาะ metadata + thumbnail.
+    <span style="color:var(--amber)">สถานะ: Design เสร็จ · Phase 0 POC · Phase 1 (Bangmod.Cloud) รอ deploy</span>
+  </p>
+
+  <div class="diagram-frame">
+  <svg viewBox="0 0 1120 430" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker id="fW" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><polygon points="0 0,9 3.5,0 7" fill="#5C4ECC"/></marker>
+      <marker id="fC" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><polygon points="0 0,9 3.5,0 7" fill="#0D7C72"/></marker>
+    </defs>
+
+    <!-- Site A edge -->
+    <rect x="20" y="40" width="260" height="350" rx="10" fill="rgba(13,124,114,.04)" stroke="#C8D4E8"/>
+    <text x="150" y="62" text-anchor="middle" font-size="11" fill="#0D7C72" class="mono-t" letter-spacing="1.5">SITE EDGE — N150 (ต่อ site)</text>
+
+    <!-- cameras -->
+    <rect x="36" y="78" width="228" height="34" rx="5" fill="#FFF" stroke="#5A6480" stroke-width="1"/>
+    <text x="150" y="99" text-anchor="middle" font-size="11" fill="#5A6480">กล้อง LAN (NIC1 แยก) — Bosch/Hik/Dahua</text>
+
+    <!-- N150 box -->
+    <rect x="36" y="124" width="228" height="200" rx="8" fill="#FFF" stroke="#0D7C72" stroke-width="1.3"/>
+    <text x="150" y="144" text-anchor="middle" font-size="12" font-weight="600" fill="#0D7C72">Intel N150 · 16GB · 512GB · dual NIC</text>
+    <line x1="48" y1="152" x2="252" y2="152" stroke="#E8EBF3"/>
+    <text x="150" y="170" text-anchor="middle" font-size="10.5" fill="#1A2033">NanoMQ (ถ้ามี Bosch)</text>
+    <text x="150" y="188" text-anchor="middle" font-size="10.5" fill="#1A2033">hikvision-isapi · dahua-cgi</text>
+    <text x="150" y="206" text-anchor="middle" font-size="10.5" fill="#1A2033">lpr-receiver :3003 (HTTP push)</text>
+    <text x="150" y="224" text-anchor="middle" font-size="10.5" fill="#5C4ECC">edge-bridge → cloud EMQX (WSS)</text>
+    <text x="150" y="242" text-anchor="middle" font-size="10.5" fill="#1A2033">edge-config-agent (pull config)</text>
+    <text x="150" y="260" text-anchor="middle" font-size="10.5" fill="#1A2033">Caddy (serve media on-site)</text>
+    <line x1="48" y1="270" x2="252" y2="270" stroke="#E8EBF3"/>
+    <text x="150" y="288" text-anchor="middle" font-size="10" fill="#1A7A3A">NVMe: full-res images (ไม่ขึ้น cloud)</text>
+    <text x="150" y="305" text-anchor="middle" font-size="10" fill="#5A6480">NIC2 (USB) = WAN + WireGuard out</text>
+
+    <!-- on-site view -->
+    <rect x="36" y="338" width="228" height="38" rx="5" fill="#F0F4FA" stroke="#9AA3BB" stroke-width="1" stroke-dasharray="4 3"/>
+    <text x="150" y="356" text-anchor="middle" font-size="10.5" fill="#5A6480">ดูในไซต์: bma.dojojin.tech → LAN N150</text>
+    <text x="150" y="370" text-anchor="middle" font-size="9.5" fill="#9AA3BB">Caddy reverse proxy · media local</text>
+
+    <!-- WireGuard tunnel -->
+    <rect x="320" y="180" width="150" height="70" rx="8" fill="rgba(92,78,204,.06)" stroke="#5C4ECC" stroke-width="1.2" stroke-dasharray="5 3"/>
+    <text x="395" y="208" text-anchor="middle" font-size="12" font-weight="600" fill="#5C4ECC">WireGuard</text>
+    <text x="395" y="225" text-anchor="middle" font-size="9.5" fill="#5A6480">UDP :51820</text>
+    <text x="395" y="240" text-anchor="middle" font-size="9.5" fill="#5A6480">edge dial-out</text>
+
+    <!-- Cloud -->
+    <rect x="510" y="40" width="430" height="350" rx="10" fill="rgba(26,95,171,.04)" stroke="#C8D4E8"/>
+    <text x="725" y="62" text-anchor="middle" font-size="11" fill="#1A5FAB" class="mono-t" letter-spacing="1.5">BANGMOD.CLOUD — 3 VM (PDPA)</text>
+
+    <rect x="528" y="82" width="394" height="58" rx="7" fill="#FFF" stroke="#5C4ECC" stroke-width="1.2"/>
+    <text x="545" y="104" font-size="12" font-weight="600" fill="#5C4ECC">vigil-edge-01 (Gateway)</text>
+    <text x="545" y="122" font-size="10" fill="#5A6480">Public IP + WireGuard :51820 + nginx — edge ต่อเข้าตรงนี้</text>
+
+    <rect x="528" y="152" width="394" height="58" rx="7" fill="#FFF" stroke="#1A5FAB" stroke-width="1.2"/>
+    <text x="545" y="174" font-size="12" font-weight="600" fill="#1A5FAB">vigil-core-01 (App)</text>
+    <text x="545" y="192" font-size="10" fill="#5A6480">Node api + EMQX broker + Rule Engine</text>
+
+    <rect x="528" y="222" width="394" height="58" rx="7" fill="#FFF" stroke="#1A7A3A" stroke-width="1.2"/>
+    <text x="545" y="244" font-size="12" font-weight="600" fill="#1A7A3A">vigil-db-01 (Data)</text>
+    <text x="545" y="262" font-size="10" fill="#5A6480">PostgreSQL 16 + RLS (multi-tenant: site_id isolation)</text>
+
+    <rect x="528" y="296" width="394" height="76" rx="7" fill="#F0F4FA" stroke="#9AA3BB" stroke-width="1" stroke-dasharray="4 3"/>
+    <text x="725" y="316" text-anchor="middle" font-size="10.5" fill="#5A6480">ขึ้น cloud เฉพาะ: LPR metadata (plate text) + face thumbnail (~46KB)</text>
+    <text x="725" y="334" text-anchor="middle" font-size="10.5" fill="#C0392B">full-res images = อยู่ edge เท่านั้น (ดู on-demand)</text>
+    <text x="725" y="352" text-anchor="middle" font-size="10" fill="#9AA3BB">bandwidth ~30 Mbps/site พอ · config = pull model (edge ดึงเอง)</text>
+
+    <!-- arrows -->
+    <line x1="264" y1="215" x2="318" y2="215" stroke="#5C4ECC" stroke-width="1.6" marker-end="url(#fW)" class="flow-anim"/>
+    <line x1="470" y1="200" x2="526" y2="111" stroke="#5C4ECC" stroke-width="1.5" marker-end="url(#fW)" class="flow-anim"/>
+    <line x1="725" y1="140" x2="725" y2="150" stroke="#1A5FAB" stroke-width="1.4" marker-end="url(#fC)"/>
+    <line x1="725" y1="210" x2="725" y2="220" stroke="#1A7A3A" stroke-width="1.4" marker-end="url(#fC)"/>
+  </svg>
+  </div>
+
+  <h3 class="sub">โมเดลการขนส่งข้อมูล</h3>
+  <div class="tbl-wrap">
+  <table>
+    <thead><tr><th>เส้นทาง</th><th>Protocol</th><th>บทบาท</th></tr></thead>
+    <tbody>
+      <tr><td>Site Edge → vigil-edge-01</td><td class="mono">WireGuard UDP :51820</td><td>edge dial-out (outbound only) — ไม่ต้องเปิด port ที่ site</td></tr>
+      <tr><td>vigil-edge-01 → core-01</td><td class="mono">private net</td><td>metadata flow (ไม่ออก internet)</td></tr>
+      <tr><td>core-01 → db-01</td><td class="mono">Postgres :5432 + SSL</td><td>query + RBAC ผ่าน RLS</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3 class="sub">ข้อมูลแต่ละชนิดไปไหน</h3>
+  <div class="tbl-wrap">
+  <table>
+    <thead><tr><th>ชนิด</th><th>ขึ้น cloud?</th><th>เก็บที่</th><th>หมายเหตุ</th></tr></thead>
+    <tbody>
+      <tr><td>LPR metadata (plate text)</td><td><span class="yes">✓</span></td><td>edge + cloud</td><td>ป้าย render จาก text</td></tr>
+      <tr><td>Face thumbnail</td><td><span class="yes">✓ (~46KB)</span></td><td>edge + cloud</td><td>full-res อยู่ edge</td></tr>
+      <tr><td>Full-res images</td><td><span class="no">✗</span></td><td>edge เท่านั้น</td><td>ดู on-demand ผ่าน Caddy</td></tr>
+      <tr><td>ANR buffer</td><td><span class="no">✗</span></td><td>edge (USB NIC)</td><td>store-and-forward กัน WAN หลุด</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3 class="sub">Storage ต่อ Site อนาคต (Tier-2, ไม่มี Clip) — ประมาณการ</h3>
+  <p class="lede" style="margin-bottom:14px">
+    ฐานจากข้อมูลจริง §05: object/event snap <b>367KB raw</b> (ไม่ resize) · LPR scene <b>972KB→150KB</b> (resize 1080p/q80) ·
+    face full+crop+ref ≈ <b>465KB raw</b>. Disk <b>1TB usable ≈ 820GB</b> (931GiB − OS ~15GB − 10% SSD headroom).
+    <b>resize แตะแค่ LPR scene</b> — object/face เก็บ raw (lever ใหญ่สุด). ตัวแปรหลัก = <b>events/กล้อง/วัน</b> (ใส่เป็นช่วง).
+  </p>
+
+  <div class="stat-strip" style="margin-bottom:8px">
+    <div class="stat amber"><div class="big">367 KB</div><div class="lbl">object snap raw (BMA driver — ไม่ resize)</div></div>
+    <div class="stat green"><div class="big">150 KB</div><div class="lbl">LPR scene resized (Site 3 ANPR)</div></div>
+    <div class="stat cyan"><div class="big">820 GB</div><div class="lbl">1TB usable (หลังหัก OS + headroom)</div></div>
+  </div>
+
+  <h3 class="sub" style="font-size:15px">Site 2 — BMA: 200× Bosch 3100i (ข้ามเส้น + object-infield)</h3>
+  <p style="font-size:13.5px;color:var(--dim);margin-bottom:6px">Driver = object snap 367KB raw · <code>GB/วัน = 200 × E × 0.367MB</code></p>
+  <div class="tbl-wrap">
+  <table>
+    <thead><tr><th>E (events/กล้อง/วัน)</th><th>snaps/วัน</th><th>GB/วัน</th><th>วันบน 1TB (820GB)</th></tr></thead>
+    <tbody>
+      <tr><td>50 <span style="color:var(--dim)">(เงียบ/tuned)</span></td><td class="mono">10,000</td><td class="mono">3.7</td><td><span class="yes">~223 วัน</span></td></tr>
+      <tr><td>100</td><td class="mono">20,000</td><td class="mono">7.3</td><td class="mono">~112 วัน</td></tr>
+      <tr><td>200</td><td class="mono">40,000</td><td class="mono">14.7</td><td class="mono">~56 วัน</td></tr>
+      <tr style="background:rgba(184,112,16,.05)"><td><b>334</b> <span style="color:var(--amber)">★ VSS office anchor</span></td><td class="mono">66,800</td><td class="mono">24.5</td><td><b>~33 วัน</b></td></tr>
+      <tr><td>500 <span style="color:var(--dim)">(busy)</span></td><td class="mono">100,000</td><td class="mono">36.7</td><td class="mono">~22 วัน</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="note">
+    <b>BMA insight:</b> โดน raw 367KB เต็มๆ (object snap ไม่ resize) → retention สั้นกว่าที่คิด. ถ้าเพิ่ม
+    <b>object-snap resize</b> (ROADMAP — ยังไม่ทำ) ได้ ~2.4× เช่น 334 ev/cam/วัน → ~80 วัน. ⚠️ anchor 367KB เป็นค่าคละ —
+    แนะนำวัด Bosch 3100i จริงบน N150 (รุ่นเดียวกัน) ภายหลังเพื่อ lock เลข
+  </div>
+
+  <h3 class="sub" style="font-size:15px">Site 3 — Hik: 16 ANPR + 184 คละ (Face/Analytics)</h3>
+  <p style="font-size:13.5px;color:var(--dim);margin-bottom:6px"><b>A) รับแต่ LPR</b> (16 ANPR, scene resize 150KB) · <code>GB/วัน = 16 × P × 0.15MB</code></p>
+  <div class="tbl-wrap">
+  <table>
+    <thead><tr><th>P (ป้าย/กล้อง/วัน)</th><th>ป้าย/วัน</th><th>GB/วัน</th><th>วันบน 1TB (820GB)</th></tr></thead>
+    <tbody>
+      <tr><td>1,000 <span style="color:var(--dim)">(เงียบ)</span></td><td class="mono">16,000</td><td class="mono">2.4</td><td><span class="yes">~342 วัน</span></td></tr>
+      <tr><td>5,000</td><td class="mono">80,000</td><td class="mono">12.0</td><td class="mono">~68 วัน</td></tr>
+      <tr><td>10,000</td><td class="mono">160,000</td><td class="mono">24.0</td><td class="mono">~34 วัน</td></tr>
+      <tr><td>18,868 <span style="color:var(--dim)">(ท่าฉัตรไชย-busy ×16)</span></td><td class="mono">301,888</td><td class="mono">45.3</td><td class="mono">~18 วัน</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p style="font-size:13.5px;color:var(--dim);margin:12px 0 6px"><b>B) LPR + อย่างอื่น</b> (เพิ่ม 184 กล้อง face/analytics ~400KB raw) · <code>+ 184 × E_o × 0.40MB</code></p>
+  <div class="tbl-wrap">
+  <table>
+    <thead><tr><th>Scenario</th><th>LPR GB/วัน</th><th>อื่นๆ GB/วัน</th><th>รวม</th><th>วันบน 1TB</th></tr></thead>
+    <tbody>
+      <tr><td>Light (P=2k, E_o=50)</td><td class="mono">4.8</td><td class="mono">3.7</td><td class="mono">8.5</td><td class="mono">~96 วัน</td></tr>
+      <tr style="background:rgba(13,124,114,.05)"><td><b>Moderate</b> (P=5k, E_o=150)</td><td class="mono">12.0</td><td class="mono">11.0</td><td class="mono">23.0</td><td><b>~36 วัน</b></td></tr>
+      <tr><td>Heavy (P=10k, E_o=300)</td><td class="mono">24.0</td><td class="mono">22.1</td><td class="mono">46.1</td><td class="mono">~18 วัน</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="note green">
+    <b>Site 3 insight:</b> 184 กล้อง face/analytics (raw) มักกิน disk <b>เท่าหรือมากกว่า</b> 16 LPR (resized) —
+    ตัวการจริงคือ raw face/analytics ไม่ใช่ LPR. LPR-only ได้หลายเดือน (ถ้า gate ไม่บ้าระห่ำ); ใส่ analytics ครบ → ~2-5 สัปดาห์
+  </div>
+
+  <div class="note red">
+    <b>⚠️ ข้อจำกัดของตัวเลข:</b> (1) ตัวแปรใหญ่สุด = events/plates ต่อกล้อง/วัน — เลือกแถวให้ตรง traffic จริง ·
+    (2) "วันบน 1TB" = disk-bound — ถ้าตั้ง retention N วัน จะชน cap ก่อน · (3) 367KB/465KB = anchor คละ (VSS production) ไม่ใช่วัดต่อรุ่น ·
+    (4) edge เก็บแต่ภาพ — metadata ไหลขึ้น central ผ่าน MQTT ไม่กิน disk edge
+  </div>
+
+  <h3 class="sub">Rollout</h3>
+  <div class="tbl-wrap">
+  <table>
+    <thead><tr><th>Phase</th><th>ขอบเขต</th><th>Infra</th><th>สถานะ</th></tr></thead>
+    <tbody>
+      <tr><td><b>Phase 0 POC</b></td><td>single site (macOS → Cloudflare/Tailscale ยังไม่ WireGuard)</td><td>central หลัง NAT</td><td><span class="tag green">✓ design + demo เสร็จ</span></td></tr>
+      <tr><td><b>Phase 1 Deploy</b></td><td>Bangmod.Cloud (WireGuard + Public IP)</td><td>3-VM cluster</td><td><span class="tag amber">code พร้อม · รอจัด infra</span></td></tr>
+      <tr><td><b>Phase 1a</b></td><td>N150 hardware + Ubuntu 24.04</td><td>N150 ต่อ site</td><td><span class="tag amber">runbook มี (REF_edge-install)</span></td></tr>
+      <tr><td><b>Phase 1b</b></td><td>DB migration (cam_role; sites + RLS)</td><td>central DB</td><td><span class="tag amber">migration พร้อม · รอ verify</span></td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="note">
+    <b>ทำไม WireGuard ไม่ใช่ Cloudflare tunnel สำหรับ cloud:</b> cloud มี public IP เองอยู่แล้ว → native IP routing,
+    ไม่พึ่ง external dependency, latency ต่ำกว่า, ops ง่ายกว่า. (Cloudflare tunnel ยังใช้กับ POC ปัจจุบันที่ central อยู่หลัง NAT)
+  </div>
+
+  <div class="note violet">
+    <b>ยังต้องตัดสินใจ:</b> (1) staging single-site ก่อน vs multi-site เต็ม · (2) WireGuard app-layer = HTTP forwarder vs MQTT bridge ·
+    (3) <code>site_id</code> + RLS vs free-text site · (4) public ingress = Cloudflare CDN vs nginx+Public IP
+  </div>
+</div>
+</section>
+
+<!-- ═══════════════ FOOTER ═══════════════ -->
+<footer>
+  <div class="wrap">
+    <div>Vigil Platform · VIGIL-ARCH-004 — ANPR Topology / Capabilities / Edge Plan · light theme</div>
+    <div style="margin-top:4px">
+      อ้างอิงจริง: <b>lpr-core.js</b> · <b>LOGIC_hikvision-ingester.md §15</b> (76,333 events) · <b>ecosystem.config.js</b> · <b>cameras-config.json</b> · <b>ROADMAP.md</b> (Bangmod.Cloud + WireGuard) · storage = production 24h (40,390 ไฟล์)
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

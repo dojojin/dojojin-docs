@@ -22,6 +22,7 @@ const path = require('path');
 const fs = require('fs');
 
 const { OFFLINE_THRESHOLD_SEC, METRIC_EVENT_FILTER, MQTT_HEALTHY_AGE_SEC } = require('./constants');
+const { siteWhere } = require('./auth');
 
 function pctChange(today, yesterday) {
   const a = Number(today) || 0;
@@ -80,15 +81,59 @@ module.exports = function registerExecutiveSummaryRoute(app, pool, opts = {}) {
     : () => '';
 
   // 30s TTL cache — exec-summary runs ~15 parallel DB queries + dirStats + diskStats;
-  // frontend polls every 60s; no per-user/group params → single global slot safe (Phase 3 opt, O6)
-  let _execCache = null, _execCacheAt = 0;
+  // frontend polls every 60s. Keyed by site scope (not a single global slot) —
+  // a site-scoped viewer must never be served another scope's cached payload.
+  const _execCache = new Map(); // scopeKey -> { payload, at }
   const EXEC_TTL_MS = 30_000;
 
   app.get('/api/stats/executive-summary', async (req, res) => {
     try {
       const now = Date.now();
-      if (_execCache && now - _execCacheAt < EXEC_TTL_MS) {
-        return res.json(_execCache);
+      // MS-5-style RBAC: null = admin/auditor (all sites), array = viewer's sites.
+      const allowedSites = req.user?.allowedSites ?? null;
+      const scopeKey = allowedSites === null ? 'all' : ([...allowedSites].sort((a, b) => a - b).join(',') || 'none');
+      const cached = _execCache.get(scopeKey);
+      if (cached && now - cached.at < EXEC_TTL_MS) {
+        return res.json(cached.payload);
+      }
+
+      // Canonical allowed-camera-id set, resolved from the cameras table (not
+      // cameras-config.json's free-text `site` name field, which is fragile).
+      // null = no filter (sees all); Set (possibly empty) = restrict to these ids.
+      let allowedCameraIds = null;
+      if (allowedSites !== null) {
+        if (allowedSites.length === 0) {
+          allowedCameraIds = new Set();
+        } else {
+          const camRows = await pool.query('SELECT id FROM cameras WHERE site_id = ANY($1)', [allowedSites]);
+          allowedCameraIds = new Set(camRows.rows.map(r => r.id));
+        }
+      }
+
+      // Edge disk override — a viewer scoped to exactly ONE site with its own
+      // Edge node should see THAT edge's disk usage, not the central server's.
+      // Ambiguous for admin/auditor (sees everything) or a multi-site viewer,
+      // so this only applies to the single-site case. edge_status only reports
+      // disk_free/disk_total (no snapshot/clip byte counts) — those two
+      // figures stay central-server-wide; see accepted-caveat note below.
+      let edgeDisk = null;
+      if (allowedSites !== null && allowedSites.length === 1) {
+        try {
+          const er = await pool.query(
+            `SELECT es.disk_free_gb, es.disk_total_gb
+               FROM edge_status es
+               JOIN sites s ON s.code = es.site_id
+              WHERE s.id = $1`,
+            [allowedSites[0]]
+          );
+          if (er.rows[0]?.disk_total_gb != null) {
+            const GB = 1024 ** 3;
+            edgeDisk = {
+              used:  (Number(er.rows[0].disk_total_gb) - Number(er.rows[0].disk_free_gb)) * GB,
+              total: Number(er.rows[0].disk_total_gb) * GB,
+            };
+          }
+        } catch { /* edge_status not present on older installs — fall back to central disk */ }
       }
 
       // Resolve display timezone (matches /api/stats/today-counts pattern)
@@ -109,6 +154,16 @@ module.exports = function registerExecutiveSummaryRoute(app, pool, opts = {}) {
       // which Trigger events don't carry, so they're already excluded.
       const analyticsExclude = disabledAnalyticsClause('event_type');
       const analyticsExcludeE = disabledAnalyticsClause('e.event_type');
+
+      // Site-scope fragments, precomputed per query shape so every KPI/
+      // breakdown/feed query below is scoped the same way the rest of the
+      // codebase scopes events (siteWhere) — this route previously had none.
+      const swTz      = siteWhere(allowedSites, 'camera_id', 2);   // queries already bound to $1=tz
+      const swTzAlias = siteWhere(allowedSites, 'e.camera_id', 2); // same, but FROM events e
+      const swBare1   = siteWhere(allowedSites, 'camera_id', 1);   // queries with no existing params
+      const swCamTable = allowedSites === null ? { sql: '', args: [] }
+        : allowedSites.length === 0 ? { sql: 'AND FALSE', args: [] }
+        : { sql: 'AND site_id = ANY($1)', args: [allowedSites] };  // FROM cameras directly (has site_id, not camera_id)
 
       const [
         eventsCounts,
@@ -139,7 +194,8 @@ module.exports = function registerExecutiveSummaryRoute(app, pool, opts = {}) {
           WHERE event_time >= ${yesterday}
             AND ${METRIC_EVENT_FILTER}
             ${analyticsExclude}
-        `, [tz]),
+            ${swTz.sql}
+        `, [tz, ...swTz.args]),
 
         // ---------- KPI: alerts (events with rule_name) ----------
         pool.query(`
@@ -152,7 +208,8 @@ module.exports = function registerExecutiveSummaryRoute(app, pool, opts = {}) {
           WHERE event_time >= ${yesterday}
             AND rule_name IS NOT NULL AND rule_name <> ''
             AND ${METRIC_EVENT_FILTER}
-        `, [tz]),
+            ${swTz.sql}
+        `, [tz, ...swTz.args]),
 
         // ---------- KPI: traffic (vehicles) ----------
         // Expanded object_class hierarchy — Bosch cameras emit either the
@@ -171,7 +228,8 @@ module.exports = function registerExecutiveSummaryRoute(app, pool, opts = {}) {
           WHERE event_time >= ${yesterday}
             AND object_class IN ('Vehicle','Car','Truck','Bus','Motorcycle','Motorbike','Van','Bicycle','Bike')
             AND ${METRIC_EVENT_FILTER}
-        `, [tz]),
+            ${swTz.sql}
+        `, [tz, ...swTz.args]),
 
         // ---------- KPI: people ----------
         // Expanded object_class hierarchy (Person/Face/HumanFace/HumanBody/
@@ -186,7 +244,8 @@ module.exports = function registerExecutiveSummaryRoute(app, pool, opts = {}) {
           WHERE event_time >= ${yesterday}
             AND object_class IN ('Person','Face','HumanFace','HumanBody','Pedestrian')
             AND ${METRIC_EVENT_FILTER}
-        `, [tz]),
+            ${swTz.sql}
+        `, [tz, ...swTz.args]),
 
         // ---------- 24h events per hour ----------
         pool.query(`
@@ -197,9 +256,10 @@ module.exports = function registerExecutiveSummaryRoute(app, pool, opts = {}) {
           WHERE event_time >= NOW() - INTERVAL '24 hours'
             AND ${METRIC_EVENT_FILTER}
             ${analyticsExclude}
+            ${swBare1.sql}
           GROUP BY hour
           ORDER BY hour
-        `),
+        `, swBare1.args),
 
         // ---------- Event breakdown (today) — by rule_name ----------
         // Was grouped by object_class, but Bosch FieldDetector/LineDetector
@@ -223,10 +283,11 @@ module.exports = function registerExecutiveSummaryRoute(app, pool, opts = {}) {
             AND NOT (event_state = 'false' AND (
               event_type LIKE 'ImageToo%' OR event_type LIKE 'GlobalSceneChange%'
               OR event_type LIKE 'Trigger/%'))
+            ${swTz.sql}
           GROUP BY 1, 2
           ORDER BY count DESC
           LIMIT 8
-        `, [tz]),
+        `, [tz, ...swTz.args]),
 
         // ---------- Per-camera event counts (today) — total + alerts ----------
         // No JOIN to the cameras table: the camera LIST + names come from
@@ -242,8 +303,9 @@ module.exports = function registerExecutiveSummaryRoute(app, pool, opts = {}) {
           WHERE e.event_time >= ${today}
             AND e.event_type NOT LIKE '%Aggregation%'
             ${analyticsExcludeE}
+            ${swTzAlias.sql}
           GROUP BY e.camera_id
-        `, [tz]),
+        `, [tz, ...swTzAlias.args]),
 
         // ---------- Recent 8 events for live feed ----------
         // Snapshot filename is a top-level column now; raw_json fallback keeps
@@ -255,9 +317,10 @@ module.exports = function registerExecutiveSummaryRoute(app, pool, opts = {}) {
           FROM events
           WHERE ${METRIC_EVENT_FILTER}
             ${analyticsExclude}
+            ${swBare1.sql}
           ORDER BY event_time DESC
           LIMIT 8
-        `),
+        `, swBare1.args),
 
         // ---------- Camera runtime state (heartbeat + recording) ----------
         // DB-side per-camera state ONLY. The camera LIST + lat/lon comes from
@@ -267,9 +330,10 @@ module.exports = function registerExecutiveSummaryRoute(app, pool, opts = {}) {
         // overcount. We just need last_seen_at / recording_data_until keyed by
         // id, then join in JS against the config list.
         pool.query(`
-          SELECT id, last_seen_at, recording_data_until
+          SELECT id, last_seen_at, recording_data_until, sd_last_check_at
           FROM cameras
-        `),
+          WHERE TRUE ${swCamTable.sql}
+        `, swCamTable.args),
 
         // ---------- 24h event count per camera ----------
         pool.query(`
@@ -278,18 +342,21 @@ module.exports = function registerExecutiveSummaryRoute(app, pool, opts = {}) {
           WHERE event_time >= NOW() - INTERVAL '24 hours'
             AND ${METRIC_EVENT_FILTER}
             ${analyticsExclude}
+            ${swBare1.sql}
           GROUP BY camera_id
-        `),
+        `, swBare1.args),
 
         // ---------- MQTT pipeline health (camera heartbeat age) ----------
         // Was based on the last EVENT time, which falsely showed
         // "Disconnected" at night when no one walked past a camera. Cameras
         // send heartbeats independent of detections, so MAX(last_seen_at)
-        // reflects whether the MQTT pipeline is actually flowing.
+        // reflects whether the MQTT pipeline is actually flowing. Scoped so a
+        // site-scoped viewer's "connected" status reflects their own cameras.
         pool.query(`
           SELECT EXTRACT(EPOCH FROM (NOW() - MAX(last_seen_at)))::int AS age_sec
           FROM cameras
-        `),
+          WHERE TRUE ${swCamTable.sql}
+        `, swCamTable.args),
 
         // ---------- Clip stats (done + pending) ----------
         pool.query(`
@@ -297,7 +364,8 @@ module.exports = function registerExecutiveSummaryRoute(app, pool, opts = {}) {
             COUNT(*) FILTER (WHERE clip_file IS NOT NULL AND clip_status = 'done')::int AS done,
             COUNT(*) FILTER (WHERE clip_status = 'pending')::int AS pending
           FROM events
-        `),
+          WHERE TRUE ${swBare1.sql}
+        `, swBare1.args),
 
         dirStats(snapshotDir),
         diskStats(snapshotDir),
@@ -314,8 +382,11 @@ module.exports = function registerExecutiveSummaryRoute(app, pool, opts = {}) {
       // registers a row for every camera_id seen on MQTT, including stale
       // ones not in the operator's config). So: list + lat/lon come from
       // the config file; last_seen_at / recording state are joined in from
-      // the cameraRuntime query keyed by id.
-      const cfgCams = (loadCameraConfig().cameras) || [];
+      // the cameraRuntime query keyed by id. Scoped by allowedCameraIds (DB
+      // cameras.site_id, canonical) rather than the config's free-text
+      // `site` name field, which is fragile to match against.
+      const cfgCams = ((loadCameraConfig().cameras) || [])
+        .filter(c => allowedCameraIds === null || allowedCameraIds.has(c.camera_id));
       const runtimeById = {};
       for (const r of cameraRuntime.rows) runtimeById[r.id] = r;
       const evCountById = {};
@@ -323,7 +394,14 @@ module.exports = function registerExecutiveSummaryRoute(app, pool, opts = {}) {
 
       const tsNow = Date.now();
       const isFresh = (ts) => ts && (tsNow - new Date(ts).getTime()) < OFFLINE_THRESHOLD_SEC * 1000;
-      const isRecording = (ts) => ts && (tsNow - new Date(ts).getTime()) < 90 * 1000;
+      // Freshness judged against when we last checked (sd_last_check_at), not wall-clock
+      // "now" — edge-site cameras are probed hourly, so recording_data_until is routinely
+      // tens of minutes stale by render time even while still genuinely recording.
+      const isRecording = (dataUntil, checkedAt) => {
+        if (!dataUntil) return false;
+        const checkedAtMs = checkedAt ? new Date(checkedAt).getTime() : tsNow;
+        return (checkedAtMs - new Date(dataUntil).getTime()) < 90 * 1000;
+      };
 
       const cameraView = cfgCams.map(c => {
         const rt = runtimeById[c.camera_id] || {};
@@ -336,7 +414,7 @@ module.exports = function registerExecutiveSummaryRoute(app, pool, opts = {}) {
           lon:          (c.longitude != null && c.longitude !== '') ? parseFloat(c.longitude) : null,
           last_seen_at: rt.last_seen_at || null,
           online:       isFresh(rt.last_seen_at),
-          recording:    isRecording(rt.recording_data_until),
+          recording:    isRecording(rt.recording_data_until, rt.sd_last_check_at),
           event_count:  evCountById[c.camera_id] || 0,
         };
       });
@@ -453,8 +531,13 @@ module.exports = function registerExecutiveSummaryRoute(app, pool, opts = {}) {
         system: {
           mqtt_connected: mqttConnected,
           mqtt_last_seen_age_sec: mqttAgeSec,   // camera-heartbeat age now
-          storage_used_bytes:  disk.used,
-          storage_total_bytes: disk.total,
+          storage_used_bytes:  edgeDisk ? edgeDisk.used  : disk.used,
+          storage_total_bytes: edgeDisk ? edgeDisk.total : disk.total,
+          storage_source: edgeDisk ? 'edge' : 'central',
+          // Snapshot/clip counts stay central-server-wide even when
+          // storage_source is 'edge' — edge_status doesn't report per-edge
+          // file counts/byte sizes, only disk_free/disk_total (accepted
+          // limitation; would need a bigger edge-heartbeat payload to fix).
           snapshot_count:      snapStats.files,
           snapshot_size_bytes: snapStats.bytes,
           clip_count:          mediaStats.files,
@@ -466,8 +549,7 @@ module.exports = function registerExecutiveSummaryRoute(app, pool, opts = {}) {
           version_date: versionDate,
         },
       };
-      _execCache = payload;
-      _execCacheAt = now;
+      _execCache.set(scopeKey, { payload, at: now });
       res.json(payload);
     } catch (err) {
       console.error('[stats/executive-summary] error:', err);

@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vigil Multi-Site Edge Architecture — ต้นทาง ↔ ส่วนกลาง (Cloud)</title>
+<link rel="stylesheet" href="multi-site.css">
+</head>
+<body>
+<div class="page">
+
+  <header class="hd">
+    <div>
+      <h1>สถาปัตยกรรม Multi-Site (Edge ↔ ส่วนกลาง Cloud)</h1>
+      <p class="sub">Site ต้นทาง (BMA / ภูเก็ต · 200 กล้อง/site) ประมวลผลในพื้นที่ → ส่งเข้าส่วนกลางบน <b>Bangmod.Cloud</b> ผ่าน <b>WireGuard</b></p>
+    </div>
+    <span class="tag">DRAFT · ร่างออกแบบ</span>
+  </header>
+
+  <div class="note-box warn"><b>⚠ ระวังชื่อชนกัน:</b> <code>vigil-edge-01</code> = <b>VM gateway บน Cloud</b> (Public IP + WireGuard + nginx) — <b>คนละตัว</b>กับ "Site Edge" (เครื่อง N150 ที่ BMA/ภูเก็ต). ในเอกสารนี้: "Edge / ต้นทาง" = เครื่องที่ site เสมอ · "vigil-edge-01" = gateway บน cloud</div>
+
+  <!-- ───────── 1 ภาพรวม ───────── -->
+  <section class="card">
+    <h2>1 · ภาพรวม — current → target</h2>
+    <p><b>ปัจจุบัน:</b> ทุกอย่าง (ingester + DB + dashboard) รันรวมเครื่องเดียว (Mac, Cloudflare Tunnel).</p>
+    <p><b>เป้าหมาย (multi-site):</b> แยกเป็น 2 ชั้น —</p>
+    <ul>
+      <li><b>Site Edge (ต้นทาง)</b> = เครื่องเล็ก (N150) ในแต่ละ Site → คุย LAN กับกล้อง, normalize event, <b>buffer (ANR)</b>, ส่งออกผ่าน WireGuard</li>
+      <li><b>ส่วนกลาง (Central) = Bangmod.Cloud 3 VMs</b> → api-server + EMQX + PostgreSQL(RLS) + dashboard เดียวรวมทุก Site</li>
+      <li>ข้อมูลทุกชิ้นติด <b><code>site_id</code></b> → แยกการเข้าถึงด้วย <b>RLS</b> (Row-Level Security) ที่ vigil-db-01</li>
+    </ul>
+    <div class="note-box warn"><b>หมายเหตุจำนวนกล้อง:</b> "<b>200 กล้อง/site</b>" = <b>ตัวเลขออกแบบเผื่อ (planning headroom)</b> — spec cloud / OPEX / sizing ทั้งเอกสารคิดที่ 200 เพื่อ<b>ไม่ต้องย้าย-ขยายของกลางทาง</b>. ช่วง <b>POC + deploy แรกจริงกล้องยังไม่ถึง 200</b> (เริ่มไม่กี่ตัว) แล้วค่อยสเกลขึ้น → uplink/ต้นทุนจริงช่วงแรกจะ<b>ต่ำกว่าในเอกสารมาก</b></div>
+  </section>
+
+  <!-- ───────── 2 System Diagram ───────── -->
+  <section class="card">
+    <h2>2 · System Diagram</h2>
+    <div class="diagram">
+
+      <!-- ZONE: EDGE -->
+      <div class="zone zone-edge">
+        <div class="zone-label">ต้นทาง · Site Edge (N150)</div>
+        <div class="site-box">
+          <div class="site-title"><span class="dot" style="background:#22c55e"></span>BMA</div>
+          <div class="node node-cam">กล้อง LAN <small>(onboard NIC)</small><br><small>มีเฉพาะบาง brand แล้วแต่ Site</small></div>
+          <div class="arr">↓ MQTT · ISAPI · CGI · RTSP</div>
+          <div class="node node-cfg">⚙ Edge Config / Site Profile<br><small>เปิด/ปิด ต่อ vendor <b>และ</b> capability — รันเฉพาะที่ใช้</small></div>
+          <div class="arr">↓</div>
+          <div class="node node-ing">Ingesters / Receivers <span class="pill">เฉพาะที่เปิด</span><br><small>Hik: Smart·<b>Face</b>·<b>ANPR</b> · Dahua: Smart·ANPR · ONVIF(อนาคต) · Bosch(MQTT)</small></div>
+          <div class="arr">↓ publish</div>
+          <div class="node node-mq">nanoMQ <span class="pill">broker + buffer</span><br><small>เฉพาะถ้ามี Bosch · คิวรวม edge</small></div>
+          <div class="arr">↓ subscribe</div>
+          <div class="node node-fwd">Forwarder <span class="pill">spool/retry</span> + Caddy <span class="pill">media local</span><br><small>(USB NIC → WAN)</small></div>
+          <div class="arr">↓ WireGuard</div>
+          <div class="node node-cf">WireGuard client<br><small>peer → vigil-edge-01</small></div>
+        </div>
+        <div class="site-box compact">
+          <div class="site-title"><span class="dot" style="background:#f59e0b"></span>ภูเก็ต</div>
+          <div class="node-mirror">โครงเหมือน BMA<br><small>กล้อง → ingesters → (nanoMQ) → forwarder → WireGuard</small></div>
+        </div>
+      </div>
+
+      <!-- ZONE: WIREGUARD -->
+      <div class="zone zone-cf">
+        <div class="zone-label">private mesh</div>
+        <div class="big-arrow">→</div>
+        <div class="node node-cloud">WireGuard<br><span class="pill">private net</span><br><small>เข้ารหัส point-to-point<br>HTTP + MQTT ผ่านได้</small></div>
+        <div class="big-arrow">→</div>
+        <div class="conn-note">internet line ต่อ site<br>(True/Fiber)</div>
+      </div>
+
+      <!-- ZONE: CENTRAL CLOUD -->
+      <div class="zone zone-central">
+        <div class="zone-label">ส่วนกลาง · Bangmod.Cloud</div>
+        <div class="node node-recv">vigil-edge-01 <span class="pill">gateway</span><br><small>Public IP + WireGuard + nginx (ingress + reverse-proxy)</small></div>
+        <div class="arr">↓ private network (ฟรี)</div>
+        <div class="node node-api">vigil-core-01<br><small>Node api-server + EMQX + Rule Engine + ingest receiver</small></div>
+        <div class="arr">↓ SQL</div>
+        <div class="node node-db">vigil-db-01<br><small>PostgreSQL 16 + <b>RLS</b> (แยกข้อมูลราย-site) · +<code>site_id</code></small></div>
+        <div class="node node-side">Storage: Block 100GB (PG) · Object 200GB (backup+thumbnail)</div>
+        <div class="node node-dash">Dashboard · <code>dashboard.dojojin.tech</code><br><small>รวมทุก Site · RBAC ราย-Site</small></div>
+      </div>
+
+    </div>
+    <p class="cap">เส้นทางหลัก: event/metadata = <b>push ผ่าน WireGuard</b> เข้า vigil-core-01 · รูปเต็ม/clip = เก็บที่ site, <b>on-site ดู local / remote pull on-demand</b> (ข้อ 6, 9)</p>
+  </section>
+
+  <!-- ───────── 3 ต้นทาง ───────── -->
+  <section class="card">
+    <h2>3 · ต้นทาง (Site Edge) — ต้องมีอะไรบ้าง</h2>
+    <table class="tbl">
+      <thead><tr><th>องค์ประกอบ</th><th>หน้าที่</th><th>ทำไมต้องมี</th></tr></thead>
+      <tbody>
+        <tr><td>เครื่อง Edge (N150)</td><td>4C/4T · 16GB · 512GB NVMe · 1GbE + USB 1GbE</td><td>คุยกล้องใน LAN + รัน ingester ในพื้นที่ (สเปคจริงที่วางไว้)</td></tr>
+        <tr><td class="hl">Edge Config (site profile)</td><td>ประกาศ <code>site_id</code> + vendor/capability ที่ site มี + endpoint กลาง</td><td><b>เปิด/ปิด ต่อ vendor และ capability</b> (Hik: Smart/Face/ANPR แยก) → PM2 สตาร์ทเฉพาะที่เปิด · ไม่รัน thread เปล่า</td></tr>
+        <tr><td>Ingesters / Receivers</td><td><code>hikvision-isapi</code> · <code>dahua-cgi</code> · face-push · lpr(ANPR) · <code>mqtt-subscriber</code>(Bosch)</td><td>โค้ดเดิม ย้ายมารันที่ edge · สตาร์ทเฉพาะที่ config เปิด</td></tr>
+        <tr><td class="hl">nanoMQ</td><td>MQTT broker เล็ก + buffer</td><td><b>Bosch ต้อง publish เข้า broker</b> → edge ใช้ nanoMQ แทน EMQX กลาง <span class="muted">(site ไม่มี Bosch → ข้ามได้ ยิ่งเบา)</span></td></tr>
+        <tr><td class="hl">Forwarder</td><td>subscribe nanoMQ → normalize → ส่งเข้ากลาง</td><td><b>spool ลงดิสก์ retry</b> เมื่อกลางเข้าไม่ถึง (แม่แบบ <code>lpr-forward.js</code>)</td></tr>
+        <tr><td class="hl">WireGuard client</td><td>peer เข้า vigil-edge-01</td><td>สร้าง private net edge↔cloud · <b>ฟรี (open-source)</b> · HTTP+MQTT วิ่งผ่านได้หมด</td></tr>
+        <tr><td>Caddy (media proxy)</td><td>เสิร์ฟ dashboard local + proxy /api กลาง + เสิร์ฟ /media local</td><td>on-site เปิดรูปจาก LAN เร็ว (ข้อ 9) · ~20–40MB เบามากบน N150</td></tr>
+        <tr><td>ดิสก์ buffer <span class="pill">≈ ANR</span></td><td>คิว nanoMQ + spool event + full-res</td><td>store-and-forward: ลิงก์ล่ม→เก็บ→กลับมา→backfill อัตโนมัติ (แนวคิด ANR ของ NVR)</td></tr>
+      </tbody>
+    </table>
+    <div class="note-box"><b>Hikvision = หลาย capability ในตัวเดียว:</b> Smart Events · <b>Face</b> (FAS push) · <b>ANPR/LPR</b> เป็นคนละ stream + ประมวลผลคนละแบบ → toggle ระดับ capability ตัดงานที่ site ไม่ใช้ออกตั้งแต่ต้นทาง</div>
+  </section>
+
+  <!-- ───────── 4 ปลายทาง (cloud) ───────── -->
+  <section class="card">
+    <h2>4 · ส่วนกลาง (Bangmod.Cloud) — ต้องมีอะไรบ้าง</h2>
+    <table class="tbl">
+      <thead><tr><th>VM / องค์ประกอบ</th><th>spec</th><th>หน้าที่</th><th>สถานะ (ขึ้น cloud ใหม่)</th></tr></thead>
+      <tbody>
+        <tr><td class="hl">vigil-edge-01 ★</td><td>4GB/4CPU · 50GB SSD · Public IP</td><td>WireGuard concentrator + nginx (ingress + reverse-proxy)</td><td><b>ต้อง provision</b> + ตั้ง WG/nginx</td></tr>
+        <tr><td class="hl">vigil-core-01</td><td>6GB/6CPU · 60GB SSD</td><td>Node api-server + EMQX + Rule Engine + ingest receiver</td><td><b>ต้อง provision</b> + deploy โค้ดเดิม</td></tr>
+        <tr><td class="hl">vigil-db-01</td><td>8GB/8CPU · 70GB SSD</td><td>PostgreSQL 16 + <b>RLS</b> (แยก site)</td><td><b>ต้อง provision</b> + migrate schema (+<code>site_id</code> + RLS policy)</td></tr>
+        <tr><td>Block Storage 100GB</td><td>10฿/GB</td><td>mount → <code>/var/lib/postgresql</code></td><td>ต้อง attach</td></tr>
+        <tr><td>Object Storage 200GB</td><td>1฿/GB</td><td>backup + thumbnail</td><td>ต้องตั้ง</td></tr>
+        <tr><td>Private Network</td><td>ฟรี</td><td>VM คุยกันภายใน (core↔db↔edge-01)</td><td>เปิดใช้</td></tr>
+      </tbody>
+    </table>
+    <div class="note-box"><b>RLS ที่ vigil-db-01 = กลไกแยกข้อมูลราย-site:</b> ทุก query ถูกกรองด้วย <code>site_id</code> ตาม policy → user ของ BMA เห็นเฉพาะ BMA โดยอัตโนมัติที่ชั้น DB (ตอบโจทย์ multi-site RBAC ใน "ต้องตัดสินใจ")</div>
+    <div class="note-box warn"><b>Public IP = ฟรีในแพ็กเกจ Bangmod ทุก VM</b> (ยืนยันจาก support) — แต่เปิดจริงแค่ <code>vigil-edge-01</code> · core+db อยู่ <b>private network เท่านั้น</b> (ไม่โผล่เน็ต). <b>Firewall vigil-edge-01 (ประตูเดียวที่ public):</b> เปิดเฉพาะ <code>51820/udp</code> (WireGuard) + <code>443</code> (nginx) + SSH จำกัด IP/ผ่าน WG · ที่เหลือปิดหมด</div>
+  </section>
+
+  <!-- ───────── 5 การเชื่อมต่อ ───────── -->
+  <section class="card">
+    <h2>5 · การเชื่อมต่อ ต้นทาง → ปลายทาง</h2>
+    <p><b>Transport = WireGuard</b> (site edge = WG peer → vigil-edge-01) → ได้ private net flat ระหว่าง site↔cloud. บน private net นี้เลือก app-layer ได้ 2 แบบ:</p>
+    <div class="opt opt-rec">
+      <div class="opt-h"><span class="badge-rec">แนะนำ</span> Pattern A — HTTP Forwarder</div>
+      <ol>
+        <li>ingesters → publish nanoMQ (local)</li>
+        <li>forwarder → <b>HTTPS POST</b> ผ่าน WireGuard → nginx(vigil-edge-01) → ingest receiver บน vigil-core-01</li>
+        <li>receiver ติด <code>site_id</code> → เขียน vigil-db-01 → <code>pg_notify</code> (เหมือน ingester เดิม)</li>
+      </ol>
+      <p class="why"><b>ทำไม:</b> ตรงกับ pattern ที่ build แล้ว (lpr-receiver + spool/retry) · เบา</p>
+    </div>
+    <div class="opt">
+      <div class="opt-h">Pattern B — MQTT Bridge (nanoMQ → EMQX กลาง)</div>
+      <p>nanoMQ bridge → EMQX บน vigil-core-01 → Rule Engine + subscriber เขียน DB. <b>WireGuard ทำให้ B ง่ายขึ้นมาก</b> (ไม่ต้อง tcp-tunnel แยกแล้ว) + core มี EMQX อยู่แล้ว → <b>viable</b> แต่ยังต้องทำ subscriber รับ normalized event ใหม่ · A เบากว่าเพราะ reuse ของเดิม</p>
+    </div>
+  </section>
+
+  <!-- ───────── 6 Snapshot / Media ───────── -->
+  <section class="card">
+    <h2>6 · Snapshot / Media — transfer mode ต่อชนิดกล้อง</h2>
+    <p>uplink (เข้า quota) ขึ้นกับ "ส่งอะไรต่อ event". รูปเต็ม/clip <b>เก็บที่ site + ดู on-demand เสมอ</b> — ต่างกันแค่ส่งอะไรไปก่อน:</p>
+    <table class="tbl">
+      <thead><tr><th>โหมด</th><th>ส่งทุก event</th><th>~/event</th><th>เหมาะกับ</th></tr></thead>
+      <tbody>
+        <tr><td class="hl">Metadata-only (plaque)</td><td>meta เท่านั้น · รูป<b>ทั้งหมด</b> on-demand</td><td><b>~3 KB</b></td><td><b>LPR</b> — plaque เรนเดอร์จาก text ได้</td></tr>
+        <tr><td>Hybrid (thumbnail)</td><td>meta + thumbnail · full-res on-demand</td><td>~19 KB</td><td><b>Face</b> — อยากเห็นใบหน้าในฟีด</td></tr>
+        <tr><td>Full push</td><td>meta + snapshot เต็มทุกครั้ง</td><td>~515 KB</td><td>เลี่ยงบน remote (หนักสุด)</td></tr>
+      </tbody>
+    </table>
+    <div class="note-box"><b>เลือกต่อ vendor/capability ใน Edge Config</b> (LPR=metadata-only · Face=thumbnail). <b>config ทั้งสองฝั่ง:</b> Edge = thumbnail size + retention full-res + media-serve (Caddy) · Central = pull URL ราย-site + cache · เกิน retention → fallback (plaque/vector). <span class="muted">ทางเลือก: Edge → Object/R2 → ส่ง URL</span></div>
+  </section>
+
+  <!-- ───────── 7 Resilience ───────── -->
+  <section class="card">
+    <h2>7 · ความทนทาน (ANR) + รูปแบบ metadata + ตรวจ "ไซต์ล่ม"</h2>
+    <ul>
+      <li><b>ANR:</b> disk buffer ที่ edge = store ตอนลิงก์ขาด, auto-backfill ตอนกลับมา (สำหรับ metadata; full-res = pull on-demand)</li>
+      <li><b>"ไซต์ล่ม" ตรวจเอง:</b> spool โต / forwarder heartbeat ขาด = ทั้ง site ขาด — health ระดับ <b>Site</b> แยกจาก "กล้องตัวเดียวล่ม"</li>
+    </ul>
+    <div class="note-box"><b>metadata เก็บรูปแบบไหน:</b> edge ingester <b>normalize เป็น event JSON มาตรฐานเดียว</b> (โครง <code>events</code> + <code>raw_json</code> เก็บ payload ดิบ) → buffer/forward เป็น JSON vendor-agnostic ทั้ง nanoMQ + spool · <b>Central แค่ validate + INSERT</b> (+<code>site_id</code>) ไม่มี logic ราย-vendor ที่กลาง</div>
+  </section>
+
+  <!-- ───────── 8 Uplink Sizing ───────── -->
+  <section class="card">
+    <h2>8 · Uplink Sizing ราย-Site</h2>
+    <p>ปริมาณ/เดือน = continuous push + on-demand pull. continuous ต่อกล้อง/เดือน ตาม mode (event 3KB · thumb 20KB · snapshot 640KB·80% — calibrated #40):</p>
+    <table class="tbl">
+      <thead><tr><th>events/วัน</th><th class="num">Metadata-only</th><th class="num">Hybrid</th><th class="num">Full push</th></tr></thead>
+      <tbody>
+        <tr><td>Standard 200</td><td class="num">18 MB</td><td class="num">114 MB</td><td class="num">3.1 GB</td></tr>
+        <tr><td>Heavy 1,000</td><td class="num">90 MB</td><td class="num">570 MB</td><td class="num">15 GB</td></tr>
+        <tr><td>LPR ถนน 5,000</td><td class="num"><b>450 MB</b></td><td class="num">2.85 GB</td><td class="num">77 GB</td></tr>
+      </tbody>
+    </table>
+    <div class="note-box"><b>กฎเลือกสาย (200 กล้อง/site):</b><br>
+      • LPR metadata-only: แม้ LPR ล้วน 200×5,000 ≈ 90 GB → <b>True capped 100GB พอ</b> (เว้น verify-pull >~7%)<br>
+      • Face/Analytics hybrid: 200×Standard ≈ 35 GB → <b>พอ</b><br>
+      • <b>Fiber (uncapped):</b> เมื่อ Full push / verify-pull สูง / Heavy มาก / ต้องการ stable+latency ต่ำ (LPR real-time)<br>
+      <b>30Mbps speed พอทุกกรณี — กำแพงคือ quota</b></div>
+  </section>
+
+  <!-- ───────── 9 Edge networking ───────── -->
+  <section class="card">
+    <h2>9 · Edge Networking (dual-NIC) + On-site Media</h2>
+    <p>N150 มี LAN port เดียว → ใช้ <b>USB 1GbE เพิ่มอีกตัว</b> เพื่อแยก camera-net ออกจาก WAN:</p>
+    <table class="tbl">
+      <thead><tr><th>NIC</th><th>ต่อกับ</th><th>ทำไม</th></tr></thead>
+      <tbody>
+        <tr><td><b>Onboard 1GbE</b></td><td>Camera subnet (isolated, ไม่มี gateway)</td><td>RTSP/ISAPI/CGI/MQTT <b>หนัก+critical</b> → ใช้ NIC นิ่งสุด · กล้องโดดเดี่ยว (security/PDPA)</td></tr>
+        <tr><td><b>USB 1GbE</b></td><td>Office/WAN (default gateway + WireGuard)</td><td>edge→cloud (เบา) + on-site operator เข้า media local · ถ้า USB หลุดวูบ → <b>ANR buffer รับไว้ ไม่หาย</b> (จึงปลอดภัยกว่าเอากล้องไว้ USB)</td></tr>
+      </tbody>
+    </table>
+    <p style="font-size:12px;font-family:var(--mono);color:var(--text-secondary);line-height:1.7">[กล้อง]──onboard──[N150: ingest→nanoMQ→forwarder+Caddy]──USB──[office sw]─┬─WireGuard→cloud (เบา)<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└─operator on-site → media local (เร็ว, 0 uplink)</p>
+    <div class="note-box"><b>On-site media (Option A):</b> operator ที่ site เปิด URL local → Caddy เสิร์ฟ dashboard + proxy <code>/api</code>→cloud (เล็ก) + เสิร์ฟ <code>/media</code> จากดิสก์ edge (LAN เร็ว, ไม่อ้อม cloud, 0 uplink) · remote → ผ่าน cloud ตามปกติ · control plane = cloud เสมอ, media plane = local-when-on-site</div>
+    <p class="why" style="margin-top:10px"><b>N150 รับไหว:</b> ingest+nanoMQ+forwarder+WireGuard+Caddy ≈ <b>&lt;2.5GB/16GB · CPU แทบ idle</b> · ตัวกิน spec จริงคือ clip/ffmpeg → เปิดเฉพาะกล้องสำคัญ · metadata-only/thumbnail ยิ่งเบา</p>
+    <div class="note-box"><b>Subdomain:</b> <code>dashboard.dojojin.tech</code> → cloud (รวมทุก site, RBAC) · <code>bma/phuket.dojojin.tech</code> → <b>edge LAN IP</b> (A record → private IP, ใช้ได้เฉพาะตอนอยู่ on-site) + Caddy ใช้ wildcard cert <code>*.dojojin.tech</code> (DNS-01) → on-site ได้ HTTPS ถูกต้องไม่มี warning.<br><b>ชัดเจน (Q local-access):</b> on-site = <b>เฉพาะ "media" ที่ local · "data/API" ยังผ่าน cloud</b> (single SoT, JSON เล็ก) · รูปที่ไม่อยู่ edge นี้ (ข้าม site / เกิน retention) → Caddy <b>fallback</b> ดึง cloud · auth share cookie ผ่านโดเมนแม่ <code>*.dojojin.tech</code> · ไม่กระทบ cloud/remote เลย (เป็น optimization ฝั่ง on-site ล้วน)</div>
+  </section>
+
+  <!-- ───────── 10 OPEX / Cost ───────── -->
+  <section class="card">
+    <h2>10 · ต้นทุน — แยก 3 ก้อน (CAPEX / OPEX cloud / line ราย-site)</h2>
+    <p><b>A. OPEX Cloud (Bangmod.Cloud, รายเดือน)</b> — จากไฟล์ OPEX (USD/THB@33):</p>
+    <table class="tbl">
+      <thead><tr><th>รายการ</th><th>spec</th><th class="num">฿/เดือน</th></tr></thead>
+      <tbody>
+        <tr><td>vigil-edge-01 ★</td><td>4GB/4CPU · 50GB · Public IP + WG + nginx</td><td class="num">719</td></tr>
+        <tr><td>vigil-core-01</td><td>6GB/6CPU · 60GB · Node+EMQX+Rule</td><td class="num">1,299</td></tr>
+        <tr><td>vigil-db-01</td><td>8GB/8CPU · 70GB · PG16 RLS</td><td class="num">1,699</td></tr>
+        <tr><td>Block Storage</td><td>100GB → PG</td><td class="num">1,000</td></tr>
+        <tr><td>Object Storage</td><td>200GB backup+thumbnail</td><td class="num">200</td></tr>
+        <tr><td>VM Snapshot</td><td>~100GB ×2 (ก่อน deploy, 7วัน)</td><td class="num">600</td></tr>
+        <tr class="tot"><td>รวม (เท่าที่เห็นในภาพ)</td><td class="muted">VM + Storage</td><td class="num">5,517</td></tr>
+      </tbody>
+    </table>
+    <p class="muted" style="font-size:12px">* ภาพ OPEX ระบุ "Tier 2 + <b>Dev Tools</b>" แต่แถว Dev Tools ถูกตัดในภาพ → ยอดนี้ <b>เฉพาะ VM+Storage ที่เห็น</b> ยังไม่รวม Dev Tools</p>
+    <p style="margin-top:10px"><b>B. CAPEX Edge (ครั้งเดียว/site)</b> — เครื่อง N150 (4C/16GB/512GB) + USB 1GbE × <b>2 site</b> (BMA, ภูเก็ต) · 🟡 ราคาแล้วแต่รุ่น (probe จริงก่อนใส่ตัวเลข)</p>
+    <p><b>C. Internet line (รายเดือน/site)</b> — True capped 100GB หรือ Fiber uncapped <b>ต่อ site</b> (ดูข้อ 8 ว่า site ไหนต้องอะไร) · แยกจาก OPEX cloud</p>
+    <div class="note-box"><b>WireGuard มีต้นทุนไหม? — แทบไม่มี.</b> WireGuard = open-source ฟรี · รันบน <b>vigil-edge-01 (719฿ ที่จ่ายอยู่แล้ว)</b> + N150 (มีอยู่แล้ว) → <b>ไม่มี line-item เพิ่ม</b> · Public IP <b>ฟรีในแพ็กเกจ</b>. traffic วิ่งใน 8TB transfer ของ VM (ingest = inbound ส่วนใหญ่ฟรี · media on-site เสิร์ฟ local ไม่กิน egress cloud). <b>ไม่ต้องมี tunnel บน cloud</b> (Public IP + WireGuard ครบ) · Cloudflare = optional CDN/DDoS หน้า dashboard เท่านั้น</div>
+    <div class="note-box"><b>ไม่ต้องพึ่ง Cloudflare media products:</b> <b>Images</b> คิดราย-รูป → volume CCTV (ล้าน/เดือน) ระเบิด (LPR-heavy ~$1,800/เดือน ❌) · <b>Stream</b> = video เท่านั้น (clip เก็บ edge → ไม่ต้อง). ถ้าจะมี cloud object สำหรับ backup/durable-thumbnail → <b>R2</b> ($0.015/GB + <b>egress ฟรี</b> · <b>batch</b> ลด per-operation) หรือ Bangmod Object (1฿/GB ไม่มี op-fee). <b>แก่น: full-res ที่ edge = ถูกที่สุด</b></div>
+  </section>
+
+  <!-- ───────── 11 Install plan ───────── -->
+  <section class="card">
+    <h2>11 · แผนติดตั้ง Site Edge (BMA + ภูเก็ต)</h2>
+    <p>ขั้นตอนร่วม (ทำเหมือนกันทั้ง 2 site) → แล้วต่างกันแค่ <b>site profile</b>:</p>
+    <div class="opt">
+      <div class="opt-h">ขั้นตอนร่วม (per edge)</div>
+      <ol>
+        <li><b>OS:</b> ลง Ubuntu Server LTS บน N150 · เปิด SSH</li>
+        <li><b>Network 2 NIC:</b> onboard → camera subnet (static, <b>ไม่มี</b> default gateway) · USB → office/WAN (มี gateway + internet)</li>
+        <li><b>WireGuard:</b> <code>apt install wireguard</code> → gen keypair → ตั้ง peer = vigil-edge-01 (Endpoint=Public IP:51820, AllowedIPs=ช่วง private cloud) → <code>wg-quick up wg0</code> → ยืนยัน handshake</li>
+        <li><b>Runtime:</b> Node 22 + PM2 → ดึง edge bundle (ingesters + forwarder + nanoMQ + Caddy)</li>
+        <li><b>Edge Config (site profile):</b> ตั้ง <code>site_id</code> · เปิด/ปิด vendor+capability · central endpoint (ผ่าน WG) · transfer mode (LPR=meta-only, Face=thumb) · thumbnail size · retention</li>
+        <li><b>Caddy media-proxy:</b> เสิร์ฟ dashboard + proxy <code>/api</code>→cloud + <code>/media</code>→local · bind USB(office) NIC · local TLS · auth ผ่าน session กลาง</li>
+        <li><b>Autostart:</b> PM2 save + systemd (boot ขึ้นเอง) · forwarder spool/retry เปิด</li>
+        <li><b>Verify:</b> WG handshake ✓ · ยิง event ทดสอบ → เห็นใน dashboard กลาง (ติด site_id ถูก) ✓ · เปิด media local ที่ site เร็ว ✓ · ถอด USB ชั่วคราว → spool โต แล้ว backfill เมื่อต่อกลับ ✓</li>
+      </ol>
+    </div>
+    <div class="site-plan bma">
+      <h3><span class="dot" style="background:#22c55e"></span>BMA — site profile</h3>
+      <ol>
+        <li><code>site_id = "bma"</code> · 200 กล้อง</li>
+        <li>เปิด ingester: <span class="muted">🟡 ตัวอย่าง (ปรับตาม inventory จริง)</span> Hikvision (ANPR + Smart) · Bosch (MQTT) · Dahua (Smart)</li>
+        <li><b>มี Bosch → เปิด nanoMQ</b></li>
+        <li>LPR (ANPR) = metadata-only · กล้องทั่วไป = thumbnail</li>
+        <li>internet: ตามปริมาณ event (ข้อ 8) — LPR เยอะ→พิจารณา Fiber</li>
+      </ol>
+    </div>
+    <div class="site-plan phuket">
+      <h3><span class="dot" style="background:#f59e0b"></span>ภูเก็ต — site profile</h3>
+      <ol>
+        <li><code>site_id = "phuket"</code> · ≤200 กล้อง (เผื่อ)</li>
+        <li>เปิด ingester: <span class="muted">🟡 ตัวอย่าง (ปรับตาม inventory จริง)</span> Dahua (ANPR + Face + Smart) · Hikvision (ANPR)</li>
+        <li><b>ไม่มี Bosch → ข้าม nanoMQ ได้</b> (ingester→forwarder ตรง ยิ่งเบาบน N150)</li>
+        <li>LPR=metadata-only · Face=thumbnail</li>
+        <li>internet: ตามปริมาณ event ราย-site</li>
+      </ol>
+    </div>
+
+    <h3 style="font-size:14px;margin:18px 0 4px">คำสั่งติดตั้งจริง (ทีละขั้น) — Phase 1 · Cloud (WireGuard) <span style="font-weight:400;font-size:12px;color:var(--text-secondary)">· POC บน Mac ดู §12</span></h3>
+
+    <div class="step-h">A · WireGuard — ฝั่ง Cloud (vigil-edge-01)</div>
+    <pre class="code">sudo apt install -y wireguard
+wg genkey | sudo tee /etc/wireguard/server.key | wg pubkey | sudo tee /etc/wireguard/server.pub
+
+# /etc/wireguard/wg0.conf
+[Interface]
+Address    = 10.99.0.1/24
+ListenPort = 51820
+PrivateKey = &lt;server.key&gt;
+[Peer]                         # BMA
+PublicKey  = &lt;bma-edge.pub&gt;
+AllowedIPs = 10.99.0.11/32
+[Peer]                         # ภูเก็ต
+PublicKey  = &lt;phuket-edge.pub&gt;
+AllowedIPs = 10.99.0.12/32
+
+sudo wg-quick up wg0 &amp;&amp; sudo systemctl enable wg-quick@wg0
+# firewall: เปิด 51820/udp (+443, SSH จำกัด) ที่เหลือปิด</pre>
+
+    <div class="step-h">B · WireGuard — ฝั่ง Edge (N150 · BMA=.11, ภูเก็ต=.12)</div>
+    <pre class="code">sudo apt install -y wireguard
+wg genkey | sudo tee /etc/wireguard/edge.key | wg pubkey | sudo tee /etc/wireguard/edge.pub
+# → ส่ง edge.pub ให้ cloud (ใส่ใน [Peer])
+
+# /etc/wireguard/wg0.conf
+[Interface]
+Address    = 10.99.0.11/24     # ภูเก็ต = 10.99.0.12
+PrivateKey = &lt;edge.key&gt;
+[Peer]
+PublicKey  = &lt;server.pub&gt;
+Endpoint   = &lt;PUBLIC_IP_vigil-edge-01&gt;:51820
+AllowedIPs = 10.99.0.0/24
+PersistentKeepalive = 25       # edge หลัง NAT → keep tunnel
+
+sudo wg-quick up wg0 &amp;&amp; sudo systemctl enable wg-quick@wg0
+sudo wg                        # เห็น "latest handshake" = สำเร็จ</pre>
+
+    <div class="step-h">C · ติดตั้ง Components (Edge)</div>
+    <pre class="code"># Node 22 + PM2
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo bash -
+sudo apt install -y nodejs &amp;&amp; sudo npm i -g pm2
+
+# nanoMQ (เฉพาะ site ที่มี Bosch เท่านั้น)
+docker run -d --name nanomq --restart=always -p 1883:1883 emqx/nanomq
+
+# Caddy (media proxy)
+sudo apt install -y caddy
+
+# Vigil edge bundle
+sudo git clone &lt;repo&gt; /opt/vigil-edge &amp;&amp; cd /opt/vigil-edge &amp;&amp; npm ci
+cp edge.config.example.json edge.config.json   # แก้ site_id, ingest, ...
+# .env: CENTRAL_TOKEN, CAMERA_SECRET_KEY</pre>
+
+    <div class="step-h">D · Caddy media-proxy (/etc/caddy/Caddyfile)</div>
+    <pre class="code">bma.dojojin.tech {
+  tls { dns cloudflare {env.CF_API_TOKEN} }    # wildcard ผ่าน DNS-01
+  handle_path /media/* {                        # full-res เสิร์ฟ local
+    root * /opt/vigil-edge/media
+    file_server
+  }
+  reverse_proxy 10.99.0.1:3000                  # /api + dashboard → cloud ผ่าน WG
+}</pre>
+
+    <div class="step-h">E · Start + Verify</div>
+    <pre class="code">pm2 start ecosystem.config.js   # อ่าน edge.config.json → start เฉพาะที่เปิด
+pm2 save &amp;&amp; pm2 startup          # boot ขึ้นเอง
+
+sudo wg                          # handshake ล่าสุด ✓
+curl http://10.99.0.1:3000/healthz   # ถึง cloud ผ่าน WG ✓
+pm2 status                       # process ที่ enable รันครบ ✓
+# ยิง event test → เห็นใน dashboard (site_id ถูก) ✓</pre>
+
+    <div class="note-box"><b>Config management — central → edge (sync ลง):</b> หน้า config กล้องอยู่ที่ <b>central dashboard</b> (หน้าเดียวจัดทุก site + RBAC) → admin แก้ → บันทึก <b>central DB (source of truth, +<code>site_id</code>)</b> → <b>edge pull config ผ่าน WireGuard</b> (edge-initiated → ลอด NAT + ถ้า cloud ล่ม edge ใช้ config ล่าสุดได้) → เขียน <code>cameras-config.json</code> local → ingester <b>hot-reload (fs.watch · ไม่ต้อง restart)</b>.<br><b>สรุปทิศทาง: config ไหลลง · event ไหลขึ้น · ทั้งคู่ผ่าน WireGuard เส้นเดียว.</b> reuse ของเดิม: <code>page-camera-settings.js</code> + <code>cameras-config.json</code> + fs.watch · 🟡 decide: camera creds (AES) → key management (edge ถอดด้วย <code>CAMERA_SECRET_KEY</code> ของตัวเอง)</div>
+  </section>
+
+  <!-- ───────── 12 Rollout ───────── -->
+  <section class="card">
+    <h2>12 · Rollout — Phase 0 (POC บน macOS) → Phase 1 (Deploy Cloud)</h2>
+    <p><b>พิสูจน์ทราบบน Mac ก่อน (งบ $0) แล้วค่อยขึ้น cloud จริง</b> — software ฝั่ง edge เหมือนกันทั้ง 2 phase, ต่างแค่ central + วิธีเชื่อม:</p>
+    <table class="tbl">
+      <thead><tr><th></th><th>Phase 0 — POC (พิสูจน์ทราบ)</th><th>Phase 1 — Deploy จริง</th></tr></thead>
+      <tbody>
+        <tr><td>Central</td><td><b>macOS เดิม</b> (single box)</td><td><b>Bangmod.Cloud 3 VMs</b></td></tr>
+        <tr><td>เชื่อม site↔central</td><td><b>Cloudflare Tunnel</b> (Mac หลัง NAT · ไม่มี Public IP) <span class="muted">หรือ Tailscale</span></td><td><b>WireGuard → Public IP</b> (vigil-edge-01) · <b>ไม่ต้อง tunnel</b></td></tr>
+        <tr><td>ขอบเขต</td><td>1 edge: same-LAN → remote · พิสูจน์ data path + <code>site_id</code> + ANR + media-local</td><td>BMA + ภูเก็ต · provision 3 VMs + RLS + firewall</td></tr>
+        <tr><td>cost</td><td><b>$0</b> (ของที่มี)</td><td>OPEX cloud (§10)</td></tr>
+      </tbody>
+    </table>
+    <div class="opt">
+      <div class="opt-h">Phase 0 — ทำเป็นชั้น (ลดเสี่ยงทีละขั้น)</div>
+      <ol>
+        <li><b>0a same-LAN:</b> N150 + Mac วงเดียวกัน · <b>กล้องไม่กี่ตัว</b> (สเกลขึ้นภายหลัง) → พิสูจน์ stack เต็ม: ingester→nanoMQ→forwarder→<b>Mac ingest</b>→DB(+<code>site_id</code>)→dashboard · metadata-only LPR · media-local (Caddy) · <b>ANR</b> (ดึงสายออก→spool โต→ต่อกลับ→backfill)</li>
+        <li><b>0b remote (Tunnel):</b> Mac หลัง NAT → ใช้ <b>Cloudflare Tunnel</b> ที่มีอยู่ (edge POST เข้า Mac) หรือ Tailscale (ใกล้ WireGuard กว่า)</li>
+        <li><b>0c ready:</b> ผ่านครบ → provision cloud (Phase 1 = §11)</li>
+      </ol>
+    </div>
+    <div class="note-box"><b>tunnel = ของ Phase 0 เท่านั้น</b> (เพราะ Mac ไม่มี Public IP) → <b>หายไปใน Phase 1</b> (vigil-edge-01 มี Public IP ฟรี + WireGuard). ย้าย 0→1 = <b>re-point edge endpoint</b> (Mac → vigil-edge-01) + provision · software edge เดิมทั้งหมด</div>
+    <p class="why" style="margin-top:8px">⚠ macOS: LNP (GOTCHAS #84) — Mac เป็น central ไม่แตะ LAN กล้อง → กระทบน้อย · ห้าม restart PM2 จาก shell (ใช้ pm2-lan-safe-restart.command) · Mac ≠ spec cloud → POC พิสูจน์ <b>architecture</b> ไม่ใช่ perf ที่ scale</p>
+
+    <div class="step-h">POC — การเชื่อม + <code>bma.dojojin.tech</code> (ยังไม่ใช้ WireGuard)</div>
+    <p style="font-size:12.5px"><b>POC ใช้ Mac เป็น central</b> (หลัง NAT · ไม่มี Public IP) → <b>ยังไม่ใช้ WireGuard</b>. เชื่อม edge↔Mac ด้วย <b>Cloudflare Tunnel</b> (มีอยู่แล้ว) หรือ <b>Tailscale</b> (WireGuard-based, ลอด NAT อัตโนมัติ). ส่วน <code>bma.dojojin.tech</code> (ดู on-site) <b>ไม่ต้องแตะ public DNS</b> — ใช้ <code>/etc/hosts</code>:</p>
+    <pre class="code"># 1. หา LAN IP ของ N150 edge
+ip addr                  # เช่น 192.168.1.50
+
+# 2. บนเครื่องทดสอบ (laptop/Mac) — เพิ่มใน /etc/hosts
+sudo sh -c 'echo "192.168.1.50  bma.dojojin.tech" &gt;&gt; /etc/hosts'
+
+# 3. Caddy บน N150 (POC) — /etc/caddy/Caddyfile
+bma.dojojin.tech {
+  tls internal                       # Caddy ออก local CA (หรือใช้ http:// ไปก่อนถ้าไม่อยากมี cert)
+  handle_path /media/* { root * /opt/vigil-edge/media; file_server }
+  reverse_proxy 192.168.1.10:3000    # ← Mac central (LAN IP ใน 0a / ผ่าน tunnel ใน 0b)
+}
+
+# 4. เปิด https://bma.dojojin.tech บนเครื่องทดสอบ
+#    → dashboard (data จาก Mac) + รูปจาก N150 local</pre>
+    <table class="tbl">
+      <thead><tr><th><code>bma.dojojin.tech</code></th><th>POC (Mac)</th><th>Prod (Cloud)</th></tr></thead>
+      <tbody>
+        <tr><td>DNS</td><td><code>/etc/hosts</code> → N150 LAN IP</td><td>public A record → N150 LAN IP</td></tr>
+        <tr><td>cert (HTTPS)</td><td>Caddy <code>tls internal</code> (หรือ http)</td><td>wildcard <code>*.dojojin.tech</code> (DNS-01)</td></tr>
+        <tr><td><code>/api</code> →</td><td>Mac central (LAN / tunnel)</td><td>vigil-core-01 (ผ่าน WireGuard)</td></tr>
+        <tr><td>WireGuard</td><td>❌ ไม่ใช้ (Tunnel/Tailscale)</td><td>✅ ใช้</td></tr>
+      </tbody>
+    </table>
+
+  <!-- ───────── 13 ต้องตัดสินใจ ───────── -->
+  <section class="card decide">
+    <h2>13 · ต้องตัดสินใจ (ก่อนลงมือจริง)</h2>
+    <div class="decide-item"><span class="qn ok">NET ✓</span><div><b>Transport:</b> WireGuard (site↔cloud) · POC ใช้ Tunnel/Tailscale ชั่วคราว</div></div>
+    <div class="decide-item"><span class="qn ok">IN ✓</span><div><b>Ingress:</b> cloud = Public IP + nginx + WireGuard <b>(ไม่ต้อง tunnel)</b> · tunnel ใช้แค่ POC บน Mac · Cloudflare = optional CDN/DDoS (กัน media ออกจาก proxy)</div></div>
+    <div class="decide-item"><span class="qn ok">IMG ✓</span><div><b>Transfer mode:</b> LPR=metadata-only · Face=thumbnail · รูปเต็ม=on-demand</div></div>
+    <div class="decide-item"><span class="qn">A/B</span><div><b>App-layer บน WireGuard:</b> A (HTTP forwarder, แนะนำ) หรือ B (MQTT bridge → EMQX กลาง)</div></div>
+    <div class="decide-item"><span class="qn">SITE</span><div><b>แยก site:</b> <code>site_id</code> + <b>RLS</b> (vigil-db-01 รองรับ) · reconcile กับ <code>site</code> free-text (IM5) เดิม: แทนที่/อยู่ร่วม?</div></div>
+  </section>
+
+  <footer class="ft">Vigil Platform · ร่างสถาปัตยกรรม Multi-Site Edge (Bangmod.Cloud) · DRAFT เพื่อพิจารณา scope + cost</footer>
+
+</div>
+</body>
+</html>

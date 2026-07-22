@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>เพิ่ม Migration — Dev Portal</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="overlay"></div>
+<div class="layout">
+<nav class="nav" id="nav"></nav>
+<button id="ham">☰</button>
+
+<div class="main">
+<h1 class="ph">Recipe: เพิ่ม Migration</h1>
+
+<p>Schema เก่าวิวัฒน์ผ่าน migration files เท่านั้น — ห้ามแก้ <code>db/init.sql</code> เพื่อ evolve schema (init.sql เป็น fresh install baseline). <code>src/migrate.js</code> รัน migration ทุกไฟล์ก่อน Express listen และ fail-fast ถ้า error (ตั้งใจ — GOTCHAS #19)</p>
+
+<h2>ขั้นตอน</h2>
+
+<div class="step">
+  <div class="step-num">1</div>
+  <div class="step-body">
+    <p>ตรวจ migration number ล่าสุด:</p>
+<pre>ls db/db_migration_0*.sql | sort | tail -3</pre>
+    <p>ถ้าล่าสุดคือ <code>074</code> → ไฟล์ใหม่ต้องเป็น <code>075</code></p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">2</div>
+  <div class="step-body">
+    <p>สร้างไฟล์ <code>db/db_migration_075_&lt;topic&gt;.sql</code> — ทุก statement ต้อง idempotent:</p>
+<pre>-- db_migration_075_&lt;topic&gt;.sql
+-- &lt;อธิบาย migration นี้ทำอะไร&gt;
+
+-- เพิ่ม column
+ALTER TABLE my_table ADD COLUMN IF NOT EXISTS new_col TEXT;
+
+-- เพิ่ม column พร้อม default
+ALTER TABLE my_table ADD COLUMN IF NOT EXISTS flag BOOLEAN DEFAULT FALSE;
+
+-- เพิ่ม index
+CREATE INDEX IF NOT EXISTS idx_my_table_new_col ON my_table(new_col);
+
+-- เพิ่ม row (settings, categories, etc.)
+INSERT INTO system_settings (key, value, description)
+VALUES ('my_key', 'default_value', 'คำอธิบาย')
+ON CONFLICT DO NOTHING;
+
+-- สร้าง table ใหม่
+CREATE TABLE IF NOT EXISTS new_table (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- เปลี่ยน type หรือ rename column (ต้องระวัง — ใช้ DO block)
+DO $$ BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name='my_table' AND column_name='old_col'
+  ) THEN
+    ALTER TABLE my_table RENAME COLUMN old_col TO new_col;
+  END IF;
+END $$;</pre>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">3</div>
+  <div class="step-body">
+    <p>อัปเดต <code>db/init.sql</code> ด้วย — เพื่อให้ fresh install ได้ schema เดียวกัน (ใส่ในตำแหน่งที่สมเหตุผล)</p>
+    <div class="ibox">
+      <h4>ทำไมต้องอัปเดตทั้ง 2 ที่</h4>
+      <p><code>init.sql</code> รันบน Docker volume ใหม่เท่านั้น — ถ้าไม่อัปเดต fresh install จะไม่มี column ใหม่ แต่ migration จะไม่รันเพราะ DB ไม่มีตารางใน <code>schema_migrations</code> ที่ระบุว่าต้อง skip</p>
+    </div>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">4</div>
+  <div class="step-body">
+    <p>ทดสอบ: restart api-server แล้วดู log</p>
+<pre>pm2 restart api-server
+pm2 logs api-server --lines 30</pre>
+    <p>ต้องเห็น <code>Migration applied: db_migration_075_&lt;topic&gt;.sql</code> และไม่มี error</p>
+  </div>
+</div>
+
+<h2>Idempotent Pattern ที่ควรรู้</h2>
+
+<table>
+<thead><tr><th>กรณี</th><th>Pattern ที่ใช้</th></tr></thead>
+<tbody>
+<tr>
+  <td>เพิ่ม column</td>
+  <td><code>ADD COLUMN IF NOT EXISTS</code></td>
+</tr>
+<tr>
+  <td>เพิ่ม index</td>
+  <td><code>CREATE INDEX IF NOT EXISTS</code></td>
+</tr>
+<tr>
+  <td>เพิ่ม table</td>
+  <td><code>CREATE TABLE IF NOT EXISTS</code></td>
+</tr>
+<tr>
+  <td>เพิ่ม row</td>
+  <td><code>INSERT ... ON CONFLICT DO NOTHING</code></td>
+</tr>
+<tr>
+  <td>เปลี่ยนชื่อ / type (destructive)</td>
+  <td><code>DO $$ BEGIN ... IF EXISTS ... END $$;</code></td>
+</tr>
+<tr>
+  <td>drop column / drop table</td>
+  <td><code>DROP COLUMN IF EXISTS</code> / <code>DROP TABLE IF EXISTS</code></td>
+</tr>
+</tbody>
+</table>
+
+<h2>สิ่งที่ migrate.js ทำ</h2>
+
+<ul>
+  <li>อ่านไฟล์ <code>db/db_migration_*.sql</code> เรียงตาม filename</li>
+  <li>ตรวจ <code>schema_migrations</code> table — ถ้ารันแล้วข้าม</li>
+  <li>รัน SQL ทั้งไฟล์แบบ transaction</li>
+  <li>บันทึก filename ลง <code>schema_migrations</code></li>
+  <li>ถ้า error → <code>process.exit(1)</code> ก่อน Express listen (ตั้งใจ)</li>
+</ul>
+
+<div class="dbox">
+  <h4>ห้ามทำ</h4>
+  <ul>
+    <li>ห้ามแก้ migration ที่รันไปแล้ว — migration runner ข้ามไฟล์ที่มีใน schema_migrations อยู่แล้ว การแก้ไม่มีผล แต่ทำให้ DB จริงกับ file ไม่ตรงกัน</li>
+    <li>ห้ามเขียน statement ที่ไม่ idempotent — รัน migration ซ้ำต้องไม่ error</li>
+    <li>ห้าม try/catch รอบ migration error — migration ล้มเหลวต้อง abort (STUBBORN_FACT)</li>
+  </ul>
+</div>
+
+<div class="ref">
+  <p><a href="index.html">← กลับ Navigator</a> · อ้างอิง: <code>docs/LOGIC_infra-ops.md</code> · <code>docs/REF_database-schema.md</code> · GOTCHAS #19, #20</p>
+</div>
+</div>
+</div>
+
+<script src="nav.js"></script>
+</body>
+</html>

@@ -296,12 +296,30 @@ async function logAudit(userId, username, action, targetUserId, targetUsername, 
 // ── User CRUD (admin only) ──────────────────────────────────
 async function listUsers() {
   const { rows } = await pool.query(`
-    SELECT id, username, email, full_name, role, enabled,
-           last_login_at, last_login_ip, failed_attempts, locked_until,
-           must_change_password, created_at
-    FROM users ORDER BY id
+    SELECT u.id, u.username, u.email, u.full_name, u.role, u.enabled,
+           u.last_login_at, u.last_login_ip, u.failed_attempts, u.locked_until,
+           u.must_change_password, u.created_at,
+           COALESCE(array_agg(us.site_id ORDER BY us.site_id) FILTER (WHERE us.site_id IS NOT NULL), '{}') AS site_ids
+    FROM users u
+    LEFT JOIN user_sites us ON us.user_id = u.id
+    GROUP BY u.id ORDER BY u.id
   `);
   return rows;
+}
+
+async function setUserSites(userId, siteIds) {
+  await pool.query('BEGIN');
+  try {
+    await pool.query('DELETE FROM user_sites WHERE user_id = $1', [userId]);
+    if (siteIds.length) {
+      const vals = siteIds.map((_, i) => `($1, $${i + 2})`).join(',');
+      await pool.query(`INSERT INTO user_sites (user_id, site_id) VALUES ${vals}`, [userId, ...siteIds]);
+    }
+    await pool.query('COMMIT');
+  } catch (e) {
+    await pool.query('ROLLBACK');
+    throw e;
+  }
 }
 
 async function createUser({ username, password, email, full_name, role }, createdBy) {
@@ -407,6 +425,43 @@ async function getActiveSessions(userId) {
   return rows;
 }
 
+// Site-RBAC helpers (P1) ----------------------------------------
+// Returns null (ALL) for admin/auditor; array of site_ids for viewer.
+// Empty array = no sites assigned (fail-open preserved by caller until P2).
+async function getAllowedSites(user, pool) {
+  if (user.role === 'admin' || user.role === 'auditor') return null;
+  const r = await pool.query('SELECT site_id FROM user_sites WHERE user_id = $1', [user.id]);
+  return r.rows.map(row => row.site_id);
+}
+
+// Combines RBAC site scope (req.user.allowedSites) with the in-page Site-pill
+// filter (?site_id=N) into the single array/null siteWhere() expects.
+// A scoped viewer can only narrow further into their own sites, never escape
+// them — picking a site_id outside allowedSites resolves to [] (no match),
+// same fail-closed semantics siteWhere() already applies to empty arrays.
+// Usage: siteWhere(resolveSiteScope(req), 'e.camera_id', paramOffset)
+function resolveSiteScope(req) {
+  const allowedSites = req.user?.allowedSites ?? null;
+  const siteId = req.query.site_id ? parseInt(req.query.site_id, 10) : null;
+  if (!siteId) return allowedSites;
+  if (allowedSites === null) return [siteId];
+  return allowedSites.includes(siteId) ? [siteId] : [];
+}
+
+// SQL fragment helper for camera-based site filtering.
+// Usage: const { sql, args } = siteWhere(req.user.allowedSites, 'e.camera_id', paramOffset);
+// Append sql to WHERE clause; spread args into query params.
+// allowedSites=null → no-op (ALL); []=no match; [id,...]→filter.
+function siteWhere(allowedSites, camCol, offset = 1) {
+  if (allowedSites === null) return { sql: '', args: [] };
+  if (allowedSites.length === 0) return { sql: 'AND FALSE', args: [] };
+  return {
+    sql: `AND ${camCol} IN (SELECT id FROM cameras WHERE site_id = ANY($${offset}))`,
+    args: [allowedSites],
+  };
+}
+// ---------------------------------------------------------------
+
 async function revokeSession(sessionId, actor) {
   await pool.query('UPDATE sessions SET revoked = true WHERE id = $1', [sessionId]);
   await logAudit(actor?.id, actor?.username, 'session_revoke', null, null, null, null, { session_id: sessionId.slice(0, 8) });
@@ -435,4 +490,9 @@ module.exports = {
   getActiveSessions,
   revokeSession,
   logAudit,
+  // Site-RBAC P1+P5
+  getAllowedSites,
+  siteWhere,
+  resolveSiteScope,
+  setUserSites,
 };

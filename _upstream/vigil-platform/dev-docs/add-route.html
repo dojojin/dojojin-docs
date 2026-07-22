@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>เพิ่ม REST Route — Dev Portal</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="overlay"></div>
+<div class="layout">
+<nav class="nav" id="nav"></nav>
+<button id="ham">☰</button>
+
+<div class="main">
+<h1 class="ph">Recipe: เพิ่ม REST Route</h1>
+
+<p>Vigil Platform ใช้ Express 5. Routes ขนาดใหญ่แยกเป็น module ใน <code>src/routes/</code> ด้วย factory pattern; routes เล็กหรือ one-off ใส่ตรงใน <code>src/api-server.js</code> ได้</p>
+
+<div class="ibox">
+  <h4>ทำไม S4 ถึงแยก api-server.js → 19 route files (MAINT-2T-001)</h4>
+  <ul>
+    <li><strong>อ่านได้ทันที</strong> — ไฟล์ 80–1,200 ลบ. เห็น context ทั้งหมดในหน้าเดียว vs api-server.js เดิม 7,156 ลบ.</li>
+    <li><strong>AI context ใช้งานจริง</strong> — โหลดเฉพาะ <code>src/routes/line.js</code> เมื่อแก้ LINE แทนที่จะโหลดทั้ง 7k บรรทัด</li>
+    <li><strong>git diff อ่านออก</strong> — PR ที่แตะ <code>routes/cameras.js</code> = รู้ทันทีว่าแตะกล้องเท่านั้น</li>
+    <li><strong>test แยกได้</strong> — factory function รับ <code>(app, pool, deps)</code> → inject mock pool โดยไม่ boot Express ทั้งก้อน</li>
+    <li><strong>แก้ bug ไม่กระทบส่วนอื่น</strong> — แก้ stats ไม่มีทางพลาดแตะ LINE หรือ auth โดยบังเอิญ</li>
+    <li><strong>Runtime ไม่เปลี่ยน</strong> — <code>require()</code> 19 ไฟล์แทบไม่ต่างจาก 1 ไฟล์ใหญ่</li>
+  </ul>
+</div>
+
+<h2>ตัดสินใจก่อน: inline หรือ route module?</h2>
+
+<table>
+<thead><tr><th>กรณี</th><th>วิธี</th></tr></thead>
+<tbody>
+<tr>
+  <td>endpoint เดียว ไม่ซับซ้อน ไม่เข้า module ไหน</td>
+  <td>เพิ่มตรงใน <code>src/api-server.js</code> ต่อท้าย require block ที่เกี่ยวข้อง</td>
+</tr>
+<tr>
+  <td>feature ใหม่ที่มีหลาย endpoint หรือ logic ซับซ้อน</td>
+  <td>สร้าง <code>src/routes/&lt;name&gt;.js</code> factory module (แนะนำ)</td>
+</tr>
+</tbody>
+</table>
+
+<h2>Option A: เพิ่มตรงใน api-server.js</h2>
+
+<p>หลัง S4 split (2026-06-14) ส่วนใหญ่ route อยู่ใน <code>src/routes/</code> แล้ว — Option A ใช้สำหรับ one-off endpoint ที่ไม่เข้า module ไหน ค้น <code>require('./routes/</code> ใน api-server.js แล้วเพิ่ม route ต่อท้าย require block ที่เกี่ยวข้อง:</p>
+
+<pre>app.get('/api/my-feature', auth.requireAuth, async (req, res) => {
+  try {
+    const { rows } = await pool.query('SELECT ...', [req.query.param]);
+    res.json(rows);
+  } catch (err) {
+    routeError(res, err, 'GET /api/my-feature');
+  }
+});</pre>
+
+<div class="ibox">
+  <h4>routeError</h4>
+  <p><code>routeError</code> ถูก require ไว้ที่ต้นไฟล์แล้ว (<code>src/helpers/routeError.js</code>) — ใช้ได้เลย ไม่ต้อง import เพิ่ม</p>
+</div>
+
+<h2>Option B: สร้าง Route Module ใหม่</h2>
+
+<div class="step">
+  <div class="step-num">1</div>
+  <div class="step-body">
+    <p>สร้างไฟล์ <code>src/routes/&lt;feature-name&gt;.js</code> — ใช้ factory pattern ตามนี้:</p>
+<pre>// ============================================================
+// Vigil Platform — Routes: &lt;Feature Name&gt;
+// @author Prakasit Rochanavipart (Dojo-mAn)
+// @copyright (c) 2025-2026 Prakasit Rochanavipart. All Rights Reserved.
+// @license Proprietary
+// ============================================================
+'use strict';
+
+const routeError = require('../helpers/routeError');
+
+module.exports = function myFeatureRoutes(app, pool, { auth }) {
+
+  // GET /api/my-feature
+  app.get('/api/my-feature', auth.requireAuth, async (req, res) => {
+    try {
+      const { rows } = await pool.query(
+        'SELECT * FROM my_table WHERE active = $1',
+        [true]
+      );
+      res.json(rows);
+    } catch (err) {
+      routeError(res, err, 'GET /api/my-feature');
+    }
+  });
+
+  // POST /api/my-feature
+  app.post('/api/my-feature', auth.requireAdmin, async (req, res) => {
+    const { name } = req.body;
+    if (!name) return res.status(400).json({ error: 'name required' });
+    try {
+      const { rows } = await pool.query(
+        'INSERT INTO my_table (name) VALUES ($1) RETURNING *',
+        [name]
+      );
+      res.json(rows[0]);
+    } catch (err) {
+      routeError(res, err, 'POST /api/my-feature');
+    }
+  });
+
+};</pre>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">2</div>
+  <div class="step-body">
+    <p>Register ใน <code>src/api-server.js</code> — ค้น <code>require('./routes/</code> เพื่อหาตำแหน่งที่เหมาะ แล้วเพิ่ม:</p>
+<pre>require('./routes/my-feature')(app, pool, { auth });</pre>
+    <p>ถ้า route ต้องการ dep เพิ่ม เช่น <code>getIP</code> หรือ <code>invalidateSystemSetting</code> — ส่งผ่าน deps object:</p>
+<pre>require('./routes/my-feature')(app, pool, { auth, getIP });</pre>
+  </div>
+</div>
+
+<h2>Auth Gate — เลือกระดับให้ถูก</h2>
+
+<table>
+<thead><tr><th>Middleware</th><th>ใคร</th><th>ใช้เมื่อ</th></tr></thead>
+<tbody>
+<tr>
+  <td><code>auth.requireAuth</code></td>
+  <td>viewer, admin, auditor</td>
+  <td>อ่านข้อมูล — events, cameras, stats, appearances</td>
+</tr>
+<tr>
+  <td><code>auth.requireAdmin</code></td>
+  <td>admin เท่านั้น</td>
+  <td>เขียน / ลบ / จัดการ config — alert rules, settings, users, LINE</td>
+</tr>
+<tr>
+  <td><code>auth.requireAdminOrAuditor</code></td>
+  <td>admin + auditor</td>
+  <td>อ่าน + export — report history, audit log</td>
+</tr>
+<tr>
+  <td>ไม่มี middleware</td>
+  <td>ทุกคน (public)</td>
+  <td>branding, health ping, login endpoint เท่านั้น</td>
+</tr>
+</tbody>
+</table>
+
+<div class="wbox">
+  <h4>ข้อควรระวัง</h4>
+  <ul>
+    <li>Auditor write-blocking เป็น global middleware ใน api-server.js — ไม่ต้องเพิ่ม check เองใน route</li>
+    <li>Internal Puppeteer calls ผ่าน <code>req.internal === true</code> — <code>requireAuth/Admin/AdminOrAuditor</code> honor ค่านี้อยู่แล้ว</li>
+    <li>อย่าอ่าน <code>X-Forwarded-For</code> ตรงๆ — ใช้ <code>getIP(req)</code> แทน (GOTCHAS #38)</li>
+  </ul>
+</div>
+
+<h2>Response Pattern</h2>
+
+<pre>// รายการ (list)
+res.json(rows);
+
+// รายการเดียว
+res.json(rows[0]);
+
+// Action result
+res.json({ ok: true });
+
+// Error (จาก routeError)
+// routeError(res, err, 'endpoint name') → HTTP 500 + { error: '...' }
+
+// Validation error
+return res.status(400).json({ error: 'คำอธิบาย' });
+
+// Not found
+return res.status(404).json({ error: 'Not found' });</pre>
+
+<h2>Copyright Header — บังคับทุกไฟล์</h2>
+
+<pre>// ============================================================
+// Vigil Platform — Routes: &lt;ชื่อ Feature&gt;
+// @author Prakasit Rochanavipart (Dojo-mAn)
+// @copyright (c) 2025-2026 Prakasit Rochanavipart. All Rights Reserved.
+// @license Proprietary
+// ============================================================</pre>
+
+<div class="ref">
+  <p><a href="index.html">← กลับ Navigator</a> · อ้างอิง: <code>docs/REF_api-reference.md</code> · <code>docs/LOGIC_auth-security.md</code></p>
+</div>
+</div>
+</div>
+
+<script src="nav.js"></script>
+</body>
+</html>

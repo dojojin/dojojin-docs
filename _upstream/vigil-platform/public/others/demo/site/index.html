@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Camera Status — Multi-Site Demo · Vigil</title>
+  <link rel="stylesheet" href="site-demo.css">
+</head>
+<body>
+  <div class="page">
+
+    <header class="page-h">
+      <div class="page-h-left">
+        <h1>สถานะกล้อง</h1>
+        <span class="demo-tag">DEMO · Multi-Site</span>
+      </div>
+      <div class="page-h-right">
+        <label class="role-label">ดูในฐานะ:</label>
+        <select id="roleSwitch" class="ctrl-select">
+          <option value="superadmin">Super Admin (ทุก Site)</option>
+          <option value="bma">Admin · BMA</option>
+          <option value="phuket">Admin · ภูเก็ต</option>
+          <option value="main">Admin · Main Site</option>
+        </select>
+      </div>
+    </header>
+
+    <!-- Summary badges -->
+    <div class="summary-bar" id="summaryBar"></div>
+
+    <!-- Data scope note -->
+    <p class="data-note">
+      <span class="live-dot"></span>
+      สถานะกล้องปัจจุบัน · ตัวเลขกิจกรรมในการ์ดเป็นยอดรวมของวันนี้ (ตั้งแต่ 00:00 น.)
+    </p>
+
+    <!-- Site tabs -->
+    <nav class="site-tabs" id="siteTabs"></nav>
+
+    <!-- Filters -->
+    <div class="toolbar">
+      <input type="search" id="q" placeholder="ค้นหาชื่อ / ID / IP / ตำแหน่ง…">
+      <select id="fGroup" class="ctrl-select"><option value="">ทุกกลุ่ม</option></select>
+      <select id="fVendor" class="ctrl-select">
+        <option value="">ทุก Vendor</option>
+        <option value="bosch">Bosch</option>
+        <option value="hikvision">Hikvision</option>
+        <option value="dahua">Dahua</option>
+        <option value="onvif">ONVIF</option>
+      </select>
+      <select id="fType" class="ctrl-select">
+        <option value="">ทุก Type</option>
+        <option value="standard">IVA / Event</option>
+        <option value="lpr">LPR</option>
+        <option value="face">Face</option>
+      </select>
+      <select id="fStatus" class="ctrl-select">
+        <option value="">ทุกสถานะ</option>
+        <option value="online">ออนไลน์</option>
+        <option value="offline">ออฟไลน์</option>
+        <option value="paused">Maintenance</option>
+      </select>
+      <span class="count-chip" id="count"></span>
+    </div>
+
+    <!-- Camera grid -->
+    <div class="cam-grid" id="camGrid"></div>
+
+    <!-- Pagination -->
+    <nav class="pager" id="pager"></nav>
+
+  </div>
+
+  <!-- Camera detail modal -->
+  <div class="cam-modal-overlay" id="camModal" style="display:none">
+    <div class="cam-modal" role="dialog" aria-modal="true" aria-label="รายละเอียดกล้อง">
+      <button class="cam-modal-x" id="camModalX" aria-label="ปิด">✕</button>
+      <div id="camModalBody"></div>
+    </div>
+  </div>
+
+  <script src="site-demo.js"></script>
+</body>
+</html>

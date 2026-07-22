@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Restart Services (LNP) — Dev Portal</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="overlay"></div>
+<div class="layout">
+<nav class="nav" id="nav"></nav>
+<button id="ham">☰</button>
+
+<div class="main">
+<h1 class="ph">Restart Services — LNP Trap</h1>
+
+<div class="dbox">
+  <h4>กับดักที่อันตรายที่สุดใน manual ops — อ่านก่อนแตะ PM2 ทุกครั้ง</h4>
+  <p>ถ้า restart PM2 จาก terminal ผิดประเภท — กล้อง Bosch MQTT ทั้งหมดจะ disconnect และ Local Network access หายไป (EHOSTUNREACH) รีคัฟเวอร์ได้แต่เสียเวลา</p>
+</div>
+
+<h2>กฎเหล็ก: ห้าม Restart จาก</h2>
+
+<ul>
+  <li>Claude Code / Claude shell</li>
+  <li><code>tmux</code> session</li>
+  <li>SSH terminal จากเครื่องอื่น</li>
+  <li>Terminal ใดก็ตามที่เปิดโดยไม่ใช่ macOS GUI โดยตรง</li>
+</ul>
+
+<h2>วิธี Restart ที่ถูกต้อง</h2>
+
+<div class="sbox">
+  <h4>ใช้ .command script เสมอ</h4>
+  <p>เปิด Terminal GUI ใหม่ด้วย .command script ที่เตรียมไว้:</p>
+</div>
+
+<pre># วิธีที่ 1: จาก terminal ที่ถูกต้อง (macOS GUI Terminal)
+open -a Terminal /Users/dojojin/vigil-platform/scripts/pm2-lan-safe-restart.command
+
+# วิธีที่ 2: ดับเบิลคลิก .command ใน Finder
+scripts/pm2-lan-safe-restart.command</pre>
+
+<p>Script นี้เปิด Terminal ใหม่ในบริบท macOS GUI ที่มี Local Network permission — ทำให้ PM2 restart แล้วยังเข้าถึง LAN ได้</p>
+
+<h2>ทำไม LNP ถึงเป็นกับดัก (root cause)</h2>
+
+<p>macOS Local Network Privacy (LNP) — ทุก process ที่ต้องการเชื่อมต่อ local network ต้องได้รับ permission จาก macOS GUI. PM2 process ที่ถูก spawn จาก terminal ที่ไม่ใช่ GUI จะไม่ได้ permission นี้ → <code>EHOSTUNREACH</code> เมื่อพยายามเชื่อมต่อ EMQX broker</p>
+
+<p>การ brew upgrade node หรือ ffmpeg ก็ทำให้ LNP record หายได้ (GOTCHAS #84)</p>
+
+<h2>คำสั่ง PM2 ที่ใช้บ่อย</h2>
+
+<p>รันจาก macOS GUI Terminal เท่านั้น:</p>
+
+<pre># ดูสถานะทุก process
+pm2 status
+
+# ดู log realtime
+pm2 logs api-server --lines 50
+pm2 logs alert-worker --lines 30
+pm2 logs mqtt-subscriber --lines 30
+
+# Restart service เดียว
+pm2 restart api-server
+pm2 restart alert-worker
+
+# Restart ทุก process
+pm2 restart all
+
+# หยุดทั้งหมด
+pm2 stop all
+
+# เริ่มใหม่ทั้งหมด (ใช้ ecosystem.config.js)
+pm2 start ecosystem.config.js</pre>
+
+<h2>services.sh — Full Lifecycle</h2>
+
+<pre># ใช้ script นี้สำหรับ start/stop เต็มรูปแบบ (ใน GUI Terminal)
+bash scripts/services.sh start
+bash scripts/services.sh stop
+bash scripts/services.sh status</pre>
+
+<p><code>services.sh</code> จัดการ PID lock และ singleton pattern ด้วย — ป้องกัน orphan process (GOTCHAS: ห้ามใช้ pkill หรือ node x.js &amp;)</p>
+
+<h2>ถ้า LNP หายไปแล้ว (EHOSTUNREACH)</h2>
+
+<div class="step">
+  <div class="step-num">1</div>
+  <div class="step-body">
+    <p>ตรวจสอบว่า error เป็น EHOSTUNREACH จริง:</p>
+<pre>pm2 logs mqtt-subscriber --lines 20</pre>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">2</div>
+  <div class="step-body">
+    <p>ไป System Preferences → Privacy &amp; Security → Local Network — ตรวจว่า Terminal.app มี checkmark</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">3</div>
+  <div class="step-body">
+    <p>Restart ด้วย <code>pm2-lan-safe-restart.command</code> จาก macOS GUI (ดูวิธีด้านบน)</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">4</div>
+  <div class="step-body">
+    <p>ถ้ายังไม่หาย — อาจต้อง reboot Mac แล้ว restart services ใหม่จาก GUI Terminal</p>
+  </div>
+</div>
+
+<h2>Services ที่ PM2 ควบคุม (7 workers)</h2>
+
+<table>
+<thead><tr><th>Process</th><th>ทำอะไร</th></tr></thead>
+<tbody>
+<tr><td><code>api-server</code></td><td>Express API + WebSocket + static serving</td></tr>
+<tr><td><code>mqtt-subscriber</code></td><td>Bosch BVMS MQTT ingestion</td></tr>
+<tr><td><code>hikvision-isapi</code></td><td>Hikvision ISAPI Alert Stream</td></tr>
+<tr><td><code>dahua-cgi</code></td><td>Dahua CGI events</td></tr>
+<tr><td><code>media-recorder</code></td><td>RTSP rolling buffer + clip dump</td></tr>
+<tr><td><code>lpr-receiver</code></td><td>ANPR HTTP push receiver (ITC camera → /lpr, port 3003)</td></tr>
+<tr><td><code>alert-worker</code></td><td>LINE alert rule matching</td></tr>
+<tr><td><code>report-worker</code></td><td>Report scheduler</td></tr>
+</tbody>
+</table>
+
+<div class="ibox">
+  <h4>launchd autostart</h4>
+  <p>PM2 ถูกตั้งเป็น launchd service — reboot แล้วทุก worker ขึ้นอัตโนมัติ ไม่ต้อง start เอง ยกเว้นถ้า stop ไว้ก่อน reboot</p>
+</div>
+
+<div class="ref">
+  <p><a href="index.html">← กลับ Navigator</a> · อ้างอิง: GOTCHAS #84 · <code>service_start.md</code> · <code>scripts/pm2-lan-safe-restart.command</code></p>
+</div>
+</div>
+</div>
+
+<script src="nav.js"></script>
+</body>
+</html>

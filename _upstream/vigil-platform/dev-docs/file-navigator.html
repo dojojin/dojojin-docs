@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>File Navigator — Dev Portal</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    /* Architecture diagram */
+    .arch {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 1rem;
+      margin: 1.5rem 0;
+    }
+    .arch-col { display: flex; flex-direction: column; gap: 0.6rem; }
+    .arch-label {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--dim);
+      margin-bottom: 0.2rem;
+    }
+    .abox {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.65rem 0.85rem;
+    }
+    .abox-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 0.25rem;
+    }
+    .abox-sub {
+      font-size: 11px;
+      color: var(--dim);
+      line-height: 1.5;
+    }
+    .abox-sub code {
+      font-size: 10.5px;
+      background: var(--surface2);
+      padding: 1px 4px;
+      border-radius: 3px;
+      color: var(--accent);
+    }
+    .abox.blue  { border-color: rgba(88,166,255,0.4); }
+    .abox.green { border-color: rgba(63,185,80,0.4); }
+    .abox.amber { border-color: rgba(210,153,34,0.4); }
+    .abox.red   { border-color: rgba(248,81,73,0.4); }
+    .abox.purple{ border-color: rgba(188,140,255,0.4); }
+    .abox.cyan  { border-color: rgba(57,197,207,0.4); }
+
+    .arrow-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      color: var(--dim);
+      font-size: 20px;
+      margin: 0.25rem 0;
+    }
+    .arrow-label { font-size: 11px; color: var(--dim); }
+
+    /* File table rows */
+    table td code { font-size: 12px; }
+    .role-tag {
+      display: inline-block;
+      padding: 1px 7px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .role-server  { background: rgba(88,166,255,0.12); color: #58a6ff; }
+    .role-worker  { background: rgba(210,153,34,0.12); color: #d29922; }
+    .role-lib     { background: rgba(63,185,80,0.12);  color: #3fb950; }
+    .role-route   { background: rgba(188,140,255,0.12); color: #bc8cff; }
+    .role-ui      { background: rgba(57,197,207,0.12); color: #39c5cf; }
+    .role-infra   { background: rgba(248,81,73,0.12); color: #f85149; }
+    .role-dev     { background: rgba(139,148,158,0.12); color: #8b949e; }
+
+    @media(max-width:900px) { .arch { grid-template-columns: 1fr 1fr; } }
+    @media(max-width:600px) { .arch { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+<div id="overlay"></div>
+<div class="layout">
+<nav class="nav" id="nav"></nav>
+<button id="ham">☰</button>
+
+<div class="main">
+<h1 class="ph">File Navigator — สารบัญไฟล์ทั้งหมด</h1>
+
+<p>สารบัญครบทุกไฟล์ใน Vigil Platform — หน้าที่ บรรทัด ความสัมพันธ์กับส่วนอื่น ✅ = documented ⚠️ = undocumented / doc gap</p>
+
+<div class="krow">
+  <div class="kpi"><div class="kn">18</div><div class="kl">src/ modules</div></div>
+  <div class="kpi"><div class="kn">19</div><div class="kl">route files</div></div>
+  <div class="kpi"><div class="kn">27</div><div class="kl">dashboard files</div></div>
+  <div class="kpi"><div class="kn">139</div><div class="kl">REST routes</div></div>
+</div>
+
+<h2>Architecture Diagram</h2>
+
+<div class="arch">
+  <!-- Column 1: Ingestion -->
+  <div class="arch-col">
+    <div class="arch-label">Ingestion (Camera Vendors)</div>
+    <div class="abox green">
+      <div class="abox-title">Bosch BVMS / MQTT</div>
+      <div class="abox-sub"><code>mqtt-subscriber.js</code><br>EMQX port 1883 → DB events</div>
+    </div>
+    <div class="abox green">
+      <div class="abox-title">Hikvision ISAPI</div>
+      <div class="abox-sub"><code>ingesters/hikvision-isapi.js</code><br>HTTP poll → DB events</div>
+    </div>
+    <div class="abox green">
+      <div class="abox-title">Dahua CGI</div>
+      <div class="abox-sub"><code>ingesters/dahua-cgi.js</code><br>HTTP poll → DB events</div>
+    </div>
+    <div class="arch-label" style="margin-top:0.8rem">Dev / Testing</div>
+    <div class="abox" style="border-style:dashed">
+      <div class="abox-title">Event Simulator</div>
+      <div class="abox-sub"><code>simulator.js</code><br>Dev-only: fake Bosch MQTT events</div>
+    </div>
+  </div>
+
+  <!-- Column 2: Server Core -->
+  <div class="arch-col">
+    <div class="arch-label">Server Core</div>
+    <div class="abox blue">
+      <div class="abox-title">Express 5 Server</div>
+      <div class="abox-sub"><code>api-server.js</code> 1,893 ลบ.<br>เริ่มต้น WebSocket, route modules, static, inline routes (faces, snapshots)</div>
+    </div>
+    <div class="abox blue">
+      <div class="abox-title">Auth / Session / RBAC</div>
+      <div class="abox-sub"><code>auth.js</code> 438 ลบ.<br>JWT triple-layer + requireAuth / requireAdmin / requireAdminOrAuditor</div>
+    </div>
+    <div class="abox purple">
+      <div class="abox-title">19 Route Modules</div>
+      <div class="abox-sub"><code>src/routes/*.js</code><br>132 routes · factory pattern · inject pool+deps</div>
+    </div>
+    <div class="abox blue">
+      <div class="abox-title">DB Migration Runner</div>
+      <div class="abox-sub"><code>migrate.js</code><br>47 migrations · runs on boot</div>
+    </div>
+    <div class="abox blue">
+      <div class="abox-title">License Engine</div>
+      <div class="abox-sub"><code>license.js</code><br>Ed25519 JWT · machine fingerprint</div>
+    </div>
+    <div class="arch-label" style="margin-top:0.8rem">Shared Libraries</div>
+    <div class="abox">
+      <div class="abox-title">Helpers / Utils</div>
+      <div class="abox-sub">
+        <code>constants.js</code> · <code>color-utils.js</code><br>
+        <code>crypto-creds.js</code> · <code>singleton.js</code><br>
+        helpers/routeError · getSystemSetting · normalizeTimeOfDay
+      </div>
+    </div>
+  </div>
+
+  <!-- Column 3: Workers + Frontend -->
+  <div class="arch-col">
+    <div class="arch-label">Background Workers</div>
+    <div class="abox amber">
+      <div class="abox-title">Alert Pipeline</div>
+      <div class="abox-sub">
+        <code>alert-worker.js</code> (PM2 process)<br>
+        <code>alert-engine.js</code> (rule library)<br>
+        <code>line-sender.js</code> → LINE API<br>
+        <code>push-sender.js</code> → Expo Push
+      </div>
+    </div>
+    <div class="abox amber">
+      <div class="abox-title">Report Pipeline</div>
+      <div class="abox-sub">
+        <code>report-worker.js</code> (PM2 process)<br>
+        <code>report-template.js</code> → Puppeteer PDF<br>
+        <code>report-renderer.js</code> → SVG+sharp PNG
+      </div>
+    </div>
+    <div class="abox amber">
+      <div class="abox-title">Media Recorder</div>
+      <div class="abox-sub"><code>media-recorder.js</code> (PM2 process)<br>SnapShot + video recording</div>
+    </div>
+    <div class="arch-label" style="margin-top:0.8rem">Frontend (Browser)</div>
+    <div class="abox cyan">
+      <div class="abox-title">Dashboard SPA (Vanilla JS)</div>
+      <div class="abox-sub">
+        <code>dashboard.js</code> core 1,379 ลบ.<br>
+        21 <code>page-*.js</code> files<br>
+        <code>i18n.js</code> · <code>design-tokens.js</code>
+      </div>
+    </div>
+    <div class="abox cyan">
+      <div class="abox-title">Report Template</div>
+      <div class="abox-sub"><code>report-template.js</code><br>Analytics report HTML for Puppeteer</div>
+    </div>
+  </div>
+</div>
+
+<div class="ibox">
+  <h4>PostgreSQL DB ตรงกลาง</h4>
+  <p>ทุก process ใช้ connection pool จาก <code>singleton.js</code> เข้า PostgreSQL เดียวกัน — schema อยู่ใน <code>db/init.sql</code> + 47 migrations; อ้างอิง <a href="md-viewer.html?src=../docs/REF_database-schema.md">REF_database-schema.md</a></p>
+</div>
+
+<!-- ============================= src/*.js ============================= -->
+<h2>src/*.js — Server Core (18 ไฟล์)</h2>
+
+<table>
+<thead>
+<tr><th>ไฟล์</th><th>บรรทัด</th><th>Role</th><th>หน้าที่</th><th>เอกสาร</th></tr>
+</thead>
+<tbody>
+<tr>
+  <td><code>api-server.js</code></td>
+  <td>1,893</td>
+  <td><span class="role-tag role-server">server</span></td>
+  <td>Express 5 entry point — register 19 route modules + inline routes (faces, snapshots, static) + WebSocket + middleware chain</td>
+  <td><a href="md-viewer.html?src=../ARCHITECTURE.md">ARCH</a></td>
+</tr>
+<tr>
+  <td><code>auth.js</code></td>
+  <td>438</td>
+  <td><span class="role-tag role-lib">lib</span></td>
+  <td>JWT auth — triple-layer (cookie/header/WS) · requireAuth · requireAdmin · requireAdminOrAuditor · session revoke · auditor write-block middleware</td>
+  <td><a href="md-viewer.html?src=../docs/LOGIC_auth-security.md">LOGIC_auth</a></td>
+</tr>
+<tr>
+  <td><code>mqtt-subscriber.js</code></td>
+  <td>866</td>
+  <td><span class="role-tag role-worker">worker</span></td>
+  <td>Bosch BVMS MQTT ingestion — EMQX port 1883 · ONVIF Profile M · event normalization · DB insert · WS broadcast · face extraction</td>
+  <td><a href="md-viewer.html?src=../docs/LOGIC_camera-ingesters.md">LOGIC_ingesters</a></td>
+</tr>
+<tr>
+  <td><code>report-renderer.js</code></td>
+  <td>924</td>
+  <td><span class="role-tag role-worker">worker</span></td>
+  <td>Health Report PNG via SVG+sharp (ไม่ใช่ Puppeteer) · <code>_svgSafeText()</code> strip emoji · HR_LABELS TH/EN · raster PNG output</td>
+  <td><a href="md-viewer.html?src=../GOTCHAS.md">GOTCHAS #25a</a></td>
+</tr>
+<tr>
+  <td><code>stats-summary-route.js</code></td>
+  <td>477</td>
+  <td><span class="role-tag role-route">route</span></td>
+  <td>GET /api/stats/executive-summary — standalone route ที่ไม่ได้อยู่ใน src/routes/ · ใช้โดย page-executive-summary.js</td>
+  <td>⚠️ ไม่มีใน REF_api-reference.md</td>
+</tr>
+<tr>
+  <td><code>media-recorder.js</code></td>
+  <td>524</td>
+  <td><span class="role-tag role-worker">worker</span></td>
+  <td>Video recording + snapshot management — PM2 process แยก</td>
+  <td><a href="md-viewer.html?src=../ARCHITECTURE.md">ARCH</a></td>
+</tr>
+<tr>
+  <td><code>alert-engine.js</code></td>
+  <td>349</td>
+  <td><span class="role-tag role-lib">lib</span></td>
+  <td>Alert rule matching library — ใช้โดย alert-worker.js · ไม่ใช่ process ตัวเอง · เทียบ event vs rule conditions</td>
+  <td><a href="md-viewer.html?src=../ARCHITECTURE.md">ARCH</a></td>
+</tr>
+<tr>
+  <td><code>alert-worker.js</code></td>
+  <td>138</td>
+  <td><span class="role-tag role-worker">worker</span></td>
+  <td>Background process (PM2) — consumes DB events · calls alert-engine.js · triggers line-sender + push-sender</td>
+  <td><a href="md-viewer.html?src=../ARCHITECTURE.md">ARCH</a></td>
+</tr>
+<tr>
+  <td><code>report-worker.js</code></td>
+  <td>353</td>
+  <td><span class="role-tag role-worker">worker</span></td>
+  <td>Analytics report PDF via Puppeteer — background PM2 process · calls report-template.js · scheduled + on-demand</td>
+  <td><a href="md-viewer.html?src=../docs/LOGIC_stats-reports.md">LOGIC_stats-reports</a></td>
+</tr>
+<tr>
+  <td><code>line-sender.js</code></td>
+  <td>390</td>
+  <td><span class="role-tag role-lib">lib</span></td>
+  <td>LINE Messaging API — Flex message builder · imgbb upload for snapshots · ใช้โดย alert-worker</td>
+  <td><a href="md-viewer.html?src=../docs/LOGIC_line-notifications.md">LOGIC_line</a></td>
+</tr>
+<tr>
+  <td><code>license.js</code></td>
+  <td>261</td>
+  <td><span class="role-tag role-lib">lib</span></td>
+  <td>Ed25519 JWT license — machine fingerprint (CPU+disk+MAC) · online activation · offline grace · expiry check</td>
+  <td><a href="md-viewer.html?src=../docs/LOGIC_license.md">LOGIC_license</a></td>
+</tr>
+<tr>
+  <td><code>push-sender.js</code></td>
+  <td>116</td>
+  <td><span class="role-tag role-lib">lib</span></td>
+  <td>Expo Push API — mobile push notifications · push_tokens table · notifyAlert() + notifyFace() · ใช้โดย alert-worker + mqtt-subscriber</td>
+  <td>⚠️ ไม่มีใน ARCHITECTURE.md</td>
+</tr>
+<tr>
+  <td><code>crypto-creds.js</code></td>
+  <td>110</td>
+  <td><span class="role-tag role-lib">lib</span></td>
+  <td>AES-256-GCM encryption สำหรับ camera credentials ใน cameras-config.json · key จาก <code>CAMERA_SECRET_KEY</code> env</td>
+  <td>⚠️ ไม่มีใน ARCHITECTURE.md</td>
+</tr>
+<tr>
+  <td><code>migrate.js</code></td>
+  <td>135</td>
+  <td><span class="role-tag role-infra">infra</span></td>
+  <td>DB migration runner — scan db/db_migration_*.sql · run idempotent on boot · ถ้า migration fail = startup abort (by design)</td>
+  <td><a href="add-migration.html">Recipe: Migration</a></td>
+</tr>
+<tr>
+  <td><code>singleton.js</code></td>
+  <td>65</td>
+  <td><span class="role-tag role-lib">lib</span></td>
+  <td>App-wide singleton — pool (pg), wss (WebSocket server), refs ที่ process อื่นต้องใช้</td>
+  <td>⚠️ ไม่มีใน ARCHITECTURE.md</td>
+</tr>
+<tr>
+  <td><code>color-utils.js</code></td>
+  <td>54</td>
+  <td><span class="role-tag role-lib">lib</span></td>
+  <td>xyzToColorName() — maps Bosch IVA Pro XYZ color payload (sRGB) → English color name · 12-color palette · ใช้ใน appearance extraction</td>
+  <td>⚠️ ไม่มีใน ARCHITECTURE.md</td>
+</tr>
+<tr>
+  <td><code>constants.js</code></td>
+  <td>19</td>
+  <td><span class="role-tag role-lib">lib</span></td>
+  <td>Shared constants — <code>OFFLINE_THRESHOLD_SEC=90</code> (กล้อง offline ถ้าไม่ได้รับ event &gt;90s)</td>
+  <td>⚠️ ไม่มีใน ARCHITECTURE.md</td>
+</tr>
+<tr>
+  <td><code>simulator.js</code></td>
+  <td>88</td>
+  <td><span class="role-tag role-dev">dev</span></td>
+  <td>Dev-only — fake Bosch MQTT events via EMQX · ใช้ทดสอบ ingestion โดยไม่ต้องใช้กล้องจริง · ห้าม run ใน production</td>
+  <td>⚠️ ไม่มีใน ARCHITECTURE.md</td>
+</tr>
+</tbody>
+</table>
+
+<!-- ============================= src/routes/ ============================= -->
+<h2>src/routes/*.js — Route Modules (19 ไฟล์, 132 routes)</h2>
+
+<p>ทุกไฟล์ใช้ factory pattern: <code>module.exports = function nameRoutes(app, pool, { auth, ... }) { ... }</code> — registered ใน api-server.js ดู <a href="api-routes.html">API Routes Reference</a> สำหรับ endpoint ทั้งหมด</p>
+
+<table>
+<thead>
+<tr><th>ไฟล์</th><th>บรรทัด</th><th>Routes</th><th>หน้าที่</th></tr>
+</thead>
+<tbody>
+<tr><td><code>cameras.js</code></td><td>1,229</td><td>15</td><td>Camera CRUD · MQTT regen · test/snapshot/probe · pause · offline alerts · status log · image quality log · live snapshot</td></tr>
+<tr><td><code>stats.js</code></td><td>852</td><td>20</td><td>Stats endpoints — occupancy · timeline · heatmap · KPI · dwell · people counting · categories · top-rules · breakdown</td></tr>
+<tr><td><code>health.js</code></td><td>629</td><td>7</td><td>Health Check — system details · service control (start/stop/restart) · report data · Health Report PDF/PNG · send now</td></tr>
+<tr><td><code>map.js</code></td><td>486</td><td>10</td><td>Map tile server (CartoDB/Mapbox proxy) · offline map download/cancel/progress · map areas CRUD · tile cache</td></tr>
+<tr><td><code>appearances.js</code></td><td>400</td><td>4</td><td>Appearance forensic search — stats · search · timeline · similar-timeline (cross-camera person tracking)</td></tr>
+<tr><td><code>line.js</code></td><td>377</td><td>12</td><td>LINE config · quota · test · QR · pending approval queue · blocked users · webhook receiver</td></tr>
+<tr><td><code>report-schedules.js</code></td><td>199</td><td>5</td><td>Report schedule CRUD + manual run trigger</td></tr>
+<tr><td><code>reports.js</code></td><td>193</td><td>6</td><td>Report history (stats/list/image) · PDF generation · daily/weekly report download</td></tr>
+<tr><td><code>events.js</code></td><td>232</td><td>4</td><td>Event list with filters · facets (camera/category/rule) · appearance link · dwell time</td></tr>
+<tr><td><code>categories.js</code></td><td>127</td><td>7</td><td>Category CRUD · category rules (sub-filter definitions)</td></tr>
+<tr><td><code>ops.js</code></td><td>161</td><td>8</td><td>Push token register/unregister · alert log · backup list/run/download</td></tr>
+<tr><td><code>auth.js</code></td><td>162</td><td>6</td><td>Login/logout · /me · change password · session list · session revoke</td></tr>
+<tr><td><code>alert-rules.js</code></td><td>130</td><td>5</td><td>Alert rule CRUD + AI suggestions endpoint</td></tr>
+<tr><td><code>settings.js</code></td><td>132</td><td>3</td><td>System settings get/set (key-value store) · map settings</td></tr>
+<tr><td><code>users.js</code></td><td>86</td><td>7</td><td>User CRUD · reset password · audit log · CSP violation report</td></tr>
+<tr><td><code>groups.js</code></td><td>81</td><td>3</td><td>Camera group CRUD</td></tr>
+<tr><td><code>branding.js</code></td><td>81</td><td>3</td><td>Branding config · logo upload/delete (public GET; admin write)</td></tr>
+<tr><td><code>license.js</code></td><td>89</td><td>4</td><td>Machine ID · license status · activate · deactivate</td></tr>
+<tr><td><code>eula.js</code></td><td>70</td><td>3</td><td>EULA content · acceptance status · accept endpoint</td></tr>
+</tbody>
+</table>
+
+<!-- ============================= src/helpers/ ============================= -->
+<h2>src/helpers/ — Utilities (3 ไฟล์)</h2>
+
+<table>
+<thead>
+<tr><th>ไฟล์</th><th>หน้าที่</th></tr>
+</thead>
+<tbody>
+<tr><td><code>routeError.js</code></td><td>Standard error handler สำหรับ route — <code>routeError(res, err, 'endpoint name')</code> → HTTP 500 + JSON; require ไว้แล้วใน api-server.js</td></tr>
+<tr><td><code>getSystemSetting.js</code></td><td>Helper query system_settings table — ใช้ใน routes ที่ต้องการ setting ระหว่าง request</td></tr>
+<tr><td><code>normalizeTimeOfDay.js</code></td><td>Normalize time-of-day filter values สำหรับ stats queries</td></tr>
+</tbody>
+</table>
+
+<!-- ============================= src/ingesters/ ============================= -->
+<h2>src/ingesters/ — Camera Vendor Adapters (2 ไฟล์)</h2>
+
+<table>
+<thead>
+<tr><th>ไฟล์</th><th>หน้าที่</th></tr>
+</thead>
+<tbody>
+<tr><td><code>hikvision-isapi.js</code></td><td>Hikvision ISAPI HTTP polling — subscribe event stream · normalize → DB events · ใช้รูปแบบเดียวกับ mqtt-subscriber.js output</td></tr>
+<tr><td><code>dahua-cgi.js</code></td><td>Dahua CGI HTTP polling — snapshot timing quirks (ดู <code>DahuaProblem.MD</code> ก่อนแตะ) · normalize → DB events</td></tr>
+</tbody>
+</table>
+
+<!-- ============================= dashboard/*.js core ============================= -->
+<h2>dashboard/*.js — Core (6 ไฟล์)</h2>
+
+<table>
+<thead>
+<tr><th>ไฟล์</th><th>บรรทัด</th><th>หน้าที่</th></tr>
+</thead>
+<tbody>
+<tr>
+  <td><code>dashboard.js</code></td>
+  <td>1,379</td>
+  <td>Core globals · WebSocket client · pagination helper (renderPagination mutates DOM) · camera group mgmt · bootstrapApp() entry point — โหลดหลังทุก page-*.js</td>
+</tr>
+<tr>
+  <td><code>i18n.js</code></td>
+  <td>1,543</td>
+  <td>TH/EN bilingual strings — I18N.t() · ทุก UI string ต้องเพิ่มทั้ง th + en block (GOTCHAS #42) · ดู <a href="add-i18n.html">Recipe: i18n</a></td>
+</tr>
+<tr>
+  <td><code>design-tokens.js</code></td>
+  <td>35</td>
+  <td>JavaScript-side token map — sync กับ index.css CSS custom properties · ใช้เมื่อต้องส่ง token เข้า Chart.js / OpenLayers</td>
+</tr>
+<tr>
+  <td><code>theme-init.js</code></td>
+  <td>14</td>
+  <td>โหลดก่อน DOM — read localStorage theme preference · set data-theme attribute ก่อน render เพื่อป้องกัน flash</td>
+</tr>
+<tr>
+  <td><code>login.js</code></td>
+  <td>121</td>
+  <td>Login page logic — POST /api/auth/login · จัดการ EULA flow · token storage</td>
+</tr>
+<tr>
+  <td><code>disclaimer.js</code></td>
+  <td>104</td>
+  <td>Disclaimer/EULA overlay — แสดงก่อน login ครั้งแรก</td>
+</tr>
+</tbody>
+</table>
+
+<!-- ============================= dashboard/page-*.js ============================= -->
+<h2>dashboard/page-*.js — Page Files (21 ไฟล์, S5/MAINT-FE-001)</h2>
+
+<p>แยกออกจาก dashboard.js ~10,500 ลบ. → เหลือ 1,379 ลบ. (−87%) · ทุกไฟล์โหลดผ่าน <code>&lt;script&gt;</code> tag ใน index.html ก่อน dashboard.js · globals แชร์ผ่าน window</p>
+
+<table>
+<thead>
+<tr><th>ไฟล์</th><th>บรรทัด</th><th>หน้าที่ (page หรือ feature)</th></tr>
+</thead>
+<tbody>
+<tr><td><code>page-nav-bindings.js</code></td><td>473</td><td>Nav chrome + sidebar handlers + dynamic page-switch handlers (_bindNavChrome, _bindStaticHandlers, _bindDynamicHandlers) — โหลดก่อน dashboard.js เสมอ</td></tr>
+<tr><td><code>page-stats.js</code></td><td>1,483</td><td>Stats page — occupancy / timeline / heatmap / KPI / dwell / people counting / top-rules charts (Chart.js)</td></tr>
+<tr><td><code>page-camera-settings.js</code></td><td>1,066</td><td>Camera settings page — add/edit/delete cameras · MQTT credentials · Hikvision/Dahua config · ONVIF</td></tr>
+<tr><td><code>page-cameras.js</code></td><td>756</td><td>Cameras live view page — camera grid · live status · snapshot preview · group filter</td></tr>
+<tr><td><code>page-map.js</code></td><td>770</td><td>Map page — OpenLayers + CartoDB tiles · camera markers · live event pulse · area overlay</td></tr>
+<tr><td><code>page-reports.js</code></td><td>770</td><td>Reports page — schedule management · report history · PDF/PNG download · daily/weekly</td></tr>
+<tr><td><code>page-appearance.js</code></td><td>618</td><td>Appearances forensic search — person attribute filters · cross-camera timeline · similar appearances</td></tr>
+<tr><td><code>page-alerts.js</code></td><td>693</td><td>Alert rules management — CRUD rules · category mapping · LINE config · test alert</td></tr>
+<tr><td><code>page-executive-summary.js</code></td><td>486</td><td>Security Morning Briefing — executive summary dashboard · KPI · top cameras · alert breakdown</td></tr>
+<tr><td><code>page-snapshots.js</code></td><td>479</td><td>Snapshots gallery — browse/filter snapshots · retention settings · download</td></tr>
+<tr><td><code>page-map-settings.js</code></td><td>357</td><td>Map settings — tile source config · area CRUD · offline map download</td></tr>
+<tr><td><code>page-user-mgmt.js</code></td><td>398</td><td>User management + Branding settings — user CRUD · roles · reset password · logo upload</td></tr>
+<tr><td><code>page-categories.js</code></td><td>303</td><td>Category management — CRUD categories · category rules (sub-filters)</td></tr>
+<tr><td><code>page-events.js</code></td><td>289</td><td>Events live feed — real-time event stream · filter by camera/category/rule · appearance link</td></tr>
+<tr><td><code>page-health.js</code></td><td>257</td><td>Health Check page — service status · PM2 process health · DB stats · camera offline count</td></tr>
+<tr><td><code>page-face-gallery.js</code></td><td>233</td><td>Face gallery — browse face detections · filter by expression/gender/age · summary stats</td></tr>
+<tr><td><code>page-system.js</code></td><td>218</td><td>System settings page — key-value settings · EULA · license status</td></tr>
+<tr><td><code>page-media.js</code></td><td>164</td><td>Media browser — video recordings list · playback · download</td></tr>
+<tr><td><code>page-branding.js</code></td><td>81</td><td>Branding page — logo preview + upload/remove (white-label)</td></tr>
+<tr><td><code>report-template.js</code></td><td>241</td><td>Analytics report HTML template — buildReportHTML() สำหรับ Puppeteer PDF · ห้ามสร้าง template ซ้ำ</td></tr>
+<tr><td><code>report-print.js</code></td><td>64</td><td>report-print.html helper — print layout logic สำหรับ static PDF view</td></tr>
+</tbody>
+</table>
+
+<!-- ============================= dashboard CSS/HTML ============================= -->
+<h2>dashboard/ — CSS, HTML, SVG</h2>
+
+<table>
+<thead>
+<tr><th>ไฟล์</th><th>หน้าที่</th></tr>
+</thead>
+<tbody>
+<tr><td><code>index.css</code></td><td>Design tokens (CSS custom properties) + layout + component styles สำหรับ dashboard SPA หลัก</td></tr>
+<tr><td><code>login.css</code></td><td>Login page styles</td></tr>
+<tr><td><code>disclaimer.css</code></td><td>Disclaimer/EULA overlay styles</td></tr>
+<tr><td><code>report-print.css</code></td><td>Print stylesheet สำหรับ analytics report</td></tr>
+<tr><td><code>report-print-override.css</code></td><td>Override styles เพื่อ suppress dashboard chrome เมื่อ print</td></tr>
+<tr><td><code>index.html</code></td><td>Dashboard SPA shell — nav sidebar · page containers · <code>&lt;script&gt;</code> load order (page-*.js ก่อน dashboard.js)</td></tr>
+<tr><td><code>login.html</code></td><td>Login page</td></tr>
+<tr><td><code>disclaimer.html</code></td><td>Disclaimer/EULA page</td></tr>
+<tr><td><code>report-print.html</code></td><td>Static report print view</td></tr>
+<tr><td><code>icons.svg</code></td><td>SVG sprite sheet — ใช้ <code>&lt;use href="icons.svg#id"&gt;</code> · ดู symbols ด้วย <code>grep 'id="' dashboard/icons.svg</code></td></tr>
+</tbody>
+</table>
+
+<!-- ============================= scripts/ ============================= -->
+<h2>scripts/ — Operational Scripts</h2>
+
+<table>
+<thead>
+<tr><th>ไฟล์</th><th>หน้าที่</th></tr>
+</thead>
+<tbody>
+<tr><td><code>services.sh</code></td><td>Service management — start/stop/status ทุก process</td></tr>
+<tr><td><code>backup.sh</code></td><td>Database + config backup script</td></tr>
+<tr><td><code>restore.sh</code></td><td>Restore from backup</td></tr>
+<tr><td><code>emqx-provision.js</code></td><td>EMQX broker provisioning — สร้าง MQTT user/credential ผ่าน EMQX Management API</td></tr>
+<tr><td><code>migrate-creds-encrypt.js</code></td><td>One-time migration: encrypt plain-text credentials ใน cameras-config.json ด้วย crypto-creds.js</td></tr>
+<tr><td><code>postgres-ssl-setup.sh</code></td><td>Setup PostgreSQL SSL certificates</td></tr>
+<tr><td><code>pm2-lan-safe-restart.command</code></td><td>LNP-safe PM2 restart — ต้องใช้แทน restart ตรงๆ (ดู GOTCHAS #84 / LNP incident)</td></tr>
+<tr><td><code>com.dojojin.dashboard.backup.plist</code></td><td>launchd plist สำหรับ scheduled backup บน macOS</td></tr>
+</tbody>
+</table>
+
+<!-- ============================= db/ ============================= -->
+<h2>db/ — Database Schema & Migrations (47 ไฟล์)</h2>
+
+<table>
+<thead>
+<tr><th>ไฟล์</th><th>หน้าที่</th></tr>
+</thead>
+<tbody>
+<tr><td><code>init.sql</code></td><td>Canonical schema — ทำงานบน fresh volume เท่านั้น · อย่าแก้เพื่อ evolve schema · ดู <a href="md-viewer.html?src=../docs/REF_database-schema.md">REF_database-schema.md</a></td></tr>
+<tr><td><code>db_migration_*.sql</code> (47 ไฟล์)</td><td>Idempotent migrations — ชื่อ sequential (001–045) + named migrations · run อัตโนมัติตอน boot โดย migrate.js · ล่าสุด: db_migration_045_alert_min_likelihood.sql · ดู <a href="add-migration.html">Recipe: Migration</a></td></tr>
+</tbody>
+</table>
+
+<!-- ============================= Config files ============================= -->
+<h2>Root Config Files</h2>
+
+<table>
+<thead>
+<tr><th>ไฟล์</th><th>หน้าที่</th></tr>
+</thead>
+<tbody>
+<tr><td><code>package.json</code></td><td>Node dependencies + npm scripts (<code>start</code> = api-server, <code>migrate</code> = run migrations)</td></tr>
+<tr><td><code>ecosystem.config.js</code></td><td>PM2 process definitions — api-server, alert-worker, report-worker, media-recorder ฯลฯ (7 processes)</td></tr>
+<tr><td><code>docker-compose.yml</code></td><td>PostgreSQL + EMQX containers สำหรับ dev/production</td></tr>
+<tr><td><code>Dockerfile</code></td><td>Node.js app image (production deployment)</td></tr>
+<tr><td><code>.env.example</code></td><td>Template env vars — copy เป็น <code>src/.env</code> · ดู service_start.md</td></tr>
+<tr><td><code>cameras-config.json</code></td><td>Camera connection config — credentials encrypted โดย crypto-creds.js · อ่าน/เขียนโดย cameras route</td></tr>
+</tbody>
+</table>
+
+<div class="ibox">
+  <h4>Doc Gaps ที่ยังค้างอยู่</h4>
+  <ul>
+    <li><code>push-sender.js</code>, <code>color-utils.js</code>, <code>constants.js</code>, <code>singleton.js</code>, <code>simulator.js</code> — ยังไม่มีใน ARCHITECTURE.md component table</li>
+    <li><code>stats-summary-route.js</code> — standalone route ไม่ได้อยู่ใน src/routes/ และไม่มีใน REF_api-reference.md</li>
+    <li>REF_api-reference.md อ้าง "126 routes / 22 groups" — จริงคือ 132 routes / 19 groups (src/routes/) + 1 (stats-summary-route) + 6 inline = 139 routes</li>
+  </ul>
+</div>
+
+<div class="ref">
+  <p><a href="index.html">← กลับ Navigator</a> · <a href="api-routes.html">API Routes Reference →</a> · อ้างอิง: <code>ARCHITECTURE.md</code> · <code>docs/REF_api-reference.md</code> · <code>docs/REF_database-schema.md</code></p>
+</div>
+</div>
+</div>
+
+<script src="nav.js"></script>
+</body>
+</html>

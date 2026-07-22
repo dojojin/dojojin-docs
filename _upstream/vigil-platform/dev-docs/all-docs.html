@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ไฟล์ .md ทั้งหมด — Dev Portal</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .tag {
+      display: inline-block;
+      padding: 1px 7px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 600;
+      margin-left: 4px;
+      vertical-align: middle;
+    }
+    .tag-ai   { background: rgba(188,140,255,0.15); color: var(--purple); }
+    .tag-audit{ background: rgba(210,153,34,0.15);  color: var(--amber); }
+    .tag-core { background: rgba(88,166,255,0.15);  color: var(--accent); }
+    .tag-ref  { background: rgba(63,185,80,0.15);   color: var(--green); }
+    .tag-ops  { background: rgba(57,197,207,0.15);  color: var(--cyan); }
+    .tag-legal{ background: rgba(248,81,73,0.15);   color: var(--red); }
+    .tag-spike{ background: rgba(139,148,158,0.15); color: var(--dim); }
+    td.fname a { font-family: 'SF Mono', Consolas, monospace; font-size: 12px; }
+    td.fname code { background: none; border: none; padding: 0; color: var(--dim); font-size: 11px; }
+  </style>
+</head>
+<body>
+<div id="overlay"></div>
+<div class="layout">
+<nav class="nav" id="nav"></nav>
+<button id="ham">☰</button>
+
+<div class="main">
+<h1 class="ph">ไฟล์ .md ทั้งหมดในโปรเจกต์ (50 ไฟล์)</h1>
+
+<p>รายการ .md ทุกไฟล์ในโปรเจกต์ — ครอบคลุม core docs, reference, AI-internal, audit, legal และอื่นๆ สามารถกดชื่อไฟล์เพื่อเปิดใน viewer ได้เลย</p>
+
+<div class="krow">
+  <div class="kpi"><div class="kn">50</div><div class="kl">ไฟล์ทั้งหมด</div></div>
+  <div class="kpi"><div class="kn">18</div><div class="kl">Core / Reference</div></div>
+  <div class="kpi"><div class="kn">10</div><div class="kl">LOGIC_ docs</div></div>
+  <div class="kpi"><div class="kn">8</div><div class="kl">AI-internal</div></div>
+  <div class="kpi"><div class="kn">7</div><div class="kl">Audit / Review</div></div>
+  <div class="kpi"><div class="kn">8</div><div class="kl">Other</div></div>
+</div>
+
+<div class="wbox">
+  <h4>ต้องเปิดผ่าน local server</h4>
+  <p><code>python3 -m http.server 8081 --directory /Users/dojojin/vigil-platform</code> → <code>http://localhost:8081/dev-docs/</code></p>
+</div>
+
+<h2>Core Architecture &amp; Design</h2>
+<table>
+<thead><tr><th>ไฟล์</th><th>คืออะไร</th></tr></thead>
+<tbody>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../ARCHITECTURE.md">ARCHITECTURE.md</a> <span class="tag tag-core">ARCH_</span></td>
+  <td>สถาปัตยกรรมหลัก · tech stack · DB schema groups · code patterns · critical ops · commercial info</td>
+</tr>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../DESIGN.md">DESIGN.md</a> <span class="tag tag-core">GUIDE_</span></td>
+  <td>Design system — tokens tri-layer · type scale · spacing · elevation · SVG icon system · Chart/Map/Report theming</td>
+</tr>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../DECISIONS.md">DECISIONS.md</a> <span class="tag tag-core">LOGIC_</span></td>
+  <td>Decision index #1–#199 — เหตุผลว่าทำไมสิ่งต่างๆ ถึงเป็นแบบนี้ อ่านก่อน second-guess</td>
+</tr>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../GOTCHAS.md">GOTCHAS.md</a> <span class="tag tag-core">INCIDENT_</span></td>
+  <td>Known issues / quirks / footguns #1–#84 — ทุก entry มาจาก incident จริง</td>
+</tr>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../docs/ARCH_documentation-governance.md">docs/ARCH_documentation-governance.md</a> <span class="tag tag-core">Registry</span></td>
+  <td>Registry ของเอกสารทั้งหมด · task→load mapping · STUBBORN_FACT index · maintenance rules</td>
+</tr>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../CHANGELOG.md">CHANGELOG.md</a></td>
+  <td>Completed features by version v1.2 → v1.5 + recent updates timeline</td>
+</tr>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../ROADMAP.md">ROADMAP.md</a> <span class="tag tag-core">REFACTOR_TODO</span></td>
+  <td>Pending work · operational roadmap Ph.1–Ph.6 · strategic direction</td>
+</tr>
+</tbody>
+</table>
+
+<h2>LOGIC_ — ทำไมต้องเป็นแบบนี้</h2>
+<table>
+<thead><tr><th>ไฟล์</th><th>คืออะไร</th></tr></thead>
+<tbody>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../docs/LOGIC_auth-security.md">docs/LOGIC_auth-security.md</a></td>
+  <td>Triple-layer auth · RBAC · WS verifyClient · security audit SEC-001–011</td>
+</tr>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../docs/LOGIC_camera-ingesters.md">docs/LOGIC_camera-ingesters.md</a></td>
+  <td>Bosch MQTT / Hikvision ISAPI / Dahua CGI / ONVIF — factory pattern, clip capture</td>
+</tr>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../docs/LOGIC_infra-ops.md">docs/LOGIC_infra-ops.md</a></td>
+  <td>Schema migrations · service lifecycle · retention · deployment · scale-up plan</td>
+</tr>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../docs/LOGIC_stats-reports.md">docs/LOGIC_stats-reports.md</a></td>
+  <td>Stats aggregation · Puppeteer reports · density · analyticsEventClause()</td>
+</tr>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../docs/LOGIC_line-notifications.md">docs/LOGIC_line-notifications.md</a></td>
+  <td>LINE alert rules · imgbb · quiet hours · recipient onboarding</td>
+</tr>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../docs/LOGIC_map-features.md">docs/LOGIC_map-features.md</a></td>
+  <td>Map page (OpenLayers) · camera grouping · Live Pulse · improvement backlog</td>
+</tr>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../docs/LOGIC_license.md">docs/LOGIC_license.md</a></td>
+  <td>Ed25519 JWT license · fingerprint · keygen setup · enforcement flow</td>
+</tr>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../docs/LOGIC_face-capture.md">docs/LOGIC_face-capture.md</a></td>
+  <td>Face capture pipeline — snapshot trigger, frame extraction, pgvector storage</td>
+</tr>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../docs/LOGIC_nlq-search.md">docs/LOGIC_nlq-search.md</a></td>
+  <td>⚠️ PLANNED — Natural Language Query layer บน event DB (ยังไม่ implement); options + DB schema design</td>
+</tr>
+</tbody>
+</table>
+
+<h2>REF_ — ข้อมูลอ้างอิง</h2>
+<table>
+<thead><tr><th>ไฟล์</th><th>คืออะไร</th></tr></thead>
+<tbody>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../docs/REF_api-reference.md">docs/REF_api-reference.md</a></td>
+  <td>Full REST API — 126 routes / 22 groups · auth levels · request params · response shapes · WebSocket protocol</td>
+</tr>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../docs/REF_database-schema.md">docs/REF_database-schema.md</a></td>
+  <td>Full DB schema ภาษาไทย — ทุก table / column / index · PostgreSQL credentials · example queries</td>
+</tr>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../docs/REF_database-schema_EN.md">docs/REF_database-schema_EN.md</a></td>
+  <td>Full DB schema (English version) — same content as Thai version</td>
+</tr>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../docs/REF_troubleshooting.md">docs/REF_troubleshooting.md</a></td>
+  <td>Troubleshooting steps §8.1–§8.18 — events / camera / LINE / storage / Puppeteer</td>
+</tr>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../docs/REF_security-checklist.md">docs/REF_security-checklist.md</a></td>
+  <td>Security audit checklist SEC-001–011 — auth / upload / cookie / credential / docker port</td>
+</tr>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../docs/REF_operator-sql.md">docs/REF_operator-sql.md</a></td>
+  <td>SQL snippets สำหรับ operator — event queries · stats · maintenance</td>
+</tr>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../docs/REF_third-party-integration.md">docs/REF_third-party-integration.md</a></td>
+  <td>Third-party DB integration (Thai) — v_*_public views · ops setup · PDPA · change policy</td>
+</tr>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../docs/REF_third-party-integration_EN.md">docs/REF_third-party-integration_EN.md</a></td>
+  <td>Third-party DB integration (English version)</td>
+</tr>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../docs/REF_face-recognition.md">docs/REF_face-recognition.md</a></td>
+  <td>Face Recognition (PLANNED) — options A/B/C · InsightFace · pgvector · hardware sizing</td>
+</tr>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../docs/REF_vms-playback.md">docs/REF_vms-playback.md</a></td>
+  <td>Qognify SGS v7.2 — VMS playback reference, timeline navigation, clip export, API integration</td>
+</tr>
+</tbody>
+</table>
+
+<h2>Operations / Operator Playbook</h2>
+<table>
+<thead><tr><th>ไฟล์</th><th>คืออะไร</th></tr></thead>
+<tbody>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../service_start.md">service_start.md</a> <span class="tag tag-ops">REF_</span></td>
+  <td>Daily start / stop / health check / troubleshoot manual — ใช้ทุกวัน</td>
+</tr>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../SKILL.md">SKILL.md</a> <span class="tag tag-ops">REF_</span></td>
+  <td>Operator's playbook (English) — mental model, mapping recipes, settings, branding, reports, i18n, license</td>
+</tr>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../SKILL-TH.md">SKILL-TH.md</a> <span class="tag tag-ops">REF_</span></td>
+  <td>Operator's playbook (Thai) — เนื้อหาเหมือน SKILL.md prose ภาษาไทย</td>
+</tr>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../HARDWARE_SIZING_GUIDE.md">HARDWARE_SIZING_GUIDE.md</a> <span class="tag tag-ops">REF_</span></td>
+  <td>Hardware sizing per camera count G1–G5 + software scale-up plan</td>
+</tr>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../README.md">README.md</a></td>
+  <td>User-facing project intro (v1.5.0) · Quick Start · Installation steps (ข้อมูลการติดตั้ง from-scratch)</td>
+</tr>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../README-TH.md">README-TH.md</a></td>
+  <td>README ภาษาไทย — same content as README.md</td>
+</tr>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../scripts/keygen/README.md">scripts/keygen/README.md</a></td>
+  <td>License key generation guide — Ed25519 keygen setup สำหรับ production deployment</td>
+</tr>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../docs/INTEGRATION.md">docs/INTEGRATION.md</a></td>
+  <td>Integration guide — เพิ่ม UI widget / page เข้า dashboard ที่มีอยู่ + backend endpoint</td>
+</tr>
+</tbody>
+</table>
+
+<h2>Legal</h2>
+<table>
+<thead><tr><th>ไฟล์</th><th>คืออะไร</th></tr></thead>
+<tbody>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../docs/EULA-th.md">docs/EULA-th.md</a> <span class="tag tag-legal">Legal</span></td>
+  <td>Thai EULA — ข้อตกลงการใช้งาน ภาษาไทย สำหรับลูกค้า</td>
+</tr>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../docs/EULA-en.md">docs/EULA-en.md</a> <span class="tag tag-legal">Legal</span></td>
+  <td>Thai EULA — English version สำหรับลูกค้าต่างชาติ</td>
+</tr>
+</tbody>
+</table>
+
+<h2>AI-Internal <small style="color:var(--dim);font-weight:400">(สำหรับ AI assistants — ไม่ใช่ operator docs)</small></h2>
+<table>
+<thead><tr><th>ไฟล์</th><th>คืออะไร</th></tr></thead>
+<tbody>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../CLAUDE.md">CLAUDE.md</a> <span class="tag tag-ai">AI</span></td>
+  <td>Context handoff document สำหรับ Claude Code — working agreements, model assignment, project purpose, documentation map</td>
+</tr>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../AGENTS.md">AGENTS.md</a> <span class="tag tag-ai">AI</span></td>
+  <td>Agent configuration — model assignments, subagent rules สำหรับ Claude Code agents</td>
+</tr>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../CODEX_SESSION_START.md">CODEX_SESSION_START.md</a> <span class="tag tag-ai">AI</span></td>
+  <td>Codex session bootstrap — context ย่อสำหรับ Codex subagent ที่ start ใหม่</td>
+</tr>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../CODEX_AUDIT_2ndTier.md">CODEX_AUDIT_2ndTier.md</a> <span class="tag tag-ai">AI</span></td>
+  <td>Codex 2nd tier audit results — security / performance findings ที่ Codex ตรวจพบ</td>
+</tr>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../CODEX_AUDIT_3rdTier.md">CODEX_AUDIT_3rdTier.md</a> <span class="tag tag-ai">AI</span></td>
+  <td>Codex 3rd tier audit results — deeper findings รอบที่สาม</td>
+</tr>
+</tbody>
+</table>
+
+<h2>Audit &amp; Review Reports</h2>
+<table>
+<thead><tr><th>ไฟล์</th><th>คืออะไร</th></tr></thead>
+<tbody>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../AuditSummary_2026.06.10.md">AuditSummary_2026.06.10.md</a> <span class="tag tag-audit">Audit</span></td>
+  <td>System audit summary 2026-06-10 — A1–A7 findings</td>
+</tr>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../TotalSummaryAudit_Vigil-Platform.md">TotalSummaryAudit_Vigil-Platform.md</a> <span class="tag tag-audit">Audit</span></td>
+  <td>Total audit summary รวม — security + performance + sustainability ทุก tier</td>
+</tr>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../docs/audit/01_critical.md">docs/audit/01_critical.md</a> <span class="tag tag-audit">Audit</span></td>
+  <td>Critical severity findings จาก security audit</td>
+</tr>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../docs/audit/02_high.md">docs/audit/02_high.md</a> <span class="tag tag-audit">Audit</span></td>
+  <td>High severity findings</td>
+</tr>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../docs/audit/03_medium.md">docs/audit/03_medium.md</a> <span class="tag tag-audit">Audit</span></td>
+  <td>Medium severity findings</td>
+</tr>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../docs/audit/04_low.md">docs/audit/04_low.md</a> <span class="tag tag-audit">Audit</span></td>
+  <td>Low severity findings</td>
+</tr>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../docs/audit/05_passed.md">docs/audit/05_passed.md</a> <span class="tag tag-audit">Audit</span></td>
+  <td>Passed checks — จุดที่ audit ผ่าน</td>
+</tr>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../public/others/codex/product_review.md">public/others/codex/product_review.md</a> <span class="tag tag-audit">Review</span></td>
+  <td>Product review โดย Codex — feature completeness, UX, commercial readiness</td>
+</tr>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../public/others/codex/commercial_system_review_2026-06-07.md">public/others/codex/commercial_system_review_2026-06-07.md</a> <span class="tag tag-audit">Review</span></td>
+  <td>Commercial system review 2026-06-07 — market fit, pricing, competitive analysis</td>
+</tr>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../public/others/codex/coding/technical_engineering_review_2026-06-07.md">public/others/codex/coding/technical_engineering_review_2026-06-07.md</a> <span class="tag tag-audit">Review</span></td>
+  <td>Technical engineering review 2026-06-07 — code quality, architecture, scalability</td>
+</tr>
+</tbody>
+</table>
+
+<h2>Planning Spikes &amp; Other</h2>
+<table>
+<thead><tr><th>ไฟล์</th><th>คืออะไร</th></tr></thead>
+<tbody>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../microservice_plan.md">microservice_plan.md</a> <span class="tag tag-spike">Spike</span></td>
+  <td>Master Plan — Modular Refactor + Security Hardening; Phase 0/1/3 ✅ done, Phase 2/4 deferred</td>
+</tr>
+<tr>
+  <td class="fname"><a href="md-viewer.html?src=../docs/PHASE_6.0_SPIKE.md">docs/PHASE_6.0_SPIKE.md</a> <span class="tag tag-spike">Spike</span></td>
+  <td>Phase 6.0 spike (dead-end, confirmed 2026-05-08) — History Workspace PoC ที่ถูกยกเลิก ไม่ implement</td>
+</tr>
+</tbody>
+</table>
+
+<div class="ibox">
+  <h4>หมายเหตุ</h4>
+  <p>ไฟล์ที่ label ว่า <span class="tag tag-ai">AI</span> ออกแบบมาสำหรับ AI assistants (Claude Code) ไม่ใช่ operator docs — เนื้อหาอาจซ้อนทับกับ docs อื่น. ไฟล์ <span class="tag tag-audit">Audit</span> และ <span class="tag tag-spike">Spike</span> เป็น point-in-time snapshots อาจ stale แล้ว</p>
+</div>
+
+<div class="ref">
+  <p><a href="index.html">← กลับ Navigator</a> · <a href="doc-browser.html">Curated Doc Browser</a> (15 ไฟล์หลัก) · อัปเดต: จาก <code>find . -name "*.md"</code> — 50 ไฟล์ ณ 2026-06-15</p>
+</div>
+</div>
+</div>
+
+<script src="nav.js"></script>
+</body>
+</html>

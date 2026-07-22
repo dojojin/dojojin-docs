@@ -71,8 +71,19 @@ Newer Dahua WizMind / face-recognition models DO crop + push real face images (s
 
 ---
 
+---
+
+## Navigation Change (2026-06-17)
+
+Face Capture gallery เดิมเป็นหน้าแยก (`#page-faces` nav item) — ตอนนี้ถูก merge เป็น **"All Faces" tab** ใต้หน้า Face Recognition (`#page-face-matches`). Nav item "ภาพใบหน้า" ถูกซ่อนแล้ว.
+
+- `#page-faces` HTML ยังคงอยู่ใน DOM เป็น rollback guard แต่ไม่ route ผ่าน nav แล้ว
+- `page-face-gallery.js` ยังทำงาน — `openFaceModal()` ถูกใช้โดย All Faces tab ผ่าน `_faceTab2Data`
+- ถ้าต้องทำงานกับ Face Capture UI → ดู `dashboard/page-face-matches.js` (`_loadFaceTab`, `_renderFaceGrid2`, `_faceTab2Data`)
+
 ## Related files
 - `src/ingesters/hikvision-isapi.js` — Face Capture multipart parser + `ingestFaceEvent`
-- `dashboard/dashboard.js` — Face gallery page (`#page-faces`), `openFaceModal`
-- `src/api-server.js` — `GET /api/faces` endpoint
+- `dashboard/page-face-gallery.js` — `openFaceModal()` modal logic
+- `dashboard/page-face-matches.js` — All Faces tab + Face Recognition Matches tab
+- `src/routes/faces.js` — `GET /api/faces` + `GET /api/faces/summary` + `GET /api/face-matches`
 - GOTCHAS #39 (Dahua face detection limitations)

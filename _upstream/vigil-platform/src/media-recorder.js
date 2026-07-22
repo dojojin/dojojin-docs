@@ -129,11 +129,14 @@ function buildRtspUrl(cam) {
     return `rtsp://${u}:${p}@${ip}:554/Streaming/Channels/10${stream}`;
   }
   if (vendor === 'dahua') {
-    // Dahua RTSP: /cam/realmonitor?channel=1&subtype=N (0=main, 1=sub).
+    // Dahua RTSP: /cam/realmonitor?channel=N&subtype=M (0=main, 1=sub).
     // Map the generic clip_stream (1=main, 2=sub — same convention as
     // Bosch/Hikvision) onto Dahua's 0-based subtype.
     const subtype = Math.max(0, stream - 1);
-    return `rtsp://${u}:${p}@${ip}:554/cam/realmonitor?channel=1&subtype=${subtype}`;
+    // NVR channel is 0-based in cam.nvr_channel; convert to 1-based for RTSP channel= parameter.
+    // Cameras without nvr_channel (single-channel devices) default to channel=1.
+    const channel = (cam.nvr_channel !== undefined ? cam.nvr_channel : 0) + 1;
+    return `rtsp://${u}:${p}@${ip}:554/cam/realmonitor?channel=${channel}&subtype=${subtype}`;
   }
   // Bosch: ?inst=N selects encoder instance.
   return `rtsp://${u}:${p}@${ip}/rtsp_tunnel?inst=${stream}`;
@@ -256,12 +259,20 @@ function recorderNeeded(cam) {
 async function syncRecorders() {
   let rows = [];
   try {
+    // ip_address is a LAN address — only reachable directly for cameras on
+    // central's own network (site_id NULL or 'main'). An edge-site camera's
+    // IP is on the edge's LAN; the edge ingester already gets its snapshots
+    // via its own CGI-live fallback (dahua-cgi.js) when no RTSP buffer is
+    // available, so central retrying RTSP against it is a guaranteed-timeout
+    // no-op — exclude it instead of looping ffmpeg failures forever.
     const r = await pool.query(`
-      SELECT id AS camera_id, ip_address, clip_pre_sec, clip_post_sec,
-             enable_clip_capture, enable_snapshot
-        FROM cameras
-       WHERE enabled = TRUE
-         AND (enable_clip_capture = TRUE OR enable_snapshot = TRUE)
+      SELECT c.id AS camera_id, c.ip_address, c.clip_pre_sec, c.clip_post_sec,
+             c.enable_clip_capture, c.enable_snapshot
+        FROM cameras c
+        LEFT JOIN sites s ON s.id = c.site_id
+       WHERE c.enabled = TRUE
+         AND (c.enable_clip_capture = TRUE OR c.enable_snapshot = TRUE)
+         AND (c.site_id IS NULL OR s.code = 'main')
     `);
     rows = r.rows.filter(recorderNeeded);
   } catch (e) {

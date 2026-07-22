@@ -1,0 +1,62 @@
+# ============================================================
+# Vigil Platform — NanoMQ config template (Site Edge)
+# ------------------------------------------------------------
+# คัดลอกไปที่: ~/.local/nanomq/usr/local/etc/nanomq.conf
+#
+# ⚠️  ห้ามใส่ bridges.mqtt block ใน file นี้
+#     NanoMQ 0.24 ไม่รองรับ mqtt-wss:// ใน built-in bridge
+#     Bridge ทำผ่าน PM2 process 'edge-bridge' (src/helpers/edge-bridge.js)
+#     (GOTCHAS #92)
+# ============================================================
+
+# NanoMQ Configuration 0.19.0
+
+mqtt {
+    property_size = 32
+    max_packet_size = 4MB   # measured real max ~5.3KB (metadata only, images never cross MQTT — decision #209); OPT5-EDGE-003
+    max_mqueue_len = 2048
+    retry_interval = 10s
+    keepalive_multiplier = 1.25
+
+    max_inflight_window = 2048
+    max_awaiting_rel = 10s
+    await_rel_timeout = 10s
+}
+
+# MQTT over TCP (local only — ingesters + edge-bridge ใช้ port นี้)
+listeners.tcp {
+    bind = "0.0.0.0:1883"
+}
+
+# MQTT over WebSocket (optional — ไม่จำเป็นสำหรับ edge POC)
+listeners.ws {
+    bind = "0.0.0.0:8083/mqtt"
+}
+
+# NanoMQ HTTP management API
+http_server {
+    port = 8081
+    limit_conn = 2
+    username = admin
+    password = public
+    auth_type = basic
+}
+
+log {
+    to = [file, console]
+    level = warn
+    dir = "/tmp"
+    file = "nanomq.log"
+    rotation {
+        size = 10MB
+        count = 5
+    }
+}
+
+# Allow anonymous local connections (edge POC)
+# เปิด ACL เมื่อ production จริง
+auth {
+    allow_anonymous = true
+    no_match = allow
+    deny_action = ignore
+}
