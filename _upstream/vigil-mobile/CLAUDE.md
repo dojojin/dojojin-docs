@@ -112,6 +112,25 @@
 4. **Capture** — log / warn ที่ไม่เปลี่ยน control flow → ทำได้เลย
    validation ที่เปลี่ยน behavior → เสนอ รอไฟเขียวก่อน
 
+### 4. Advisor-led cycle — PLAN → EXECUTE → AUDIT → STOP → COMMIT (บังคับทุกคำสั่งที่ให้ลงมือ)
+
+> เพิ่ม 2026-06-16 ตามคำสั่งเจ้าของ. เป็น **meta-process** ครอบ #1–#3 — owner ไม่ต้องสั่งซ้ำ.
+> ทุกคำสั่งที่ให้ "ลงมือทำ" เดินตาม 5 ขั้นนี้โดยอัตโนมัติ.
+
+1. **PLAN — ให้ Advisor วางแผน + reproduce/audit แผนทีละขั้นก่อนลงมือ**
+   - มี codebase / process ชัดอยู่แล้ว → ดำเนินตามแผนได้เลย
+   - ยังไม่ทราบ process → ให้ Advisor ตกผลึกจนได้ **spec ที่ชัด** (absolute path + เกณฑ์เสร็จ) ก่อน แล้วจึงส่งต่อ
+2. **EXECUTE — เฉพาะงานกลไกที่ spec ครบแล้วเท่านั้น → delegate ให้ subagent**
+   (Sonnet ตาม [Model Assignment](#-model-assignment-เลือก-model-ตามงาน); spec ยังไม่ครบ ห้าม execute)
+3. **AUDIT — หลังทำเสร็จ ให้ main loop (หรือ subagent) re-run repro บน Simulator/device จริง แล้วให้ Advisor audit ผลอีกรอบ**
+   → สรุปผล audit ให้เจ้าของดู แยก **🔵 Fact / 🟡 Opinion** ตาม #1
+   > Advisor อ่าน transcript ได้แต่ **รัน repro เองไม่ได้** — ขา runtime ต้องให้ main loop/subagent รันจริงแล้วส่งผลให้ Advisor ตรวจ
+4. **STOP — หยุดรอเจ้าของยืนยัน. ห้าม commit เองเด็ดขาดจนกว่าจะ confirm**
+5. **COMMIT — หลังเจ้าของ confirm แล้วค่อย commit** (ยังคงกฎ sole authorship — ห้าม `Co-Authored-By: Claude`, ดู หมายเหตุ Commit)
+
+> **เส้นแบ่งสำคัญ vs #1:** ไฟเขียวของ #1 ("ทำเลย / จัดการเลย / ต่อเลย") = อนุมัติให้ **execute** เท่านั้น —
+> **ไม่ใช่** ไฟเขียวให้ **commit**. STOP ในข้อ 4 ยังบังคับเสมอ ต้องได้ confirm แยกต่างหากก่อน commit.
+
 ### หมายเหตุ Commit
 - **ห้ามใส่ `Co-Authored-By: Claude`** ในทุก commit — เจ้าของต้องการ sole authorship
 
