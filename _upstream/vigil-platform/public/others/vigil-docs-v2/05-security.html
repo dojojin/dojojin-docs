@@ -19,7 +19,7 @@
 <h1 class="ph">05 Audit ความปลอดภัย (Security Audit)</h1>
 
 <h2>เส้นเวลา Audit</h2>
-<p>Vigil Platform ผ่านการตรวจสอบความปลอดภัย (internal security audit) 4 รอบครอบคลุม 25 จุด (SEC-001–017 + SEC-2T-001–008) ทุกจุดได้รับการแก้ไขแล้วภายใน v1.5.3 และมีการตรวจสอบ CVE / Dependency Audit เพิ่มเติมในรอบที่ 4 (2026-06-07) พร้อมอัปเกรด runtime stack ทั้งหมด</p>
+<p>Vigil Platform ผ่านการตรวจสอบความปลอดภัย (internal security audit) 6 รอบครอบคลุม 46 จุด (SEC-001–017 + SEC-2T-001–008 + SEC5-HIGH/MED/LOW + LIVE-HIGH/MED/LOW/PASS) ส่วนใหญ่ได้รับการแก้ไขแล้วภายใน v1.5.3 มีการตรวจสอบ CVE / Dependency Audit เพิ่มเติมในรอบที่ 4 (2026-06-07) พร้อมอัปเกรด runtime stack ทั้งหมด และรอบที่ 6 (2026-07-21) เป็นการ <strong>ยิงทดสอบระบบจริงที่กำลังรัน</strong> (live low-impact probe) ไม่ใช่แค่อ่านซอร์สโค้ด — จุดที่ยังเปิดอยู่ (deferred) มีเหตุผลบันทึกไว้ชัดเจน ไม่ใช่ถูกมองข้าม</p>
 
 <table>
 <thead>
@@ -54,6 +54,18 @@
 <td>2026-06-07</td>
 <td>CVE / Dependency Audit — Node.js EOL, npm packages, Docker images, runtime stack, EMQX network resilience</td>
 <td>0 confirmed CVE หลังอัปเกรด — Node 22 LTS, EMQX 5.8.9, PG 16.14, Puppeteer 25 / Chrome 149</td>
+</tr>
+<tr>
+<td><strong>รอบ 5</strong></td>
+<td>2026-07-21/22</td>
+<td>Public receiver hardening, edge broker auth posture, secret handling, legacy endpoint cleanup</td>
+<td>SEC5-HIGH/MED/LOW (12 finding) — ปิด/mitigate ส่วนใหญ่ แล้ว 3 จุด deferred ตั้งใจ (มีเหตุผลบันทึกไว้)</td>
+</tr>
+<tr>
+<td><strong>รอบ 6</strong></td>
+<td>2026-07-21</td>
+<td>Live low-impact probe กับระบบ production จริง (ไม่ใช่แค่อ่านซอร์ส) — auth boundary, receiver DoS surface, dependency scan</td>
+<td>LIVE-HIGH/MED/LOW/PASS (9 finding) — core auth boundary ผ่านหมด; receiver hardening ปิดแล้ว 4/6</td>
 </tr>
 </tbody>
 </table>
@@ -113,6 +125,31 @@
   </ul>
 </div>
 
+<div class="card">
+  <h3>SEC5-HIGH/MED/LOW: Public Receiver &amp; Edge Broker Posture (รอบ 5, 2026-07-21/22)</h3>
+  <ul>
+    <li><strong>SEC5-HIGH-001:</strong> Edge node config file permission drift → แก้ไข: self-heal <code>chmod 600</code> ทุกครั้งที่เขียนไฟล์ ทั้ง Central และ Edge</li>
+    <li><strong>SEC5-HIGH-002:</strong> Legacy public endpoint ไม่มี token → แก้ไข: ปิดด้วยหลักฐาน log (0 การใช้งานจริงตลอดประวัติ) ไม่ใช่เดา</li>
+    <li><strong>SEC5-HIGH-003:</strong> Edge message broker เปิดกว้างเกินไป → <em>Mitigated บางส่วน</em>: คำสั่งที่มีผลทำลายข้อมูล (ลบไฟล์) ต้องมี secret ยืนยันก่อนเสมอแล้ว; การล็อก broker เต็มรูปแบบต้องรอ deploy พร้อม multi-site rollout เพราะกระทบ configuration ของกล้องจริงทุกตัว</li>
+    <li><strong>SEC5-HIGH-004:</strong> Message broker กลาง (central) ยังไม่ deny-by-default → เตรียม access rule ให้ครบทุก client แล้ว รอ flip พร้อมรอบ multi-site rollout</li>
+    <li><strong>SEC5-MED-003:</strong> เอกสารติดตั้ง edge สอนสร้าง key ผิดวิธี → แก้ไข: ปรับ template ให้ตรงกับขั้นตอนที่ถูกต้อง</li>
+    <li><strong>SEC5-MED-005:</strong> Internal service token — fallback เงียบเมื่อไม่ได้ตั้งค่า → แก้ไข: หยุดทำงานทันทีในโหมด production แทนการรันต่อแบบไม่ปลอดภัย</li>
+    <li><strong>SEC5-LOW-001:</strong> ไฟล์ระบบตกค้าง (<code>.DS_Store</code>) → แก้ไข: ลบออกจาก workspace</li>
+  </ul>
+  <p style="font-size:13px;color:var(--dim)">จุดที่ยังเปิดอยู่ตั้งใจ: URL token rotation policy ระยะยาว, multi-site permission regression test — ไม่มีเหตุการณ์จริงบ่งชี้ว่าเร่งด่วน</p>
+</div>
+
+<div class="card">
+  <h3>LIVE-HIGH/MED/LOW/PASS: Live Production Probe (รอบ 6, 2026-07-21)</h3>
+  <ul>
+    <li><strong>LIVE-PASS:</strong> Auth boundary หลักผ่านการยิงทดสอบจริงหมด — API, static assets, snapshots, media, WebSocket, CORS ปฏิเสธ request ที่ไม่ได้ auth ถูกต้องทุกจุด</li>
+    <li><strong>LIVE-HIGH-001:</strong> Public push receiver (รับข้อมูลจากกล้อง/edge) ประมวลผลข้อมูลก่อนตรวจสอบสิทธิ์ → แก้ไข: ตรวจสอบสิทธิ์ก่อนประมวลผลเสมอ — ระหว่างแก้พบการยิง request ที่ไม่มีสิทธิ์เข้ามาต่อเนื่องจริงอยู่แล้ว จึงปิดพร้อมยืนยันผลจากการใช้งานจริง ไม่ใช่แค่ทดสอบ</li>
+    <li><strong>LIVE-HIGH-002:</strong> Library ที่ใช้รับไฟล์อัปโหลดมีช่องโหว่ DoS → แก้ไข: อัปเกรดเวอร์ชัน</li>
+    <li><strong>LIVE-LOW-001:</strong> Response header เปิดเผยเทคโนโลยีที่ใช้ (fingerprinting) → แก้ไข: ปิด header นี้</li>
+  </ul>
+  <p style="font-size:13px;color:var(--dim)">จุดที่ยังเปิดอยู่ตั้งใจ: unknown-token event logging ยังไม่มีรายละเอียด source/rate เพิ่มเติม; tunnel credential handling รอปรับเป็นวิธีที่ไม่ผ่าน process argument</p>
+</div>
+
 <h2>CVE / Dependency Audit (2026-06-07)</h2>
 <p>ตรวจสอบ CVE และ dependency ของระบบทั้งหมด ด้วย <code>npm audit</code>, NVD, GitHub Security Advisories และ Docker image history ผลลัพธ์: <strong>0 confirmed CVE</strong> หลังอัปเกรด runtime stack</p>
 
@@ -124,7 +161,7 @@
   <tbody>
   <tr><td>express</td><td>5.2.1</td><td><span class="badge b-green">Clean</span></td></tr>
   <tr><td>ws</td><td>8.21.0</td><td><span class="badge b-green">Clean</span> (อัปเกรดจาก 8.20.1 — patch CVE-2024-37890 DoS)</td></tr>
-  <tr><td>multer</td><td>2.1.1</td><td><span class="badge b-green">Clean</span> (patch CVE-2026-3520 stack overflow)</td></tr>
+  <tr><td>multer</td><td>2.2.0</td><td><span class="badge b-green">Clean</span> (patch CVE-2026-3520 stack overflow; อัปเกรดอีกครั้งจาก 2.1.1 → 2.2.0 หลัง audit รอบ 6 พบ DoS advisory เพิ่ม)</td></tr>
   <tr><td>puppeteer</td><td>25.1.0</td><td><span class="badge b-green">Clean</span> (อัปเกรดจาก 24.43.1; Chrome 148 → 149.0.7827.22)</td></tr>
   <tr><td>pg</td><td>8.21.0</td><td><span class="badge b-green">Clean</span> (อัปเกรดจาก 8.20.0)</td></tr>
   <tr><td>sharp</td><td>0.34.5 / libvips 8.17.3</td><td><span class="badge b-green">Clean</span> (rebuild for Node 22)</td></tr>

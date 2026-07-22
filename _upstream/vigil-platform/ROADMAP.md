@@ -17,7 +17,22 @@
   - **CEN-007 (ครึ่งหลัง)** — pool wait metrics ✅ มีแล้ว (`health.js` `waiting_peak`); ยังไม่มี query-concurrency limiter จำกัด report/stats หนักๆ พร้อมกัน
   - **EDGE-002 (ครึ่งหลัง)** — SD-status probe stagger ✅ มีแล้ว (เฉพาะ Bosch onvif poll); ยังไม่มี global concurrency limiter ครอบ `_fetchJpeg`/heartbeat/preview/scan ทั้งหมด + per-camera cooldown + probe/timeout counter ใน heartbeat
 
-**ยังไม่ได้อ่าน (มีไฟล์อยู่แล้ว, commit `98b183e`):** [`CODEX/CODEX_Audit_5th_part_security.md`](CODEX/CODEX_Audit_5th_part_security.md) · [`CODEX/CODEX_Audit_6th_live_pentest_summary.md`](CODEX/CODEX_Audit_6th_live_pentest_summary.md)
+### CODEX Audit 5th (security) + 6th (live pentest) — ✅ triaged + most items closed 2026-07-22
+
+> เต็ม: [`CODEX/CODEX_Audit_5th_part_security.md`](CODEX/CODEX_Audit_5th_part_security.md) (§7 = verification log ต่อ finding) · [`CODEX/CODEX_Audit_6th_live_pentest_summary.md`](CODEX/CODEX_Audit_6th_live_pentest_summary.md) (§9 = verification log). Re-verified ทุกข้อกับโค้ด+ระบบจริง (ไม่ใช่แค่อ่าน static) แล้วปิด Phase 0-4c/4d + cloudflared token rotate ในรอบเดียว — commits `6525a02` `7fd4204` `2fc9a99` `82c5963` `088fedf` + tunnel token rotate (Cloudflare dashboard, ไม่มี commit).
+
+- ✅ ปิดแล้ว: HIGH-001 (central+edge chmod), MED-003 (env.template doc), LOW-001 (.DS_Store), LIVE-LOW-001 (x-powered-by), LIVE-MED-004 (stale deps — verified already fixed by `3995f29`), HIGH-002/LIVE-HIGH-003 (legacy `/lpr` → 410), LIVE-HIGH-001 (token pre-check ก่อน body parse — เจอ flood จริงที่กำลังยิงอยู่ตอนแก้), LIVE-HIGH-002 (multer upgrade), LIVE-MED-001 (central `lpr-receiver` bind → 127.0.0.1, ยืนยัน cloudflared route ผ่าน dashboard จริงก่อนแคบ), LIVE-MED-003 (cloudflared token rotate)
+- ⚠️ Mitigated บางส่วน: HIGH-003 (NanoMQ edge ยัง anonymous — แต่ guard เฉพาะ `_config/detect-model`/`delete-media` ด้วย `CAMERA_SECRET_KEY` shared-secret แล้ว ปิดช่องทำลายข้อมูลที่อันตรายสุด)
+- **[ ] Deferred ตั้งใจ (ไม่ใช่ backlog ที่ลืม):**
+  - **HIGH-004** (EMQX central `no_match=deny`) — ผูกกับรอบ multi-site rollout (ต้อง inventory ทุก site รวม topic ใหม่ `_config/detect-model`/`delete-media` ก่อน flip); prep เสร็จแล้ว (10 user มี ACL rule ครบ, orphan cleanup แล้ว) แค่ยังไม่ flip
+  - **MED-002** (URL token rotation/log) — design gap ระยะยาว ไม่มี incident รองรับ
+  - **MED-006** (multi-site RBAC regression test) — แยกเป็นงาน test-coverage
+  - **`CAMERA_SECRET_KEY` rotation** — key เข้ารหัส `cameras-config.json` หลุดเข้า Claude session transcript (2026-07-22, ตอนแก้ `LPR_BIND_HOST`) แต่**ประเมินแล้วไม่ร้ายแรง**: ต้องมีทั้ง key + ไฟล์ ciphertext พร้อมกันถึงใช้ประโยชน์ได้ — คนที่เข้าถึงไฟล์ได้ระดับนั้นอ่าน `src/.env` เอาค่า key ตรงๆ ได้อยู่แล้ว (คนละ threat model กับ cloudflared token ที่เป็น bearer token ใช้จากอินเทอร์เน็ตได้ทันที). Migration script เขียน+self-test เสร็จพร้อมใช้แล้ว: [`scripts/rotate-camera-secret-key.js`](scripts/rotate-camera-secret-key.js) (`SELF_TEST=1 node scripts/rotate-camera-secret-key.js` verify ได้ทุกเมื่อ) — เมื่อจะทำจริง: เจ้าของ gen key + รัน migration script + แก้ `.env` 3 เครื่องเอง (Claude ทำแทนไม่ได้ เพราะต้องเห็นค่า key ถึงจะเขียนได้ — จะกลายเป็นหลุดซ้ำ), Claude ช่วย restart/verify ส่วนที่ไม่ต้องเห็น key ได้
+
+**Route-split backlog (พบระหว่าง doc-sync audit, 2026-07-22 — วิเคราะห์เฉยๆ ยังไม่แตะโค้ด):**
+- `src/routes/cameras.js` โตเป็น **1877 บรรทัด** ทิ้งห่างไฟล์ route อื่นชัดเจน (อันดับ 2 คือ `stats.js` 1143 บรรทัด) จากการเพิ่ม EDGE-004/EDGE-005 command-channel logic + FK-child delete compensation + EMQX credential provisioning function เข้าไปในเซสชันนี้
+- Pattern **"if site≠main: `emqxPublish()` else: เรียกฟังก์ชันตรง"** ซ้ำกัน **3 จุด** ในไฟล์เดียวกัน (`detect-model`, `scan-nvr`, `delete-media`) — ตัวถอดเป็น `src/helpers/edgeCommand.js` ได้ชัดเจนสุด (`dispatchEdgeCommand(siteCode, topic, payload, inlineFallbackFn)`) ลดโค้ดซ้ำ + จุดเดียวถ้าต้องแก้ pattern นี้ในอนาคต (เช่นตอนเพิ่ม `secret` field ก็ต้องแก้ 2 ใน 3 จุดแยกกัน)
+- ยังไม่ถึงจุดที่ต้อง split เป็นหลายไฟล์ (เช่น `cameras.js` + `cameras-edge-commands.js`) — เสนอแค่ helper extraction ก่อน ประเมินใหม่อีกทีถ้าไฟล์โตต่อ
 
 ### Per-Site Access Control (Site-Scoped Viewer) — ✅ P1-P5 + D1-D3 VERIFIED DONE 2026-07-03 (code-audit, not just doc)
 > เป้า: user แยกไซต์ (VSS/BMA/Phuket) = **viewer ที่ act ได้ (ack+comment face & LPR) แต่ตั้งค่าไม่ได้** และเห็น/act เฉพาะ site ตัวเอง. **ไม่ต้อง role ใหม่** — `viewer` + `user_sites` (migration 054). role/write-block layer เสร็จแล้ว (config admin-gated ครบ).
