@@ -49,6 +49,12 @@ Vigil ingests ANPR/LPR events from supported cameras and indexes them in a searc
 
 The LPR page provides forensic search by plate number, date range, camera, and vehicle type. A statistical dashboard shows plate activity by category, per-camera breakdowns, and timeline charts.
 
+**Safety enforcement features:**
+- **No-helmet detection** — motorcycles without helmets are flagged as a separate vehicle category with a dedicated KPI card and filter
+- **Overloaded motorcycle detection (3+ riders)** — a KPI card surfaces events where rider count exceeds 2; click-through to the filtered event list
+- **Plate mismatch detection** — when the same plate is read with inconsistent vehicle characteristics across events, it is flagged as a potential stolen/cloned plate suspect; operators can review and dismiss false positives
+- **Local plate recognition** — plates registered to the site's own vehicle fleet are tracked separately, enabling distinction between resident vehicles and external visitors
+
 ### Real-Time Monitoring
 
 Every camera is probed on a heartbeat cycle. Status transitions from online to offline are detected within 60 seconds and trigger notifications.
