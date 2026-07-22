@@ -483,7 +483,9 @@ export async function registerForPush() {
 1. **Investigate-first** — Fact / Opinion แยกชัด, รอ green light
 2. **UI-first** — token + safe-area + ไม่มี emoji เป็น UI
 3. **Reproduce-before-fix** (bug only) — verify บน device ก่อนเสร็จ
-4. **No Co-Authored-By Claude** ใน commits
+4. **Advisor-led cycle** — ทุกคำสั่งที่ให้ลงมือ: PLAN → EXECUTE → AUDIT → STOP → COMMIT. หยุดรอ owner confirm ก่อน commit เสมอ (ไฟเขียว execute ≠ ไฟเขียว commit)
+
+> Commit: ห้าม `Co-Authored-By: Claude` — sole authorship
 
 ---
 
