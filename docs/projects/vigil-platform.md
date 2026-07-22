@@ -52,8 +52,10 @@ The LPR page provides forensic search by plate number, date range, camera, and v
 **Safety enforcement features:**
 - **No-helmet detection** — motorcycles without helmets are flagged as a separate vehicle category with a dedicated KPI card and filter
 - **Overloaded motorcycle detection (3+ riders)** — a KPI card surfaces events where rider count exceeds 2; click-through to the filtered event list
+- **Seatbelt detection** — drivers without seatbelts are flagged separately; available on supported Dahua ITC cameras
 - **Plate mismatch detection** — when the same plate is read with inconsistent vehicle characteristics across events, it is flagged as a potential stolen/cloned plate suspect; operators can review and dismiss false positives
 - **Local plate recognition** — plates registered to the site's own vehicle fleet are tracked separately, enabling distinction between resident vehicles and external visitors
+- **LPR Watchlist** — plates added to a watchlist trigger immediate alerts with an acknowledgement workflow when detected by any camera
 
 ### Real-Time Monitoring
 
@@ -214,9 +216,9 @@ Vigil Platform is organized into four layers:
 
 ## Security
 
-Vigil Platform underwent a formal security audit covering the full codebase: backend API, frontend, database, and infrastructure. The audit followed the OWASP Top 10 methodology and included PDPA compliance verification.
+Vigil Platform has undergone six rounds of security audit covering the full codebase: backend API, frontend, database, and infrastructure. The most recent round was conducted as a live low-impact probe against the running production system — not a static source review. Audits follow the OWASP Top 10 methodology and include PDPA compliance verification.
 
-**A formal multi-round security audit was conducted. All identified security issues have been resolved.**
+**Six formal security audits have been conducted, including a live production pentest. Critical and high-severity findings have been resolved; remaining open items are intentionally deferred with documented rationale.**
 
 ### Authentication and Authorization
 
