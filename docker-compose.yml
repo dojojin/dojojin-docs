@@ -9,6 +9,11 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: vigil-postgres
+    # Parallel-query DSM lives in /dev/shm; Docker's 64 MB default is exhausted
+    # by the LPR/faces/reports stats endpoints (many concurrent aggregations over
+    # 100k+ rows) → "could not resize shared memory segment: No space left on
+    # device" → 500s → dashboard charts render 0. 1 GB gives ample headroom.
+    shm_size: 1gb
     environment:
       POSTGRES_DB: vigil_platform
       POSTGRES_USER: vigil_sql
@@ -44,11 +49,14 @@ services:
       # security level equivalent; EMQX dashboard remains localhost-only.
       - "1883:1883"                # MQTT — all interfaces; AUTHN enforced
       - "127.0.0.1:18083:18083"    # Dashboard UI — localhost only (never expose)
+      - "127.0.0.1:8083:8083"      # MQTT-over-WS — localhost only; reached publicly via Cloudflare tunnel (/mqtt). AUTHN enforced.
     environment:
       # SEC-001 Phase 2: AUTHN on — all clients must present credentials.
       # Run scripts/emqx-provision.js once after container restart to create users.
       EMQX_LISTENERS__TCP__DEFAULT__ENABLE_AUTHN: "true"
-      EMQX_LISTENERS__WS__DEFAULT__ENABLE_AUTHN: "false"
+      # WS authn ON — the WS listener is now reachable from the public Cloudflare
+      # tunnel (edge bridge), so it MUST require credentials like TCP does.
+      EMQX_LISTENERS__WS__DEFAULT__ENABLE_AUTHN: "true"
       # Disable EMQX's cluster autoheal/clustering (single-node deployment)
       EMQX_NODE__NAME: "emqx@127.0.0.1"
       EMQX_CLUSTER__DISCOVERY_STRATEGY: "manual"

@@ -1,10 +1,12 @@
 # REF_face-recognition — Face Recognition Plan
 
-> **Status: PLANNED — ยังไม่ได้ implement**
-> บันทึกแผนงาน, สถาปัตยกรรม, hardware sizing, และขั้นตอนพัฒนาไว้เป็น reference
-> สำหรับ session ที่จะเริ่มทำจริง
+> **Status: ✅ FR.1–FR.2 IMPLEMENTED (2026-06-17)**
+> FR.1 (Hikvision camera-side recognition + ingestion) ✅ ทำงานแล้ว.
+> FR.2 (body appearance + Face Capture merge) ✅ ทำงานแล้ว.
+> FR.3 (server-side ML / InsightFace vector search) = ยังไม่ implement.
+> ไฟล์นี้ยังเป็น reference สำหรับ §3 (Option B InsightFace) เมื่อถึงเวลา.
 >
-> Last updated: 2026-06-08 · v1.5.0
+> Last updated: 2026-06-17 · v1.5.3
 > Load when: วางแผน / เริ่มทำ Face Recognition feature ใดก็ตาม
 
 ---

@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Loading… — Dev Portal</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    /* Markdown-rendered content overrides */
+    .md-content { padding-top: 0.5rem; }
+
+    .md-content h1 {
+      font-size: 26px; font-weight: 700;
+      color: var(--text);
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 1rem;
+      margin: 0 0 2rem 0;
+    }
+
+    .md-content h2 {
+      font-size: 19px; font-weight: 700;
+      color: var(--text);
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 0.5rem;
+      margin: 2.5rem 0 1rem 0;
+    }
+
+    .md-content h3 {
+      font-size: 15px; font-weight: 600;
+      color: var(--text);
+      margin: 1.75rem 0 0.6rem 0;
+    }
+
+    .md-content h4 {
+      font-size: 13px; font-weight: 600;
+      color: var(--dim);
+      margin: 1.25rem 0 0.4rem 0;
+      text-transform: none;
+      letter-spacing: 0;
+    }
+
+    .md-content p {
+      color: var(--text);
+      line-height: 1.75;
+      margin-bottom: 1rem;
+      font-size: 14px;
+    }
+
+    .md-content a { color: var(--accent); text-decoration: none; }
+    .md-content a:hover { text-decoration: underline; }
+
+    .md-content code {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 2px 6px;
+      font-size: 11.5px;
+      font-family: 'SF Mono', Consolas, monospace;
+      color: var(--accent);
+    }
+
+    .md-content pre {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem;
+      overflow-x: auto;
+      margin-bottom: 1rem;
+      line-height: 1.6;
+    }
+
+    .md-content pre code {
+      background: none;
+      border: none;
+      padding: 0;
+      font-size: 12px;
+      color: var(--text);
+    }
+
+    .md-content ul, .md-content ol {
+      padding-left: 1.5rem;
+      color: var(--text);
+      line-height: 1.85;
+      margin-bottom: 1rem;
+      font-size: 14px;
+    }
+
+    .md-content li { margin-bottom: 0.3rem; }
+
+    .md-content table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      margin-bottom: 1.5rem;
+    }
+
+    .md-content th {
+      background: var(--surface2);
+      color: var(--text);
+      font-weight: 600;
+      text-align: left;
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+    }
+
+    .md-content td {
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      color: var(--dim);
+      vertical-align: top;
+      line-height: 1.6;
+    }
+
+    .md-content tr:nth-child(even) td { background: rgba(33,38,45,0.5); }
+
+    .md-content blockquote {
+      border-left: 3px solid var(--accent-dim);
+      background: rgba(88,166,255,0.05);
+      padding: 0.75rem 1rem;
+      margin: 1rem 0;
+      border-radius: 0 6px 6px 0;
+    }
+
+    .md-content blockquote p {
+      margin-bottom: 0;
+      color: var(--dim);
+    }
+
+    .md-content hr {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 2rem 0;
+    }
+
+    .md-content img {
+      max-width: 100%;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+    }
+
+    .md-content strong { color: var(--text); font-weight: 600; }
+    .md-content em { color: var(--dim); font-style: italic; }
+
+    /* File breadcrumb */
+    .md-crumb {
+      font-size: 12px;
+      color: var(--dim);
+      margin-bottom: 0.75rem;
+    }
+    .md-crumb a { color: var(--accent); text-decoration: none; }
+    .md-crumb a:hover { text-decoration: underline; }
+
+    .md-filename {
+      font-size: 13px;
+      color: var(--dim);
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 2px 8px;
+      display: inline-block;
+      font-family: 'SF Mono', Consolas, monospace;
+      margin-bottom: 1.5rem;
+    }
+
+    /* Loading / error states */
+    .md-state {
+      padding: 3rem 0;
+      text-align: center;
+      color: var(--dim);
+      font-size: 14px;
+    }
+
+    @media (max-width: 768px) {
+      .md-content table {
+        display: block;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        font-size: 12px;
+        max-width: 100%;
+      }
+      .md-content th, .md-content td { padding: 6px 8px; white-space: nowrap; }
+      .md-content td:last-child { white-space: normal; }
+    }
+  </style>
+</head>
+<body>
+<div id="overlay"></div>
+<div class="layout">
+<nav class="nav" id="nav"></nav>
+<button id="ham">☰</button>
+
+<div class="main">
+  <div class="md-crumb">
+    <a href="index.html">← Dev Portal</a>
+    <span id="crumb-file"></span>
+  </div>
+  <div id="md-content" class="md-state">กำลังโหลด...</div>
+</div>
+</div>
+
+<script src="vendor/marked.min.js"></script>
+<script src="nav.js"></script>
+<script>
+(function () {
+  const params = new URLSearchParams(location.search);
+  const src = params.get('src');
+  const contentEl = document.getElementById('md-content');
+  const crumbFile = document.getElementById('crumb-file');
+
+  if (!src) {
+    contentEl.innerHTML = '<p style="color:var(--red)">Error: ไม่ระบุ src parameter</p>';
+    return;
+  }
+
+  const filename = src.split('/').pop();
+  document.title = filename + ' — Dev Portal';
+  crumbFile.textContent = ' / ' + filename;
+
+  marked.setOptions({ gfm: true, breaks: false });
+
+  fetch(src)
+    .then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status + ' — ' + src);
+      return r.text();
+    })
+    .then(function (text) {
+      contentEl.className = 'md-content';
+      contentEl.innerHTML =
+        '<div class="md-filename">' + filename + '</div>' +
+        marked.parse(text);
+    })
+    .catch(function (err) {
+      contentEl.className = 'md-state';
+      contentEl.innerHTML =
+        '<p style="color:var(--red)">โหลดไม่ได้: ' + err.message + '</p>' +
+        '<p style="margin-top:0.5rem;font-size:12px">ต้องเปิดผ่าน local server — ดู <a href="index.html">Navigator</a></p>';
+    });
+}());
+</script>
+</body>
+</html>

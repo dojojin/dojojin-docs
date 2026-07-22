@@ -36,6 +36,7 @@ const base = {
   interpreter: '/opt/homebrew/opt/node@24/bin/node',
   env: {
     NODE_NO_WARNINGS: '1',
+    NODE_ENV: 'production',
   },
 };
 
@@ -77,6 +78,16 @@ module.exports = {
       ...base,
       name: 'alert-worker',
       script: 'alert-worker.js',
+      restart_delay: 3000,
+    },
+    {
+      // CS7 — standalone LPR/face push receiver (127.0.0.1:3003). Stays up across
+      // api-server redeploys so the /lpr forward (a downstream gov system's only
+      // feed) never drops. Goes LIVE only when the cloudflared ingress is flipped
+      // to route /lpr + /face-push here (until then api-server still serves them).
+      ...base,
+      name: 'lpr-receiver',
+      script: 'lpr-receiver.js',
       restart_delay: 3000,
     },
   ],

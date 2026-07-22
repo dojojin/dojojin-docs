@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LPR Redesign — Draft Demo</title>
+
+<!-- DRAFT/DEMO ONLY — links real production assets so the preview is pixel-faithful.
+     CSP-compliant (external css/js, no inline script, no inline <style>).
+     Served at: /others/demo/  (auth-gated — log in to dashboard first).
+     Filter OPTIONS use real DB values; table ROWS are mock (not live queries). -->
+<script src="/theme-init.js"></script>
+<link rel="stylesheet" href="/vendor/fonts/fonts.css">
+<link rel="stylesheet" href="/vendor/air-datepicker/air-datepicker.css">
+<link rel="stylesheet" href="/vendor/air-datepicker/theme-vigil.css">
+<script src="/vendor/air-datepicker/air-datepicker.min.js"></script>
+<script src="/vendor/chartjs/chart-4.4.1.umd.min.js"></script>
+<link rel="stylesheet" href="/index.css">
+<link rel="stylesheet" href="lpr-demo.css?v=rf10">
+</head>
+<body>
+<div class="demo-wrap">
+
+  <div class="demo-banner">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+    DRAFT — demo ออกแบบใหม่ · ตัวเลือก filter = ค่าจริงจาก DB · ข้อมูลในการ์ด/กราฟ = mock (ยังไม่ query สด)
+  </div>
+  <div class="demo-toolbar">
+    <button class="btn btn-secondary" id="btnTheme">สลับ Light / Dark</button>
+  </div>
+
+  <div class="page-head">
+    <div>
+      <h1>ป้ายทะเบียน · ANPR</h1>
+      <div class="sub">ตรวจจับและค้นหาป้ายทะเบียนรถจากกล้อง LPR</div>
+    </div>
+    <div class="tabs" id="lprTabBar">
+      <button class="tab active" data-tab="overview">ภาพรวม</button>
+      <button class="tab" data-tab="alerts">การแจ้งเตือน<span class="tab-badge" id="alertTabBadge"></span></button>
+      <button class="tab" data-tab="search">ค้นหา</button>
+      <button class="tab" data-tab="watchlist">เฝ้าระวัง</button>
+      <button class="tab" data-tab="settings">ตั้งค่า</button>
+    </div>
+  </div>
+
+  <!-- ===================== TAB: OVERVIEW ===================== -->
+  <section id="tab-overview">
+    <div class="period-row">
+      <div class="seg" id="periodBar">
+        <button data-p="hour">ชั่วโมงนี้</button>
+        <button data-p="today" class="active">วันนี้</button>
+        <button data-p="yesterday">เมื่อวาน</button>
+        <button data-p="week">สัปดาห์นี้</button>
+        <button data-p="month">เดือนนี้</button>
+        <button data-p="custom">กำหนดเอง</button>
+      </div>
+      <div class="custom-range" id="customRange" style="display:none">
+        <input class="form-input" id="pFrom" placeholder="ตั้งแต่" readonly>
+        <span style="color:var(--text-secondary)">–</span>
+        <input class="form-input" id="pTo" placeholder="ถึง" readonly>
+      </div>
+    </div>
+
+    <div class="ov-top">
+      <div class="kpi-grid" id="kpiGrid"></div>
+      <div class="alarm-block" id="alarmBlock">
+        <div class="alarm-head"><span class="alarm-head-dot"></span>เฝ้าระวังที่ตรวจพบ<a class="alarm-head-link" data-goto-alerts>ดูทั้งหมด →</a></div>
+        <div class="alarm-strip" id="alarmStrip"></div>
+      </div>
+    </div>
+
+    <div class="chart-grid cols-2">
+      <div class="card">
+        <div class="card-title">ปริมาณรายชั่วโมง</div>
+        <div class="chart-box"><canvas id="chHourly"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">ทิศทาง เข้า / ออก</div>
+        <div class="chart-box"><canvas id="chDir"></canvas></div>
+        <div class="inline-note" id="dirNote"></div>
+      </div>
+    </div>
+
+    <div class="chart-grid cols-2">
+      <div class="card">
+        <div class="card-title">จังหวัดที่พบมากที่สุด</div>
+        <div class="chart-box tall"><canvas id="chProvince"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">ประเภทรถ</div>
+        <div class="chart-box tall"><canvas id="chType"></canvas></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:4px">
+      <div class="card-title">ป้ายล่าสุด<span class="live-dot"></span><span class="live-label">อัปเดตอัตโนมัติทุก 3 วิ</span></div>
+      <div class="lpr-grid" id="latestGrid"></div>
+    </div>
+  </section>
+
+  <!-- ===================== TAB: ALERTS / การแจ้งเตือน ===================== -->
+  <section id="tab-alerts" style="display:none">
+    <div class="alert-head">
+      <div>
+        <div class="alert-title">การแจ้งเตือนเฝ้าระวัง</div>
+        <div class="alert-sub" id="alertCount">—</div>
+      </div>
+      <div class="alert-controls">
+        <div class="seg" id="alertPeriodBar"></div>
+        <input class="form-input alert-search" id="alertSearch" placeholder="ค้นหา ป้าย / จังหวัด / หมายเหตุ">
+      </div>
+    </div>
+    <div class="seg alert-filter" id="alertFilterBar"></div>
+    <div class="alert-feed" id="alertFeed"></div>
+    <div class="alert-pager" id="alertPager"></div>
+  </section>
+
+  <!-- ===================== TAB: SEARCH ===================== -->
+  <section id="tab-search" style="display:none">
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-title">ตัวกรอง</div>
+      <div class="filter-grid">
+        <div class="form-group">
+          <label class="form-label">ป้ายทะเบียน</label>
+          <input class="form-input" id="fPlate" placeholder="เช่น กท 4095">
+        </div>
+        <div class="form-group">
+          <label class="form-label">กล้อง</label>
+          <select class="form-input" id="fCam"></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">จังหวัด</label>
+          <select class="form-input" id="fRegion"></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">ประเภทรถ</label>
+          <select class="form-input" id="fType"></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">สีรถ</label>
+          <select class="form-input" id="fVColor"></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">สีป้าย</label>
+          <select class="form-input" id="fPColor"></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">การติดป้าย</label>
+          <select class="form-input" id="fHasPlate">
+            <option value="">ทั้งหมด</option>
+            <option value="1">ติดป้ายทะเบียน</option>
+            <option value="0">ไม่ติดป้ายทะเบียน *</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">เลน</label>
+          <select class="form-input" id="fLane"></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">จุด / ทิศทาง</label>
+          <select class="form-input" id="fGate"></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">ตั้งแต่</label>
+          <input class="form-input" id="fFrom" placeholder="dd/mm/yyyy --:--" readonly>
+        </div>
+        <div class="form-group">
+          <label class="form-label">ถึง</label>
+          <input class="form-input" id="fTo" placeholder="dd/mm/yyyy --:--" readonly>
+        </div>
+      </div>
+      <div class="settings-desc" style="margin:12px 0 0">* "ไม่ติดป้ายทะเบียน" ต้องแก้ ingestion ให้เก็บ vehicle detection ที่อ่านป้ายไม่ได้ก่อน (ปัจจุบัน DB เก็บเฉพาะแถวที่มีป้าย)</div>
+      <div class="filter-actions">
+        <button class="btn btn-secondary" id="btnReset">ล้าง</button>
+        <button class="btn btn-primary" id="btnSearch">ค้นหา</button>
+      </div>
+    </div>
+
+    <div class="results-bar">
+      <div class="results-count">พบ <b id="resCount">128</b> รายการ</div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:11px;color:var(--text-secondary)">เรียงโดย</span>
+        <select class="form-input" style="padding:6px 9px" id="fSort">
+          <option>เวลาล่าสุด</option><option>เวลาเก่าสุด</option><option>ความมั่นใจสูงสุด</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="lpr-grid" id="searchGrid"></div>
+
+    <div class="pager">
+      <div class="seg">
+        <button>◀</button><button class="active">1</button><button>2</button><button>3</button><button>▶</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== TAB: WATCHLIST (เฝ้าระวัง) ===================== -->
+  <section id="tab-watchlist" style="display:none">
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-title">เพิ่มป้ายเฝ้าระวัง</div>
+      <div class="filter-grid">
+        <div class="form-group">
+          <label class="form-label">ป้ายทะเบียน *</label>
+          <input class="form-input" id="wlPlate" placeholder="เช่น 1กข 1234" style="text-transform:uppercase">
+        </div>
+        <div class="form-group">
+          <label class="form-label">จังหวัด</label>
+          <select class="form-input" id="wlRegion"></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">กลุ่มเฝ้าระวัง</label>
+          <select class="form-input" id="wlGroup"></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">โหมดจับคู่แจ้งเตือน</label>
+          <select class="form-input" id="wlMode">
+            <option value="plate">ป้ายทะเบียนอย่างเดียว</option>
+            <option value="plate_region">ป้าย + จังหวัด (ตรงทั้งคู่)</option>
+          </select>
+        </div>
+        <div class="form-group full">
+          <label class="form-label">หมายเหตุ / รายละเอียด</label>
+          <input class="form-input" id="wlNote" placeholder="เช่น เลขหมายจับ, สาเหตุ, ผู้แจ้ง">
+        </div>
+        <div class="form-group">
+          <label class="form-label">รูป Reference</label>
+          <input class="form-input" id="wlImg" placeholder="(เลือกไฟล์ — demo)" readonly>
+        </div>
+        <div class="form-group">
+          <label class="form-label">แจ้งเตือนทันทีเมื่อพบ</label>
+          <label class="switch-row"><input type="checkbox" id="wlInstant" checked> ส่ง LINE ทันที</label>
+        </div>
+      </div>
+      <div class="filter-actions">
+        <button class="btn btn-primary" id="btnWlAdd">เพิ่มเข้าเฝ้าระวัง</button>
+      </div>
+    </div>
+
+    <div class="wl-groupbar" id="wlGroupBar"></div>
+    <div id="wlList"></div>
+  </section>
+
+  <!-- ===================== TAB: SETTINGS (ตั้งค่าระบบป้ายทะเบียน) ===================== -->
+  <section id="tab-settings" style="display:none">
+    <div class="settings-note">
+      ในระบบจริง เมนูนี้จะอยู่ใต้ <b>การตั้งค่า → การตั้งค่าระบบป้ายทะเบียน</b> · กราฟ + KPI หน้าภาพรวมจะอิงค่าที่ตั้งตรงนี้
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-title">ทิศทางกล้อง (เข้า / ออก)</div>
+      <p class="settings-desc">กำหนดทิศทางต่อกล้อง (เหมือนการตั้งค่า Events) — แต่ละกล้อง LPR = <b>ขาเข้า</b> / <b>ขาออก</b> (นับทุกเลน) หรือ <b>ไม่กำหนด</b> · กล้องที่ไม่กำหนดจะไม่แสดงในกราฟทิศทาง · กำหนดได้อิสระต่อจุด</p>
+      <div id="gateList"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">ประเภทรถที่แสดงผล</div>
+      <p class="settings-desc">ดึงประเภทที่พบจริงในฐานข้อมูล · เปิด/ปิดการแสดงผล และตั้งชื่อภาษาไทยได้</p>
+      <div id="vtypeList"></div>
+    </div>
+  </section>
+
+</div>
+
+<!-- ===================== DETAIL MODAL ===================== -->
+<div class="lpr-modal-overlay" id="lprModal" style="display:none">
+  <div class="lpr-modal">
+    <button class="lpr-modal-x" id="lprModalX" aria-label="ปิด">✕</button>
+    <label class="lm-simtoggle"><input type="checkbox" id="lmSimDeleted"> จำลองสถานะ: ภาพถูกลบแล้ว (เกินอายุเก็บรูป 7 วัน)</label>
+    <div class="lm-grid">
+      <div class="lm-left">
+        <div class="lm-box">
+          <span class="lm-cap">ป้ายจริง (crop จากกล้อง)</span>
+          <div id="lmReal"></div>
+        </div>
+        <div class="lm-box">
+          <span class="lm-cap">ระบบอ่านได้ (เทียบ)</span>
+          <div id="lmPlaque" style="display:flex;justify-content:center;padding:12px 0"></div>
+        </div>
+      </div>
+      <div class="lm-right">
+        <div class="lm-box lm-snapbox">
+          <span class="lm-cap">Snapshot ฉากเต็ม</span>
+          <div id="lmScene"></div>
+        </div>
+      </div>
+    </div>
+    <div class="lm-data" id="lmData"></div>
+  </div>
+</div>
+
+<!-- ALERT detail modal (การแจ้งเตือน) — captured vs reference compare + ack -->
+<div class="lpr-modal-overlay" id="alertModal" style="display:none">
+  <div class="lpr-modal am-modal">
+    <button class="lpr-modal-x" id="alertModalX" aria-label="ปิด">✕</button>
+    <div class="am-head"><span class="alert-badge" id="amBadge"></span><span class="am-plate" id="amPlate"></span><span class="am-time" id="amTime"></span></div>
+    <label class="lm-simtoggle am-toggle"><input type="checkbox" id="amSimDeleted"> จำลองสถานะ: ภาพจากกล้องถูกลบแล้ว (เกินอายุเก็บรูป 7 วัน)</label>
+    <div class="am-compare">
+      <div class="lm-box am-side">
+        <span class="lm-cap">ภาพจากกล้อง (ที่ตรวจพบ)</span>
+        <div class="am-img" id="amCaptured"></div>
+        <div class="am-platerow">
+          <div class="am-realcrop" id="amReal"></div>
+          <div class="am-plaque" id="amPlaque"></div>
+        </div>
+      </div>
+      <div class="lm-box am-side">
+        <span class="lm-cap">ภาพอ้างอิง (จากหมายจับ / ผู้แจ้ง)</span>
+        <div class="am-img" id="amRef"></div>
+      </div>
+    </div>
+    <div class="lm-data" id="amData"></div>
+    <div class="am-note" id="amNote"></div>
+    <div class="am-foot">
+      <button class="btn btn-primary am-ack" id="amAck">รับทราบ</button>
+      <span class="am-ack-log" id="amAckLog"></span>
+      <div class="am-viewbtns">
+        <button class="btn btn-secondary" id="amViewFull">ดูรูปขนาดเต็ม</button>
+        <button class="btn btn-secondary" id="amViewRef">ดูรูปภาพอ้างอิง</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- simple full-image lightbox (demo) — click anywhere to close -->
+<div class="img-lightbox" id="imgLightbox" style="display:none"><div class="il-inner" id="ilInner"></div></div>
+
+<script src="/lpr-plaque.js?v=rf10"></script>
+<script src="lpr-demo.js?v=rf10"></script>
+</body>
+</html>

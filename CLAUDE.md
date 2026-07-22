@@ -13,6 +13,8 @@
 > เพิ่มไฟล์ `DESIGN.md` (role `GUIDE_`); log เหตุผลใน `DECISIONS.md` #142–147.
 > · 2026-05-27 — owner's machine เปิด `.claude/settings.local.json` = `{"model":"opus"}`
 > (effective default = opus เฉพาะเครื่องนี้; ดู Enforcement).
+> · 2026-07-20 — Working Agreement #1 เพิ่มกฎภาษา: ระหว่าง investigate/audit/
+> reproduce ใช้อังกฤษได้ แต่สรุปผล (Fact/Opinion/ข้อเสนอแนะ) ต้องเป็นไทยเสมอ.
 
 ---
 
@@ -36,6 +38,11 @@
 **ข้อยกเว้น:** ถ้าคำสั่งเป็นไฟเขียวในตัว ("ทำเลย" / "จัดการเลย" / "ต่อเลย" /
 อนุมัติแผนใน plan mode) = ตัดสินใจแล้ว → ลงมือได้ทันที ไม่ต้องวนถามซ้ำ. แต่
 ผลลัพธ์ยังต้องรายงานแบบแยก Fact / Opinion เสมอ.
+
+**ภาษาที่ใช้รายงาน:** ระหว่างลงมือ (investigate / audit / reproduce / progress
+update ระหว่างทาง) ใช้ภาษาอังกฤษได้ปกติ. แต่เมื่อสรุปผล — ขั้น 4 (นำเสนอ Fact/Opinion)
+และทุกข้อสรุป/ข้อเสนอแนะ/คำแนะนำถึงเจ้าของ — **ต้องเป็นภาษาไทย** เสมอ (คง
+keyword/โค้ด/ชื่อไฟล์เป็นอังกฤษได้ตามปกติ).
 
 ### 2. UI-design-first (Responsive เป็น subset)
 
@@ -126,6 +133,28 @@ system ทุกครั้ง — spec เต็มอยู่ใน [DESIGN.
 
 > Repro template ละเอียดต่อชนิดบั๊ก (MQTT / WS / cache / ITP) อยู่ใน
 > `docs/REF_troubleshooting.md` / `GOTCHAS.md` — ไฟล์นี้เก็บแค่กฎ.
+
+### 4. Advisor-led cycle — PLAN → EXECUTE → AUDIT → STOP → COMMIT (บังคับทุกคำสั่งที่ให้ลงมือ)
+
+> เพิ่ม 2026-06-16 ตามคำสั่งเจ้าของ. เป็น **meta-process** ครอบ #1–#3 (Investigate /
+> UI / Reproduce กลายเป็นเนื้อหาภายในขั้น PLAN/AUDIT). owner ไม่ต้องสั่งซ้ำทุกครั้ง —
+> ทุกคำสั่งที่ให้ "ลงมือทำ" เดินตาม 5 ขั้นนี้โดยอัตโนมัติ.
+
+1. **PLAN — ให้ Advisor วางแผน + reproduce/audit แผนทีละขั้นก่อนลงมือ**
+   - มี codebase / process ชัดอยู่แล้ว → ดำเนินตามแผนได้เลย
+   - ยังไม่ทราบ process → ให้ Advisor ตกผลึกจนได้ **spec ที่ชัด** (absolute path + เกณฑ์เสร็จ)
+     ก่อน แล้วจึงส่งต่อให้ executor
+2. **EXECUTE — เฉพาะงานกลไกที่ spec ครบแล้วเท่านั้น → delegate ให้ subagent**
+   (Sonnet ตาม [Model Assignment Rules](#-model-assignment-rules); งานที่ spec ยังไม่ครบ ห้าม execute)
+3. **AUDIT — หลังทำเสร็จ ให้ main loop (หรือ subagent) re-run repro แล้วให้ Advisor audit ผลอีกรอบ**
+   → สรุปผล audit ให้เจ้าของดู แยก **🔵 Fact / 🟡 Opinion** ตาม #1
+   > Advisor อ่าน transcript ได้แต่ **รัน repro เองไม่ได้** — ขา runtime ต้องให้ main loop/subagent รันจริงแล้วส่งผลให้ Advisor ตรวจ
+4. **STOP — หยุดรอเจ้าของยืนยัน. ห้าม commit เองเด็ดขาดจนกว่าจะ confirm**
+5. **COMMIT — หลังเจ้าของ confirm แล้วค่อย commit**
+
+> **เส้นแบ่งสำคัญ vs #1:** ไฟเขียวของ #1 ("ทำเลย / จัดการเลย / ต่อเลย") = อนุมัติให้ **execute**
+> เท่านั้น — **ไม่ใช่** ไฟเขียวให้ **commit**. STOP ในข้อ 4 ยังบังคับเสมอ ต้องได้ confirm
+> แยกต่างหากก่อน commit ทุกครั้ง.
 
 ---
 
@@ -222,6 +251,7 @@ unclear → open `docs/ARCH_documentation-governance.md` first.**
 | [docs/REF_third-party-integration.md](docs/REF_third-party-integration.md) | `REF_` | Third-party DB integration — `v_*_public` view catalog · ops setup (CREATE USER + GRANT role + pg_hba + docker bind + SSL) · query do/don't · PDPA · change policy · decommissioning |
 | [docs/REF_api-reference.md](docs/REF_api-reference.md) | `REF_` | Full REST API reference — 126 routes across 22 groups · auth levels · request params · response shapes · WebSocket protocol |
 | [docs/REF_face-recognition.md](docs/REF_face-recognition.md) | `REF_` | **PLANNED** Face Recognition — options A/B/C · InsightFace server-side · DB schema (pgvector) · Python service · hardware sizing · Mac dev → GPU migration · PDPA · phases FR.1–FR.4 |
+| [docs/REF_edge-install.md](docs/REF_edge-install.md) | `REF_` | Edge node install guide — N150/Linux Mint 22 (Ubuntu 24.04 base), NanoMQ, cloudflared, EDGE_MODE, camera config, WSL2 vs pure Linux comparison (VIGIL-ARCH-003) |
 | [HARDWARE_SIZING_GUIDE.md](HARDWARE_SIZING_GUIDE.md) | `REF_` | Hardware sizing per camera count (G1–G5) + software scale-up plan |
 | [README.md](README.md) | Public overview | User-facing project intro (v1.5.0) |
 | [LICENSE](LICENSE) + [docs/EULA-th.md](docs/EULA-th.md) | Legal | Proprietary license + Thai EULA |
@@ -238,6 +268,9 @@ unclear → open `docs/ARCH_documentation-governance.md` first.**
 | Security / auth | + `docs/LOGIC_auth-security.md` + `GOTCHAS.md` (#36–#38) |
 | UI / design / responsive / i18n | + `DESIGN.md` + `DECISIONS.md` (#1, #42, #128, #142–145) + `GOTCHAS.md` (#29–#31, #35, #42) |
 | Multi-vendor cameras | + `docs/LOGIC_camera-ingesters.md` + `GOTCHAS.md` (#32–#33, #39–#41) |
+| Dahua ingester (snapshot / CGI / test) | + `docs/LOGIC_dahua-ingester.md` + `GOTCHAS.md` (#39, #43, #58, #73, #75) |
+| Hikvision ingester (ISAPI / face / body / people) | + `docs/LOGIC_hikvision-ingester.md` + `GOTCHAS.md` (#41, #57, #58, #62, #63) |
+| Edge node (EDGE_MODE / site edge deploy / VIGIL-ARCH-003) | + `docs/REF_edge-install.md` + `docs/LOGIC_edge-ingester-divergence.md` + `GOTCHAS.md` (#97–#99) |
 | Face Recognition (planned) | + `docs/REF_face-recognition.md` + `docs/LOGIC_face-capture.md` |
 | Map page / OpenLayers / camera grouping / Live Pulse | + `docs/LOGIC_map-features.md` + `GOTCHAS.md` (#53) |
 | Reports / Puppeteer / LINE | + `DESIGN.md` (Report PNG section) + `docs/LOGIC_stats-reports.md` + `docs/LOGIC_line-notifications.md` |

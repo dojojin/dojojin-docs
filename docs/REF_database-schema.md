@@ -181,6 +181,9 @@ LPR (License Plate Recognition) data
 | `region` | VARCHAR(50) | จังหวัด |
 | `bbox_x/y/width/height` | INT | bounding box |
 | `detected_at` | TIMESTAMPTZ | |
+| `vehicle_type` `vehicle_color` `vehicle_brand` | VARCHAR | ANPR attrs (brand = Hik numeric code) |
+| `plate_image` | VARCHAR | path ของภาพ crop ป้าย |
+| `no_seatbelt` | BOOLEAN | **migration 073** — ผู้ขับ/ผู้โดยสารไม่คาดเข็มขัด (parse `pilot/vicepilotsafebelt` ตอน ingest); partial index `idx_plates_no_seatbelt … WHERE no_seatbelt`; แทน filter LIKE rawXml (decision #214) |
 
 ---
 
@@ -347,8 +350,12 @@ Key/value store สำหรับ settings และ white-label branding
 
 | Key | Default | คำอธิบาย |
 |---|---|---|
-| `data_retention_days` | `365` | เก็บ events กี่วัน (max 730) |
+| `data_retention_days` | `365` | เก็บ events (general) กี่วัน (max 730) — **ยกเว้น anprAlarm** (decision #213) |
 | `snapshot_retention_days` | `30` | เก็บ snapshot images กี่วัน (max 365) |
+| `lpr_retention_days` | `30` | เก็บ LPR row (anprAlarm+license_plates) — sole authority ของ LPR (max 730) |
+| `lpr_image_retention_days` | `7` | เก็บ LPR image files (≤ lpr_retention) |
+| `rawxml_retention_days` | `90` | **migration 074** — strip `raw_json.rawXml` เก่ากว่านี้ (class-D, `enforceRawXmlRetention`, decision #212) |
+| `clip_retention_days` `appearances_retention_days` | `30` `40` | clip files / biometric rows |
 | `display_timezone` | `Asia/Bangkok` | timezone สำหรับ date boundaries |
 | `counter_dedup_mode` | `state` | `state` / `object_window` / `none` |
 | `comparison_mode` | `rolling` | `rolling` / `calendar` |
@@ -630,7 +637,14 @@ GROUP BY status;
 | migration_038 | `cameras`: drop dead columns `http_password` + `rtsp_url` (decision #193, SEC-015) |
 | migration_039 | Drop dead GIN index `idx_events_raw_gin` on `events.raw_json` (0 lifetime scans) |
 | migration_040 | Drop trgm GIN index `idx_events_type_trgm` on `events.event_type` (1 lifetime scan, decision perf audit 2026-06-06) |
+| _041–070_ | (LPR gates/watchlist/alerts, sites/multi-site, appearances, edge_status m.067, reports — see `db/` + git) |
+| migration_071 | `events`: keyset index `idx_events_time_id (event_time DESC, id DESC)` — LPR keyset pagination (decision #211) |
+| migration_072 | `edge_status`: เพิ่ม `snapshot_oldest (DATE)`, `snapshot_dirs (INT)` — edge snapshot inventory (decision #214) |
+| migration_073 | `license_plates`: เพิ่ม `no_seatbelt (BOOLEAN)` + partial index `idx_plates_no_seatbelt WHERE no_seatbelt` (decision #214) |
+| migration_074 | `system_settings`: seed `rawxml_retention_days = 90` (class-D retention, decision #212) |
+
+> **`edge_status`** (migration 067, edge monitoring): `site_id PK → sites(code)`, `last_seen_at`, `disk_free_gb`, `disk_total_gb`, `bridge_forwarded/dropped/remote/local`, `pm2_json JSONB`, **`snapshot_oldest DATE`**, **`snapshot_dirs INT`** (m.072). Upsert โดย `mqtt-subscriber.recordEdgeHeartbeat()` จาก edge heartbeat; snapshot fields ใช้ COALESCE กัน NULL clobber.
 
 ---
 
-<sub>End of REF_database-schema.md · Vigil Platform v1.5.3 · 2026-06-08</sub>
+<sub>End of REF_database-schema.md · Vigil Platform v1.5.3 · 2026-07-01</sub>

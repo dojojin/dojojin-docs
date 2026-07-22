@@ -83,6 +83,14 @@ Hikvision Face Capture cameras feed a dedicated **"ภาพใบหน้า" 
 - Filterable gallery + demographic summary bar
 - Per-face detail modal: full-frame background + pre-alarm clip + attribute table
 
+### 📋 License Plate Recognition (ANPR) — **v1.5.3**
+Hikvision ITCCAM ANPR HTTP-push ingester feeds a dedicated **"ป้ายทะเบียน" gallery** with search, watchlist, and KPI:
+- **Gallery tabs**: Latest (24h) · Search (text/camera/region/date) · Watchlist (flag plates → LINE alerts)
+- **Plate search**: Text search, camera filter, geographic region (province), date range
+- **Watchlist management**: Admin-gated flag/unflag, rules auto-fire alerts, per-recipient toggle
+- **KPI dashboard**: Today total plates, unique plates, top brands (synthetic DLT plaque display)
+- **Data persistence**: LPR events normalized into shared `license_plates` table (same retention policy as events)
+
 ### 🎥 Pre-alarm Video Clip Capture — **v1.2.1 (Phase 6.1)**
 - 24/7 RTSP rolling buffer per camera (Stream 2 — ~1080p / 2 Mbps)
 - Event triggers MP4 dump (configurable pre/post seconds); all three vendors supported
@@ -285,7 +293,7 @@ Three daily background jobs:
 
 ### Prerequisites
 - macOS / Linux with Docker
-- Node.js 18+
+- Node.js 22 LTS
 - Cameras with MQTT / ISAPI / CGI enabled
 
 ### Installation
@@ -407,21 +415,8 @@ vigil-platform/
 │   ├── db_migration_011_analytics_event_display.sql  # Phase 7.1
 │   ├── db_migration_012_alert_quiet_hours.sql        # Phase 7.2
 │   ├── db_migration_013_report_schedules.sql         # Phase 7.3
-│   ├── db_migration_015_report_schedule_send_days.sql # Phase 7.4 day pickers
-│   ├── db_migration_016_license.sql                  # Phase 8 license + EULA
-│   ├── db_migration_017_auditor_role.sql             # Auditor role
-│   ├── db_migration_018_camera_offline_alerts.sql    # Ph.1 camera alerts + status log
-│   ├── db_migration_019_escalate_once.sql            # Ph.1 escalate_once flag
-│   ├── db_migration_021_report_history.sql           # Ph.2 report history
-│   ├── db_migration_022_report_health_type.sql       # Ph.3 health report type
-│   ├── db_migration_023_pending_recipients.sql       # LINE self-service onboarding
-│   ├── db_migration_024_camera_audit_log.sql         # Camera audit log
-│   ├── db_migration_025_events_snapshot_columns.sql  # Snapshot column cleanup
-│   ├── db_migration_026_line_oa_basic_id.sql         # LINE QR code
-│   ├── db_migration_027_third_party_views.sql        # 3rd-party read-only views
-│   ├── db_migration_028_blocked_recipients.sql       # LINE block list
-│   ├── db_migration_029_map_settings.sql             # Mapbox token in DB
-│   └── db_migration_030_trgm_event_type.sql          # pg_trgm GIN index
+│   ├── …                                             # migrations 014–044
+│   └── db_migration_045_alert_min_likelihood.sql     # latest; 47 files total
 │
 ├── scripts/
 │   ├── backup.sh                                     # pg_dump -Fc → backups/
@@ -446,12 +441,14 @@ vigil-platform/
 ├── camera-groups.json
 ├── map-areas.json            # (gitignored)
 │
-├── dashboard/                # Frontend (served as static)
-│   ├── index.html            # Main dashboard SPA (15+ pages)
-│   ├── dashboard.js          # All UI logic
+├── dashboard/                # Frontend SPA (Vanilla JS, 27 files; served as static)
+│   ├── index.html            # Main SPA shell (15+ pages)
+│   ├── dashboard.js          # Core router/bootstrap (~1,379 lines; S5/MAINT-FE-001 ✅)
+│   ├── page-*.js             # 19 page modules (alerts, stats, events, map, cameras, …)
 │   ├── i18n.js               # Bilingual engine (Thai / English)
 │   ├── icons.svg             # Self-hosted SVG sprite (18 symbols)
 │   ├── design-tokens.js      # JS palette + token() helper
+│   ├── theme-init.js         # Theme bootstrap (runs before DOM ready)
 │   ├── report-template.js    # Shared report HTML builder
 │   ├── report-print.html     # Puppeteer print target (auth-gated)
 │   ├── login.html            # Brand-aware
@@ -467,8 +464,11 @@ vigil-platform/
     ├── ingesters/
     │   ├── hikvision-isapi.js  # Hikvision ISAPI Alert Stream
     │   └── dahua-cgi.js        # Dahua CGI VCA event stream
-    ├── routes/
-    │   └── categories.js     # Categories & mapping-rules routes
+    ├── routes/               # 19 route modules — factory pattern (S4/MAINT-2T-001 ✅)
+    │   ├── cameras.js  stats.js  events.js  line.js  map.js  health.js
+    │   ├── alert-rules.js  reports.js  report-schedules.js  appearances.js
+    │   ├── auth.js  users.js  groups.js  settings.js  categories.js
+    │   └── ops.js  branding.js  license.js  eula.js
     ├── media-recorder.js     # 24/7 RTSP rolling buffer + clip dump
     ├── migrate.js            # Schema migration runner
     ├── auth.js               # bcrypt + sessions + RBAC
@@ -477,8 +477,12 @@ vigil-platform/
     ├── line-sender.js        # LINE Messaging API + imgbb
     ├── report-renderer.js    # Puppeteer (PDF) + SVG+sharp (PNG health report)
     ├── stats-summary-route.js # Executive Summary / Security Morning Briefing aggregator
+    ├── push-sender.js        # Expo Push API — mobile push notifications
+    ├── crypto-creds.js       # AES-256-GCM encryption for camera credentials
+    ├── color-utils.js        # XYZ→color name for Bosch IVA appearance payloads
+    ├── singleton.js          # App-wide singleton store (pool, wss)
     ├── constants.js          # Shared constants (OFFLINE_THRESHOLD_SEC, etc.)
-    └── simulator.js          # Synthetic MQTT event generator
+    └── simulator.js          # Synthetic MQTT event generator (dev only)
 ```
 
 ---
@@ -486,7 +490,7 @@ vigil-platform/
 ## 🛠️ Tech Stack
 
 **Backend (10 direct deps):**
-- Node.js 18+ · Express 5 · WebSocket (ws)
+- Node.js 22 LTS · Express 5 · WebSocket (ws)
 - PostgreSQL 16 (Docker, with `LISTEN/NOTIFY` push)
 - **EMQX 5.8** (Docker — tolerant of legacy Bosch MQTT 3.1 packets; per-camera auth)
 - Ingesters: `mqtt-subscriber.js` (Bosch) · `ingesters/hikvision-isapi.js` · `ingesters/dahua-cgi.js`
@@ -561,6 +565,7 @@ See [`db/init.sql`](db/init.sql) for full schema and [`SKILL.md`](SKILL.md) for 
 | [`SKILL.md`](SKILL.md) | Operators | Mapping recipes, troubleshooting, SQL snippets |
 | [`service_start.md`](service_start.md) | Operators | Daily start/stop, health check, recovery |
 | [`HARDWARE_SIZING_GUIDE.md`](HARDWARE_SIZING_GUIDE.md) | Pre-sales / architects | Hardware specs G1-G5, capacity calc, TCO |
+| [`dev-docs/`](dev-docs/index.html) | Developer | Internal developer portal — file navigator, API routes reference, how-to recipes (file:// only) |
 
 ---
 

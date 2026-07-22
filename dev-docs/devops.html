@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>DevOps Reference — Dev Portal</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="overlay"></div>
+<div class="layout">
+<nav class="nav" id="nav"></nav>
+<button id="ham">☰</button>
+
+<div class="main">
+<h1 class="ph">DevOps Reference — Maintainer's Guide</h1>
+
+<p>Landing page สำหรับ DevOps / คนที่มาดูแลระบบ — links ไปเอกสารที่เกี่ยวข้อง + command cheatsheet ที่ใช้บ่อย</p>
+
+<div class="wbox">
+  <h4>LNP Trap — อ่านก่อนแตะ PM2 ทุกครั้ง</h4>
+  <p>ห้าม restart PM2 จาก SSH / tmux / Claude shell — ดู <a href="restart-services.html">Restart Services (LNP)</a> ก่อน</p>
+</div>
+
+<h2>Infrastructure Overview</h2>
+
+<table>
+<thead><tr><th>Layer</th><th>Technology</th><th>Port</th><th>Control</th></tr></thead>
+<tbody>
+<tr>
+  <td>Web API + Static</td>
+  <td>Node.js / Express</td>
+  <td>3000</td>
+  <td>PM2 <code>api-server</code></td>
+</tr>
+<tr>
+  <td>Database</td>
+  <td>PostgreSQL 16 (Docker)</td>
+  <td>5432</td>
+  <td><code>docker compose</code></td>
+</tr>
+<tr>
+  <td>MQTT Broker</td>
+  <td>EMQX 5.8 (Docker)</td>
+  <td>1883 / 8083 (WS) / 18083 (UI)</td>
+  <td><code>docker compose</code></td>
+</tr>
+<tr>
+  <td>MQTT Subscriber</td>
+  <td>Node.js</td>
+  <td>—</td>
+  <td>PM2 <code>mqtt-subscriber</code></td>
+</tr>
+<tr>
+  <td>Camera Ingesters</td>
+  <td>Node.js (Hikvision + Dahua)</td>
+  <td>—</td>
+  <td>PM2 <code>hikvision-isapi</code>, <code>dahua-cgi</code></td>
+</tr>
+<tr>
+  <td>Media Recorder</td>
+  <td>Node.js + ffmpeg (RTSP)</td>
+  <td>—</td>
+  <td>PM2 <code>media-recorder</code></td>
+</tr>
+<tr>
+  <td>Alert &amp; Report Workers</td>
+  <td>Node.js</td>
+  <td>—</td>
+  <td>PM2 <code>alert-worker</code>, <code>report-worker</code></td>
+</tr>
+<tr>
+  <td>Public HTTPS</td>
+  <td>Cloudflare Tunnel (cloudflared)</td>
+  <td>—</td>
+  <td>launchd <code>com.cloudflare.cloudflared</code></td>
+</tr>
+</tbody>
+</table>
+
+<h2>PM2 — Quick Commands</h2>
+
+<div class="dbox">
+  <h4>รันจาก macOS GUI Terminal เท่านั้น (LNP)</h4>
+</div>
+
+<pre># Status
+pm2 status
+pm2 list
+
+# Logs
+pm2 logs api-server --lines 50
+pm2 logs mqtt-subscriber --lines 30
+pm2 logs alert-worker --lines 20
+
+# Restart
+open -a Terminal /Users/dojojin/vigil-platform/scripts/pm2-lan-safe-restart.command
+
+# Restart service เดียว (จาก GUI Terminal เท่านั้น)
+pm2 restart api-server
+pm2 restart alert-worker
+
+# Full lifecycle
+bash scripts/services.sh start
+bash scripts/services.sh stop
+bash scripts/services.sh status</pre>
+
+<h2>Docker — Infrastructure</h2>
+
+<pre># Status
+docker ps
+docker compose ps
+
+# Logs
+docker logs vigil-postgres --tail 30
+docker logs vigil-emqx --tail 30
+
+# Restart docker services
+docker compose restart
+docker compose up -d --force-recreate   # ถ้า port binding ผิด
+
+# Database shell
+docker exec -it vigil-postgres psql -U vigil_sql -d vigil_platform
+
+# EMQX UI
+open http://localhost:18083   # admin / ดูรหัสผ่านใน .env → EMQX_DASHBOARD_PASSWORD</pre>
+
+<h2>Database — Backup &amp; Restore</h2>
+
+<pre># Manual backup
+./scripts/backup.sh
+# → backups/vigil_platform_YYYY-MM-DD_hhmmss.dump
+
+# ดู backup list
+ls -lh backups/
+
+# Restore (ต้องพิมพ์ "yes" ยืนยัน)
+./scripts/restore.sh backups/vigil_platform_2026-05-29_030000.dump
+
+# ดู TOC ของ backup
+pg_restore --list backups/vigil_platform_latest.dump | head -30
+
+# Check schema migrations applied
+docker exec -it vigil-postgres psql -U vigil_sql -d vigil_platform \
+  -c "SELECT filename, applied_at FROM schema_migrations ORDER BY applied_at DESC LIMIT 10;"</pre>
+
+<div class="ibox">
+  <h4>Auto-backup ด้วย launchd</h4>
+  <p>ตั้งครั้งเดียว: <code>cp scripts/com.dojojin.dashboard.backup.plist ~/Library/LaunchAgents/ && launchctl load -w ~/Library/LaunchAgents/com.dojojin.dashboard.backup.plist</code></p>
+</div>
+
+<h2>Cloudflare Tunnel</h2>
+
+<pre># ตรวจสถานะ tunnel (local)
+curl -s http://localhost:3000/api/health | node -e "const d=require('fs').readFileSync('/dev/stdin','utf8'); console.log(JSON.parse(d).status)"
+
+# ตรวจผ่าน public URL
+curl -I https://dashboard.dojojin.tech/api/health
+
+# Restart tunnel (launchd)
+launchctl stop com.cloudflare.cloudflared
+launchctl start com.cloudflare.cloudflared
+
+# ดู tunnel log
+tail -f /Library/Logs/com.cloudflare.cloudflared.out.log
+tail -f /Library/Logs/com.cloudflare.cloudflared.err.log</pre>
+
+<h2>Schema Migrations</h2>
+
+<pre># Apply migrations manually (นอกจาก api-server boot)
+cd src && npm run migrate
+
+# ดู migrations ที่ apply แล้ว
+docker exec -it vigil-postgres psql -U vigil_sql -d vigil_platform \
+  -c "SELECT filename, applied_at FROM schema_migrations ORDER BY filename;"
+
+# ดู migration files ทั้งหมด
+ls db/db_migration_*.sql | sort</pre>
+
+<div class="dbox">
+  <h4>Migration fail = api-server ไม่ start</h4>
+  <p>ห้าม comment out migration ที่ fail — restore backup แล้วแก้ SQL ให้ถูก (GOTCHAS #19)</p>
+</div>
+
+<h2>Health Check</h2>
+
+<pre># API health endpoint
+curl http://localhost:3000/api/health
+curl http://localhost:3000/api/health/details   # รายละเอียดทุก component
+
+# ตรวจ disk
+df -h /Users/dojojin
+du -sh backups/
+
+# ตรวจ memory
+pm2 status   # ดู memory column
+top -pid $(pm2 id api-server | head -1)</pre>
+
+<h2>Security Checklist</h2>
+
+<p>ก่อนแตะ code ที่เกี่ยวกับ auth / upload / cookie / docker port — โหลด checklist ก่อน:</p>
+
+<div class="sbox">
+  <h4>เอกสาร Security</h4>
+  <p>
+    <a href="md-viewer.html?src=../docs/REF_security-checklist.md">REF_security-checklist.md</a> (SEC-001–011) ·
+    <a href="md-viewer.html?src=../docs/LOGIC_auth-security.md">LOGIC_auth-security.md</a> (RBAC, WS verifyClient)
+  </p>
+</div>
+
+<pre># ตรวจ open ports (ไม่ควร expose 5432 / 1883 ออก public)
+netstat -an | grep LISTEN | grep -E "5432|1883|18083"
+# ถ้าเห็น 0.0.0.0:5432 = อันตราย — ตรวจ docker compose ports binding</pre>
+
+<h2>Scale-up &amp; Hardware</h2>
+
+<table>
+<thead><tr><th>กลุ่ม</th><th>กล้อง</th><th>RAM</th><th>CPU</th><th>Storage (ตัวอย่าง)</th></tr></thead>
+<tbody>
+<tr><td>G1 STARTER</td><td>≤100</td><td>24 GB</td><td>i5-13500 (14C)</td><td>256 GB NVMe + 4 TB SSD</td></tr>
+<tr><td>G2 STANDARD</td><td>100–500</td><td>48 GB</td><td>Xeon E-2486 (8C)</td><td>RAID NVMe + 12 TB SSD</td></tr>
+<tr><td>G3 PRO</td><td>500–1,000</td><td>96–128 GB (2-node)</td><td>Xeon 4416+ (20C)</td><td>NVMe RAID + NFS</td></tr>
+<tr><td>G4 ENTERPRISE</td><td>1,000–2,000</td><td>HA cluster (3+ nodes)</td><td>Xeon + EMQX cluster</td><td>S3-compatible + MinIO</td></tr>
+<tr><td>G5 DATACENTER</td><td>2,000–3,000</td><td>Kubernetes cluster</td><td>Multi-node scale-out</td><td>MinIO + NVMe RAID</td></tr>
+</tbody>
+</table>
+
+<p>ดูรายละเอียดเพิ่มเติม: <a href="md-viewer.html?src=../HARDWARE_SIZING_GUIDE.md">HARDWARE_SIZING_GUIDE.md</a> · <a href="md-viewer.html?src=../docs/LOGIC_infra-ops.md">LOGIC_infra-ops.md §Scale-up</a></p>
+
+<h2>Third-party Integration</h2>
+
+<p>สำหรับ partner ที่ต้องการ read-only DB access ผ่าน <code>v_*_public</code> views:</p>
+<p><a href="md-viewer.html?src=../docs/REF_third-party-integration.md">REF_third-party-integration.md</a> — ops setup (CREATE USER + GRANT + pg_hba + docker bind + SSL) · PDPA · change policy</p>
+
+<h2>เอกสารที่เกี่ยวข้อง</h2>
+
+<div class="cg">
+  <div class="card">
+    <h3>Ops &amp; Lifecycle</h3>
+    <p><a href="md-viewer.html?src=../docs/LOGIC_infra-ops.md">LOGIC_infra-ops.md</a></p>
+    <p><a href="md-viewer.html?src=../service_start.md">service_start.md</a></p>
+    <p><a href="restart-services.html">Restart Services (LNP)</a></p>
+  </div>
+  <div class="card">
+    <h3>Database</h3>
+    <p><a href="md-viewer.html?src=../docs/REF_database-schema.md">REF_database-schema.md</a></p>
+    <p><a href="md-viewer.html?src=../docs/REF_operator-sql.md">REF_operator-sql.md</a></p>
+  </div>
+  <div class="card">
+    <h3>Security</h3>
+    <p><a href="md-viewer.html?src=../docs/REF_security-checklist.md">REF_security-checklist.md</a></p>
+    <p><a href="md-viewer.html?src=../docs/LOGIC_auth-security.md">LOGIC_auth-security.md</a></p>
+  </div>
+  <div class="card">
+    <h3>Troubleshoot</h3>
+    <p><a href="troubleshoot.html">Symptom Index</a></p>
+    <p><a href="md-viewer.html?src=../docs/REF_troubleshooting.md">REF_troubleshooting.md</a></p>
+    <p><a href="faq.html">FAQ</a></p>
+  </div>
+</div>
+
+<div class="ref">
+  <p><a href="index.html">← กลับ Navigator</a> · อ้างอิง: <a href="md-viewer.html?src=../docs/LOGIC_infra-ops.md">LOGIC_infra-ops.md</a> · <a href="md-viewer.html?src=../HARDWARE_SIZING_GUIDE.md">HARDWARE_SIZING_GUIDE.md</a> · <a href="md-viewer.html?src=../docs/REF_security-checklist.md">REF_security-checklist.md</a></p>
+</div>
+</div>
+</div>
+
+<script src="nav.js"></script>
+</body>
+</html>

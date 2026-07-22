@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Face Redesign — Draft Demo</title>
+
+<!-- DRAFT/DEMO ONLY — links real production assets so the preview is pixel-faithful.
+     CSP-compliant (external css/js, no inline script, no inline event handlers).
+     Served at: /others/face/  (auth-gated — log in to dashboard first).
+     Field names = real prod (/api/faces, /api/face-matches). Card/chart data = mock.
+     Face images = synthetic avatars (PDPA: no real faces in a demo). -->
+<script src="/theme-init.js"></script>
+<link rel="stylesheet" href="/vendor/fonts/fonts.css">
+<link rel="stylesheet" href="/vendor/air-datepicker/air-datepicker.css">
+<link rel="stylesheet" href="/vendor/air-datepicker/theme-vigil.css">
+<script src="/vendor/air-datepicker/air-datepicker.min.js"></script>
+<script src="/vendor/chartjs/chart-4.4.1.umd.min.js"></script>
+<link rel="stylesheet" href="/index.css">
+<link rel="stylesheet" href="face-demo.css?v=f7">
+</head>
+<body>
+<div class="demo-wrap">
+
+  <div class="demo-banner">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+    DRAFT — demo ออกแบบหน้าใบหน้าใหม่ · ชื่อฟิลด์ = ค่าจริงจาก prod · ข้อมูลการ์ด/กราฟ = mock · รูปใบหน้า = avatar สังเคราะห์ (ไม่ใช้รูปจริง)
+  </div>
+  <div class="demo-toolbar">
+    <button class="btn btn-secondary" id="btnTheme">สลับ Light / Dark</button>
+  </div>
+
+  <div class="page-head">
+    <div>
+      <h1>ใบหน้า · Face</h1>
+      <div class="sub">บันทึก จดจำ และค้นหาใบหน้าจากกล้องวิเคราะห์ใบหน้า</div>
+    </div>
+    <div class="tabs" id="faceTabBar">
+      <button class="tab active" data-tab="overview">ภาพรวม</button>
+      <button class="tab" data-tab="recog">แจ้งเตือนบุคคล<span class="tab-badge" id="recogTabBadge"></span></button>
+      <button class="tab" data-tab="search">ค้นหา</button>
+      <button class="tab" data-tab="settings">ตั้งค่า</button>
+    </div>
+  </div>
+
+  <!-- ===================== TAB: OVERVIEW ===================== -->
+  <section id="tab-overview">
+    <div class="period-row">
+      <div class="seg" id="periodBar">
+        <button data-p="hour">ชั่วโมงนี้</button>
+        <button data-p="today" class="active">วันนี้</button>
+        <button data-p="yesterday">เมื่อวาน</button>
+        <button data-p="week">สัปดาห์นี้</button>
+        <button data-p="month">เดือนนี้</button>
+        <button data-p="custom">กำหนดเอง</button>
+      </div>
+      <div class="custom-range" id="customRange" style="display:none">
+        <input class="form-input" id="pFrom" placeholder="ตั้งแต่" readonly>
+        <span style="color:var(--text-secondary)">–</span>
+        <input class="form-input" id="pTo" placeholder="ถึง" readonly>
+      </div>
+    </div>
+
+    <div class="ov-top">
+      <div class="kpi-grid" id="kpiGrid"></div>
+      <div class="alarm-block" id="alarmBlock">
+        <div class="alarm-head"><span class="alarm-head-dot"></span>บุคคลเฝ้าระวังที่พบ<a class="alarm-head-link" data-goto-recog>ดูทั้งหมด →</a></div>
+        <div class="alarm-strip" id="alarmStrip"></div>
+      </div>
+    </div>
+
+    <div class="chart-grid cols-2">
+      <div class="card">
+        <div class="card-title">ช่วงเวลาที่พบมากที่สุด (Peak)</div>
+        <div class="chart-box"><canvas id="chPeak"></canvas></div>
+        <div class="inline-note" id="peakNote"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">สัดส่วนเพศ</div>
+        <div class="chart-box"><canvas id="chGender"></canvas></div>
+      </div>
+    </div>
+
+    <div class="chart-grid cols-2">
+      <div class="card">
+        <div class="card-title">ช่วงอายุ</div>
+        <div class="chart-box tall"><canvas id="chAge"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">สีหน้า / อารมณ์</div>
+        <div class="chart-box tall"><canvas id="chExpr"></canvas></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:4px">
+      <div class="card-title">ใบหน้าล่าสุด<span class="live-dot"></span><span class="live-label">อัปเดตอัตโนมัติทุก 3 วิ</span></div>
+      <div class="face-wall" id="latestGrid"></div>
+    </div>
+  </section>
+
+  <!-- ===================== TAB: RECOG / แจ้งเตือนบุคคล ===================== -->
+  <section id="tab-recog" style="display:none">
+    <div class="alert-head">
+      <div>
+        <div class="alert-title">การจดจำใบหน้า (Face Recognition)</div>
+        <div class="alert-sub" id="recogCount">—</div>
+      </div>
+      <div class="alert-controls">
+        <input class="form-input alert-search" id="recogSearch" placeholder="ค้นหา ชื่อบุคคล / กลุ่ม / กล้อง">
+      </div>
+    </div>
+    <div class="seg alert-filter" id="recogFilterBar"></div>
+    <div class="alert-feed" id="recogFeed"></div>
+    <div class="alert-pager" id="recogPager"></div>
+  </section>
+
+  <!-- ===================== TAB: SEARCH ===================== -->
+  <section id="tab-search" style="display:none">
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-title">ตัวกรอง</div>
+      <div class="filter-grid">
+        <div class="form-group">
+          <label class="form-label">เพศ</label>
+          <select class="form-input" id="fGender"><option value="">ทั้งหมด</option><option value="male">ชาย</option><option value="female">หญิง</option></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">ช่วงอายุ</label>
+          <select class="form-input" id="fAge"><option value="">ทั้งหมด</option><option value="0-19">ไม่เกิน 19</option><option value="20-39">20–39</option><option value="40-59">40–59</option><option value="60-120">60 ขึ้นไป</option></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">สีหน้า / อารมณ์</label>
+          <select class="form-input" id="fExpr"></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">แว่นตา</label>
+          <select class="form-input" id="fGlass"><option value="">ทั้งหมด</option><option value="no">ไม่ใส่</option><option value="yes">ใส่แว่น</option><option value="sunglasses">แว่นกันแดด</option></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">หน้ากาก</label>
+          <select class="form-input" id="fMask"><option value="">ทั้งหมด</option><option value="yes">ใส่</option><option value="no">ไม่ใส่</option></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">หมวก</label>
+          <select class="form-input" id="fHat"><option value="">ทั้งหมด</option><option value="yes">ใส่</option><option value="no">ไม่ใส่</option></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">กล้อง</label>
+          <select class="form-input" id="fCam"></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">สีเสื้อ</label>
+          <select class="form-input" id="fTopColor"></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">สีกางเกง</label>
+          <select class="form-input" id="fBottomColor"></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">ประเภทเสื้อ</label>
+          <select class="form-input" id="fTopType"></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">ประเภทกางเกง</label>
+          <select class="form-input" id="fBottomType"></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">ตั้งแต่</label>
+          <input class="form-input" id="fFrom" placeholder="dd/mm/yyyy --:--" readonly>
+        </div>
+        <div class="form-group">
+          <label class="form-label">ถึง</label>
+          <input class="form-input" id="fTo" placeholder="dd/mm/yyyy --:--" readonly>
+        </div>
+      </div>
+      <div class="filter-actions">
+        <button class="btn btn-secondary" id="btnReset">ล้าง</button>
+        <button class="btn btn-primary" id="btnSearch">ค้นหา</button>
+      </div>
+    </div>
+
+    <div class="face-summary" id="faceSummary"></div>
+
+    <div class="results-bar">
+      <div class="results-count">พบ <b id="resCount">0</b> ใบหน้า</div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:11px;color:var(--text-secondary)">เรียงโดย</span>
+        <select class="form-input" style="padding:6px 9px" id="fSort">
+          <option>เวลาล่าสุด</option><option>เวลาเก่าสุด</option><option>คุณภาพสูงสุด</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="face-wall" id="searchGrid"></div>
+    <div class="pager" id="searchPager"></div>
+  </section>
+
+  <!-- ===================== TAB: WATCHLIST (เฝ้าระวัง) ===================== -->
+  <!-- ===================== TAB: SETTINGS ===================== -->
+  <section id="tab-settings" style="display:none">
+    <div class="settings-note">
+      ในระบบจริง เมนูนี้จะอยู่ใต้ <b>การตั้งค่า → การตั้งค่าระบบใบหน้า</b> · KPI + กราฟหน้าภาพรวมจะอิงค่าที่ตั้งตรงนี้
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-title">การจดจำใบหน้า</div>
+      <div class="set-card" style="border:none;padding:0;background:none" id="recogSettings"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">กล้องที่เปิดวิเคราะห์ใบหน้า</div>
+      <p class="settings-desc">เปิด/ปิดการบันทึกใบหน้า (FaceCapture) และการจดจำ (FaceRecognition) ต่อกล้อง</p>
+      <div id="camList"></div>
+    </div>
+  </section>
+
+</div>
+
+<!-- ===================== FACE DETAIL MODAL ===================== -->
+<div class="lpr-modal-overlay" id="faceModal" style="display:none">
+  <div class="lpr-modal">
+    <button class="lpr-modal-x" id="faceModalX" aria-label="ปิด">✕</button>
+    <div class="am-head"><span class="am-name">รายละเอียดใบหน้า</span><span class="am-time" id="fmTime"></span></div>
+    <label class="lm-simtoggle"><input type="checkbox" id="faceSimDeleted"> จำลองสถานะ: ภาพจากกล้องถูกลบแล้ว (เกินอายุเก็บรูป)</label>
+    <div id="faceModalBody"></div>
+  </div>
+</div>
+
+<!-- RECOGNITION compare modal — captured vs reference + ack -->
+<div class="lpr-modal-overlay" id="recogModal" style="display:none">
+  <div class="lpr-modal">
+    <button class="lpr-modal-x" id="recogModalX" aria-label="ปิด">✕</button>
+    <div class="am-head"><span class="alert-badge" id="rmBadge"></span><span class="am-name" id="rmName"></span><span class="am-time" id="rmTime"></span></div>
+    <label class="lm-simtoggle"><input type="checkbox" id="rmSimDeleted"> จำลองสถานะ: ภาพจากกล้องถูกลบแล้ว (เกินอายุเก็บรูป)</label>
+    <div id="recogModalBody"></div>
+    <div class="op-note">
+      <span class="op-note-k">หมายเหตุ (Operator)</span>
+      <div class="op-row">
+        <textarea class="form-input op-ta" id="rmNoteInput" rows="2" placeholder="เพิ่มหมายเหตุ เช่น การดำเนินการ ผู้รับผิดชอบ หรือรายละเอียดเพิ่มเติม (ต้นฉบับจากหัวกล้องไม่มีข้อมูลส่วนนี้)"></textarea>
+        <button class="btn btn-primary op-save" id="rmNoteSave">บันทึก</button>
+      </div>
+      <span class="op-note-saved" id="rmNoteSaved"></span>
+    </div>
+    <div class="am-foot">
+      <button class="btn btn-primary am-ack" id="rmAck">รับทราบ</button>
+      <span class="am-ack-log" id="rmAckLog"></span>
+      <div class="am-viewbtns">
+        <button class="btn btn-secondary" id="rmViewFull">ดูภาพจากกล้อง</button>
+        <button class="btn btn-secondary" id="rmViewRef">ดูภาพอ้างอิง</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- simple lightbox -->
+<div class="img-lightbox" id="imgLightbox" style="display:none"><div class="il-inner" id="ilInner"></div></div>
+
+<script src="face-demo.js?v=f7"></script>
+</body>
+</html>

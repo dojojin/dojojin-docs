@@ -10,7 +10,7 @@
 > **SQL + service commands** → `docs/REF_operator-sql.md`
 > **เหตุผลการออกแบบ** → `docs/LOGIC_*.md`
 >
-> Last updated: 2026-06-08 · v1.5.3
+> Last updated: 2026-06-15 · v1.5.3
 
 ---
 
@@ -316,7 +316,7 @@ Dashboard รองรับ 2 ภาษา — engine: `dashboard/i18n.js` (van
 
 **ตรวจ string ที่ยังเป็นภาษาไทยแต่ไม่ผ่าน i18n:**
 ```bash
-grep -rn '[฀-๿]' dashboard/index.html dashboard/dashboard.js | grep -v 'data-i18n'
+grep -rn '[฀-๿]' dashboard/index.html dashboard/dashboard.js dashboard/page-*.js | grep -v 'data-i18n'
 ```
 
 **รายงาน export:** analytics report เป็นไทยเสมอ (Puppeteer เปิด context ใหม่ ไม่รู้ภาษาที่เลือก)
@@ -437,15 +437,22 @@ Dahua ไม่พึ่ง `snapshot.cgi` เป็นหลักเพรา�
 > **CGI** = Common Gateway Interface — โปรโตคอลเรียก endpoint บนกล้อง Dahua เพื่อดึงข้อมูล/ภาพ
 > **RTSP** = Real Time Streaming Protocol — โปรโตคอลสตรีม video จากกล้อง
 
-flow snapshot ปัจจุบัน:
+**Module helper (testable แยกต่างหาก):**
+- `src/ingesters/dahua-protocol.js` — parser: `parseDahuaEventText`, `parseSnapManagerCode`, `extractObjectClass`, `DAHUA_EVENT_MAP`
+- `src/ingesters/dahua-snapshot-selector.js` — scoring: `scoreFrameForObject`, `scoreFrameMotion`, `chooseBestSnapshotCandidate`, `selectScanSegments` + ค่าคงที่ต่างๆ
 
-1. ใช้ JPEG จาก `snapManager` event ถ้ากล้องส่งมาให้
-2. ถ้าไม่มี ใช้ RTSP rolling buffer burst scoring รอบเวลาที่ server รับ event
-3. ถ้า pass แรกได้ `low_confidence` / `missing` / `failed` หรือสถานะยังไม่ถูกเขียนตอน `clip_done` → clip resolver จะ retry และเลือกภาพจาก `media/<eventId>.mp4`
-4. Single RTSP fallback และ live CGI fallback ถือเป็น `low_confidence` เพื่อให้ clip resolver แก้ต่อได้
+waterfall snapshot ปัจจุบัน (เรียงตามลำดับ):
+
+1. **snapManager event JPEG** — JPEG ที่กล้องแนบมาพร้อม event text (`dahua-event-snapshot`)
+2. **RTSP buffer burst** — score 11 frame candidate รอบเวลาที่ server รับ event ด้วย motion-diff + ROI detail (`dahua-rtsp-buffer-best`); ตรวจ segment "ปิดแล้ว" ด้วย mtime fallback (`SEGMENT_CLOSE_AGE_MS = 2000`) เพื่อให้ buffer ที่มีน้อย segment ยังหา candidate ได้
+3. **RTSP buffer scan** — ถ้า burst ได้ 0 candidates, scan segment ที่ปิดแล้วในช่วง ±30 วินาที (สูงสุด 5 ตัว) score แต่ละตัว เลือก frame ที่ดีที่สุด (`dahua-rtsp-buffer-scan`, `low_confidence`)
+4. **Single RTSP fallback** — ดึง frame เดียวที่ timestamp เป้าหมาย ไม่มีการ score (`dahua-rtsp-buffer`, `low_confidence`)
+5. **CGI live** — ทางเลือกสุดท้าย ภาพมาช้ากว่าเหตุการณ์เสมอ (`dahua-cgi-live`, `low_confidence`)
 
 > **burst scoring** = การประเมิน frame หลาย frame ในช่วงเวลาสั้นๆ แล้วเลือก frame ที่ดีที่สุด
 > **clip resolver** = กระบวนการที่ตรวจสอบและแก้ไขภาพ snapshot จาก clip ที่บันทึกได้
+
+ข้อ 3–5 ทั้งหมดถูก mark เป็น `low_confidence` เพื่อให้ clip resolver upgrade ได้เมื่อ `clip_done` มาถึง
 
 ตรวจสอบผล:
 
@@ -456,16 +463,19 @@ SELECT
   event_time AT TIME ZONE 'Asia/Bangkok' AS local_time,
   raw_json->>'_snapshot_source' AS source,
   raw_json->>'_snapshot_status' AS status,
-  raw_json->'_snapshot_debug'->>'confidence' AS confidence
+  raw_json->'_snapshot_debug'->>'confidence' AS confidence,
+  raw_json->'_snapshot_debug'->>'strategy' AS strategy
 FROM events
 WHERE camera_id IN ('DAHUA_CAM01', 'BMA-EAST_DAHUA_CAM01')
 ORDER BY event_time DESC
 LIMIT 20;
 ```
 
+สถานะที่ควรเห็น: `dahua-clip-resolver / ok` (ดีสุด), `dahua-rtsp-buffer-best / ok` (burst ได้ผล)
+`dahua-rtsp-buffer-scan / low_confidence` = scan fallback ทำงาน (burst ได้ 0 candidates — มักเกิดหลัง camera reconnect)
+`missing` = clip + ทุก buffer path ล้มเหลว
+
 ถ้า `BMA-EAST_DAHUA_CAM01` ยังพลาดภาพ ให้อ่าน `DahuaProblem.MD` ก่อนแตะ code
-สถานะที่ควรเห็นบ่อยหลัง fix: `dahua-clip-resolver / ok` หรือ `dahua-rtsp-buffer-best / ok`
-`missing` มักหมายถึง clip/buffer ทำงานไม่สำเร็จ
 
 ---
 
@@ -549,4 +559,4 @@ docker exec vigil-postgres psql -U vigil_sql -d vigil_platform -c "SELECT versio
 
 ---
 
-<sub>**SKILL-TH.md** v1.5.3 — ฉบับภาษาไทย · เนื้อหาเดียวกับ [SKILL.md](SKILL.md) · Vigil Platform · Updated 2026-06-08</sub>
+<sub>**SKILL-TH.md** v1.5.3 — ฉบับภาษาไทย · เนื้อหาเดียวกับ [SKILL.md](SKILL.md) · Vigil Platform · Updated 2026-06-15</sub>

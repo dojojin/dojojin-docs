@@ -1,0 +1,30 @@
+# ============================================================
+# Vigil Platform — Cloudflare Tunnel config (Site Edge, vss)
+# ------------------------------------------------------------
+# Tunnel: vss → vss.dojojin.tech
+# Managed by PM2 (see ecosystem.edge.config.js).
+#
+# Ingress: vss.dojojin.tech → lpr-receiver :3003
+#   /lpr         → LPR scene + plate push from cameras
+#   /face-push/* → Hik Face Recognition match
+#   /healthz     → health check
+#
+# NOTE — Hikvision Face Alarm Server (FAS, port 3010) is NOT exposed
+# through this tunnel because cloudflared proxies via loopback (127.0.0.1)
+# which fails the FAS IP-allowlist check. LAN cameras reach FAS directly:
+#   camera → 192.168.x.x:3010 (FACE_PUSH_BIND=0.0.0.0 in src/.env)
+#
+# Token: set TUNNEL_TOKEN=eyJ... in src/.env — PM2 injects it as env var.
+# Never commit the real token.
+# ============================================================
+
+no-autoupdate: true
+metrics: localhost:9100
+
+ingress:
+  # All paths on vss.dojojin.tech → lpr-receiver (handles /lpr, /face-push, /healthz)
+  - hostname: vss.dojojin.tech
+    service: http://127.0.0.1:3003
+
+  # Catch-all required by cloudflared (must be last, no hostname)
+  - service: http_status:404

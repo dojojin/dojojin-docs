@@ -5,7 +5,7 @@
 > to load it.
 >
 > Living Docs system adapted from: https://github.com/Diew/living-docs
-> Last updated: 2026-06-08 · v1.7.0
+> Last updated: 2026-06-15 · v1.8.0
 
 ---
 
@@ -24,6 +24,8 @@ Every file that an agent should know about. If a file is NOT here, it does not e
 | `docs/LOGIC_line-notifications.md` | `LOGIC_` | LINE alerts, imgbb delivery, recipients, webhook onboarding, camera offline LINE alerts, scheduled report delivery boundaries (#12–#14, #90–#91) | Report rendering internals, camera ingestion internals, operator SQL | LINE/alerts work, recipient onboarding, LINE webhook, imgbb/quota changes |
 | `docs/LOGIC_stats-reports.md` | `LOGIC_` | Stats v2, Reports, Puppeteer, scheduled delivery config, Health Report (#15–#32, #85, #92–#94, #98–#99, #131–#133, #136–#139, #148) | LINE delivery details (→ LOGIC_line-notifications.md), camera-specific logic, operator SQL | Stats page, Reports page, Puppeteer rendering |
 | `docs/LOGIC_camera-ingesters.md` | `LOGIC_` | Bosch MQTT, Hikvision ISAPI, Dahua CGI, ONVIF, clip capture, camera lifecycle (#40–#41, #62–#71, #77–#79, #86, #89, #96, #109–#116, #121, #123, #125) | LINE behavior details (→ LOGIC_line-notifications.md), Face Capture specifics (→ LOGIC_face-capture.md), license logic | Camera ingester work, multi-vendor, clip capture, snapshot display |
+| `docs/LOGIC_dahua-ingester.md` | `LOGIC_` | Dahua CGI ingester ครบวงจร — transport, event map, snapshot waterfall 5 ระดับ, pure modules (dahua-protocol/dahua-snapshot-selector), test coverage 48 tests, incident log 9 เหตุการณ์, constants reference | Bosch/Hikvision logic (→ LOGIC_camera-ingesters.md), LINE delivery (→ LOGIC_line-notifications.md) | Dahua snapshot, scan fallback, CGI quirks, segment guard, digest fail |
+| `docs/LOGIC_hikvision-ingester.md` | `LOGIC_` | Hikvision ISAPI ingester ครบวงจร — transport, multipart parser, event map, Face Capture pipeline, body appearance normalization, People Counting, dwell detection, incident log 12 เหตุการณ์ | Bosch/Dahua logic (→ LOGIC_camera-ingesters.md), Face Capture architecture (→ LOGIC_face-capture.md) | Hikvision body appearance, face capture, color dot, FAS, people counting |
 | `DahuaProblem.MD` | `INCIDENT_` / live problem log | Dahua snapshot timing findings, live test results, clip resolver recovery plan, manufacturer API notes | General camera architecture, non-Dahua ingester rules | Dahua snapshot timing, Dahua CGI recovery, `DAHUA_CAM01`, `BMA-EAST_DAHUA_CAM01` |
 | `docs/LOGIC_face-capture.md` | `LOGIC_` | Face Capture multipart parsing, gallery page, PDPA boundary (#117–#119) | Generic camera ingester logic | Face Capture work, gallery page, Dahua face boundary |
 | `docs/LOGIC_map-features.md` | `LOGIC_` | Map page architecture (OpenLayers), improvement backlog, Option B multi-group overlay (#155), Live Pulse Toast-on-map T2 (#156), map bug history | Camera ingester logic (→ LOGIC_camera-ingesters.md), design tokens (→ DESIGN.md) | Map page work, OpenLayers, camera grouping overlay, Live Pulse |
@@ -45,8 +47,13 @@ Every file that an agent should know about. If a file is NOT here, it does not e
 | `docs/REF_face-recognition.md` | `REF_` — Face Recognition plan | Architecture options (A/B/C), recommended approach (InsightFace server-side), DB schema (`known_persons`, `face_recognition_results`, pgvector), Python service code, hardware sizing, Mac dev setup, CPU→GPU migration path, PDPA considerations, implementation phases FR.1–FR.4 | Camera ingester internals (→ LOGIC_camera-ingesters.md), Face Capture parsing (→ LOGIC_face-capture.md) | Planning / starting any Face Recognition work |
 | `docs/LOGIC_nlq-search.md` | `LOGIC_` — NLQ feature spec | Natural Language Query to structured JSON filter; Unified Forensic Search page concept; Phase 0–2 plan; Claude Haiku API adapter code; Ollama + Typhoon2 local adapter code; known gaps (multi-camera appearances, LPR endpoint missing); cost comparison | Camera ingester logic (→ LOGIC_camera-ingesters.md), DB schema (→ REF_database-schema.md) | Any work on NLQ / Forensic Search / AI query parsing |
 | `docs/REF_vms-playback.md` | `REF_` — VMS playback integration plan | On-demand RTSP proxy architecture; Qognify SGS REST API v7.2 adapter code; provider interface contract (vendor-neutral); camera mapping via cameras-config.json; JPEG frame fallback + HLS proxy paths; Phase 0–5 implementation plan; critical traps (XML body, auth encoding, RTSP TTL, self-signed certs) | Camera ingester logic (→ LOGIC_camera-ingesters.md), DB schema (→ REF_database-schema.md) | Any work on VMS playback / Qognify SGS / on-demand video retrieval |
+| `docs/REF_edge-install.md` | `REF_` — Edge node install guide | Complete install guide สำหรับ N150/Linux Mint 22 — Ubuntu 24.04 base (VIGIL-ARCH-003 Site Edge) — NanoMQ v0.24.14-3, cloudflared, Node.js PM2 setup, camera config (Bosch MQTT / Hik ISAPI / Dahua CGI), EDGE_MODE pattern table, WSL2 vs pure Linux comparison, troubleshooting 8 gotchas | Edge runtime files (→ `src/edge/`), camera ingesters (→ LOGIC_camera-ingesters.md) | Setting up a new edge deployment; N150 install; WSL2 PoC reproduction |
+| `docs/REF_edge-site-checklist.md` | `REF_` — Per-site deploy runbook | Condensed parameterized checklist to deploy a new edge site (per-site variables table, central/cloudflare/edge steps, start order, verification) | Deep narrative (→ `REF_edge-install.md`), camera ingester internals | Executing a new edge site deploy (Phuket, BMA, re-run vss) |
+| `docs/LOGIC_edge-ingester-divergence.md` | `LOGIC_` — Edge ingester contract | Intentional divergence between edge and central ingesters — EDGE_MODE guard pattern, pre-normalized row shape, image-never-over-MQTT contract, `src/edge/` directory structure; ห้าม rewrite edge ingesters กลับไปใช้ central shape | Central ingester logic (→ LOGIC_camera-ingesters.md), install guide (→ REF_edge-install.md) | Edge ingester work; porting vendor ใหม่ไปยัง EDGE_MODE; เปรียบ central vs edge ingest |
+| `docs/LOGIC_edge-camera-ui.md` | `LOGIC_` — Edge camera UI design | Design rationale for managing edge-site cameras from central dashboard (no SSH/hand-edit JSON) — provision engine, per-site EMQX ACL, audit+RBAC, config relay. **Status: DESIGN (not built)** | Edge ingester runtime (→ LOGIC_edge-ingester-divergence.md), auth/RBAC (→ LOGIC_auth-security.md) | Planning edge camera management UI (not yet implemented) |
 | `README.md` | Public overview | User-facing install guide, feature list, architecture overview (high level) | Internal gotchas, design decisions | Customer-facing questions; fresh install reference |
-| `public/others/vigil-docs-v2/` (16 HTML + nav.js + styles.css) | `PUBLIC_DOCS` — customer/operator-facing | Operator-readable explanations: purpose, capabilities, components, security findings, bugs, architecture decisions, mobile app, LINE, maps, scale-up, Appearances. Nav shared via `nav.js` (single source). | Internal GOTCHAS numbers, SQL snippets, raw implementation detail, secrets | Updating customer-facing docs; content audit after feature change (see "vigil-docs-v2 update trigger" in Maintenance Rules) |
+| `public/others/vigil-docs-v2/` (16 HTML + nav.js + styles.css) | `PUBLIC_DOCS` — customer/operator-facing | Operator-readable explanations: purpose, capabilities, components, security findings, bugs, architecture decisions, mobile app, LINE, maps, scale-up, Appearances, REST API overview. Nav shared via `nav.js` (single source). | Internal GOTCHAS numbers, SQL snippets, raw implementation detail, secrets | Updating customer-facing docs; content audit after feature change (see "vigil-docs-v2 update trigger" in Maintenance Rules) |
+| `dev-docs/` (6 HTML + nav.js + styles.css) | `GUIDE_` — Developer portal (owner-only) | Navigation index linking to all .md docs; how-to-by-hand recipes: add REST route, add migration, add i18n string, add dashboard page (updated for S5 split — page-*.js pattern), safe service restart (LNP trap). No content duplicated from .md files — links out only. | Customer/operator content (→ vigil-docs-v2), full feature rationale (→ LOGIC files), SQL snippets (→ REF_operator-sql.md) | Developer needs to work without AI assistance; onboarding self-reference for codebase navigation |
 | `docs/ARCH_documentation-governance.md` | Registry (this file) | File registry, task→load mapping, STUBBORN_FACT index, naming convention, maintenance rules | Any feature logic, operator recipes, design decisions | Doc management tasks; adding new files; scope unclear |
 
 ---
@@ -84,9 +91,11 @@ Every file that an agent should know about. If a file is NOT here, it does not e
 | 3rd party partner onboarding / DB integration rollout | + `docs/REF_third-party-integration.md` (+ `docs/REF_database-schema.md` for column-level lookup) |
 | DBA onboarding / schema lookup / DB security review | + `docs/REF_database-schema.md` |
 | API endpoint work / mobile app (vigil-mobile) / REST integration | + `docs/REF_api-reference.md` |
+| Deploying a NEW edge site (execute) | + `docs/REF_edge-site-checklist.md` (+ `docs/REF_edge-install.md` for detail) |
 | Adding / moving docs | `docs/ARCH_documentation-governance.md` (this file) |
 | Scope unclear | `docs/ARCH_documentation-governance.md` first |
 | Updating customer-facing vigil-docs-v2 | `public/others/vigil-docs-v2/` — see "vigil-docs-v2 update trigger" in Maintenance Rules |
+| Working without AI / codebase navigation / hand-editing | `dev-docs/` — open via `file://dev-docs/index.html` |
 
 ---
 
@@ -121,6 +130,8 @@ One file owns each rule. No rule should appear in full in more than one file. Li
 | Completed features timeline | `CHANGELOG.md` |
 | Hardware sizing constants and high-level TCO | `HARDWARE_SIZING_GUIDE.md` |
 | TCO spreadsheet calculations | `docs/cost/Cost_Calculator.xlsx` |
+| Developer portal — codebase navigation index + hand-edit recipes (owner-only) | `dev-docs/` |
+| Per-site edge deploy execution checklist | `docs/REF_edge-site-checklist.md` |
 | Doc registry | `docs/ARCH_documentation-governance.md` |
 
 ---
@@ -321,9 +332,25 @@ Critical decisions that must never be reversed without explicit owner approval.
 | `10-maps-api.html` | `docs/LOGIC_map-features.md` | Map library change, new tile provider |
 | `12-scale-up.html` | `HARDWARE_SIZING_GUIDE.md` | G-tier camera ranges or server spec change |
 | `14-appearances.html` | `db/init.sql` (appearances table), `src/api-server.js` `/api/appearances/*` | appearances schema or API change |
-| `nav.js` (all 15 pages) | This file listing | Any page added, renamed, or removed |
+| `15-api-overview.html` | `docs/REF_api-reference.md` · `src/routes/` · `src/api-server.js` | New API group added, auth flow changes, WebSocket protocol changes |
+| `nav.js` (all 16 pages) | This file listing | Any page added, renamed, or removed |
 
 **To add a page:** edit `nav.js` NAV_ITEMS array only — all 15 pages pick it up automatically.
+
+### dev-docs update trigger
+
+`dev-docs/` contains navigation index and hand-edit recipes. Index links to .md files and does not duplicate content — low rot risk. Recipes are the only prose that needs maintenance:
+
+| dev-docs page | Update when |
+|---|---|
+| `index.html` (file map) | New src/ module added, file renamed/deleted, new major script added |
+| `add-route.html` | Factory pattern changes, new auth middleware added, `routeError` helper changes |
+| `add-migration.html` | Migration runner behavior changes, next-number convention changes |
+| `add-i18n.html` | I18N.t API changes, new attribute patterns added |
+| `add-dashboard-page.html` | Token system changes (DESIGN.md), new icon system, fetch pattern changes |
+| `restart-services.html` | New PM2 workers added, LNP workaround changes (GOTCHAS #84) |
+
+**Note:** `dev-docs/` is not routed by api-server — open via `file://dev-docs/index.html` from repo root. No deployment needed.
 
 ### Doc update trigger
 Update docs **on explicit human request**, not automatically after every task:
@@ -344,4 +371,4 @@ Update docs **on explicit human request**, not automatically after every task:
 
 ---
 
-*v1.7.0 — 2026-06-08 · Vigil Platform · Living Docs adapted from github.com/Diew/living-docs*
+*v1.8.0 — 2026-06-15 · Vigil Platform · Living Docs adapted from github.com/Diew/living-docs*

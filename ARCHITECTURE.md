@@ -6,7 +6,7 @@
 > live in the linked LOGIC/REF docs.
 >
 > Companion to [CLAUDE.md](CLAUDE.md) · [docs/ARCH_documentation-governance.md](docs/ARCH_documentation-governance.md)
-> Last updated: 2026-06-08
+> Last updated: 2026-06-25
 
 ---
 
@@ -33,6 +33,7 @@
 
 ## Runtime Topology
 
+**Central deployment (default):**
 ```text
 Bosch / Hikvision / Dahua / ONVIF cameras
         |
@@ -53,6 +54,23 @@ PostgreSQL 16  <---->  api-server.js (Express + ws)
                     Cloudflare Tunnel
 ```
 
+**Edge deployment (VIGIL-ARCH-003 / EDGE_MODE=1):**
+```text
+Cameras (same LAN as edge box N150/Ubuntu)
+        |
+        | MQTT / ISAPI / CGI (local network)
+        v
+Edge ingesters (EDGE_MODE=1 — no DB)
+        |
+        | publishEdgeEvent() → NanoMQ :1883
+        v
+edge-bridge.js ──WSS──▶ central EMQX ──▶ mqtt-subscriber.js ──▶ PostgreSQL
+                                                                      |
+                                                           api-server.js / Dashboard
+```
+
+Edge details: [`docs/REF_edge-install.md`](docs/REF_edge-install.md) · [`docs/LOGIC_edge-ingester-divergence.md`](docs/LOGIC_edge-ingester-divergence.md)
+
 Event-to-operator target: camera event to dashboard/LINE notification in under 2 seconds where network and third-party APIs cooperate.
 
 ---
@@ -62,7 +80,12 @@ Event-to-operator target: camera event to dashboard/LINE notification in under 2
 | Component | Role | Canonical Detail |
 |---|---|---|
 | `src/api-server.js` | Express API, auth gate, WebSocket bridge, health endpoints, static serving | [docs/LOGIC_auth-security.md](docs/LOGIC_auth-security.md), [docs/LOGIC_stats-reports.md](docs/LOGIC_stats-reports.md) |
-| `src/mqtt-subscriber.js` | Bosch MQTT ingestion, snapshot capture, `pg_notify` event/alert dispatch | [docs/LOGIC_camera-ingesters.md](docs/LOGIC_camera-ingesters.md) |
+| `src/routes/` | Route modules split from api-server.js (factory pattern, S4/MAINT-2T-001 ✅); 19 files: alert-rules, appearances, auth, branding, cameras, categories, eula, events, groups, health, license, line, map, ops, report-schedules, reports, settings, stats, users | Loaded via `require('./routes/<name>')(app, pool, deps)` in api-server.js |
+| `src/helpers/` | Shared utilities: `routeError.js`, `getSystemSetting.js` (Map cache + invalidate), `normalizeTimeOfDay.js` | Required directly in route files and api-server.js |
+| `src/mqtt-subscriber.js` | Bosch MQTT ingestion + edge snapshot handler (`saveEdgeSnapshot` — Hik/Dahua event_id path + Bosch timestamp path), `pg_notify` event/alert dispatch | [docs/LOGIC_camera-ingesters.md](docs/LOGIC_camera-ingesters.md) |
+| `src/edge/publisher.js` | Edge-only — `publishEdgeEvent()` lazy MQTT singleton to NanoMQ; exports `EDGE_MODE` flag; used by all 4 ingesters | [docs/LOGIC_edge-ingester-divergence.md](docs/LOGIC_edge-ingester-divergence.md) |
+| `src/edge/bridge.js` | Edge-only PM2 process (`edge-bridge`); forwards `projects/${SITE_ID}/#` + Bosch `+/onvif-ej/#` from NanoMQ → central EMQX WSS; CONFIG_TOPIC loop-break; 60s heartbeat | [docs/LOGIC_edge-ingester-divergence.md](docs/LOGIC_edge-ingester-divergence.md) |
+| `src/edge-config-agent.js` | Edge-only PM2 process; receives `cameras-config.json` push from central via MQTT retain `_config/cameras`; writes local file for ingesters | [docs/LOGIC_edge-ingester-divergence.md](docs/LOGIC_edge-ingester-divergence.md) |
 | `src/ingesters/hikvision-isapi.js` | Hikvision ISAPI Alert Stream ingestion, Smart Events, Face Capture | [docs/LOGIC_camera-ingesters.md](docs/LOGIC_camera-ingesters.md), [docs/LOGIC_face-capture.md](docs/LOGIC_face-capture.md) |
 | `src/ingesters/dahua-cgi.js` | Dahua CGI event ingestion, clip/snapshot resolver path | [docs/LOGIC_camera-ingesters.md](docs/LOGIC_camera-ingesters.md), [DahuaProblem.MD](DahuaProblem.MD) |
 | `src/media-recorder.js` | Rolling RTSP buffers and pre/post-event clip dump | [docs/LOGIC_camera-ingesters.md](docs/LOGIC_camera-ingesters.md) |
@@ -70,9 +93,19 @@ Event-to-operator target: camera event to dashboard/LINE notification in under 2
 | `src/report-worker.js` | Report scheduler loop; HTTP endpoint `127.0.0.1:3001/run/:id` for on-demand triggers | [docs/LOGIC_stats-reports.md](docs/LOGIC_stats-reports.md) |
 | `src/alert-engine.js` | LINE rule matching logic (library module, required by alert-worker) | [docs/LOGIC_line-notifications.md](docs/LOGIC_line-notifications.md) |
 | `src/line-sender.js` | LINE push/reply API, imgbb upload, Flex message builders | [docs/LOGIC_line-notifications.md](docs/LOGIC_line-notifications.md) |
-| `src/report-renderer.js` | Puppeteer PDF/PNG orchestration | [docs/LOGIC_stats-reports.md](docs/LOGIC_stats-reports.md) |
-| `dashboard/` | Vanilla JS SPA, reports UI/template, i18n dictionaries | [SKILL.md](SKILL.md), [GOTCHAS.md](GOTCHAS.md) |
-| `db/db_migration_*.sql` | Existing-volume schema evolution | [docs/LOGIC_infra-ops.md](docs/LOGIC_infra-ops.md) |
+| `src/report-renderer.js` | Health Report PNG via SVG + `sharp` (`_svgSafeText()` strips emoji; distinct path from Puppeteer analytics reports) | [docs/LOGIC_stats-reports.md](docs/LOGIC_stats-reports.md), [GOTCHAS.md](GOTCHAS.md) #25a |
+| `src/license.js` | Ed25519 JWT license — machine fingerprint (CPU+disk+MAC), online activation, offline grace, expiry check | [docs/LOGIC_license.md](docs/LOGIC_license.md) |
+| `src/auth.js` | JWT triple-layer auth (cookie / Authorization header / WebSocket query) · requireAuth / requireAdmin / requireAdminOrAuditor middleware · session revoke · auditor write-block | [docs/LOGIC_auth-security.md](docs/LOGIC_auth-security.md) |
+| `src/push-sender.js` | Expo Push API — mobile push notifications; `notifyAlert()` + `notifyFace()`; tokens stored in `push_tokens` table; called by alert-worker + mqtt-subscriber | [SKILL.md](SKILL.md) |
+| `src/crypto-creds.js` | AES-256-GCM encryption for camera credentials in `cameras-config.json`; key from `CAMERA_SECRET_KEY` env var | — |
+| `src/color-utils.js` | `xyzToColorName()` — maps Bosch IVA Pro XYZ color payload (sRGB) to English color name; 12-color canonical palette; used in appearance extraction | — |
+| `src/constants.js` | Shared server-side constants — `OFFLINE_THRESHOLD_SEC = 90` (camera considered offline if no event/heartbeat within 90 s) | — |
+| `src/singleton.js` | App-wide singleton store — `pool` (pg connection pool), `wss` (WebSocket server), shared refs for cross-process coordination | — |
+| `src/migrate.js` | DB migration runner — scans `db/db_migration_*.sql` on api-server boot; idempotent; failed migration aborts startup (by design, GOTCHAS #81) | [docs/LOGIC_infra-ops.md](docs/LOGIC_infra-ops.md) |
+| `src/stats-summary-route.js` | Standalone route (`GET /api/stats/executive-summary`) — not in `src/routes/`; registered directly in api-server.js; powers Security Morning Briefing page | — |
+| `src/simulator.js` | Dev-only — publishes fake Bosch MQTT events to EMQX for local testing; must not run in production | — |
+| `dashboard/` | Vanilla JS SPA (27 files) — `dashboard.js` core + 19 `page-*.js` page files (S5/MAINT-FE-001 ✅) + `i18n.js` + `design-tokens.js` + `theme-init.js` + report templates | [SKILL.md](SKILL.md), [GOTCHAS.md](GOTCHAS.md), [dev-docs/file-navigator.html](dev-docs/file-navigator.html) |
+| `db/db_migration_*.sql` | Existing-volume schema evolution (71 files, latest: 061_lpr_scene_resize) | [docs/LOGIC_infra-ops.md](docs/LOGIC_infra-ops.md) |
 
 ---
 
@@ -140,6 +173,22 @@ Canonical details: [docs/LOGIC_infra-ops.md](docs/LOGIC_infra-ops.md), [docs/REF
 
 ---
 
+## Retention Model
+
+Data retention is class-based, governed by system settings and enforced by daily/hourly background jobs:
+
+| Class | Setting | Default | Enforcer | Notes |
+|---|---|---|---|---|
+| General events | `data_retention_days` | 365 | `src/api-server.js` (daily) | Applies to `events` table; **excludes `anprAlarm` rows** (decision #213) |
+| LPR (license plate) rows | `lpr_retention_days` | 30 | `src/api-server.js` (daily, `enforceLprRetention`) | Sole authority over `license_plates` table; raising to years gated on P2/2B partitioning |
+| LPR images | `lpr_image_retention_days` | 7 | `src/lpr-retention.js` (daily) | Deletes files from `snapshots/lpr/` older than N days (≤ lpr_retention) |
+| rawXml metadata | `rawxml_retention_days` | 90 | `src/api-server.js` (daily, `enforceRawXmlRetention`) | Strips `raw_json->>'rawXml'` from `events`; decision #212 |
+| Edge Bosch scene snapshots | `EDGE_IMAGE_RETENTION_DAYS` | 7 | `src/edge/bridge.js` (hourly) | Edge prunes `snapshots/events/<YYYY-MM-DD>/` older than N days; no api-server present on edge (decision #214) |
+
+Central enforcers run in `src/api-server.js` (`setTimeout` ~60–150s after boot, then `setInterval` every 24h — no fixed clock time) except the edge, which prunes in `src/edge/bridge.js` (hourly async, logic in `src/edge/snapshot-retention.js`). Env vars: [docs/REF_edge-install.md](docs/REF_edge-install.md).
+
+---
+
 ## Source Of Truth Boundaries
 
 | Domain | Source Of Truth |
@@ -198,7 +247,8 @@ See [docs/ARCH_documentation-governance.md](docs/ARCH_documentation-governance.m
 | Pending work | [ROADMAP.md](ROADMAP.md) |
 | Completed work | [CHANGELOG.md](CHANGELOG.md) |
 | Documentation ownership rules | [docs/ARCH_documentation-governance.md](docs/ARCH_documentation-governance.md) |
+| Developer portal — file navigator, API routes reference, how-to recipes | [dev-docs/index.html](dev-docs/index.html) |
 
 ---
 
-<sub>End of ARCHITECTURE.md · Companion to CLAUDE.md · Updated 2026-06-08</sub>
+<sub>End of ARCHITECTURE.md · Companion to CLAUDE.md · Updated 2026-06-15</sub>

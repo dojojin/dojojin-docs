@@ -209,9 +209,28 @@ const css = `:root{ --surface-base:${tokens.surfaceBase}; --accent:${tokens.acce
 | **Button** | `--accent`, hover `--accent-muted`, icon SVG | emoji, ขนาด/สี นอก token |
 | **Empty state** | ข้อความ + SVG เรียบ | emoji ใหญ่ |
 | **Grid child** | `min-width:0` เมื่อ content กว้าง (กัน mobile scroll) | ลืม → STUBBORN_FACT #29 |
+| **Filter select** | **MultiPicker** (ดู §7.1) แทน native `<select>` — multi โดย default | native `<select multiple>` (UX แย่), user toggle single/multi |
 
 > **a11y:** อย่าสื่อความหมายด้วย "สีอย่างเดียว" — มี icon/label กำกับเสมอ
 > (คนตาบอดสี + ผ่าน contrast §1).
+
+### 7.1 MultiPicker — filter dropdown กลาง (2026-06-23)
+
+checkbox-dropdown component กลาง แทน native `<select>` ใน filter ทุกหน้า — `dashboard/multipicker.js` + `.mp-*` ใน `index.css`. (ต้นแบบ + เหตุผลเต็ม: demo `public/others/demo/multipicker/`, memory `project-multipicker`.)
+
+```html
+<div class="mp" data-mp-unit="กล้อง" data-mp-search="ค้นหากล้อง...">
+  <select id="lprFilterCam" multiple>…</select>   <!-- hidden, = source of truth -->
+</div>
+```
+```js
+MultiPicker.initAll(scope);            // upgrade หลัง populate options
+MultiPicker.values('lprFilterCam');    // → string[]  (อ่านใน param-builder; [] = ทั้งหมด)
+```
+
+- **2 mode = dev flag** (ไม่ทำ user toggle): default = **multi** · `data-mp-mode="single"` = radio (เลือกเดี่ยว, คลิกแล้วปิด, ไม่มีเลือกทั้งหมด/ล้าง) — ทั้งคู่ได้ search/theme/มือถือ
+- **multi** = list ที่ "OR" มีความหมาย (กล้อง/จังหวัด/ประเภท/สี/เลน/body attrs/…) · **single/native** = mode-threshold ที่ตัดกันเอง (การอ่านป้าย/dup/mismatch/min-conf)
+- มือถือ = bottom-sheet (media query) · search auto เมื่อ options ≥5 · backed by hidden `<select multiple>` (form-compatible)
 
 ---
 

@@ -15,12 +15,13 @@
 <button id="ham">☰</button>
 
 <div class="main">
-<!-- SOURCE: ARCHITECTURE.md · src/api-server.js (RBAC roles) · cameras-config.json · ecosystem.config.js | Update: new vendor, new service, RBAC role added -->
+<!-- SOURCE: ARCHITECTURE.md · src/api-server.js (RBAC roles) · cameras-config.json · ecosystem.config.js · ecosystem.edge.config.js | Update: new vendor, new service, RBAC role added -->
 <h1 class="ph">04 องค์ประกอบระบบ</h1>
 
 <h2>ภาพรวมสถาปัตยกรรม (Architecture Overview)</h2>
 <p>Vigil Platform ประกอบด้วย 4 ชั้นหลัก: <strong>Ingestion</strong> (รับเหตุการณ์จากกล้อง), <strong>Backend API</strong> (ประมวลผล สถิติ), <strong>Worker Processes</strong> (แจ้งเตือน + รายงาน), <strong>Database</strong> (เก็บข้อมูล), และ <strong>Frontend</strong> (dashboard + mobile app)</p>
-<p>ระบบทำงานเป็น <strong>7 PM2 processes</strong> แยกกัน — ถ้า Chrome/Puppeteer ของ report-worker crash หรือ LINE timeout ใน alert-worker จะไม่กระทบ api-server หรือ MQTT ingester</p>
+<p>ระบบทำงานเป็น <strong>8 PM2 processes</strong> แยกกัน — ถ้า Chrome/Puppeteer ของ report-worker crash หรือ LINE timeout ใน alert-worker จะไม่กระทบ api-server หรือ MQTT ingester</p>
+<p>รองรับ <strong>Site Edge Node</strong> (VIGIL-ARCH-003) — mini PC (N150/Ubuntu) วางข้างกล้อง รัน ingester ด้วย <code>EDGE_MODE=1</code> ส่ง events ขึ้น central ผ่าน MQTT bridge แทน direct DB</p>
 
 <div class="feat-grid">
   <div class="card">
@@ -64,8 +65,9 @@
     <h3>Worker Processes (PM2)</h3>
     <p><strong>Isolated background workers</strong></p>
     <ul>
-      <li><strong>alert-worker</strong> — รับ <code>pg_notify alert_event</code> → ประมวล rule → ส่ง LINE + push แยกจาก MQTT ingester</li>
+      <li><strong>alert-worker</strong> — รับ <code>pg_notify alert_event</code> → ประมวล rule → ส่ง LINE + push; EM6 edge stale alert ทุก 5 นาที</li>
       <li><strong>report-worker</strong> — scheduler รายงาน (60s tick) + on-demand HTTP <code>127.0.0.1:3001</code> — crash isolation ถ้า Puppeteer/Chrome พัง</li>
+      <li><strong>lpr-receiver</strong> (PM2 id 8) — standalone ANPR HTTP push receiver (port 3003); รับ LPR + face-push; disk spool/retry สำหรับ LPR forward</li>
     </ul>
   </div>
 
@@ -74,9 +76,13 @@
     <p><strong>PostgreSQL (20+ ตาราง)</strong></p>
     <ul>
       <li><code>events</code> — บันทึกเหตุการณ์หลัก</li>
-      <li><code>cameras</code> — การตั้งค่ากล้อง</li>
+      <li><code>cameras</code> — การตั้งค่ากล้อง (<code>site_id</code>, <code>cam_role</code>, <code>lpr_direction</code> added)</li>
+      <li><code>sites</code>, <code>user_sites</code> — Multi-site (Tier 1 ✅)</li>
+      <li><code>edge_status</code> — Edge Node heartbeat per site (EM2)</li>
       <li><code>alert_rules</code>, <code>alert_logs</code></li>
       <li><code>appearances</code> — คุณลักษณะของบุคคล</li>
+      <li><code>face_event_notes</code>, <code>face_event_acks</code>, <code>face_settings</code> — Face UX (FP4/5/6)</li>
+      <li><code>lpr_alert_acks</code>, <code>lpr_watchlist_groups</code> — LPR alert ack (RF-Alert)</li>
       <li><code>users</code>, <code>audit_logs</code></li>
       <li>นโยบายการเก็บรักษา (การลบโดยอัตโนมัติ)</li>
       <li>Indexes + partition ตามวันที่</li>
@@ -100,10 +106,23 @@
     <ul>
       <li><strong>EMQX</strong> (สำหรับ Bosch MQTT)</li>
       <li><strong>Redis</strong> (session cache real-time pub/sub)</li>
-      <li><strong>PM2</strong> (7 workers: api-server, mqtt-subscriber, hikvision-isapi, dahua-cgi, media-recorder, report-worker, alert-worker)</li>
+      <li><strong>PM2</strong> (8 workers: api-server, mqtt-subscriber, hikvision-isapi, dahua-cgi, media-recorder, lpr-receiver, alert-worker, report-worker)</li>
       <li><strong>Cloudflare Tunnel</strong> (reverse proxy)</li>
       <li><strong>LINE API</strong> (bot webhook)</li>
       <li><strong>Puppeteer</strong> (health report PDF/PNG — ใน report-worker)</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>Site Edge Node (ตัวเลือก — VIGIL-ARCH-003)</h3>
+    <p><strong>Mini PC (N150/Ubuntu) วางข้างกล้องที่ site</strong></p>
+    <ul>
+      <li>รัน ingester ด้วย <code>EDGE_MODE=1</code> — ไม่ต้องการ DB local</li>
+      <li><strong>NanoMQ</strong> — local MQTT broker รับ events จากกล้อง</li>
+      <li><strong>edge-bridge</strong> (Node.js) — ส่ง events ขึ้น central EMQX ผ่าน WSS</li>
+      <li>7 PM2 processes แยกจาก central: nanomq, hikvision, dahua, lpr-receiver, edge-config-agent, edge-bridge, cloudflared</li>
+      <li>Images ไม่ผ่าน MQTT — เฉพาะ metadata + filename ref</li>
+      <li>ใช้เมื่อกล้องอยู่ต่าง network segment หรือต้องการ local resilience</li>
     </ul>
   </div>
 </div>
@@ -219,6 +238,56 @@
 </tr>
 </tbody>
 </table>
+
+<h2>โครงสร้างโค้ดแบบ Modular (Maintainability)</h2>
+
+<p>Vigil Platform ออกแบบโค้ดให้แยกเป็นโมดูลย่อย เพื่อให้บำรุงรักษา อัปเดต และต่อเติมได้ง่ายในระยะยาว:</p>
+
+<div class="two">
+  <div class="card">
+    <h3>Backend — 27 Route Modules</h3>
+    <p>ตรรกะ API แยกเป็น 27 ไฟล์ใน <code>src/routes/</code> แต่ละไฟล์รับผิดชอบงานเดียว:</p>
+    <ul>
+      <li><code>cameras.js</code> — กล้องและการตั้งค่า EMQX</li>
+      <li><code>stats.js</code> — สถิติและการวิเคราะห์</li>
+      <li><code>line.js</code> — LINE notification และ webhook</li>
+      <li><code>health.js</code> — รายงานสุขภาพระบบ</li>
+      <li><code>auth.js</code> / <code>users.js</code> — ยืนยันตัวตนและจัดการผู้ใช้</li>
+      <li><code>lpr.js</code> — ป้ายทะเบียน ANPR (ค้นหา / KPI)</li>
+      <li><code>lpr-query.js</code> — Advanced LPR search</li>
+      <li><code>lpr-watchlist.js</code> / <code>lpr-alerts.js</code> / <code>lpr-gates.js</code> — watchlist, alert ack, lane/gate config</li>
+      <li><code>faces.js</code> / <code>face-push.js</code> — Face Capture gallery + push receiver</li>
+      <li><code>sites.js</code> — multi-site scoping และ site management</li>
+      <li>และอีก 15 modules (alert-rules, appearances, events, map, reports, ...)</li>
+    </ul>
+    <p>ผลลัพธ์: <code>api-server.js</code> ลดจาก ~7,156 → 1,893 บรรทัด (−73%)</p>
+  </div>
+  <div class="card">
+    <h3>Frontend — 22 Page Files</h3>
+    <p>UI แต่ละหน้าแยกเป็นไฟล์ใน <code>dashboard/page-*.js</code> ไม่รวมกันใน bundle เดียว:</p>
+    <ul>
+      <li><code>page-cameras.js</code> — หน้าจัดการกล้อง</li>
+      <li><code>page-stats.js</code> — หน้าสถิติและกราฟ</li>
+      <li><code>page-alerts.js</code> — กฎการแจ้งเตือน LINE</li>
+      <li><code>page-map.js</code> — แผนที่และ heatmap</li>
+      <li><code>page-executive-summary.js</code> — บรรยายสรุปตอนเช้า</li>
+      <li><code>page-lpr.js</code> / <code>page-lpr-settings.js</code> — แกลเลอรี่ป้ายทะเบียน + ตั้งค่า retention/gate/vehicle-type</li>
+      <li>และอีก 16 ไฟล์ (health, reports, faces, user-mgmt, ...)</li>
+    </ul>
+    <p>ผลลัพธ์: <code>dashboard.js</code> ลดจาก ~10,500 → 1,379 บรรทัด (−87%)</p>
+    <p>Shared component: <code>multipicker.js</code> — checkbox-dropdown multi/single-select แทน native <code>&lt;select&gt;</code> ใน filter bar ทุกหน้า</p>
+  </div>
+</div>
+
+<div class="card" style="margin-top:1rem">
+  <h3>ข้อดีสำหรับลูกค้าที่ซื้อ Source Code</h3>
+  <ul>
+    <li><strong>แก้ bug เร็วขึ้น</strong> — นักพัฒนาหาไฟล์ที่เกี่ยวข้องได้ทันที ไม่ต้องไล่อ่านโค้ดหมื่นบรรทัด</li>
+    <li><strong>ต่อเติมง่าย</strong> — เพิ่ม feature ใหม่หรือปรับ white-label โดยแตะเฉพาะไฟล์ที่เกี่ยวข้อง ไม่กระทบส่วนอื่น</li>
+    <li><strong>ความเสี่ยงต่ำ</strong> — การแก้ LINE config ไม่มีทางพลาดกระทบ Stats หรือ Camera settings โดยบังเอิญ</li>
+    <li><strong>โค้ดโปร่งใสตรวจสอบได้</strong> — เจ้าของ source code เปิดดูได้ชัดเจนว่าแต่ละส่วนทำงานอะไร</li>
+  </ul>
+</div>
 
 <h2>ไฟล์การตั้งค่าหลัก</h2>
 

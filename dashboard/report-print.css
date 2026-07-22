@@ -1,5 +1,13 @@
 /* Extracted from report-print.html inline <style> — SEC-3T-005 (2026-06-10)
    style-src-elem 'self' enforcement: no inline style elements allowed */
+:root {
+  --accent:       #3b6fd4;
+  --accent-muted: #2d5ab8;
+  --warn:         #b45309;
+  --status-ok:    #16a34a;
+  --status-bad:   #dc2626;
+  --purple:       #7c3aed;
+}
   * { box-sizing: border-box; }
   body { margin: 0; padding: 28px; width: 820px; background: #fff;
          color: #1a202c; font-family: 'Sarabun','Segoe UI',sans-serif; }
