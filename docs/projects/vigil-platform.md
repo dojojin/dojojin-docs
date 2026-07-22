@@ -37,12 +37,21 @@ Supported protocols:
 
 - **Bosch BVMS** — MQTT over ONVIF Profile M; supports IVA Pro and IVA Basic event types (Crossing Line, Object In Field, Loitering, Counting, and more)
 - **Hikvision** — ISAPI HTTP alert stream; Smart Events and Face Capture
-- **Dahua** — CGI VCA events: Line Crossing, Intrusion, Smart Motion; pre-alarm RTSP clips
+- **Dahua** — CGI VCA events: Line Crossing, Intrusion, Smart Motion; ANPR/LPR plate recognition (ITC cameras); Face Capture via NVR-stored crops (RPC2); pre-alarm RTSP clips; multi-channel NVR support
 - **ONVIF generic** — Monitor-only mode (live snapshot + reachability probe); full event ingestion on the roadmap
+
+### License Plate Recognition (LPR)
+
+Vigil ingests ANPR/LPR events from supported cameras and indexes them in a searchable plate database. Each record includes the plate image crop, full scene image, vehicle type classification, plate registration type (derived from plate color), province, and speed (where available).
+
+- **Hikvision ANPR** — ISAPI stream integration
+- **Dahua ITC** — CGI event integration; vehicle categories include sedan, SUV, truck, pickup, motorcycle, and more
+
+The LPR page provides forensic search by plate number, date range, camera, and vehicle type. A statistical dashboard shows plate activity by category, per-camera breakdowns, and timeline charts.
 
 ### Real-Time Monitoring
 
-Every camera is probed on a heartbeat cycle. Status transitions from online to offline are detected within 90 seconds and trigger notifications.
+Every camera is probed on a heartbeat cycle. Status transitions from online to offline are detected within 60 seconds and trigger notifications.
 
 The **Security Morning Briefing** dashboard gives operators an immediate operational picture:
 
@@ -87,9 +96,12 @@ Event categories and their icons and colors are configurable by administrators.
 
 **Health Report** — System-wide status report rendered as a PNG image with five configurable sections: camera uptime summary, event volume, disk usage, alert activity, and image quality assessment (bright/dark/blurry/scene-change per camera over 24 hours). The banner automatically flags when more than 50% of cameras are offline or disk usage exceeds 85%.
 
-### Face Capture (Hikvision)
+### Face Capture
 
-For Hikvision cameras with Face Capture capability, Vigil captures and stores face crops alongside the full background image. Each face record includes demographic attributes detected by the camera firmware: approximate age range, gender, emotion, and attributes such as mask, glasses, or hat. Images are stored locally on the server — no cloud storage. A filterable gallery and per-face detail modal are available in the dashboard.
+Vigil captures and stores face crops alongside the full background image for supported camera vendors. Each face record includes demographic attributes detected by the camera firmware: approximate age range, gender, emotion, and attributes such as mask, glasses, or hat. Images are stored locally on the server — no cloud storage. A filterable gallery and per-face detail modal are available in the dashboard.
+
+- **Hikvision** — face crops via ISAPI stream
+- **Dahua** — face crops and full scene images retrieved directly from NVR storage; includes similarity scores and blacklist match status from `FaceComparision` events
 
 ### Snapshot Overlays
 
