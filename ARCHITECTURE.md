@@ -81,7 +81,7 @@ Event-to-operator target: camera event to dashboard/LINE notification in under 2
 |---|---|---|
 | `src/api-server.js` | Express API, auth gate, WebSocket bridge, health endpoints, static serving | [docs/LOGIC_auth-security.md](docs/LOGIC_auth-security.md), [docs/LOGIC_stats-reports.md](docs/LOGIC_stats-reports.md) |
 | `src/routes/` | Route modules split from api-server.js (factory pattern, S4/MAINT-2T-001 ✅); 19 files: alert-rules, appearances, auth, branding, cameras, categories, eula, events, groups, health, license, line, map, ops, report-schedules, reports, settings, stats, users | Loaded via `require('./routes/<name>')(app, pool, deps)` in api-server.js |
-| `src/helpers/` | Shared utilities: `routeError.js`, `getSystemSetting.js` (Map cache + invalidate), `normalizeTimeOfDay.js` | Required directly in route files and api-server.js |
+| `src/helpers/` | Shared utilities: `routeError.js`, `getSystemSetting.js` (Map cache + invalidate), `normalizeTimeOfDay.js`, `emqxPublish.js` (one-shot EMQX HTTP API publish — login+publish, used for `_config/detect-model`\|`delete-media`\|`scan-nvr` command channels) | Required directly in route files and api-server.js |
 | `src/mqtt-subscriber.js` | Bosch MQTT ingestion + edge snapshot handler (`saveEdgeSnapshot` — Hik/Dahua event_id path + Bosch timestamp path), `pg_notify` event/alert dispatch | [docs/LOGIC_camera-ingesters.md](docs/LOGIC_camera-ingesters.md) |
 | `src/edge/publisher.js` | Edge-only — `publishEdgeEvent()` lazy MQTT singleton to NanoMQ; exports `EDGE_MODE` flag; used by all 4 ingesters | [docs/LOGIC_edge-ingester-divergence.md](docs/LOGIC_edge-ingester-divergence.md) |
 | `src/edge/bridge.js` | Edge-only PM2 process (`edge-bridge`); forwards `projects/${SITE_ID}/#` + Bosch `+/onvif-ej/#` from NanoMQ → central EMQX WSS; CONFIG_TOPIC loop-break; 60s heartbeat | [docs/LOGIC_edge-ingester-divergence.md](docs/LOGIC_edge-ingester-divergence.md) |
@@ -98,6 +98,8 @@ Event-to-operator target: camera event to dashboard/LINE notification in under 2
 | `src/auth.js` | JWT triple-layer auth (cookie / Authorization header / WebSocket query) · requireAuth / requireAdmin / requireAdminOrAuditor middleware · session revoke · auditor write-block | [docs/LOGIC_auth-security.md](docs/LOGIC_auth-security.md) |
 | `src/push-sender.js` | Expo Push API — mobile push notifications; `notifyAlert()` + `notifyFace()`; tokens stored in `push_tokens` table; called by alert-worker + mqtt-subscriber | [SKILL.md](SKILL.md) |
 | `src/crypto-creds.js` | AES-256-GCM encryption for camera credentials in `cameras-config.json`; key from `CAMERA_SECRET_KEY` env var | — |
+| `src/model-detect.js` | Camera model/firmware auto-detect — vendor-specific probes: Dahua `magicBox.cgi`, Hikvision ISAPI, Bosch ONVIF `GetDeviceInformation`; triggered on camera Save (OPT5-EDGE-004) | [ROADMAP.md](ROADMAP.md) (CODEX Audit 5th optimization) |
+| `src/camera-media-delete.js` | `deleteCameraMedia()` — removes a deleted camera's on-disk media across all snapshot categories/date-dirs; reject-then-use `camera_id` validation, exact dir-name matching (no prefix collision) | [ROADMAP.md](ROADMAP.md) (CODEX Audit 5th optimization, OPT5-EDGE-005) |
 | `src/color-utils.js` | `xyzToColorName()` — maps Bosch IVA Pro XYZ color payload (sRGB) to English color name; 12-color canonical palette; used in appearance extraction | — |
 | `src/constants.js` | Shared server-side constants — `OFFLINE_THRESHOLD_SEC = 90` (camera considered offline if no event/heartbeat within 90 s) | — |
 | `src/singleton.js` | App-wide singleton store — `pool` (pg connection pool), `wss` (WebSocket server), shared refs for cross-process coordination | — |
@@ -105,7 +107,7 @@ Event-to-operator target: camera event to dashboard/LINE notification in under 2
 | `src/stats-summary-route.js` | Standalone route (`GET /api/stats/executive-summary`) — not in `src/routes/`; registered directly in api-server.js; powers Security Morning Briefing page | — |
 | `src/simulator.js` | Dev-only — publishes fake Bosch MQTT events to EMQX for local testing; must not run in production | — |
 | `dashboard/` | Vanilla JS SPA (27 files) — `dashboard.js` core + 19 `page-*.js` page files (S5/MAINT-FE-001 ✅) + `i18n.js` + `design-tokens.js` + `theme-init.js` + report templates | [SKILL.md](SKILL.md), [GOTCHAS.md](GOTCHAS.md), [dev-docs/file-navigator.html](dev-docs/file-navigator.html) |
-| `db/db_migration_*.sql` | Existing-volume schema evolution (71 files, latest: 061_lpr_scene_resize) | [docs/LOGIC_infra-ops.md](docs/LOGIC_infra-ops.md) |
+| `db/db_migration_*.sql` | Existing-volume schema evolution (81 numbered files + a few legacy-named, latest: 091_camera_model_detect_status) | [docs/LOGIC_infra-ops.md](docs/LOGIC_infra-ops.md) |
 
 ---
 

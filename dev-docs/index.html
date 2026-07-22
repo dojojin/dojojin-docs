@@ -131,6 +131,21 @@
   <td><code>scripts/backup.sh</code> / <code>scripts/restore.sh</code></td>
   <td><code>pg_dump -Fc</code> = binary — ห้าม cat ดู <code>GOTCHAS #20</code></td>
 </tr>
+<tr>
+  <td>ตรวจจับรุ่น/เฟิร์มแวร์กล้อง (model detect)</td>
+  <td><code>src/model-detect.js</code></td>
+  <td>Dahua <code>magicBox.cgi</code> / Hikvision ISAPI / Bosch ONVIF <code>GetDeviceInformation</code>; trigger-on-Save ผ่าน command channel — ดู <code>src/routes/cameras.js</code></td>
+</tr>
+<tr>
+  <td>ลบ media ของกล้องที่ถูกลบออกจากระบบ</td>
+  <td><code>src/camera-media-delete.js</code></td>
+  <td>reject-then-use validation + exact dir-name matching; รันผ่าน MQTT command channel เดียวกับ model-detect (edge) หรือเรียกตรง (site <code>main</code>)</td>
+</tr>
+<tr>
+  <td>rotate <code>CAMERA_SECRET_KEY</code></td>
+  <td><code>scripts/rotate-camera-secret-key.js</code></td>
+  <td>รับ <code>OLD_KEY</code>/<code>NEW_KEY</code> เป็น env param เท่านั้น (ไม่อ่านจาก <code>.env</code> ambient) — <code>SELF_TEST=1 node scripts/rotate-camera-secret-key.js</code> verify ได้โดยไม่แตะไฟล์จริง</td>
+</tr>
 </tbody>
 </table>
 
@@ -163,6 +178,7 @@
     <p><code>getSystemSetting.js</code> — Map cache + invalidate</p>
     <p><code>normalizeTimeOfDay.js</code> — quiet hours normalization</p>
     <p><code>face-multipart.js</code> — Hikvision FAS multipart parser (<code>parseFaceAlarmMultipart</code> + <code>faceAlarmToRecord</code>); shared ระหว่าง hikvision-isapi ingester + face-push receiver</p>
+    <p><code>emqxPublish.js</code> — one-shot EMQX HTTP API publish (login+publish); ใช้โดย command channel ทุกตัว (<code>_config/detect-model</code>, <code>_config/delete-media</code>, <code>_config/scan-nvr</code>) — publish ผ่าน admin API จึงไม่ผ่าน MQTT client ACL</p>
   </div>
   <div class="card">
     <h3>Edge Runtime (src/edge/) — VIGIL-ARCH-003</h3>

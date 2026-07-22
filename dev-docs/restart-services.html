@@ -75,6 +75,23 @@ pm2 stop all
 # เริ่มใหม่ทั้งหมด (ใช้ ecosystem.config.js)
 pm2 start ecosystem.config.js</pre>
 
+<h2>ข้อยกเว้นของกฎเหล็ก: <code>pm2 restart &lt;app เดียว&gt;</code></h2>
+
+<p>กฎ "ห้าม restart จาก non-GUI shell" ด้านบนใช้กับ <strong>การ (re)start ตัว PM2 daemon เอง</strong> เท่านั้น (<code>pm2 kill</code> ตามด้วย <code>pm2 resurrect</code> หรือ <code>pm2 start</code>) — เพราะ grant ของ macOS Local Network Privacy (LNP) ผูกกับ context ของ daemon process (ดู GOTCHAS #84)</p>
+
+<p><code>pm2 restart &lt;app-name&gt;</code> **ตัวเดียว** เป็นแค่ RPC สั่ง daemon ที่<strong>รันอยู่แล้ว</strong>ให้ respawn child process นั้นตัวเดียว — daemon เองไม่ได้ restart เลย ไม่กระทบ grant ที่มีอยู่ — สั่งจาก shell ไหนก็ได้ (SSH, tmux, Claude Code shell) ปลอดภัย <strong>ยกเว้น</strong> app ที่ restart เป็น process ที่ต้องเชื่อมกล้อง (ffmpeg-based recorder, ingester) ซึ่งควรระวังเป็นพิเศษเพราะ symptom ของ grant หายจะไม่เห็นทันที</p>
+
+<div class="wbox">
+  <h4><code>ecosystem.config.js</code>'s <code>env</code> block เปลี่ยน — ต้องมากกว่าแค่ restart</h4>
+  <p><code>pm2 kill && pm2 resurrect</code> (LAN-safe restart script ปกติ) <strong>ไม่ pick up</strong> การเปลี่ยน <code>env</code> block ใน <code>ecosystem.config.js</code> — เพราะ <code>pm2 resurrect</code> อ่านจาก <code>~/.pm2/dump.pm2</code> (snapshot จากตอน <code>pm2 save</code> ครั้งก่อน) ไม่ได้ re-read config file เลย (GOTCHAS #115)</p>
+  <pre># แก้ ecosystem.config.js's env block แล้ว ต้องรันแบบนี้แทน (ยังต้องผ่าน GUI Terminal เพราะเป็นการ start daemon ใหม่)
+pm2 start ecosystem.config.js   # apply env ใหม่ให้ process ที่ชื่อตรงกันที่กำลังรันอยู่
+pm2 save                        # persist ให้ resurrect รอบถัดไปจำค่านี้ได้
+
+# verify:
+pm2 jlist | grep -A2 '"NODE_ENV"'</pre>
+</div>
+
 <h2>services.sh — Full Lifecycle</h2>
 
 <pre># ใช้ script นี้สำหรับ start/stop เต็มรูปแบบ (ใน GUI Terminal)
