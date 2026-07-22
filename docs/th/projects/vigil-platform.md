@@ -37,12 +37,21 @@ Protocol ที่รองรับ:
 
 - **Bosch BVMS** — MQTT over ONVIF Profile M; รองรับ IVA Pro และ IVA Basic (Crossing Line, Object In Field, Loitering, Counting และอื่น ๆ)
 - **Hikvision** — ISAPI HTTP alert stream; Smart Events และ Face Capture
-- **Dahua** — CGI VCA events: Line Crossing, Intrusion, Smart Motion; pre-alarm RTSP clips
+- **Dahua** — CGI VCA events: Line Crossing, Intrusion, Smart Motion; ANPR/LPR อ่านป้ายทะเบียน (กล้อง ITC); Face Capture ผ่านการดึง crop จาก NVR (RPC2); pre-alarm RTSP clips; รองรับ NVR หลาย channel
 - **ONVIF generic** — โหมด monitor-only (live snapshot + reachability probe); full event ingestion อยู่ใน roadmap
+
+### อ่านป้ายทะเบียน (LPR)
+
+Vigil รับ event ANPR/LPR จากกล้องที่รองรับและ index ลงในฐานข้อมูลป้ายทะเบียนที่ค้นหาได้ แต่ละ record เก็บ crop ป้าย, ภาพ scene เต็ม, ประเภทยานพาหนะ, ประเภททะเบียน (จากสีป้าย), จังหวัด, และความเร็ว (กรณีมีข้อมูล)
+
+- **Hikvision ANPR** — integration ผ่าน ISAPI stream
+- **Dahua ITC** — integration ผ่าน CGI event; ประเภทยานพาหนะได้แก่ รถเก๋ง, SUV, รถบรรทุก, กระบะ, มอเตอร์ไซค์ และอื่น ๆ
+
+หน้า LPR ให้ค้นหา forensic ตามเลขป้าย, ช่วงเวลา, กล้อง, และประเภทยานพาหนะ พร้อม dashboard สถิติแสดง activity ตาม category, แยกต่อกล้อง, และ timeline
 
 ### ติดตาม Real-Time
 
-กล้องทุกตัวถูก probe ตาม heartbeat cycle การเปลี่ยนสถานะจาก online เป็น offline ตรวจพบภายใน 90 วินาทีและ trigger notification
+กล้องทุกตัวถูก probe ตาม heartbeat cycle การเปลี่ยนสถานะจาก online เป็น offline ตรวจพบภายใน 60 วินาทีและ trigger notification
 
 Dashboard **Security Morning Briefing** ให้ภาพรวมปฏิบัติการทันที:
 
@@ -85,9 +94,12 @@ Event ถูกเก็บพร้อม metadata ครบ สามารถ
 
 **Health Report** — รายงานสถานะระบบทั้งหมด render เป็น PNG พร้อม 5 ส่วนที่ตั้งค่าได้: สรุป uptime กล้อง, ปริมาณ event, การใช้ disk, กิจกรรม alert, และการประเมินคุณภาพภาพ banner แจ้งอัตโนมัติเมื่อกล้องออฟไลน์เกิน 50% หรือ disk เกิน 85%
 
-### Face Capture (Hikvision)
+### Face Capture
 
-สำหรับกล้อง Hikvision ที่มีความสามารถ Face Capture Vigil จับและเก็บ face crop พร้อมภาพพื้นหลังเต็มรูป แต่ละ face record มี demographic attribute ที่ firmware ของกล้องตรวจจับ: ช่วงอายุโดยประมาณ, เพศ, อารมณ์, และ attribute เช่น หน้ากาก, แว่น, หรือหมวก ภาพเก็บใน server ของลูกค้า — ไม่ใช้ cloud storage มีแกลเลอรี่ที่กรองได้และ face detail modal ใน dashboard
+Vigil จับและเก็บ face crop พร้อมภาพพื้นหลังเต็มรูปสำหรับยี่ห้อที่รองรับ แต่ละ face record มี demographic attribute ที่ firmware ของกล้องตรวจจับ: ช่วงอายุโดยประมาณ, เพศ, อารมณ์, และ attribute เช่น หน้ากาก, แว่น, หรือหมวก ภาพเก็บใน server ของลูกค้า — ไม่ใช้ cloud storage มีแกลเลอรี่ที่กรองได้และ face detail modal ใน dashboard
+
+- **Hikvision** — ดึง face crop ผ่าน ISAPI stream
+- **Dahua** — ดึง face crop และภาพเต็มโดยตรงจาก NVR storage; รวมคะแนน similarity และสถานะ blacklist match จาก event `FaceComparision`
 
 ### Snapshot Overlay
 
