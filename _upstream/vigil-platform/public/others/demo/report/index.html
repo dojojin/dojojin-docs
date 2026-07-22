@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reports Redesign — Draft Demo</title>
+
+<!-- DRAFT/DEMO ONLY — links real production assets so the preview is pixel-faithful.
+     CSP-compliant (external css/js, no inline <script>, no inline event handlers).
+     Served at: /others/demo/report/  (auth-gated — log in to dashboard first).
+     Report numbers/charts = mock. Multi-domain: Events · Face Recognition ·
+     Face Capture · LPR + auto-send to LINE. -->
+<script src="/theme-init.js"></script>
+<link rel="stylesheet" href="/vendor/fonts/fonts.css">
+<link rel="stylesheet" href="/vendor/air-datepicker/air-datepicker.css">
+<link rel="stylesheet" href="/vendor/air-datepicker/theme-vigil.css">
+<script src="/vendor/air-datepicker/air-datepicker.min.js"></script>
+<script src="/vendor/chartjs/chart-4.4.1.umd.min.js"></script>
+<link rel="stylesheet" href="/index.css">
+<link rel="stylesheet" href="report-demo.css?v=r9">
+</head>
+<body>
+<div class="demo-wrap">
+
+  <div class="demo-banner">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+    DRAFT — demo ออกแบบหน้ารายงานใหม่ · รวม เหตุการณ์ · จดจำใบหน้า · บันทึกใบหน้า · ป้ายทะเบียน + ส่งเข้า LINE อัตโนมัติ · ข้อมูลทั้งหมด = mock
+  </div>
+  <div class="page-head">
+    <div>
+      <h1>รายงาน · Reports</h1>
+      <div class="sub">สร้างรายงานหลายมิติ พร้อมตัวอย่างสด และตั้งส่งเข้า LINE อัตโนมัติ</div>
+    </div>
+    <div class="tabs" id="rptTabBar">
+      <button class="tab active" data-tab="build">รายงานวิเคราะห์</button>
+      <button class="tab" data-tab="health">สุขภาพระบบ</button>
+      <button class="tab" data-tab="face">ใบหน้า</button>
+      <button class="tab" data-tab="lpr">ป้ายทะเบียน</button>
+      <button class="tab" data-tab="auto">ส่งเข้า LINE อัตโนมัติ<span class="tab-badge" id="autoBadge"></span></button>
+      <button class="tab" data-tab="history">ประวัติการส่ง</button>
+    </div>
+  </div>
+
+  <!-- Scope bar — RBAC role simulator + Site scope (applies to every tab) -->
+  <div class="scope-bar">
+    <div class="scope-group">
+      <span class="scope-label">มุมมอง (จำลองสิทธิ์)</span>
+      <div class="seg sm" id="viewerBar">
+        <button data-vw="super" class="active">Super Admin</button>
+        <button data-vw="vss">ผู้ใช้ VSS</button>
+        <button data-vw="bma">ผู้ใช้ BMA</button>
+        <button data-vw="phuket">ผู้ใช้ ภูเก็ต</button>
+      </div>
+    </div>
+    <div class="scope-group">
+      <span class="scope-label">ขอบเขต Site</span>
+      <div class="seg sm" id="siteBar"></div>
+      <span class="scope-lock" id="siteLock" style="display:none">🔒 เห็นเฉพาะ Site ของตน</span>
+    </div>
+  </div>
+
+  <!-- ===================== TAB: BUILD ===================== -->
+  <section id="tab-build">
+    <div class="rb-layout">
+
+      <!-- left: controls -->
+      <aside class="rb-controls card">
+        <div class="rb-step">สร้างรายงาน</div>
+
+        <label class="form-label">ประเภทรายงาน</label>
+        <div class="seg rb-seg" id="rptTypeBar">
+          <button data-rt="daily" class="active">รายวัน</button>
+          <button data-rt="weekly">รายสัปดาห์</button>
+          <button data-rt="monthly">รายเดือน</button>
+          <button data-rt="custom">กำหนดเอง</button>
+        </div>
+
+        <label class="form-label">ช่วงข้อมูล</label>
+        <div class="rb-daterow">
+          <input class="form-input" id="rbFrom" placeholder="ตั้งแต่" readonly>
+          <span class="rb-dash" id="rbDash">–</span>
+          <input class="form-input" id="rbTo" placeholder="ถึง" readonly>
+        </div>
+
+        <label class="form-label">ชื่อรายงาน</label>
+        <input class="form-input" id="rbTitle" value="รายงานวิเคราะห์ระบบ CCTV">
+
+        <label class="form-label">เนื้อหาในรายงาน</label>
+        <div class="rb-domains" id="rbDomains">
+          <label class="rb-dom"><input type="checkbox" data-dom="events" checked><span class="rb-dom-dot" style="background:var(--accent)"></span>เหตุการณ์ทั่วไป</label>
+          <label class="rb-dom"><input type="checkbox" data-dom="facerec" checked><span class="rb-dom-dot" style="background:var(--purple)"></span>การจดจำใบหน้า</label>
+          <label class="rb-dom"><input type="checkbox" data-dom="facecap" checked><span class="rb-dom-dot" style="background:#14b8a6"></span>การบันทึกใบหน้า</label>
+          <label class="rb-dom"><input type="checkbox" data-dom="lpr" checked><span class="rb-dom-dot" style="background:var(--warn)"></span>ป้ายทะเบียน (LPR)</label>
+        </div>
+
+        <label class="form-label">รูปแบบไฟล์</label>
+        <div class="seg rb-seg sm" id="rptFmtBar">
+          <button data-fmt="png" class="active">PNG (รูปภาพ)</button>
+          <button data-fmt="pdf">PDF (A4)</button>
+        </div>
+
+        <div class="rb-actions">
+          <button class="btn btn-primary" id="rbDownload">ดาวน์โหลด <span id="rbFmtLabel">PNG</span></button>
+          <button class="btn btn-secondary rb-line" id="rbSendLine">ส่งเข้า LINE ทันที</button>
+          <button class="btn btn-secondary" id="rbSchedule">ตั้งส่งอัตโนมัติ →</button>
+        </div>
+
+        <div class="rb-summary" id="rbSummary"></div>
+      </aside>
+
+      <!-- right: live report preview -->
+      <div class="rb-preview">
+        <div class="rb-preview-bar">
+          <span class="rb-preview-label">ตัวอย่างสด</span>
+          <span class="rb-preview-hint">อัปเดตทันทีเมื่อเปลี่ยนตัวเลือก</span>
+        </div>
+        <div class="rpt-doc" id="rptDoc"><!-- rendered by JS --></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== TAB: HEALTH REPORT ===================== -->
+  <section id="tab-health" style="display:none">
+    <div class="rb-layout">
+      <aside class="rb-controls card">
+        <div class="rb-step">รายงานสุขภาพระบบ</div>
+
+        <label class="form-label">ช่วงข้อมูล</label>
+        <div class="seg rb-seg sm" id="hrRangeBar">
+          <button data-hr="24h" class="active">24 ชม.</button>
+          <button data-hr="7d">7 วัน</button>
+          <button data-hr="30d">30 วัน</button>
+        </div>
+
+        <label class="form-label">จัดกลุ่ม Uptime ตาม</label>
+        <div class="seg rb-seg sm" id="hrGroupBar">
+          <button data-gb="group" class="active">กลุ่ม</button>
+          <button data-gb="site">Site</button>
+          <button data-gb="vendor">ยี่ห้อ</button>
+          <button data-gb="camera">กล้อง</button>
+        </div>
+
+        <label class="form-label">หมวดในรายงาน</label>
+        <div class="rb-domains" id="hrSecs">
+          <label class="rb-dom"><input type="checkbox" data-sec="camera_status" checked><span class="rb-dom-dot" style="background:var(--accent)"></span>สถานะกล้อง</label>
+          <label class="rb-dom"><input type="checkbox" data-sec="camera_uptime" checked><span class="rb-dom-dot" style="background:var(--status-ok)"></span>Uptime กล้อง</label>
+          <label class="rb-dom"><input type="checkbox" data-sec="storage" checked><span class="rb-dom-dot" style="background:var(--purple)"></span>พื้นที่จัดเก็บ</label>
+          <label class="rb-dom"><input type="checkbox" data-sec="system" checked><span class="rb-dom-dot" style="background:#14b8a6"></span>ทรัพยากรระบบ</label>
+        </div>
+
+        <label class="form-label">รูปแบบไฟล์</label>
+        <div class="seg rb-seg sm" id="hrFmtBar">
+          <button data-fmt="png" class="active">PNG (รูปภาพ)</button>
+          <button data-fmt="pdf">PDF (A4)</button>
+        </div>
+
+        <div class="rb-actions">
+          <button class="btn btn-primary" id="hrDownload">ดาวน์โหลด <span id="hrFmtLabel">PNG</span></button>
+          <button class="btn btn-secondary rb-line" id="hrSendLine">ส่งเข้า LINE ทันที</button>
+          <button class="btn btn-secondary" id="hrSchedule">ตั้งส่งอัตโนมัติ →</button>
+        </div>
+
+        <div class="rb-summary" id="hrSummary"></div>
+      </aside>
+
+      <div class="rb-preview">
+        <div class="rb-preview-bar">
+          <span class="rb-preview-label">ตัวอย่างสด</span>
+          <span class="rb-preview-hint">รายงานสุขภาพระบบ — render เป็น PNG/PDF (server-side)</span>
+        </div>
+        <div class="rpt-doc" id="hrDoc"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== TAB: FACE REPORT ===================== -->
+  <section id="tab-face" style="display:none">
+    <div class="rb-layout">
+      <aside class="rb-controls card">
+        <div class="rb-step">รายงานใบหน้า</div>
+
+        <label class="form-label">ประเภทรายงาน</label>
+        <div class="seg rb-seg sm" id="faTypeBar">
+          <button data-rt="daily" class="active">รายวัน</button>
+          <button data-rt="weekly">รายสัปดาห์</button>
+          <button data-rt="monthly">รายเดือน</button>
+          <button data-rt="custom">กำหนดเอง</button>
+        </div>
+
+        <label class="form-label">กลุ่มเฝ้าระวัง (คลัง FDLib)</label>
+        <div class="seg rb-seg sm" id="faGroupBar">
+          <button data-fg="all" class="active">ทั้งหมด</button>
+          <button data-fg="บัญชีดำ">บัญชีดำ</button>
+          <button data-fg="ห้ามเข้า">ห้ามเข้า</button>
+          <button data-fg="VIP">VIP</button>
+        </div>
+        <div class="auto-note">กลุ่ม = ชื่อคลัง FDLib บนกล้อง (`fdLibName` — ต่างกันตามลูกค้า) · ระบบนี้ <b>ไม่มี</b>ตาราง watchlist ใบหน้าฝั่งเซิร์ฟเวอร์ · "ผู้ต้องสงสัย" = เหตุการณ์ FaceRecognition ที่ <code>listType=blackList</code> พร้อมรูปอ้างอิงจาก <code>face/ref/</code></div>
+
+        <label class="form-label">ความมั่นใจขั้นต่ำ</label>
+        <div class="seg rb-seg sm" id="faScoreBar">
+          <button data-sc="70">≥70%</button>
+          <button data-sc="80" class="active">≥80%</button>
+          <button data-sc="90">≥90%</button>
+        </div>
+
+        <label class="form-label">เนื้อหาในรายงาน</label>
+        <div class="rb-domains" id="faSecs">
+          <label class="rb-dom"><input type="checkbox" data-sec="peak" checked><span class="rb-dom-dot" style="background:var(--accent)"></span>ช่วงเวลาหนาแน่น (Peak)</label>
+          <label class="rb-dom"><input type="checkbox" data-sec="demographics" checked><span class="rb-dom-dot" style="background:#14b8a6"></span>ข้อมูลประชากร</label>
+          <label class="rb-dom"><input type="checkbox" data-sec="trend" checked><span class="rb-dom-dot" style="background:var(--purple)"></span>แนวโน้มตามเวลา</label>
+          <label class="rb-dom"><input type="checkbox" data-sec="persons" checked><span class="rb-dom-dot" style="background:var(--status-ok)"></span>บุคคลที่พบบ่อย</label>
+          <label class="rb-dom"><input type="checkbox" data-sec="suspects" checked><span class="rb-dom-dot" style="background:var(--status-bad)"></span>ผู้ต้องสงสัย/เฝ้าระวัง (มีรูป)</label>
+        </div>
+
+        <label class="form-label">รูปแบบไฟล์</label>
+        <div class="seg rb-seg sm" id="faFmtBar">
+          <button data-fmt="png" class="active">PNG (รูปภาพ)</button>
+          <button data-fmt="pdf">PDF (A4)</button>
+        </div>
+
+        <div class="rb-actions">
+          <button class="btn btn-primary" id="faDownload">ดาวน์โหลด <span id="faFmtLabel">PNG</span></button>
+          <button class="btn btn-secondary rb-line" id="faSendLine">ส่งเข้า LINE ทันที</button>
+          <button class="btn btn-secondary" id="faSchedule">ตั้งส่งอัตโนมัติ →</button>
+        </div>
+        <div class="rb-summary" id="faSummary"></div>
+      </aside>
+
+      <div class="rb-preview">
+        <div class="rb-preview-bar">
+          <span class="rb-preview-label">ตัวอย่างสด</span>
+          <span class="rb-preview-hint">รายงานใบหน้า — ภาพที่ตรวจพบเทียบภาพอ้างอิง</span>
+        </div>
+        <div class="rpt-doc" id="faDoc"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== TAB: LPR REPORT ===================== -->
+  <section id="tab-lpr" style="display:none">
+    <div class="rb-layout">
+      <aside class="rb-controls card">
+        <div class="rb-step">รายงานป้ายทะเบียน</div>
+
+        <label class="form-label">ประเภทรายงาน</label>
+        <div class="seg rb-seg sm" id="lpTypeBar">
+          <button data-rt="daily" class="active">รายวัน</button>
+          <button data-rt="weekly">รายสัปดาห์</button>
+          <button data-rt="monthly">รายเดือน</button>
+          <button data-rt="custom">กำหนดเอง</button>
+        </div>
+
+        <label class="form-label">กลุ่มเฝ้าระวัง</label>
+        <div class="seg rb-seg sm" id="lpGroupBar">
+          <button data-lg="all" class="active">ทั้งหมด</button>
+          <button data-lg="รถตามหมายจับ">หมายจับ</button>
+          <button data-lg="รถผู้ต้องสงสัย">ต้องสงสัย</button>
+          <button data-lg="รถ VIP">VIP</button>
+        </div>
+
+        <label class="form-label">เนื้อหาในรายงาน</label>
+        <div class="rb-domains" id="lpSecs">
+          <label class="rb-dom"><input type="checkbox" data-sec="peak" checked><span class="rb-dom-dot" style="background:var(--accent)"></span>ช่วงเวลาหนาแน่น (Peak)</label>
+          <label class="rb-dom"><input type="checkbox" data-sec="province" checked><span class="rb-dom-dot" style="background:var(--purple)"></span>จังหวัด</label>
+          <label class="rb-dom"><input type="checkbox" data-sec="vtype" checked><span class="rb-dom-dot" style="background:var(--warn)"></span>ประเภทรถ</label>
+          <label class="rb-dom"><input type="checkbox" data-sec="direction" checked><span class="rb-dom-dot" style="background:var(--status-ok)"></span>ทิศทาง เข้า/ออก</label>
+          <label class="rb-dom"><input type="checkbox" data-sec="watch" checked><span class="rb-dom-dot" style="background:var(--status-bad)"></span>รถเฝ้าระวัง (มีรูป)</label>
+        </div>
+
+        <label class="form-label">รูปแบบไฟล์</label>
+        <div class="seg rb-seg sm" id="lpFmtBar">
+          <button data-fmt="png" class="active">PNG (รูปภาพ)</button>
+          <button data-fmt="pdf">PDF (A4)</button>
+        </div>
+
+        <div class="rb-actions">
+          <button class="btn btn-primary" id="lpDownload">ดาวน์โหลด <span id="lpFmtLabel">PNG</span></button>
+          <button class="btn btn-secondary rb-line" id="lpSendLine">ส่งเข้า LINE ทันที</button>
+          <button class="btn btn-secondary" id="lpSchedule">ตั้งส่งอัตโนมัติ →</button>
+        </div>
+        <div class="rb-summary" id="lpSummary"></div>
+      </aside>
+
+      <div class="rb-preview">
+        <div class="rb-preview-bar">
+          <span class="rb-preview-label">ตัวอย่างสด</span>
+          <span class="rb-preview-hint">รายงานป้ายทะเบียน — ป้ายที่จับได้เทียบทะเบียนเฝ้าระวัง</span>
+        </div>
+        <div class="rpt-doc" id="lpDoc"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== TAB: AUTO-SEND LINE ===================== -->
+  <section id="tab-auto" style="display:none">
+    <div class="auto-layout">
+      <div class="auto-list-col">
+        <div class="auto-head">
+          <div>
+            <div class="auto-title">กำหนดการส่งอัตโนมัติ</div>
+            <div class="auto-sub">รายงานจะถูกสร้างและส่งเข้า LINE ตามเวลาที่ตั้งไว้</div>
+          </div>
+          <button class="btn btn-primary" id="autoNew">+ สร้างกำหนดการ</button>
+        </div>
+        <div class="auto-list" id="autoList"></div>
+      </div>
+
+      <!-- LINE message preview -->
+      <aside class="auto-side card">
+        <div class="rb-step">ตัวอย่างข้อความใน LINE</div>
+        <div class="line-mock" id="lineMock"></div>
+        <div class="auto-note">รายงานแนบเป็นรูป (PNG) หรือไฟล์ PDF · ผู้รับเปิดดูได้ทันทีในแชต</div>
+      </aside>
+    </div>
+
+    <!-- schedule editor (inline panel, hidden until +สร้าง/แก้ไข) -->
+    <div class="sched-editor card" id="schedEditor" style="display:none">
+      <div class="rb-step" id="schedEditTitle">กำหนดการใหม่</div>
+      <div class="sched-grid">
+        <div class="form-group">
+          <label class="form-label">ชนิดรายงาน</label>
+          <div class="seg sm" id="seFamily">
+            <button data-fam="analytics" class="active">วิเคราะห์</button>
+            <button data-fam="health">สุขภาพระบบ</button>
+            <button data-fam="face">ใบหน้า</button>
+            <button data-fam="lpr">ป้ายทะเบียน</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">ขอบเขต Site</label>
+          <div class="seg sm" id="seSite"></div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">ชื่อกำหนดการ</label>
+          <input class="form-input" id="seName" placeholder="เช่น สรุปประจำวัน 08:00">
+        </div>
+        <div class="form-group">
+          <label class="form-label">ความถี่</label>
+          <div class="seg sm" id="seFreq">
+            <button data-fr="daily" class="active">รายวัน</button>
+            <button data-fr="weekly">รายสัปดาห์</button>
+            <button data-fr="monthly">รายเดือน</button>
+          </div>
+        </div>
+        <div class="form-group" id="seDowGroup" style="display:none">
+          <label class="form-label">วันในสัปดาห์</label>
+          <div class="seg sm" id="seDow"></div>
+        </div>
+        <div class="form-group" id="seDomGroup" style="display:none">
+          <label class="form-label">วันที่ของเดือน</label>
+          <input class="form-input" id="seDom" placeholder="1–28" value="1">
+        </div>
+        <div class="form-group">
+          <label class="form-label">เวลาส่ง</label>
+          <input class="form-input" id="seTime" type="time" value="08:00">
+        </div>
+        <div class="form-group">
+          <label class="form-label">รูปแบบไฟล์</label>
+          <div class="seg sm" id="seFmt">
+            <button data-fmt="png" class="active">PNG</button>
+            <button data-fmt="pdf">PDF</button>
+          </div>
+        </div>
+      </div>
+
+      <label class="form-label">เนื้อหาที่ส่ง</label>
+      <div class="rb-domains" id="seDomains">
+        <label class="rb-dom"><input type="checkbox" data-dom="events" checked><span class="rb-dom-dot" style="background:var(--accent)"></span>เหตุการณ์</label>
+        <label class="rb-dom"><input type="checkbox" data-dom="facerec" checked><span class="rb-dom-dot" style="background:var(--purple)"></span>จดจำใบหน้า</label>
+        <label class="rb-dom"><input type="checkbox" data-dom="facecap" checked><span class="rb-dom-dot" style="background:#14b8a6"></span>บันทึกใบหน้า</label>
+        <label class="rb-dom"><input type="checkbox" data-dom="lpr" checked><span class="rb-dom-dot" style="background:var(--warn)"></span>ป้ายทะเบียน</label>
+      </div>
+      <div class="rb-domains" id="seHealthSecs" style="display:none">
+        <label class="rb-dom"><input type="checkbox" data-hsec="camera_status" checked><span class="rb-dom-dot" style="background:var(--accent)"></span>สถานะกล้อง</label>
+        <label class="rb-dom"><input type="checkbox" data-hsec="camera_uptime" checked><span class="rb-dom-dot" style="background:var(--status-ok)"></span>Uptime กล้อง</label>
+        <label class="rb-dom"><input type="checkbox" data-hsec="storage" checked><span class="rb-dom-dot" style="background:var(--purple)"></span>พื้นที่จัดเก็บ</label>
+        <label class="rb-dom"><input type="checkbox" data-hsec="system" checked><span class="rb-dom-dot" style="background:#14b8a6"></span>ทรัพยากรระบบ</label>
+      </div>
+      <div class="auto-note" id="seWholeNote" style="display:none">ส่งรายงานทั้งฉบับ (ตั้งค่าหมวดย่อย/ตัวกรองได้ในแท็บรายงานนั้น)</div>
+
+      <label class="form-label">ผู้รับใน LINE</label>
+      <div class="recip-list" id="seRecips"></div>
+
+      <div class="sched-foot">
+        <label class="lm-simtoggle"><input type="checkbox" id="seEnabled" checked> เปิดใช้งาน</label>
+        <div class="sched-foot-btns">
+          <button class="btn btn-secondary" id="seCancel">ยกเลิก</button>
+          <button class="btn btn-primary" id="seSave">บันทึกกำหนดการ</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== TAB: HISTORY ===================== -->
+  <section id="tab-history" style="display:none">
+    <div class="auto-head">
+      <div>
+        <div class="auto-title">ประวัติการส่งรายงาน</div>
+        <div class="auto-sub" id="histSub">—</div>
+      </div>
+      <div class="seg sm" id="histFilter">
+        <button data-hf="all" class="active">ทั้งหมด</button>
+        <button data-hf="ok">สำเร็จ</button>
+        <button data-hf="fail">ล้มเหลว</button>
+      </div>
+    </div>
+    <div class="card hist-card">
+      <table class="hist-table" id="histTable"></table>
+    </div>
+  </section>
+
+</div>
+
+<script src="/lpr-plaque.js?v=r9"></script>
+<script src="report-demo.js?v=r9"></script>
+</body>
+</html>

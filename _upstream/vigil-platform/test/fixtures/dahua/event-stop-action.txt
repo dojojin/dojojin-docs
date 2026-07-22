@@ -1,0 +1,1 @@
+Code=CrossRegionDetection;action=Stop;index=0;data={"UTC":1781701210,"EventID":7,"Direction":"Enter","Object":{"ObjectID":42}}

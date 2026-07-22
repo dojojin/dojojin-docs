@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Person Data Redesign — Draft Demo</title>
+
+<!-- DRAFT/DEMO ONLY — links real production assets so the preview is pixel-faithful.
+     CSP-compliant (external css/js, no inline script, no inline event handlers).
+     Served at: /others/demo/body/  (auth-gated — log in to dashboard first).
+     Field names = real prod (/api/appearances). Card/chart data = mock.
+     Body images = synthetic avatars (PDPA: no real people in a demo). -->
+<script src="/theme-init.js"></script>
+<link rel="stylesheet" href="/vendor/fonts/fonts.css">
+<link rel="stylesheet" href="/vendor/air-datepicker/air-datepicker.css">
+<link rel="stylesheet" href="/vendor/air-datepicker/theme-vigil.css">
+<script src="/vendor/air-datepicker/air-datepicker.min.js"></script>
+<script src="/vendor/chartjs/chart-4.4.1.umd.min.js"></script>
+<link rel="stylesheet" href="/index.css">
+<link rel="stylesheet" href="body-demo.css?v=b1">
+</head>
+<body>
+<div class="demo-wrap">
+
+  <div class="demo-banner">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+    DRAFT — demo ออกแบบหน้าข้อมูลบุคคลใหม่ · ชื่อฟิลด์ = ค่าจริงจาก prod (/api/appearances) · ข้อมูลการ์ด/กราฟ = mock · รูป = avatar สังเคราะห์ (ไม่ใช้รูปจริง)
+  </div>
+  <div class="demo-toolbar">
+    <button class="btn btn-secondary" id="btnTheme">สลับ Light / Dark</button>
+  </div>
+
+  <div class="page-head">
+    <div>
+      <h1>ข้อมูลบุคคล · Person Data</h1>
+      <div class="sub">ค้นหาและติดตามบุคคลจากรูปพรรณ (เสื้อผ้า · สี · ทรงผม · ของใช้) ข้ามกล้อง</div>
+    </div>
+    <div class="tabs" id="bodyTabBar">
+      <button class="tab active" data-tab="overview">ภาพรวม</button>
+      <button class="tab" data-tab="search">ค้นหา</button>
+    </div>
+  </div>
+
+  <div class="period-row">
+    <div class="seg" id="periodBar">
+      <button data-p="today">วันนี้</button>
+      <button data-p="yesterday">เมื่อวาน</button>
+      <button data-p="week" class="active">7 วัน</button>
+      <button data-p="month">1 เดือน</button>
+      <button data-p="custom">กำหนดเอง</button>
+    </div>
+    <div class="custom-range" id="customRange" style="display:none">
+      <input class="form-input" id="pFrom" placeholder="ตั้งแต่" readonly>
+      <span style="color:var(--text-secondary)">–</span>
+      <input class="form-input" id="pTo" placeholder="ถึง" readonly>
+    </div>
+  </div>
+
+  <!-- ===================== TAB: OVERVIEW ===================== -->
+  <section id="tab-overview">
+    <!-- A. headline KPI -->
+    <div class="ov-kpi" id="kpiGrid"></div>
+
+    <!-- C. volume trend + peak moved up -->
+    <div class="chart-grid cols-2">
+      <div class="card">
+        <div class="card-title">ปริมาณคนต่อวัน</div>
+        <div class="chart-box"><canvas id="chVolume"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">ช่วงเวลาที่คนเยอะสุด (Peak)</div>
+        <div class="chart-box"><canvas id="chPeak"></canvas></div>
+        <div class="inline-note" id="peakNote"></div>
+      </div>
+    </div>
+
+    <!-- D. by-camera + gender + age + direction -->
+    <div class="chart-grid cols-2">
+      <div class="card">
+        <div class="card-title">คนเยอะตามจุด / กล้อง</div>
+        <div class="chart-box tall"><canvas id="chCamera"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">ทิศทาง (เข้า / ออก)</div>
+        <div class="chart-box tall"><canvas id="chDir"></canvas></div>
+        <div class="inline-note">* map เป็น เข้า/ออก เมื่อกำหนดทิศทางต่อกล้อง (เหมือน LPR gate) — ยังไม่กำหนด = ซ้าย/ขวา/หน้า/หลัง</div>
+      </div>
+    </div>
+
+    <div class="chart-grid cols-3">
+      <div class="card">
+        <div class="card-title">สัดส่วนเพศ</div>
+        <div class="chart-box"><canvas id="chGender"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">กลุ่มอายุ</div>
+        <div class="chart-box"><canvas id="chAge"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">ของใช้ / accessory</div>
+        <div class="acc-row" id="accRow" style="margin-top:6px"></div>
+      </div>
+    </div>
+
+    <!-- forensic detail (collapsible) — colors + garment types + hair + expression -->
+    <div class="card">
+      <div class="collapse-hd" id="forensicToggle"><svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>รายละเอียด forensic (สี · ประเภทเสื้อผ้า · ทรงผม · อารมณ์)</div>
+      <div class="collapse-body" id="forensicBody">
+        <div class="chart-grid cols-3" style="margin-bottom:0">
+          <div><div class="card-title" style="margin-bottom:10px">สีเสื้อ</div><div class="hbar-list" id="topColorList"></div></div>
+          <div><div class="card-title" style="margin-bottom:10px">สีกางเกง / กระโปรง</div><div class="hbar-list" id="botColorList"></div></div>
+          <div><div class="card-title" style="margin-bottom:10px">สีผม</div><div class="hbar-list" id="hairColorList"></div></div>
+        </div>
+        <div class="chart-grid cols-3" style="margin-top:18px;margin-bottom:0">
+          <div class="card" style="background:var(--surface-base)"><div class="card-title">ประเภทเสื้อ</div><div class="chart-box sm"><canvas id="chTop"></canvas></div></div>
+          <div class="card" style="background:var(--surface-base)"><div class="card-title">ประเภทกางเกง / กระโปรง</div><div class="chart-box sm"><canvas id="chBot"></canvas></div></div>
+          <div class="card" style="background:var(--surface-base)"><div class="card-title">ความยาวผม</div><div class="chart-box sm"><canvas id="chHair"></canvas></div></div>
+        </div>
+        <div class="card" style="background:var(--surface-base);margin-top:18px">
+          <div class="card-title">อารมณ์ <span style="font-size:10px;color:var(--text-secondary);font-weight:400">(action ต่ำ — เก็บเป็น analytics)</span></div>
+          <div class="chart-box"><canvas id="chExpr"></canvas></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== TAB: SEARCH ===================== -->
+  <section id="tab-search" style="display:none">
+    <div class="xlink-note">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>
+      เชื่อมกับหน้า <b>ใบหน้า</b>: เมื่อใบหน้าเห็นไม่ชัด ใช้ <b>รูปพรรณ (เสื้อผ้า/สี)</b> ตามคนข้ามกล้องต่อได้ — แต่ละการ์ดมีปุ่ม "ดูใบหน้า"
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-title">ตัวกรอง</div>
+      <div class="filter-grid">
+        <div class="form-group"><label class="form-label">กล้อง / จุด</label><select class="form-input" id="fCam"></select></div>
+        <div class="form-group"><label class="form-label">เพศ</label><select class="form-input" id="fGender"><option value="">ทั้งหมด</option><option value="M">ชาย</option><option value="F">หญิง</option></select></div>
+        <div class="form-group"><label class="form-label">ประเภทเสื้อ</label><select class="form-input" id="fTop"></select></div>
+        <div class="form-group"><label class="form-label">ประเภทกางเกง / กระโปรง</label><select class="form-input" id="fBot"></select></div>
+        <div class="form-group"><label class="form-label">ความยาวผม</label><select class="form-input" id="fHairLen"></select></div>
+        <div class="form-group"><label class="form-label">กลุ่มอายุ</label><select class="form-input" id="fAge"></select></div>
+        <div class="form-group"><label class="form-label">แว่นตา</label><select class="form-input" id="fGlass"><option value="">ทั้งหมด</option><option value="1">ใส่แว่น</option><option value="0">ไม่ใส่</option></select></div>
+        <div class="form-group"><label class="form-label">หมวก</label><select class="form-input" id="fHat"><option value="">ทั้งหมด</option><option value="1">สวม</option><option value="0">ไม่สวม</option></select></div>
+        <div class="form-group"><label class="form-label">กระเป๋า</label><select class="form-input" id="fBag"></select></div>
+        <div class="form-group"><label class="form-label">ความเชื่อมั่นขั้นต่ำ</label><select class="form-input" id="fConf"><option value="">ทั้งหมด</option><option value="0.5">50%+</option><option value="0.7">70%+</option><option value="0.9">90%+</option></select></div>
+        <div class="form-group" style="grid-column:span 2"><label class="form-label">สีเสื้อ</label><div class="swatch-pick" id="topColorPick"></div></div>
+        <div class="form-group" style="grid-column:span 2"><label class="form-label">สีกางเกง / กระโปรง</label><div class="swatch-pick" id="botColorPick"></div></div>
+        <div class="form-group" style="grid-column:span 2"><label class="form-label">สีผม</label><div class="swatch-pick" id="hairColorPick"></div></div>
+        <div class="form-group"><label class="form-label">ตั้งแต่</label><input class="form-input" id="fFrom" placeholder="dd/mm/yyyy --:--" readonly></div>
+        <div class="form-group"><label class="form-label">ถึง</label><input class="form-input" id="fTo" placeholder="dd/mm/yyyy --:--" readonly></div>
+      </div>
+      <div class="filter-actions">
+        <button class="btn btn-secondary" id="btnReset">ล้างค่า</button>
+        <button class="btn btn-secondary" id="btnTimeline">เส้นเวลา (Timeline)</button>
+        <button class="btn btn-primary" id="btnSearch">ค้นหา</button>
+      </div>
+    </div>
+
+    <!-- timeline / follow panel (hidden until invoked) -->
+    <div class="card" id="timelinePanel" style="display:none;margin-bottom:16px">
+      <div class="tl-head">
+        <div class="card-title" style="margin:0">เส้นเวลา / ตามคนนี้</div>
+        <div id="tlAnchorWrap"></div>
+      </div>
+      <div class="tl-map">แผนที่เส้นทาง — เปิดในหน้าแผนที่จริง (วาดเส้นทางข้ามกล้องตามลำดับเวลา)</div>
+      <div id="tlSegs"></div>
+    </div>
+
+    <div class="results-bar">
+      <div class="results-count">พบ <b id="resCount">0</b> คน</div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:11px;color:var(--text-secondary)">เรียงโดย</span>
+        <select class="form-input" style="padding:6px 9px" id="fSort"><option>เวลาล่าสุด</option><option>เวลาเก่าสุด</option><option>ความเชื่อมั่นสูงสุด</option></select>
+      </div>
+    </div>
+    <div class="person-wall" id="resultGrid"></div>
+  </section>
+
+</div>
+
+<!-- ===================== DETAIL MODAL ===================== -->
+<div class="lpr-modal-overlay" id="personModal" style="display:none">
+  <div class="lpr-modal">
+    <button class="lpr-modal-x" id="personModalX" aria-label="ปิด">✕</button>
+    <div class="am-head"><span class="am-name" id="pmTitle">รูปพรรณบุคคล</span><span class="am-time" id="pmTime"></span></div>
+    <label class="lm-simtoggle"><input type="checkbox" id="pmSimDeleted"> จำลองสถานะ: ภาพถูกลบแล้ว (เกินอายุเก็บรูป)</label>
+    <div id="personModalBody"></div>
+    <div class="dm-foot">
+      <button class="btn btn-primary" id="pmFollow">ตามคนนี้ (ข้ามกล้อง)</button>
+      <button class="btn btn-secondary" id="pmExample">หาคนแบบนี้</button>
+      <button class="btn btn-secondary" id="pmFace">ดูในหน้าใบหน้า</button>
+    </div>
+  </div>
+</div>
+
+<script src="body-demo.js?v=b1"></script>
+</body>
+</html>

@@ -3,11 +3,378 @@
 > Companion to [CLAUDE.md](CLAUDE.md). Records completed work by
 > version / phase. For pending work see [ROADMAP.md](ROADMAP.md);
 > for design rationale see [DECISIONS.md](DECISIONS.md).
-> Last updated: 2026-06-08 · Current version: **v1.5.3**
+> Last updated: 2026-07-22 (Codex audit 5th optimization — 10/12 shipped) · Current version: **v1.5.3**
 
 ---
 
 ## 📰 Recent Updates Timeline (reverse chronological)
+
+- **2026-07-22 — CODEX audit 5th (optimization) closed 10/12 remaining findings in one pass — production DB partitioning, retention/cache perf, 2 new remote command channels** (commits `8f46ca6` `a9c9680` `195d743` `053ebe6` `869cfe6` `1a2c7c2` `530ea78` `b03786e` `5312c9f` `aa3a3da` `afe9e28` `bfe9e9f` `1ac1275` `e30de83`; decision #220)
+
+  Followed on from the 2026-07-21 triage (decision #219) — owner green-lit working through groups A+B one finding at a time, audit-before/reproduce-after each per Working Agreement #3/#4.
+
+  **(1) CEN-003 — partition `events`** (`db/MANUAL_partition_events_option_a.sql`, decision #220): rehearsed twice on a restored backup copy before touching production — the first rehearsal caught 3 FK constraints (`face_event_notes`, `face_event_acks`, `lpr_alert_acks`) the script didn't know about, which would have left the system in a half-migrated state with a stranded `events_old` on a real run. Fixed, added a pre-flight schema+FK-drift guard (`DO $$ ... EXCEPT ...`) so this class of drift self-detects next time, re-rehearsed clean, then **ran for real on production**: fresh backup, all 6 writer PM2 processes stopped, migration applied, verified (0 orphans across all 5 FK-child tables, partition pruning confirmed live via `EXPLAIN`), services restarted. Measured downtime: ~90.7s DB lock window (vs. the untested "3-15s" estimate the script carried from a 63K-row measurement — table is now 1.7M+ rows). Follow-up: `enforceRetention()`/camera-delete/`pruneLprRows()` only cleaned up 2 of the 5 now-uncascaded child tables — fixed all 3 call sites before the FK drop went live (commit `195d743`), caught by advisor review, not by a rehearsal (rehearsals never exercise a delete).
+
+  **(2) CEN-002 — LPR image retention fast path** (`src/lpr-retention.js`): a date-dir strictly older than the cutoff is guaranteed to contain only expired files (folder name is the capture date) — `rm -rf` it whole instead of `stat()`+`unlink()` every file inside. Boundary day (named exactly as the cutoff date) still goes through the exact per-file walk. Mirrors the guard rails already proven on edge (`edge/snapshot-retention.js`).
+
+  **(3) CEN-004 — `/api/lpr/stats` materialize + cache** (`src/routes/lpr-query.js`): 20s TTL cache + a `_lpr_stats_filtered` temp-table pattern (mirrors `appearances/stats`) so the 8 heavy sub-queries hit a pre-filtered working set instead of re-joining `events`+`license_plates` per aggregation.
+
+  **(4) CEN-006 — edge-proxy thumbnail cache** (`src/api-server.js`): 60s in-memory cache (capped 500 entries) for edge-proxied snapshot thumbnails — repeated gallery views stop re-fetching from the edge and re-running `sharp` every time. Deliberately in-memory only, no disk persistence — "no permanent central copy of edge images" stays a PDPA decision, not something this quietly reopened.
+
+  **(5) EDGE-002/EDGE-003 (partial)** — SD-status poll staggering (`src/edge-config-agent.js`, 30s spread across Bosch cameras) and NanoMQ `max_packet_size` cut from 256MB to 4MB (`edge/nanomq.conf.template`, deployed + live-verified on both hdy-edge and vss-edge). Both findings' broader asks (a global fetch/probe concurrency limiter; a measured HTTP body limit) remain open — the audit's own basis for the HTTP body number was post-resize, not pre-resize, so implementing it risked rejecting real camera uploads; left for a future pass with a proper measurement.
+
+  **(6) CEN-005 — closed, not implemented** (`src/routes/faces.js`, `src/routes/appearances.js`): measured real query cost with `EXPLAIN ANALYZE` before building anything — OFFSET pagination depth turned out not to be the bottleneck at current data volumes (page 1 and a deep page cost roughly the same on both LPR no-read and Person Data search); the actual cost drivers are join-plan choices and `COUNT(*) OVER()`. Converting to keyset pagination would have removed the numbered jump-to-page UI (`renderPagination`) for no measurable benefit, so the conversion was not built. Found and fixed a real but minor correctness gap along the way: `/api/face-matches` and `/api/appearances/search` sorted by `event_time` alone with no `id` tie-break, risking duplicate/skipped rows across a page boundary on an exact-timestamp tie.
+
+  **(7) EDGE-004 — trigger-on-Save model detect** (`src/edge-config-agent.js`, `src/edge/bridge.js`, `src/mqtt-subscriber.js`, `src/routes/cameras.js`, migration 091): owner proposed detect-on-Save instead of the audit's suggested recurring cron — simpler, no scheduler to maintain, and it covers the case that matters (a camera is always Saved when added). New one-shot `_config/detect-model`/`_config/detect-model-result` MQTT pair mirrors the existing `scan-nvr` pattern; edge-site cameras round-trip through it, central-reachable cameras (site `main`) detect inline. `model_detected_at`/`model_detect_error` columns give the audit trail the finding asked for. Live end-to-end test against a real camera (`BSH-HDY-4031`, hdy-edge) caught a real bug immediately — `mqtt-subscriber.js`'s result-handler UPDATE used a non-existent `camera_id` column instead of `id` — fixed and reverified before calling it done.
+
+  **(8) EDGE-005 — delete on-disk media on camera delete** (`src/camera-media-delete.js` new, wired into the same command-channel pattern as EDGE-004): the snapshot layout nests camera **under** date (`{category}/{date}/{camera}/{slot}/`), so there's no single path for "this camera's media" — every date-dir under every category gets walked. Gated on the same `keepData` flag the DB-row cleanup already uses. Rejects (not sanitizes) any `camera_id` outside `[A-Za-z0-9._-]+` or equal to `.`/`..` before it can reach an `rm`; matches directory names by exact string equality, never prefix, so a camera whose id is a prefix of another camera's id can never take out its neighbor. Live-tested on hdy-edge with a synthetic camera_id (never touching real camera data): target directory removed, a prefix-superset sibling directory survived untouched.
+
+  **Remaining (2/12, not urgent — no incident indicates otherwise):** CEN-007's query-concurrency limiter and EDGE-002's global fetch/probe concurrency limiter — both have their observability half already shipped (pool-wait metrics, SD-poll stagger); the enforcement half is deferred pending real signal that it's needed.
+
+- **2026-07-21 — CODEX audit 5th (optimization) independently re-verified + 2 fixes shipped: health endpoint perf + edge-bridge queue alerting** (commit `0b40332`)
+
+  Re-verified all 12 findings in `CODEX/CODEX_Audit_5th_Audit_part_optimization.md` (OPT5-CEN-001–007, OPT5-EDGE-001–005) against current source independently (2 Explore agents + direct checks) — all confirmed accurate, 2 understatements found (CEN-007 pool-count undercount: 20 vs actual 33 max connections across PM2 workers; EDGE-001 severity — a live near-miss reached 88.4% of the 200MB bridge queue cap with zero alerting during this exact audit window, GOTCHAS #113). Shipped narrow scope only (2 of 12) — remaining 10 triaged and logged to ROADMAP ("CODEX Audit 5th — optimization backlog", decision #219) rather than auto-completed.
+
+  **(1) OPT5-CEN-001 — `/api/health/details` perf** (`src/routes/health.js`): TTL cache (10s) + per-section timing wrapping only the filesystem-walk/process-spawn sections (`snapshot_stats`, `clips_dir`, `spool_dir`, `pm2 jlist`, worker health polls) — DB queries stay live (already scale via indexes). `result.diagnostics_ms` surfaces per-section timing; `console.warn` if any section exceeds 1000ms.
+
+  **(2) OPT5-EDGE-001 — bridge queue alerting** (`src/edge/bridge.js`): immediate `console.warn` on cap-hit eviction (previously silent data-loss) + proactive warn at ≥80% of the 200MB queue cap inside the heartbeat interval; `health.js`'s `edge_sites` mapping gets a new `bridge_alert` boolean (latches on `bridge_dropped>0`) surfaced to the Health page.
+
+  **Deploy note:** central server needs to redeploy + restart `api-server` for these changes to take effect — not yet live-verified from this edge box (no local Postgres here to exercise `health.js` against).
+
+- **2026-07-17–21 — Dahua ANPR ingest hardening + LPR/stats UI polish + 2 KPI/modal fixes** (commits `2ba710e` `a719e24` `6ca17a2` `dfb3864` `b7a837f` `3fc4377` `3978a6c` `a146c66` `5f347d4` `edf4dd4` `dfd0d62` `f270d2a` `1b7b890` `17616fb` `8963777` `5b07bc2` `235321c` `c0b8231` `f0f657f` `62dca37` `7dc3b12` `5ee61c5` `2a8cf0e` `be8b230` `53e7a81` `8988989` + others)
+
+  **(1) Dahua ITC ANPR → LPR page** (`2ba710e` `a719e24`): กล้อง Dahua ITC ยิง plate event เข้า `license_plates` เดียวกับ Hikvision ANPR — searchable vehicle type, plate crop, scene resize, site indicator. Vehicle-category mapping (SUV/LargeTruck ฯลฯ, `6ca17a2`), brand OCR correction (`Hino2→Hino`, unknown-brand null-out, `dfb3864`), speed field (`b7a837f`, sentinel `255` handling `3fc4377`, ซ่อนสำหรับมอไซค์เพราะอ่านสูงเกิน ~3x จริง `3978a6c`), province code→ชื่อไทย (`f270d2a` `17616fb`), plate registration type จากสีป้าย (`1b7b890`).
+
+  **(2) Plate-cutout pairing hardening** (`a146c66` `5f347d4` `edf4dd4` `dfd0d62`): snapManager คู่ plate crop กับ event ผ่าน `ObjectID` แทน text-match (กัน mispair เมื่อ event ถี่); ใช้ scene ที่ snapManager paired มาแทน `captureFrame()` live-pull; recover late-arriving cutout ที่มาไม่ทันในพื้นหลัง; route กล้องรุ่นเก่ากลับไป fixed-pixel crop เพราะ width-routing แม่นน้อยกว่า.
+
+  **(3) `รถต่อกล้อง` chart + rider_count + helmet** (`7b35c9d` `5b07bc2`): กราฟ vehicles-per-camera ใหม่ + surface stats error (แทน silent 0); `rider_count` (pillion) column ใหม่ (migration 090) wire เข้า helmet detection.
+
+  **(4) LPR/stats UI polish** (`235321c` `c0b8231` `7dc3b12` `5ee61c5` `2a8cf0e` `be8b230` `53e7a81` `8988989` `3035582`): แก้ Thai y-axis label ถูกตัดบน iOS Safari; ขยาย pie การกระจาย category + ย้าย legend ลงล่าง + เรียงตาม count; ปุ่ม nav ใน Forensic Summary ใช้งานได้ + เพิ่มช่องค้นป้าย; wrap legend เป็นแถวบนมือถือ; timeline chart ขยายได้ + scrollbar touch-friendly; ซ่อน People Counting/Dwell Time เมื่อไม่มีกล้องรองรับ; scope group tabs ตาม site ที่เลือก.
+
+  **(5) 2 bug fixes จาก user report** — "ซ้อน 3+" KPI card กดแล้วไม่ค้นหา (`f0f657f`, missing `lprGotoOverload` ใน dispatcher `ACTION_MAP` — sibling การ์ดอื่นลงทะเบียนหมดแล้วยกเว้นตัวนี้); modal "ป้ายเดียวกัน อ่านลักษณะรถต่างกัน" ยาวเกิน 30 วัน → ปรับแสดง 7 วัน แต่ตรวจจับ (`mismatch_level`) ยังคง 30 วันเดิม (`62dca37`, `/api/lpr/plate-history?hours=168` — endpoint รองรับ `hours` param อยู่แล้ว ไม่ต้องแก้ backend).
+
+- **2026-07-15–17 — Dahua multi-channel NVR ingest + RPC2 face capture + Camera Settings redesign** (commits `d96e0d5` `27f10ea` `1287e9a` `c0c4b1f` `89a2664` `16913cb` `0d026e3` `b6fb9de` `8518485` `e73f1a5` `609590c` `ecc44ce` `a4a00df` `e87db78` `58471b0` `3a318c6` `0de049b` `1d3f657` `98b5983` `c9b247f` + others)
+
+  **(1) Multi-channel NVR support** (`d96e0d5`): config entries ที่ share connection identity (device_id หรือ ip:port:user) รวมเป็น **1 eventManager + 1 snapManager** ต่อ NVR แทน 1 คู่ต่อ channel — route ผ่าน `index=N` (0-based) ในบรรทัด event; per-channel `capture_categories` allow-list (face/anpr/vehicle/nonmotor/person/rule) เป็น two-stage filter (device subscription = union, post-filter ต่อ channel). Live-verify กับ `DHI-NVR5216-16P-I/L` จริงที่ HDY: 2 channel = 1 event stream + 1 snap stream ยืนยันแล้ว. `media-recorder.js` RTSP channel มาจาก `nvr_channel` (เดิม hardcode=1). Foundation Phase 3 (`e73f1a5` DB columns, `609590c` scan-over-MQTT, `ecc44ce` scan-and-add UI, `e87db78` opt-in channel + camera-type selector) + CSV bulk-import onboarding (`0de049b` `1d3f657` `98b5983`).
+
+  **(2) Dahua face → appearances + RPC2 NVR-stored crop** (`1287e9a` `c0c4b1f` `16913cb` `0d026e3` `b6fb9de` `8518485`): face attribute events (glass/beard/hat/emotion) เข้า `appearances` table + `FaceComparision` similarity/blacklist. NVR เก็บ face crop (`ObjPath`) + scene เต็ม (`OriPath`) ไว้แล้วทุก `FaceComparision` event — ดึงผ่าน RPC2 session (`src/ingesters/dahua-rpc.js` ใหม่: challenge/MD5 login, session cache + re-login-on-401) เร็วกว่า `captureFrame()` สด (วัดจริง success ceiling เดิม ~50-63% ใต้ AI load สูง) — mechanism ยืนยันจาก DevTools network capture ของ NVR web UI เอง (`/IntelliStorage/mnt/<file>:<len>.jpg` ตรงด้วย session cookie ไม่ต้อง `/RPC_Loadfile`). `captureFrame()` เหลือเป็น fallback.
+
+  **(3) Camera Settings redesign** (`3a318c6` `58471b0` + others): Material-tonal redesign แยก column Site ชัดเจน; แก้ false-positive duplicate-IP warning ที่ทำ multi-channel NVR edit พัง.
+
+- **2026-07-06–13 — LPR object_class split + Person Data merge + reports category chart** (commits `ba8782d` `bea596e` `214a424` `6081240` `cefa801` `700a264` `5475078` `377e1f8` `d11a484` + others)
+
+  **(1) LPR object_class ปรับ granularity**: populate `events.object_class` จาก `vehicle_type` สำหรับ `anprAlarm` (`ba8782d`), wildcard match_state query-level (`bea596e`), แยก **Pickup** ออกจาก generic Truck class (`214a424`).
+
+  **(2) Person Data**: merge FaceRecognition เข้า appearances tab + filter mask/hat (`6081240`).
+
+  **(3) Reports**: scope preview/PDF ตาม site ที่เลือก + แก้ pill "ทั้งหมด" ค้าง (`cefa801`); เพิ่ม category breakdown chart ใน analytics report (`700a264`).
+
+  **(4) Edge**: TCP probe ก่อน publish heartbeat กัน false-online เมื่อ port เปิดแต่ service ไม่ตอบจริง (`5475078`, GOTCHAS #109 area).
+
+  **(5) LPR retention UI**: เพิ่มหน้า Settings›LPR retention settings + แก้ edge-proxy 404 passthrough (`377e1f8` `d11a484`).
+
+- **2026-07-02–06 — Multi-site RBAC scoping rollout (P1-P5, D1-D3) + site-pill filters** (49 call sites, 9 route files — commits `edbe4e2` `94198fc` `255f2bb` `49ee80a` `20c6018` `f76cb59` `7ceb3fc` `7aa25c3` `a906eb0` `5ce5c4f` `97d4588` `12dd48a` `ccbd8c5` `8b09ae4` `6119c03` `d0f5b32` `536d4e7` `0633c93` `024b656` + docs `8d27f40` + others)
+
+  `getAllowedSites(user, pool)` + `siteWhere(allowedSites, camCol, offset)` (`src/auth.js`) rollout ครบทุก endpoint cluster ที่มี site scope: Events/Snapshot/Media/Face/Appearance (`7ceb3fc`)/LPR (`7aa25c3`)/Stats (`024b656`)/Reports/Alerts/Groups/Sites/Map — เดิม plan ค้างใน ROADMAP แต่โค้ดจริงเสร็จแล้ว (audit `8d27f40` 2026-07-03 พบ 49 call sites ใน 9 ไฟล์). แก้ data-leak: executive-summary ไม่ scope ตาม site (`94198fc`), exec-summary แสดง edge disk ของ central แทนของ site ตัวเอง (`255f2bb`), alert-logs อ่านข้าม site (`49ee80a`). Edge sync: re-prefix Bosch MQTT topic ด้วย site + warn mismatch (`ccbd8c5`), DB-backed pause check + sync delete ไปยัง edge config (`8b09ae4`), reject cross-site `camera_id` mismatch แทน warn-only (`d0f5b32`), authenticate `_snapMqtt` แทน anonymous (`0633c93`). D1-D3 ปิดหมด (D1 moot จาก role gate เดิม, D2 fail-closed ตรงกับ `auth.js`, D3 ยืนยันผ่าน `lpr-gates.js`). decision candidate: site-RBAC resolver pattern.
+
+- **2026-07-01 — LPR scale (keyset search) + class-based retention + edge snapshot pruner** (commits `1c638b5` `d87649c` `d4e2ba5` `b2741cc` `d5fc975` `39552ee` + docs `3327d4c` `4f999df` `828e9b4` `7a6ff0a`)
+
+  **(1) P1 keyset pagination** (`1c638b5`, migration 071 `idx_events_time_id`): `/api/lpr` เปลี่ยนจาก `OFFSET + exact COUNT(*)` (O(N)) เป็น cursor keyset (`before_time`/`before_id`, `X-Has-More`, estimate `X-Estimated-Count` ผ่าน EXPLAIN, ลบ `X-Total-Count`) → เร็วคงที่ทุกหน้าที่ ~10M row/เดือน. UI: Prev/Next + jump-by-date (ไม่มี jump-to-page). decision #211, GOTCHAS #105.
+
+  **(2) Edge snapshot retention + inventory** (`d87649c` migration 072, `d4e2ba5`): edge (N150) ไม่มี api-server → `src/edge/snapshot-retention.js` ใหม่ ให้ edge-bridge prune `snapshots/events/` รายชั่วโมง (guards, `EDGE_IMAGE_RETENTION_DAYS`=7, ไม่แตะ `lpr/`) + รายงาน inventory (oldest date + dir count) ใน heartbeat → `edge_status.snapshot_oldest/dirs` → แสดงการ์ด Edge หน้า Health. decision #214, GOTCHAS #106.
+
+  **(3) Class-based retention** — (D) `enforceRawXmlRetention()` strip `raw_json-'rawXml'` >`rawxml_retention_days`=90 (`d5fc975`, migration 074) — decision #212; (E) `enforceRetention()` exclude anprAlarm → LPR อยู่ใต้ `lpr_retention_days` เดี่ยว (`39552ee`, mechanism only, number-flip gated on partitioning) — decision #213, GOTCHAS #107. แผนเต็ม: `docs/superpowers/plans/2026-07-01-retention-architecture.md`.
+
+  **(4) P2/2A seatbelt column** (`b2741cc`, migration 073): parse `pilot/vicepilotsafebelt` → `license_plates.no_seatbelt` (partial index) แทน filter LIKE rawXml → unblock class-D.
+
+  **(5) LPR charts + filters + forward-test** (earlier commits `f99a359` `56ad8a5` `147c9ee` `a4eaa17` `11df1ca` `93eb10d` `13aeea7`): plate-color + brand Top-10 charts (`/api/lpr/stats` += pcolor/brand); filters brand (`/api/lpr/brands`)/vehicle-color(10)/pedestrian/seatbelt/9 plate-colors + เบตง; `POST /api/cameras/lpr-forward-test` (save+test). **Deferred:** driver face capture (`7a6ff0a`) · F rollup/legal-hold (YAGNI).
+
+- **2026-06-25 — Health page + Edge monitoring EM1-EM6 + LPR advanced features** (commits `5894cf9` `abc0a6a` `6b22cc2` `c2b0bae` `5b6d9cb` `caa781f` `f10a630` `00433cf` + others)
+
+  **(1) Health page improvements** (commits `5894cf9` `abc0a6a`):
+  - `lpr-receiver` เพิ่มเข้า Service Management card ใน Health page
+  - Cameras/Image Quality/Automation cards รวมเป็น card เดียว (ลด noise)
+  - lpr-receiver healthz port `3003` รวมใน `/api/health/details`
+
+  **(2) Edge monitoring EM1–EM6** (commits `6b22cc2` `c2b0bae`) — VSS N150 health ใน Health page:
+  - `db/db_migration_067_edge_status.sql` — ตาราง `edge_status` (site_id PK, pm2_json, disk, bridge stats)
+  - `src/edge/bridge.js` (EM1): publish heartbeat ทุก 60s → `projects/vss/_edge/heartbeat` (pm2 jlist + df + bridge stats)
+  - `src/mqtt-subscriber.js` (EM3): intercept `_edge/heartbeat` ก่อน processMessage; `recordEdgeHeartbeat()` upsert edge_status; ⚠️ topic ต้อง read raw (ก่อน `_stripSitePrefix`)
+  - `src/routes/health.js` (EM4): `result.edge_sites[]` — stale flag, stale_sec, disk, bridge, pm2 services per site; `EDGE_HEARTBEAT_STALE_SEC=180`
+  - `dashboard/page-health.js` (EM5): "Edge — VSS" card (Live/Stale badge + service rows + disk/bridge stats)
+  - `src/alert-worker.js` (EM6): LINE alert เมื่อ last_seen_at stale > 180s
+  - IM5 Ph.2 (site-down correlation) → **deferred** (EM6 ปิด full-site-down แล้ว; per-camera alerts ทุกตัว enabled=FALSE)
+
+  **(3) Bosch Tier-2 snapshots** (commits `5b6d9cb` `caa781f`):
+  - `src/edge/edge-config-agent.js`: snapshot capture บน edge → publish base64 via MQTT + disk path
+  - `src/mqtt-subscriber.js`: `handleEdgeEvent()` — reroute edge events; Bosch snapshot COALESCE preserves edge-captured image
+  - snapshot proxy เสริมสำหรับ Tier-2 (on-demand fetch จาก edge cache)
+
+  **(4) Hikvision face ref image forwarding** (commit `f10a630` + others):
+  - HKT01/02 face push ส่ง `faceLibImage` (FD library ref photo) พร้อม alarm
+  - `src/edge/edge-config-agent.js`: forward `preview_ref`/`full` ref images ไปยัง central
+  - face match modal แสดง FD Library photo ใน ref panel
+
+  **(5) LPR advanced features** (multiple commits):
+  - **No-helmet KPI card + filter** — `vehicle_type=no_helmet` parse + KPI card ใน LPR overview
+  - **Phone-use analytics** — parse phone-use event_state; analytics tile ใน overview
+  - **Pillion-passenger card tag + filter** — `vehicle_type=pillion_passenger`; tag บน plate card + filter
+  - **Operator dismiss (plate-swap suspects)** — `lpr_mismatch_dismissals` (migration 064) + province column + dismiss modal + ack button
+  - **KPI drill-down UX** — quick-date chips + duplicate-plate click-through + KPI period sync
+  - **Camera-type dropdown** — event-driven activity tiles ใน camera grid (commits `557db77`)
+  - **Sites management UI** — `GET/POST/PUT/DELETE /api/sites`; provision-edge button `POST /api/sites/:id/push-config` (commit `d3bb0ce`)
+
+  **(6) Bug fixes**:
+  - `FieldDetector` leave events ที่มี snapshot (Dahua via edge) ไม่ถูก filter ออกอีกต่อไป (commit `00433cf`; fix: `AND has_snapshot = FALSE` เพิ่มใน WHERE)
+  - Bosch snapshot COALESCE — preserves MQTT-body crop ใน `snapshot_filename`
+
+- **2026-06-24–25 — Edge pipeline hardening + docs** (commits `a00f62d` `0db4f37` `3a7fd94` `5d5a696` `d7df861`)
+
+  Follow-up fixes หลัง edge port + vss live deploy (2026-06-24):
+
+  - **Phase A** (`edge-config-agent.js`) — เพิ่ม `LineDetector` / `FieldDetector` ใน topic filter (BOSCH_3100i ส่ง event ประเภทนี้นอกจาก `ObjectDetection`)
+  - **Phase B MQTT snapshot transport** — `hikvision-isapi.js` + `dahua-cgi.js` เปลี่ยนจาก save-to-local เป็น publish snapshot base64 ผ่าน MQTT พร้อม `event_id`; `mqtt-subscriber.js` เพิ่ม branch `if (msg.event_id)` → `UPDATE events WHERE id = $event_id` (direct, แม่นยำ 100%) แทน timestamp-window Bosch path เดิม — แก้ "Central bugs identified" ที่ระบุใน commit `74d3c6a`
+  - **ITC/ANPR probe** (`docs/LOGIC_hikvision-ingester.md` §15) — XML fields 7 กลุ่ม 34 fields จาก `HIK-V_LPR01`, ค่าจริงใน DB 76,333 events, rear-facing camera note
+  - **Edge deploy docs** (`docs/REF_edge-site-checklist.md` ใหม่; `REF_edge-install.md` 9 จุดแก้ confirmed on hardware: NanoMQ `.deb`, cloudflared apt, dashboard-managed tunnel warning, systemd vs PM2, dahua start order, BRIDGE_PASSWORD source, parameterize user, clone URL `Diew→dojojin`)
+  - **GOTCHAS #100** — dahua crash-loop with 0 cameras on edge boot; fix: `fs.watch persistent:true` ใน `watchConfig()`
+
+- **2026-06-23–24 — Site Edge Node (VIGIL-ARCH-003) ported to main** (commit `74d3c6a`)
+
+  Edge deployment ครบวงจร: ingester เดิม (hikvision-isapi, dahua-cgi, lpr-core, face-push) รัน
+  บน edge box ด้วย `EDGE_MODE=1` — skip DB insert, publish pre-normalized row ไปยัง NanoMQ local
+  แทน; bridge ส่งขึ้น central EMQX ผ่าน WSS. Verified live บน WSL2 (vss edge box); 3,700+ messages
+  forwarded ก่อน context ที่ session นี้บันทึก:
+
+  **(1) EDGE_MODE guard pattern (DECISIONS #209)**
+  - `src/edge/publisher.js` — lazy MQTT client singleton; `publishEdgeEvent()` publish pre-normalized event JSON ไปยัง `projects/${SITE_ID}/${camera_id}/onvif-ej/${cat}/${type}`; export `EDGE_MODE` flag
+  - `src/edge/bridge.js` — standalone PM2 process; forward `projects/${SITE_ID}/#` + Bosch `+/onvif-ej/#` จาก NanoMQ → central EMQX WSS; relay `_config/cameras` downlink + CONFIG_TOPIC loop-break (GOTCHAS #99); heartbeat 60s
+  - 4 ingesters แก้ additive: `if (EDGE_MODE) { publishEdgeEvent(); return; }` ก่อน DB insert ทุกจุด — central path ไม่กระทบ
+
+  **(2) Operator templates + PM2 config**
+  - `ecosystem.edge.config.js` (root) — 7 PM2 apps: nanomq, hikvision, dahua, lpr-receiver, edge-config-agent, edge-bridge, cloudflared
+  - `edge/env.template`, `edge/nanomq.conf.template` — template สำหรับ N150/Ubuntu deploy
+  - `scripts/edge-cloudflared.sh`, `config/cloudflared.yml` — cloudflared wrapper + ingress config
+
+  **(3) Docs**
+  - `docs/REF_edge-install.md` (711+ lines) — install guide ครบสำหรับ N150/Ubuntu Server 24.04; NanoMQ v0.24.14-3, Node v22, PM2; WSL2 vs pure Linux comparison + 8-item gotcha table
+  - `docs/LOGIC_edge-ingester-divergence.md` — contract edge vs central (EDGE_MODE pattern, image-never-over-MQTT, pre-normalized row shape)
+
+  **Central bugs identified at port time → ✅ fixed in follow-up commits (2026-06-24–25):**
+  - `$1` type cast ใน edge-snapshot SQL → fixed `941b8d5` (`jsonb_build_object(..., $1::text, ...)`)
+  - `no matching event for ts=...` → fixed `3a7fd94` (event_id direct UPDATE path ใน `mqtt-subscriber.js`)
+
+- **2026-06-19–23 — Camera Settings + Face redesign + LPR Gallery + Multi-site + MultiPicker** (many commits)
+
+  **(1) Camera Settings redesign CS3–CS7:**
+  - **CS3** (commit `719c4ed` 2026-06-20): paginated camera list 25/page + search + vendor/status/location filters; `_filterPaginate()`/`_camDistinctLocations()` + `renderPagination`/`pgGo`
+  - **CS4** (commit `6d620f4` 2026-06-21): full-page editor; `#set-cameras.cam-editing` view-swap; pill nav scrollspy; Esc/back; mobile overflow fix
+  - **CS5** (commit `6cccec7` 2026-06-21): Pull/Push radios = VIEW of `frmCamPushOnly`; `_syncIngestRadios()`/`_setIngestRec()` advisory-only; Hik=choice, Bosch/Dahua=info
+  - **CS7 / IM7** (commit `f213cca` 2026-06-21): `src/lpr-core.js` + `src/lpr-forward.js` + `src/lpr-receiver.js` standalone (PM2 id 8, port 3003); disk spool/retry; CF tunnel route `^/(lpr$|face-push/)` → :3003. Verified 14/14 synthetic e2e (cross-process pg_notify ✓)
+
+  **(2) LPR Gallery Phase F-R (RF1–RF5 + RF-IMG + RF-Alert):**
+  - **RF1–RF4** (2026-06-21): read-only gallery tab + Settings›LPR (retention/gate/vtype/watchlist mgmt + drag-drop); migration backfill lpr_gates
+  - **RF-Alert** (commits `f9252ed`+`f2082b8` 2026-06-23): `lpr_alert_acks` (migration 060) + alert tab + ack modal; `GET /api/lpr/alerts` + `/count` + `POST /:id/ack`
+  - **RF5** (commit `3e49b60` 2026-06-23): `cameras.lpr_direction` (migration 063) + direction chart + assignment UI; `PUT /api/lpr/camera-direction`
+  - **RF-IMG** (commit `a96ee28` 2026-06-23): `resizeScene` 1080p/q80 ใน lpr-core (ingest); 2 settings ใน Settings›LPR (max_resolution/quality); ~600KB/image from live camera
+  - **MultiPicker rollout** (2026-06-23): LPR 5 filters (region/type/color/plate-color/lane) ใช้ multi-select dropdown
+
+  **(3) Multi-site DB Tier 1** (migrations 052–056, 062–063, 2026-06-21-22):
+  - `sites` table (052), `cameras.site_id` FK (053), `user_sites` (054), backfill VSS (055), `cameras.cam_role` (056), `cameras.lpr_direction` (062-063)
+  - `/api/cameras` scoped by user_sites (fail-open); site dropdown ใน camera editor; cam_role field
+  - Push-only camera grace period 30 min (commit `60b301a`)
+
+  **(4) Face Page Redesign FP1–FP6** — ✅ ALL LIVE 2026-06-22:
+  - **FP1–FP3** (commits `c5eb368` `338a355` `92614d4` + `bade691` demo parity): 4-tab (ภาพรวม/แจ้งเตือน/ค้นหา/ตั้งค่า) + `GET /api/faces/stats` + modal rework (crop↔FD ref + Body Appearance + deleted→avatar)
+  - **FP4** (migration 057 `face_event_notes`): `GET/POST /api/face-matches/:id/note`; operator note free-text ใน modal
+  - **FP5** (commit `fea95e8`, migration 058 `face_event_acks`): blacklist ack; unacked badge; `GET /api/faces/counts` + `unacked_watch`
+  - **FP6** (commit `0c4ad8a`, migration 059 `face_settings`): `face_similarity_min`(80) + `face_show_expression`(1); threshold query-time (reversible); Settings›ระบบใบหน้า
+
+  **(5) Camera Status demo parity** (commits `35ee205` `a806d80` 2026-06-22):
+  - OSD overlay (ts + cam-id pill on preview); summary chip bar (รวม/ออนไลน์/ออฟไลน์/Maintenance)
+  - RBAC fail-open `/api/cameras` scoped by user_sites; `recording_data_from` → SD box
+  - Client-side resolution (`img.naturalWidth`; cache `_camResCache`); Face tile counts
+  - Deep-link `cameraViewEvents()` role-aware (lpr/face/standard) — implemented (not stub)
+
+  **(6) Person Data redesign BP1–BP3** (commit `bd5a969` 2026-06-22):
+  - Peak-by-hour + peak-by-camera charts; color swatch picker; search-by-example
+  - Face cross-link (event time/camera → face page); avatar from metadata (within retention 30d)
+
+  **(7) MultiPicker component** (2026-06-23):
+  - Multi/single-select dropdown แทน native `<select>` ทุก filter bar; `data-mp-mode` dev flag; CSP-safe (no inline)
+  - Demo: `public/others/demo/multipicker/`; deployed to LPR 5 filters
+
+  **(8) Site provisioning** (commits `a5d9d9d` `55ff04d` `d3bb0ce` 2026-06-23-24):
+  - Site CRUD: `GET/POST/PUT/DELETE /api/sites`
+  - Provision-edge button: onboard site's MQTT bridge from UI (`POST /api/sites/:id/push-config` + EC1+EC2 edge-config-agent)
+  - `scripts/provision-edge.js` CLI + `src/routes/sites.js`
+
+  **(9) IM3-R ✅ LIVE 2026-06-23 (on-site Phuket)**:
+  - HKT01 + HKT02 face push active via Cloudflare tunnel `POST /face-push/:token`
+  - FAS multi-slot (HCP slot 1 + Vigil slot 2) — ไม่ต้องเลือก
+  - v1 = ingest-only; LINE alert / body-appearance = v2 future
+
+  **(10) IM4 — auto-detect ingest method** (commit `3640f1e` 2026-06-19):
+  - Test Connection (Hikvision) + unreachable → nudge suggest `push_only`
+  - suggest-only (ไม่ auto-tick — guard transient TCP blip)
+
+- **2026-06-18–19 — LPR/ANPR system + Events/Snapshot/Faces reorganization** (commits `00fbd41` `acc8f1a` `03c894b` `37531a4` `0ed18b5` `1b4fa77` `608e0a6`)
+
+  **(1) LPR/ANPR pipeline** — Hikvision ITCCAM ANPR cameras push plates over HTTP:
+  - `src/routes/lpr.js` — ANPR HTTP push receiver (ingest + image save under `snapshots/lpr/YYYY-MM-DD/`); 78-province map (`tailandStateID`→ชื่อ); 3s dedup
+  - `src/routes/lpr-query.js` — `GET /api/lpr` (search: q/camera/region/from/to + X-Total-Count) + `GET /api/lpr/stats` (KPI: today total/unique/top brand)
+  - `src/routes/lpr-watchlist.js` — `GET/POST/PATCH/DELETE /api/lpr/watchlist` (migration **050** `lpr_watchlist`)
+  - `dashboard/page-lpr.js` — ป้ายทะเบียน gallery: latest/search/watchlist tabs; 579-entry vehicle-brand map; DLT plate plaque
+  - `dashboard/lpr-plaque.js` — shared synthetic plate plaque (DLT background colors; motorcycle 2-line); single source for Events feed + LPR page
+  - redesign demo (approved) at `/others/demo/` — overview KPI+charts, 77-province filter, เฝ้าระวัง watchlist groups, lane→gate config, detail modal. Port → production = **Phase F** (see `docs/superpowers/plans/2026-06-18-lpr-receiver.md`)
+
+  **(1b) Phase F1 — demo → production port** (2026-06-19): `page-lpr.js` rewrite to 3-tab redesign (ภาพรวม/ค้นหา/เฝ้าระวัง), period-aware KPIs + hourly/province/vtype charts, search filters (vehicle_type/color, plate_color, lane, no-read), watchlist groups/alert-mode/ref-image/notify (migration **051** `lpr_watchlist_groups` + `lpr_watchlist` cols; image upload sharp 400×400 + magic-bytes), no-read "อ่านไม่ออก" + unknown→"ไม่ทราบ" (DECISION #208), AirDatepicker pickers. **Fixes found in review:** CSP `script-src 'self'` blocks inline handlers → converted to `data-action`/`data-change`/`data-input`/`data-err` dispatcher (ACTION_MAP in `page-nav-bindings.js`); TZ boundary — app forces `SET TIME ZONE 'UTC'` so period windows use `::date::timestamp AT TIME ZONE 'Asia/Bangkok'`; AirDatepicker `position:'bottom right'` to keep popup in viewport. Card plaque → container-query sizing + 2px DLT frame. Re-architecture (read-only tab + Settings›LPR config + retention) = **Phase F-R** (ROADMAP).
+
+  **(2) Events/Snapshot — category separation** — LPR/Face are their own pages → out of the generic feeds:
+  - `dashboard/event-domains.js` — single classifier `eventDomain(ev)` (event_type → domain/render/badge) replaces scattered hardcoded checks; `specializedEventTypes()` drives feed exclusion → a new domain = one registry entry
+  - Events "ทั้งหมด" + Snapshot exclude `anprAlarm,FaceRecognition,FaceCapture` via `/api/events?exclude_types=` (high-frequency plates were burying other logs — recent 200 feed rows = 100% anprAlarm)
+  - Events feed declutter: removed ป้ายทะเบียน tab + CONF/SRC columns (only 7.7%/17.1% populated); หมวด column shows domain badge; LPR rows surface plate number in name
+  - `anprAlarm` display name → "ข้อมูลป้ายทะเบียน" / "ANPR" (`etl.anprAlarm`, DECISIONS via EVENT_TYPE_LABELS)
+
+  **(3) Faces page (ค้นหาบุคคล) — 3 category tabs** — 2 tabs → 3:
+  - **ภาพใบหน้า** (FaceCapture) / **พบในระบบ** (FaceRecognition matched) / **ไม่พบในระบบ** (FaceRecognition, no listType) + live count badges
+  - `GET /api/faces/counts` (capture/match/miss in one query); `/api/face-matches?misses_only=1`
+  - listType label `blackList` → "เฝ้าระวัง" / "Watchlist" (consistent with LPR); removed obsolete "รวมที่ไม่จับคู่ได้" toggle
+
+  **(4) No-read decision (#208)** — camera probes unreadable-plate vehicles as `anprAlarm` `plate='unknown'` (6.9%, attributes intact) → display as **"อ่านไม่ออก"** (ANPR no-read = camera-health KPI), not "ไม่ทราบ". Implement in Phase F.
+
+  *(Same-day, separately documented: ANPR receiver `00fbd41`; Hikvision FAS P1 hardening `7e1b088`; Stats forensic Sprints A–E `324f06e`…`27b3218`.)*
+
+- **2026-06-17–18 — Dahua ingester: test harness + segment guard fix + smart scan fallback** (commits `1aeb94d` `8689855` `8fc5078` `0731ca6`)
+
+  4 commits ปรับปรุง `dahua-cgi.js` ทั้งด้านความถูกต้องของ snapshot และความสามารถ test ได้:
+
+  **(1) `1aeb94d` — extract parser → `dahua-protocol.js` + test fixtures**
+  - แยก `DAHUA_EVENT_MAP`, `parseDahuaEventText`, `parseSnapManagerCode`, `extractObjectClass` ออกจาก dahua-cgi.js เป็น pure module (ไม่มี I/O / DB)
+  - เพิ่ม `test/fixtures/dahua/` (7 fixtures) + `test/dahua-parser.test.js` (21 tests)
+  - regression net พร้อมก่อนแตะ snapshot logic
+
+  **(2) `8689855` — fix: mtime fallback สำหรับ segment close detection**
+  - root cause ของ `candidates=0` ใน event 103109 (DAHUA_CAM01, 17 มิ.ย. 12:59): guard เดิมต้องการ segment ใหม่กว่าอยู่ใน buffer — ถ้า segment ล่าสุดเป็นตัวที่ต้องการพอดี → ทุก candidate ถูก skip
+  - แก้: OR mtime fallback — ถ้า ffmpeg ไม่ได้เขียน segment นั้นมา >2 วินาที (`SEGMENT_CLOSE_AGE_MS = 2000`) ถือว่าปิดแล้ว อ่านได้
+
+  **(3) `8fc5078` — refactor: extract snapshot scoring → `dahua-snapshot-selector.js`**
+  - ย้าย `scoreFrameForObject`, `scoreFrameMotion`, `chooseBestSnapshotCandidate`, `eventBoundingBox`, `eventBoxEdgeRisk`, `frameRoi` + 5 constants ออกเป็น pure module (dep เดียวคือ `sharp`)
+  - เพิ่ม `test/dahua-snapshot-selector.test.js` (21 tests) รวม discriminating image-level tests (noisy > flat, diff > same)
+  - zero behavior change; total suite 85/85 pass
+
+  **(4) `0731ca6` — feat: smart scan fallback (`dahua-rtsp-buffer-scan`)**
+  - เพิ่ม level ที่ 3 ในระหว่าง burst → dumb-single: เมื่อ burst คืน 0 candidates, scan ±30 วินาที (สูงสุด 5 segments), score แต่ละตัวผ่าน `scoreFrameForObject`, คืน frame ที่ดีที่สุด
+  - `selectScanSegments()` (pure helper ใน selector) + `SCAN_WINDOW_SEC=30` / `SCAN_MAX_SEGS=5`
+  - source label: `dahua-rtsp-buffer-scan` / `low_confidence` → clip-resolver upgrade ทำงานตามปกติ
+  - เพิ่ม 6 unit tests; total suite 27/27 pass
+
+  **Test coverage รวม:** 48 tests (21 parser + 27 selector); `dahua-cgi.js` ลด ~170 ลบ. (−16%)
+
+- **2026-06-15 — docs: accuracy pass — README, SKILL, SKILL-TH, ARCHITECTURE** (commits `b82a97c` `e3cf83b`)
+
+  อัปเดต 4 ไฟล์ให้ตรงกับ codebase จริง:
+  - `README.md`: Node.js 18+ → 22 LTS; `dashboard/` section สะท้อน S5 split (19 page-*.js, core ~1,379 lines); `routes/` แสดง 19 modules ครบ (S4); `src/` เพิ่ม push-sender / crypto-creds / color-utils / singleton; db/ migration list ย่อเป็น 011–013 … 045 (47 files); Documentation Index เพิ่มแถว dev-docs/
+  - `SKILL.md` / `SKILL-TH.md`: date 2026-06-08 → 2026-06-15; §8 grep command ครอบ `dashboard/page-*.js` ด้วย
+  - `ARCHITECTURE.md`: `dashboard/` row 21 → 19 page-*.js (verified via `ls`); File Ownership เพิ่มแถว dev-docs/ portal; date อัปเดต
+
+- **2026-06-15 — docs(dev-portal): file-navigator + api-routes pages + ARCHITECTURE.md gap-fill** (commit `e35d007`)
+
+  เพิ่มสองหน้าใหม่ใน `dev-docs/` และอุด gap ใน ARCHITECTURE.md:
+  - `dev-docs/file-navigator.html` — สารบัญไฟล์ทุกไฟล์ใน project; CSS architecture diagram (3-col grid: Ingestion / Server Core / Workers+Frontend); role badges (server/worker/lib/route/ui/infra/dev); ครอบ src/*.js, routes/, helpers/, ingesters/, dashboard/*.js, db/, scripts/, root configs
+  - `dev-docs/api-routes.html` — REST routes 139 routes จัดตาม 20 module groups; METHOD badges (GET/POST/PUT/PATCH/DELETE สีต่างกัน) + auth-level badges; note ว่า REF_api-reference.md ยังแสดง 126 routes (outdated)
+  - `ARCHITECTURE.md` Runtime Components: เพิ่ม 9 rows ที่หายไป — `push-sender.js`, `crypto-creds.js`, `color-utils.js`, `constants.js`, `singleton.js`, `migrate.js`, `stats-summary-route.js`, `simulator.js`; อัปเดต `auth.js` + `license.js` + `report-renderer.js` ให้ละเอียดขึ้น; dashboard row 27 files (S5 ✅); db row 47 files/045
+
+- **2026-06-15 — refactor(dashboard): S5/MAINT-FE-001 dashboard.js split — CAMPAIGN COMPLETE** (19 page files, commits `dd35f68`→`e90877e`)
+
+  dashboard.js peak **~10,500 ลบ.** → **1,379 ลบ.** (−9,121 ลบ., −87%); 19 page files สร้างใหม่ใน `dashboard/`
+
+  | ไฟล์ใหม่ | Lines | Section ที่ย้ายออก | Commit |
+  |---|---|---|---|
+  | `page-appearance.js` | 618 | Appearance Search | `dd35f68` |
+  | `page-reports.js` | 770 | Reports + History | `236ef27` |
+  | `page-alerts.js` | 693 | Alerts / LINE Notification | `1d98f3c` |
+  | `page-stats.js` | 1,483 | Stats / Analytics / Charts | `43da0f7` |
+  | `page-map.js` | 770 | Map + OpenLayers | `92baf8a` |
+  | `page-events.js` | 289 | Events feed | `27ef402` |
+  | `page-cameras.js` | 756 | Camera list + EMQX provisioning | `bb3bacd` |
+  | `page-camera-settings.js` | 1,066 | Camera settings modal | `7254960` |
+  | `page-face-gallery.js` | 233 | Face gallery | `8bf203b` |
+  | `page-snapshots.js` | 479 | Snapshots + Overlay | `ba91e89` |
+  | `page-media.js` | 164 | Media / Clip viewer | `3249116` |
+  | `page-map-settings.js` | 357 | Map cache manager + Settings › Map | `a1d61b3` |
+  | `page-branding.js` | 81 | Brand logo/name/color | `298b34f` |
+  | `page-user-mgmt.js` | 398 | User manager + Audit log + Sessions | `298b34f` |
+  | `page-categories.js` | 303 | Category + Rule manager | `cbf1698` |
+  | `page-system.js` | 218 | System settings + Analytics events | `a7b7951` |
+  | `page-health.js` | 257 | Health check page | `3324210` |
+  | `page-executive-summary.js` | 486 | Executive summary / SMB briefing | `b7bbedf` |
+  | `page-nav-bindings.js` | 473 | Nav chrome + static + dynamic handlers | `e90877e` |
+
+  **Pattern — Option A (classic script, no-build):**
+  - Load order: `page-*.js` ก่อน `dashboard.js` ใน `index.html`
+  - Global scope แชร์ผ่าน window — `let/const` top-level ย้ายตามไฟล์, ไม่ redeclare ข้ามไฟล์
+  - Cross-file calls resolve at call-time (ปลอดภัยเพราะ page-*.js load ก่อน `dashboard.js`)
+  - Verify gate: `node --check` ทุก step + browser verify ปิดท้าย
+  - dashboard.js ที่เหลือ = core globals + pagination + WS + group mgmt + bootstrapApp (~1,379 ลบ.)
+
+- **2026-06-14 — refactor(routes): route split ชุดที่ 13–16 — map, line, health, reports** (commits `60ab7d2` `97e8c8e` `e81399e` `90b831f`) **← S4 CAMPAIGN COMPLETE**
+
+  api-server.js peak 7,156 ลบ. → **1,893 ลบ.** (−5,263 ลบ., −73%); 19/19 route files done; faces 2 routes hold รอ FR module
+
+  - `src/routes/map.js` (new, 486 lines) — 10 routes: map areas/polygons CRUD + download/cancel + tiles proxy + `/api/settings/mapbox`; `mapDownloadState` + helpers ใน factory closure; path `path.join(__dirname, '../..', 'map-cache')`
+  - `src/routes/line.js` (new, 377 lines) — 12 routes: line-config CRUD + test + pending/blocked/webhook + `/api/line-config/quota`
+  - `src/routes/health.js` (new, 629 lines) — 7 routes: `/api/health/details` + `/api/health/report` + `/api/health/report/:id` + `/api/services`; `_dirSize()` local helper; `getBrandForReport` รับจาก dep (ยังอยู่ใน api-server.js)
+  - `src/routes/reports.js` (new, 193 lines) — 6 routes: `/api/report-history/stats` + `/api/report-history` + `/api/report-history/:id/image` + `/api/reports/pdf` + `/api/reports/daily` + `/api/reports/weekly`; `PORT` + `REPORT_TYPES` + `REPORT_TITLE_TH` เป็น local const
+
+- **2026-06-14 — refactor(routes): route split ชุดที่ 6–12 — ops, auth, license, events, appearances, cameras, stats** (commits `7f352de` `1205361` `a084038` `cd54b64` `daff4bf` `21fe1f3`)
+
+  api-server.js peak 7,156 ลบ. → 3,480 ลบ. (−51%) ณ จุดนี้; extracted ~3,808 ลบ. รวม 12 commits; 15/19 route files done
+
+  - `src/routes/ops.js` (new) — push register/unregister + alert-logs + backups (8 routes); −148 ลบ.
+  - `src/routes/auth.js` (new) — login/logout/me/change-password/sessions (6 routes); −151 ลบ.
+  - `src/routes/license.js` (new) — machine-id/status/activate/deactivate (4 routes); −79 ลบ.
+  - `src/routes/events.js` + `src/routes/appearances.js` (new) — events list/facets/dwell + appearances stats/search/timeline (8 routes); −599 ลบ.
+  - `src/routes/cameras.js` (new) — cameras CRUD + offline-alerts + live-snapshot + /api/config (15 routes); −1,187 ลบ. (largest single split)
+  - `src/routes/stats.js` (new) — stats/occupancy/heatmap/dwell/people-counting/categories/timeline ครบ (20 routes); `_occupancy` Map ส่งผ่าน by reference; local state (`_todayCountsCache`, `parseRange`, `pickTruncUnit`) ย้ายเข้าโมดูล; −811 ลบ.
+
+- **2026-06-14 — refactor(routes): route split ชุดที่ 5 — report-schedules** (commit `7160e68`)
+
+  **Report Schedules route split:**
+  - `src/routes/report-schedules.js` (new, ~170 lines) — 5 routes: `GET/POST/PUT/DELETE /api/report-schedules` + `POST /api/report-schedules/:id/run`; factory `reportSchedulesRoutes(app, pool, { WORKER_PORT, INTERNAL_API_TOKEN })`
+  - helpers ย้ายเข้าโมดูล: `normalizeHealthSections`, `normalizeSendDayOfWeek`, `normalizeSendDaysOfMonth`, `HEALTH_SECTION_KEYS` — ทั้งหมดเป็น local-only ใน block เดิม
+  - `REPORT_TYPES` คงไว้ใน api-server.js (ยังใช้ใน `/api/reports/pdf`); narrow scope — `/api/report-history/*` + `/api/reports/pdf` + health report routes ไม่แตะ (ป้องกัน PORT TDZ trap ที่ `const PORT` line 6185)
+  - api-server.js: -184 lines
+
+- **2026-06-14 — refactor(routes): route split ชุดที่ 2–4 — groups, settings, users, alert-rules** (commits `23fc063` `0e19dc7` `3caa6b1`)
+
+  **Groups + Settings split (commit `23fc063`):**
+  - `src/routes/groups.js` (new) — 3 routes: `GET/POST/DELETE /api/groups`; factory `groupsRoutes(app, { auth, getIP, loadGroups, saveGroups, logCameraAudit })`; file-based JSON, no pool
+  - `src/routes/settings.js` (new) — 3 routes: `GET /api/settings`, `PUT /api/settings/map`, `PUT /api/settings/:key`; factory `settingsRoutes(app, pool, { ... })`; `PUT /api/settings/map` ลำดับก่อน wildcard route (ป้องกัน Express ตีความ 'map' เป็น `:key`)
+  - api-server.js: -124 lines
+
+  **Users + Audit-log + CSP-report split (commit `0e19dc7`):**
+  - `src/routes/users.js` (new) — 7 routes: `GET/POST/PUT/DELETE /api/users`, `POST /api/users/:id/reset-password`, `GET /api/audit-log`, `POST /api/csp-report`; factory `usersRoutes(app, { auth, getIP })`
+  - `require()` วางก่อน global auth middleware line 676 — intentional: user mgmt ต้องใช้ได้แม้ license หมดอายุ/write-blocked
+  - `_cspRateMap` (rate-limiter Map) ย้ายเข้า factory; `express.json()` สำหรับ csp-report require ภายใน
+  - api-server.js: -111 lines
+
+  **Alert-rules + normalizeTimeOfDay helper split (commit `3caa6b1`):**
+  - `src/routes/alert-rules.js` (new) — 5 routes: `GET/POST/PUT/DELETE /api/alert-rules` + `GET /api/alert-rules-suggestions`; factory `alertRulesRoutes(app, pool)`; Bosch tampering synthetic names คง verbatim; `pg_notify('alert_rules_changed', '')` คงทุก write path
+  - `src/helpers/normalizeTimeOfDay.js` (new) — extract shared helper (เดิม inline ใน alert-rules block); ยังใช้ใน camera offline-alerts (line 2121/2122) + report-schedules (line 3610/3646) ผ่าน require
+  - api-server.js: -127 lines (3 ins / 127 del)
+
+- **2026-06-13 — perf(settings) + refactor(routes): P2 system_settings cache + branding/EULA route split** (commits `a8f4304` `926962c`)
+
+  **P2 — `system_settings` cache (commit `a8f4304`):**
+  - สร้าง `src/helpers/getSystemSetting.js` — Map cache TTL 60 วินาที, 3 exports: `getSystemSetting(pool, key)`, `getSystemSettings(pool, keys[])` (multi-key single query), `invalidateSystemSetting(key)`
+  - migrate 13 call sites ใน api-server.js (display_timezone, analytics_event_display, brand_*, retention days, mapbox_token, eula, notifications ฯลฯ) จาก raw `pool.query(WHERE key=)` → helper
+  - เพิ่ม `invalidateSystemSetting()` ทุก write path (4 จุด); fork-mode single-process → ไม่ต้องการ Redis/pg_notify cross-process
+  - ลด seq_scans บน `system_settings` ~80%
+
+  **Branding + EULA route split (commit `926962c`):**
+  - `src/routes/branding.js` (new, 81 lines) — 3 routes: `GET /api/branding`, `POST /api/branding/logo`, `DELETE /api/branding/logo`; factory signature `brandingRoutes(app, pool, brandingDir)`; multer ย้ายเข้า factory; SEC-005 magic-bytes check คง verbatim
+  - `src/routes/eula.js` (new, 70 lines) — 3 routes: `GET /api/eula`, `GET /api/eula/status`, `POST /api/eula/accept`; `EULA_PATHS`/`_eulaCache`/`getEulaContent` ย้ายเข้าโมดูล; path ปรับสำหรับ `src/routes/` (`../../docs/`)
+  - api-server.js: -124 lines (EULA block 55 lines + branding block 69 lines); `const sharp` (thumbnail) + `publicApiPaths` ไม่กระทบ
 
 - **2026-06-07 — docs(api-ref): เพิ่ม REF_api-reference.md — full REST API reference** (commits `ef2f844` `a9a20be` `fbb3548` `98e876d` `fef8816` `48ff98d` `09ef3d2`) — จัดทำ API reference ฉบับแรกของโปรเจกต์ + ลงทะเบียนใน doc registry ครบทุกจุด:
   - `docs/REF_api-reference.md` (new, ~1510 lines) — ครอบคลุม **126 routes ใน 22 groups** ได้แก่ Auth, Users, Cameras, Events, Snapshots, Media, Appearances, LPR, Stats, Executive Summary, LINE config/alerts/recipients, Report schedules/history, Settings (validated keys + ranges ทุกตัว), Face Capture, Categories, System/Branding, Health & Services (service management rules), WebSocket protocol
@@ -628,4 +995,36 @@ This version's completed work is captured chronologically in the
 
 - **PM2 decision** (decision #196) — ตัดสินใจ pull PM2 forward เป็น prerequisite ของ Service Management UI (Start/Stop/Restart per-service); เหตุผล: `concurrently -k` ทำ per-service restart พัง stack; api-server restart ตัวเองไม่ได้ (PM2 daemon แก้); pgrep self-detection bug; scope MVP 5 workers; cloudflared/infra = Phase 2
 
-<sub>End of CHANGELOG.md · Companion to CLAUDE.md · Updated 2026-06-08</sub>
+---
+
+### 2026-06-17
+
+- **Route split: faces.js — S4 ✅ COMPLETE** (commit `f0ad8d2`) — `/api/faces`, `/api/faces/summary`, `/api/face-matches` + `_buildFaceFilter` ย้ายออกจาก `api-server.js` → `src/routes/faces.js` (api-server.js: 1944→1816 ลบ., −128). S4 route split campaign ✅ ครบทุก **20 modules** แล้ว.
+
+- **Hikvision Body Appearance ingestion** (commits `3cb95d6`, `37422f5`, `6c38c85`) — Hikvision FaceReg camera ส่ง second HTTP push `mixedTargetDetection` ~2s หลัง FaceRecognition alarm พร้อม body appearance JSON + `humanImage` JPEG:
+  - `parseFaceAlarmMultipart` แยก `bodyJson` จาก `alarmJson` ได้แล้ว
+  - `_pendingBodyLink` Map เชื่อม FaceRecognition `event_id` → body push ผ่าน 10s TTL (keyed by `camera_id`); `525dd75` เพิ่ม cleanup on TTL expiry
+  - `ingestBodyAppearance` → INSERT INTO `appearances` (upper_color/lower_color/top_category/bottom_category/bag_category/gender/glasses/attributes) + JSONB patch บน `events.raw_json` (jacketColor/trousersColor/jacketType/trousersType/direction/hairStyle) + บันทึก `humanImage` → `snapshots/`
+  - Normalize Hikvision body field names → BOSCH canonical format เพื่อให้ Appearance page แสดง color dot ถูกต้อง; `5f52263` + `fe7a412` fix color dot ใน chips + appearances search
+
+- **Face Capture merged → All Faces tab** (commit `43f0828`) — Face Recognition page ได้ tab bar "Matches / All Faces":
+  - All Faces tab โหลด `/api/faces` พร้อม filter ครบ (gender/age/expression/glass/mask/hat/from-to); commit `528b677` เพิ่ม camera + body appearance filters
+  - Face sidebar nav item ซ่อนแล้ว — face ทั้งหมดอยู่ใน Face Recognition page
+  - `#page-faces` HTML ยังคงอยู่ใน DOM เป็น rollback guard (unreachable via nav)
+
+- **Body appearance in match detail modal** (commit `6a4c98f`) — แสดง `humanImage` + color swatches (top/bottom) + jacket/trousers type + direction เมื่อ `mixedTargetDetection` data พร้อม
+
+- **Person Data (Appearance) page — 3 new charts + mask/hat tiles** (commit `f21f2bd`) — `/api/appearances/stats` เพิ่ม 3 parallel queries (age_group, expression, direction) + accessories counts (mask/hat); page แสดง Chart.js bar charts: สัดส่วนช่วงอายุ, อารมณ์, ทิศทางการเดิน; Mask/Hat gauge tiles
+
+- **Face Recognition UI polish & fixes** (commits `d05b922`, `bc533f6`, `1219ab0`, `82d0b17`, `7bfd965`, `b5074b8`, `bebf14d`, `588b062`):
+  - Hits-only toggle ("รวมที่ไม่จับคู่ได้" pill) — default แสดงเฉพาะ matched faces
+  - LINE alert ส่ง `backgroundImage` (full scene) แทน face crop
+  - Face Recognition Detail modal: full frame + clip ฝั่งซ้าย; crop + table + ref + body chips ฝั่งขวา
+  - clickable All Faces cards → Face Detail modal
+  - Bosch-style body chips + body image layout ใน modal
+  - nav badges (unread count) + WS auto-refresh บน FaceRecognition event type
+  - sanitize colorDot CSS: `replace(/[^a-zA-Z0-9#]/g, '')` — ป้องกัน CSS injection ผ่าน color value จาก DB (GOTCHAS #91)
+
+- **migration 047** (`alert_list_types`) — `ALTER TABLE alert_rules ADD COLUMN IF NOT EXISTS list_types text[] DEFAULT NULL` — กฎ alert กรองเฉพาะ `listType` ที่ระบุ (เช่น blackList เท่านั้น); `NULL` = pass ทุก list type; alert rule editor UI รองรับ multi-select
+
+<sub>End of CHANGELOG.md · Companion to CLAUDE.md · Updated 2026-07-21</sub>

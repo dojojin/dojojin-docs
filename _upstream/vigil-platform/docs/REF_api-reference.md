@@ -49,6 +49,7 @@ In this document:
 5. [Events](#5-events)
 6. [Appearances (Person Attributes)](#6-appearances-person-attributes)
 7. [Face Capture](#7-face-capture)
+7.5. [License Plates (LPR)](#75-license-plates-lpr)
 8. [Event Categories & Mapping Rules](#8-event-categories--mapping-rules)
 9. [Statistics](#9-statistics)
 10. [LINE Notifications](#10-line-notifications)
@@ -281,6 +282,15 @@ Admin gets plaintext credentials; viewer/auditor get `***` for `password`, `mqtt
 
 ---
 
+### POST /api/cameras/lpr-forward-test
+**Admin** — probe reachability of an LPR forward URL with SSRF guard.
+
+**Body** `{ "forward_url": "http://example.com/api/lpr/push" }`
+
+**Response** `{ "reachable": true, "status": 200, "latency_ms": 45, "error": null }` or `{ "reachable": false, "status": null, "latency_ms": null, "error": "Connection timeout" }`
+
+---
+
 ### GET /api/cameras/status-current
 **Admin/Auditor** — current online/offline status for all cameras (from DB `cameras` table).
 
@@ -486,6 +496,78 @@ Omit `id` to auto-generate.
   "male": 75, "female": 45,
   "masked": 10,
   "age_teen": 5, "age_young": 60, "age_mid": 40, "age_senior": 15
+}
+```
+
+---
+
+## 7.5. License Plates (LPR)
+
+> ITC/ANPR camera detections — license plate reads from Hikvision IDS-2CD9396-HIS and integrated LPR sensors.
+
+### GET /api/lpr
+**Any auth** — paginated license plate detection list. Keyset-paginated (decision #211) for cursor-based navigation.
+
+**Query params**
+
+| Param | Type | Notes |
+|---|---|---|
+| `before_time` | ISO timestamp | Keyset cursor: latest `event_time` to exclude (for cursor-based pagination) |
+| `before_id` | bigint | Tie-breaker: largest `id` to exclude when times equal |
+| `count` | string | Pass `count=est` to request estimated row count in response header |
+| `from` | ISO timestamp | Inclusive lower bound on `event_time` |
+| `to` | ISO timestamp | Inclusive upper bound on `event_time` |
+| `cameras` | CSV | Camera IDs: `CAM1,CAM2` |
+| `belt` | `no` | Filter to detections with missing seatbelts (`no_seatbelt=true`) |
+| `vehicle_brands` | CSV | Vehicle brand codes: `BYD,TESLA` |
+| `vehicle_colors` | CSV | Vehicle body colors: `black,white,red` |
+| `plate_colors` | CSV | License plate colors: `yellow,white,blue` |
+| `lanes` | CSV | Lane numbers: `1,2,3` |
+| `limit` | int | Default 100 |
+
+**Response headers**
+
+| Header | Notes |
+|---|---|
+| `X-Has-More` | `1` if more rows exist beyond this batch, `0` otherwise |
+| `X-Estimated-Count` | Total matching row estimate (only present when `count=est` was passed); used by UI planner |
+
+**Response array** — `license_plates` table row plus computed fields
+
+```json
+[
+  {
+    "id", "event_time", "camera_id",
+    "plate_text", "plate_color", "confidence",
+    "vehicle_brand", "vehicle_color", "vehicle_type",
+    "no_seatbelt", "lane", "direction",
+    "snapshot_file", "clip_file", "clip_status"
+  }
+]
+```
+
+---
+
+### GET /api/lpr/brands
+**Any auth** — distinct vehicle brands detected with counts.
+
+**Response** `[ { "brand": "BYD", "n": 142 }, { "brand": "TESLA", "n": 89 }, ... ]`
+
+---
+
+### GET /api/lpr/stats
+**Any auth** — aggregate LPR statistics. Includes new chart data.
+
+**Query params** `from`, `to`, `cameras`
+
+**Response** extends base KPI with new fields:
+
+```json
+{
+  "total": 500,
+  "by_hour": [ ... ],
+  "pcolor": [ { "color": "yellow", "count": 320 }, { "color": "white", "count": 180 } ],
+  "brand": [ { "brand": "TOYOTA", "count": 145 }, { "brand": "HONDA", "count": 98 }, ... ]
 }
 ```
 
@@ -1372,6 +1454,7 @@ Supported types: PNG, JPG, WebP, SVG (max 5MB). Non-SVG images are auto-resized 
 | `imageQuality` | Per-camera 24h auto-analytics counts |
 | `automationTriggers` | Per-camera Digital Input + Relay counts |
 | `storage` | Snapshot/clip file counts + sizes, disk free/total, retention config |
+| `edge_sites` | Multi-site edge inventory (one entry per EDGE_SITE_ID): includes `snapshot_oldest` (ISO date of oldest snapshot dir) + `snapshot_dirs` (count of <YYYY-MM-DD> directories in snapshots/events/) |
 | `apiServer` | Process uptime, Node version, PID, RSS, heap, WebSocket clients |
 | `host` | Hostname, platform, RAM total/free/used%, load average |
 
@@ -1519,4 +1602,4 @@ Authentication: send `{ "type": "auth", "token": "<session-token>" }` immediatel
 
 ---
 
-<sub>**REF_api-reference.md** v1.5.3 · 126 routes across 22 groups · Vigil Platform · Updated 2026-06-08</sub>
+<sub>**REF_api-reference.md** v1.5.3 · 128 routes across 23 groups · Vigil Platform · Updated 2026-06-08</sub>

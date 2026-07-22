@@ -1,0 +1,3 @@
+Events[0].Code=CrossLineDetection
+Events[0].Action=Start
+Events[0].Index=0

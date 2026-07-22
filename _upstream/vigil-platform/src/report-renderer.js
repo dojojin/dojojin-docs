@@ -19,6 +19,12 @@
 const puppeteer = require('puppeteer');
 const sharp = require('sharp');
 
+// SVG→PNG rasterisation DPI. The SVGs are authored at 720px logical width;
+// librsvg re-renders the vector at this density (200 ≈ 2.8× → ~2000px), so the
+// PNG download and the PNG embedded in the PDF stay crisp when scaled up to A4.
+// Calibration knob: raise for sharper/larger files, lower for smaller.
+const REPORT_PNG_DENSITY = 200;
+
 // ── Helpers ─────────────────────────────────────────────────
 function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, c => (
@@ -259,12 +265,14 @@ process.once('SIGTERM', shutdown);
 
 // Build the /report-print.html URL with query params (shared by the PDF
 // and 'full' image paths — same standalone page renders both).
-function _printPageUrl({ baseUrl, from, to, title, rangeLabel, cameras }) {
+function _printPageUrl({ baseUrl, from, to, title, rangeLabel, cameras, domains, site_id }) {
   const qp = new URLSearchParams({
     from: from || '', to: to || '',
     title: title || '', label: rangeLabel || '',
   });
   if (cameras && cameras.length) qp.set('cameras', cameras.join(','));
+  if (domains) qp.set('domains', domains);
+  if (site_id) qp.set('site_id', site_id);
   return `${baseUrl}/report-print.html?${qp.toString()}`;
 }
 
@@ -278,18 +286,14 @@ function _printPageUrl({ baseUrl, from, to, title, rangeLabel, cameras }) {
 // Body padding is zeroed via an injected stylesheet — page.pdf supplies
 // the margin (8mm). For the image path, body padding stays so screenshots
 // have a small visual border.
-async function renderReportPdf({ baseUrl, internalToken, from, to, cameras, brand, title, rangeLabel }) {
-  const url = _printPageUrl({ baseUrl, from, to, title, rangeLabel, cameras });
+async function renderReportPdf({ baseUrl, internalToken, from, to, cameras, brand, title, rangeLabel, domains, site_id }) {
+  const url = _printPageUrl({ baseUrl, from, to, title, rangeLabel, cameras, domains, site_id });
   return _withPage(async (page) => {
     await page.setExtraHTTPHeaders({ 'X-Internal-Token': internalToken });
     await page.setViewport({ width: 820, height: 1100, deviceScaleFactor: 1 });
     await page.goto(url, { waitUntil: 'networkidle0', timeout: 45000 });
     await page.waitForFunction('window.__reportReady === true', { timeout: 20000 });
-    await page.addStyleTag({
-      content: 'body{padding:0!important;width:auto!important;max-width:100%!important}'
-            + ' tr,h2,h3{page-break-inside:avoid}'
-            + ' table{page-break-inside:auto}',
-    });
+    await page.addStyleTag({ url: `${baseUrl}/report-print-override.css` });
     return page.pdf({
       format: 'A4',
       printBackground: true,
@@ -479,8 +483,12 @@ async function gatherHealthData({ baseUrl, internalToken, sections, range }) {
   return { health: hrData, cameras: camData, alerts: alData };
 }
 
-function renderHealthReportHtml(data, { brand = {}, sections, range, lang = 'th' } = {}) {
-  const L = HR_LABELS[lang] || HR_LABELS.th;
+function renderHealthReportHtml(data, { brand = {}, sections, range, lang = 'th', title } = {}) {
+  // Strip emoji/✓✗ from labels so this HTML (PDF) matches the SVG (PNG),
+  // which runs every string through _svgSafeText. Single source of truth →
+  // both renderers drop the same decorative icons (decision #144, GOTCHAS #25a).
+  const L0 = HR_LABELS[lang] || HR_LABELS.th;
+  const L = Object.fromEntries(Object.entries(L0).map(([k, v]) => [k, typeof v === 'string' ? _svgSafeText(v) : v]));
   const enabled = new Set(normalizeHealthSections(sections));
   const accent = brand.primary_color || '#5b8def';
   const brandName = brand.name || 'Vigil Platform';
@@ -488,6 +496,7 @@ function renderHealthReportHtml(data, { brand = {}, sections, range, lang = 'th'
   const locale = lang === 'en' ? 'en-US' : 'th-TH';
   const dateLabel = new Date().toLocaleDateString(locale, { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
   const rangeLabel = range?.customLabel || L[range?.labelKey || 'range24h'];
+  const genStr = new Date().toLocaleString(lang === 'en' ? 'en-GB' : 'th-TH', { hour12: false });
 
   const sectionHtml = (title, body) => `
     <div style="margin-bottom:16px">
@@ -545,7 +554,7 @@ function renderHealthReportHtml(data, { brand = {}, sections, range, lang = 'th'
         const subStyle = 'font-size:10px;color:#718096;margin-top:2px;padding-left:14px';
         return `<div style="padding:6px 0;border-bottom:1px solid #edf2f7;font-size:12px">
           <div style="display:flex;justify-content:space-between">
-            <span style="color:#ef4444">✗ ${esc(cam.name || cam.camera_id)}</span>
+            <span style="color:#ef4444">${esc(cam.name || cam.camera_id)}</span>
             <strong style="color:#ef4444">${esc(L.offlineFor)}${esc(_fmtDuration(cam.offline_for_sec))}</strong>
           </div>
           <div style="${subStyle}">${esc(L.lastOnline)}: ${esc(_fmtTimestamp(cam.last_heartbeat_at, lang, L.ago))}</div>
@@ -574,9 +583,8 @@ function renderHealthReportHtml(data, { brand = {}, sections, range, lang = 'th'
         const upColor = isOnline ? '#22c55e' : '#ef4444';
         const upColor2 = (upPct === null || upPct === undefined) ? (isOnline ? '#22c55e' : '#a0aec0')
           : (upPct < 90 ? '#ef4444' : upPct < 99 ? '#f59e0b' : '#22c55e');
-        const statusIcon = isOnline ? '✓' : '✗';
         const headerRow = `<div style="display:flex;justify-content:space-between">
-          <span style="color:${esc(upColor)}">${esc(statusIcon)} ${esc(cam.name || cam.camera_id)}</span>
+          <span style="color:${esc(upColor)}">${esc(cam.name || cam.camera_id)}</span>
           <strong style="color:${esc(upColor2)}">${esc(upText)}</strong>
         </div>`;
         // All cameras: compact lifecycle + event/snapshot diagnostics.
@@ -660,10 +668,21 @@ function renderHealthReportHtml(data, { brand = {}, sections, range, lang = 'th'
   body { font-family:'Sarabun','Segoe UI',sans-serif; color:#1a202c; margin:0;
          width:720px; padding:22px; background:#fff; }
 </style></head><body>
-  <div style="border-bottom:3px solid ${esc(accent)};padding-bottom:12px;margin-bottom:18px">
-    <div style="font-size:20px;font-weight:800">${esc(L.title)}</div>
-    <div style="font-size:12px;color:#4a5568;margin-top:3px">${esc(rangeLabel)} · ${esc(L.generatedAt)} ${esc(dateLabel)}</div>
-    <div style="font-size:11px;color:#a0aec0;margin-top:2px">${esc(brandName)}</div>
+  <div style="border-bottom:3px solid ${esc(accent)};padding-bottom:14px;margin-bottom:20px">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div style="display:flex;align-items:center;gap:14px">
+        ${brand.logo_b64 ? `<img src="${brand.logo_b64}" alt="logo" style="width:56px;height:56px;object-fit:contain">` : ''}
+        <div>
+          <div style="font-size:22px;font-weight:700;color:#1a202c">${esc((title && String(title).trim()) || L.title)}</div>
+          <div style="font-size:13px;color:#4a5568;margin-top:4px">${esc(rangeLabel)}</div>
+        </div>
+      </div>
+      <div style="text-align:right;font-size:11px;color:#a0aec0">
+        <div style="font-weight:700;color:#1a202c">${esc(brandName)}</div>
+        ${brand.tagline ? `<div style="font-size:10px;color:#a0aec0">${esc(brand.tagline)}</div>` : ''}
+        <div style="margin-top:3px">${esc(L.generatedAt)} ${esc(genStr)}</div>
+      </div>
+    </div>
   </div>
   ${bannerHtml}
   ${parts.join('')}
@@ -689,7 +708,27 @@ function _svgSafeText(value) {
     .trim();
 }
 
-function _renderHealthReportSvg(data, { brand = {}, sections, range, lang = 'th' } = {}) {
+// Shared report header for the SVG reports (Face / LPR / Health). Mirrors the
+// analytics report header (dashboard/report-template.js) so every report type
+// is identical apart from the title: logo + title + subtitle (left) ·
+// brand / tagline / generated-at (right) · accent rule below. Draws via the
+// caller's add()/text() closures and returns the next y.
+function _svgReportHeader({ add, text, left, right, accent, logoB64, brandName, tagline, title, subtitle, generatedLabel, genStr, y }) {
+  const logoSz = 56;
+  if (logoB64) add(`<image x="${left}" y="${y}" width="${logoSz}" height="${logoSz}" href="${logoB64}" xlink:href="${logoB64}" preserveAspectRatio="xMidYMid meet"/>`);
+  const tx = logoB64 ? left + logoSz + 14 : left;
+  text(tx, y + 24, title, { size: 22, weight: 700, fill: '#1a202c', max: 46 });
+  text(tx, y + 44, subtitle, { size: 13, fill: '#4a5568', max: 46 });
+  text(right, y + 16, brandName, { size: 13, weight: 700, fill: '#1a202c', anchor: 'end', max: 30 });
+  let ry = y + 31;
+  if (tagline) { text(right, ry, tagline, { size: 11, fill: '#a0aec0', anchor: 'end', max: 34 }); ry += 15; }
+  text(right, ry, `${generatedLabel} ${genStr}`, { size: 11, fill: '#a0aec0', anchor: 'end', max: 40 });
+  const barY = y + 62;
+  add(`<rect x="${left}" y="${barY}" width="${right - left}" height="3" fill="${esc(accent)}"/>`);
+  return barY + 16;
+}
+
+function _renderHealthReportSvg(data, { brand = {}, sections, range, lang = 'th', title } = {}) {
   const L = HR_LABELS[lang] || HR_LABELS.th;
   const enabled = new Set(normalizeHealthSections(sections));
   const accent = brand.primary_color || '#5b8def';
@@ -734,14 +773,9 @@ function _renderHealthReportSvg(data, { brand = {}, sections, range, lang = 'th'
   };
   const cameraName = cam => cam.name || cam.camera_id || '—';
 
-  text(left, y, L.title, { size: 20, weight: 800, max: 70 });
-  y += 22;
-  text(left, y, `${rangeLabel} · ${L.generatedAt} ${dateLabel}`, { size: 12, fill: '#4a5568', max: 92 });
-  y += 18;
-  text(left, y, brandName, { size: 11, fill: '#a0aec0', max: 88 });
-  y += 12;
-  add(`<rect x="${left}" y="${y}" width="${right - left}" height="3" fill="${esc(accent)}"/>`);
-  y += 18;
+  // Header (shared across all report types — see _svgReportHeader)
+  const genStr = new Date().toLocaleString(lang === 'en' ? 'en-GB' : 'th-TH', { hour12: false });
+  y = _svgReportHeader({ add, text, left, right, accent, logoB64: brand.logo_b64, brandName, tagline: brand.tagline, title: (title && String(title).trim()) || L.title, subtitle: rangeLabel, generatedLabel: L.generatedAt, genStr, y });
 
   if (enabled.has('camera_status') && c?.summary) {
     const { total, offline } = c.summary;
@@ -869,27 +903,29 @@ function _renderHealthReportSvg(data, { brand = {}, sections, range, lang = 'th'
   const height = Math.min(16000, Math.max(900, y + 24));
 
   return `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
   <rect width="100%" height="100%" fill="#ffffff"/>
   <g font-family="Sarabun, Segoe UI, Arial, sans-serif">${rows.join('')}</g>
 </svg>`;
 }
 
-async function renderHealthReportImage({ baseUrl, internalToken, brand, sections, range, lang }) {
+async function renderHealthReportImage({ baseUrl, internalToken, brand, sections, range, lang, title }) {
   const normalizedRange = _normalizeRange(range);
   const data = await gatherHealthData({ baseUrl, internalToken, sections, range: normalizedRange });
-  const svg = _renderHealthReportSvg(data, { brand, sections, range: normalizedRange, lang });
-  return sharp(Buffer.from(svg)).png().toBuffer();
+  const logo_b64 = await _fetchLogoDataUri(brand?.logo_url, internalToken);
+  const svg = _renderHealthReportSvg(data, { brand: { ...brand, logo_b64 }, sections, range: normalizedRange, lang, title });
+  return sharp(Buffer.from(svg), { density: REPORT_PNG_DENSITY }).png().toBuffer();
 }
 
 // ── Health Report PDF (A4 + page numbers) ────────────────────
 // Same HTML template as the image, but rendered through page.pdf() with
 // A4 paper, margins, and Chromium's built-in page-number footer.
 // Body width is overridden to fit A4 content area (210mm - 24mm = 186mm).
-async function renderHealthReportPdf({ baseUrl, internalToken, brand, sections, range, lang }) {
+async function renderHealthReportPdf({ baseUrl, internalToken, brand, sections, range, lang, title }) {
   const normalizedRange = _normalizeRange(range);
   const data = await gatherHealthData({ baseUrl, internalToken, sections, range: normalizedRange });
-  const html = renderHealthReportHtml(data, { brand, sections, range: normalizedRange, lang });
+  const logo_b64 = await _fetchLogoDataUri(brand?.logo_url, internalToken);
+  const html = renderHealthReportHtml(data, { brand: { ...brand, logo_b64 }, sections, range: normalizedRange, lang, title });
   const pageLabel = lang === 'en' ? 'Page' : 'หน้า';
   return _withPage(async (page) => {
     page.setDefaultTimeout(60000);
@@ -921,8 +957,238 @@ async function renderHealthReportPdf({ baseUrl, internalToken, brand, sections, 
   });
 }
 
+// Fetch the system logo and inline it as a base64 data URI — librsvg/sharp
+// won't pull a remote http href, so the SVG must carry the bytes itself.
+async function _fetchLogoDataUri(logoUrl, internalToken) {
+  if (!logoUrl) return null;
+  try {
+    const r = await fetch(logoUrl, { headers: { 'X-Internal-Token': internalToken } });
+    if (!r.ok) return null;
+    const buf = Buffer.from(await r.arrayBuffer());
+    if (buf.length > 2_000_000) return null; // ponytail: skip absurd logos
+    const ct = r.headers.get('content-type') || 'image/png';
+    return `data:${ct};base64,${buf.toString('base64')}`;
+  } catch (e) { console.warn('[report] logo fetch:', e.message); return null; }
+}
+
+// ── Face / Person Report ─────────────────────────────────────
+// Renders via HTML→Puppeteer (report-face-print.html) so the PNG/PDF match the
+// on-screen preview exactly — suspect face cards included, paginated cleanly
+// across A4 pages. (The old SVG path was removed once this shipped.)
+function _facePrintUrl({ baseUrl, period, group, min_score, sections, lang, site_id, title, from, to }) {
+  const qp = new URLSearchParams({ period: period || 'today', lang: lang || 'th' });
+  if (group && group !== 'all') qp.set('group', group);
+  if (min_score) qp.set('min_score', String(min_score));
+  if (sections && Object.keys(sections).length) {
+    const on = Object.keys(sections).filter(k => sections[k]);
+    if (on.length) qp.set('sections', on.join(','));
+  }
+  if (period === 'custom' && from && to) { qp.set('from', from); qp.set('to', to); }
+  if (site_id) qp.set('site_id', String(site_id));
+  if (title) qp.set('title', String(title));
+  return `${baseUrl}/report-face-print.html?${qp.toString()}`;
+}
+
+async function renderFaceReportImage({ baseUrl, internalToken, period, group, min_score, sections, lang, site_id, title, from, to }) {
+  const url = _facePrintUrl({ baseUrl, period, group, min_score, sections, lang, site_id, title, from, to });
+  return _withPage(async (page) => {
+    await page.setExtraHTTPHeaders({ 'X-Internal-Token': internalToken });
+    await page.setViewport({ width: 880, height: 1000, deviceScaleFactor: 2 });
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 90000 });
+    // First render builds up to ~334 snapshot thumbnails server-side; the page
+    // sets __reportReady once every <img> has loaded (cached on later renders).
+    await page.waitForFunction('window.__reportReady === true', { timeout: 90000 });
+    return page.screenshot({ type: 'png', fullPage: true });
+  });
+}
+
+async function renderFaceReportPdf({ baseUrl, internalToken, period, group, min_score, sections, lang, site_id, title, from, to }) {
+  const url = _facePrintUrl({ baseUrl, period, group, min_score, sections, lang, site_id, title, from, to });
+  const pageLabel = lang === 'en' ? 'Page' : 'หน้า';
+  return _withPage(async (page) => {
+    await page.setExtraHTTPHeaders({ 'X-Internal-Token': internalToken });
+    await page.setViewport({ width: 820, height: 1100, deviceScaleFactor: 2 });
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 90000 });
+    await page.waitForFunction('window.__reportReady === true', { timeout: 90000 });
+    return page.pdf({ format: 'A4', printBackground: true,
+      margin: { top: '10mm', bottom: '14mm', left: '10mm', right: '10mm' },
+      displayHeaderFooter: true, headerTemplate: '<div></div>',
+      footerTemplate: `<div style="font-size:9px;width:100%;text-align:center;color:#888;font-family:'Sarabun','Segoe UI',sans-serif;padding-bottom:4px">${pageLabel} <span class="pageNumber"></span></div>`,
+      timeout: 90000 });
+  });
+}
+
+// ── LPR Report ────────────────────────────────────────────────
+const LPR_LABELS = {
+  th: {
+    title: 'รายงานป้ายทะเบียน', generatedAt: 'สร้างเมื่อ',
+    pToday: 'วันนี้', pYesterday: 'เมื่อวาน', pWeek: 'สัปดาห์นี้', pMonth: 'เดือนนี้',
+    secKpi: 'ภาพรวม', kpiTotal: 'ผ่านทั้งหมด', kpiUnique: 'ป้ายไม่ซ้ำ',
+    kpiNoRead: 'อ่านไม่ได้', kpiIdentified: 'ระบุได้', kpiWatch: 'เฝ้าระวัง',
+    secPeak: 'ช่วงเวลาหนาแน่น', peakNoData: 'ไม่มีข้อมูล',
+    secProvince: 'จังหวัดสูงสุด 10 อันดับ', times: 'ครั้ง',
+    secVtype: 'ประเภทรถ',
+    secDirection: 'ทิศทางเข้า/ออก', dirIn: 'เข้า', dirOut: 'ออก',
+    secWatch: 'รถเฝ้าระวัง', watchNoData: 'ไม่พบรายการ',
+  },
+  en: {
+    title: 'LPR Report', generatedAt: 'Generated at',
+    pToday: 'Today', pYesterday: 'Yesterday', pWeek: 'This week', pMonth: 'This month',
+    secKpi: 'Overview', kpiTotal: 'Total', kpiUnique: 'Unique plates',
+    kpiNoRead: 'No read', kpiIdentified: 'Identified', kpiWatch: 'Watch hits',
+    secPeak: 'Peak hours', peakNoData: 'No data',
+    secProvince: 'Top 10 provinces', times: 'times',
+    secVtype: 'Vehicle types',
+    secDirection: 'Direction in/out', dirIn: 'In', dirOut: 'Out',
+    secWatch: 'Watch vehicles', watchNoData: 'None found',
+  },
+};
+
+function _renderLprReportSvg(data, { brand = {}, sections = {}, period = 'today', lang = 'th', title } = {}) {
+  const L = LPR_LABELS[lang] || LPR_LABELS.th;
+  const accent = brand.primary_color || '#5b8def';
+  const brandName = brand.name || 'Vigil Platform';
+  const locale = lang === 'en' ? 'en-US' : 'th-TH';
+  const dateLabel = new Date().toLocaleDateString(locale, { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
+  const width = 720, left = 22, right = 698;
+  const rows = [];
+  let y = 28;
+
+  const add = s => rows.push(s);
+  const text = (x, yy, value, opts = {}) => {
+    const size = opts.size || 12, weight = opts.weight || 400;
+    const fill = opts.fill || '#1a202c', anchor = opts.anchor || 'start';
+    add(`<text x="${x}" y="${yy}" font-size="${size}" font-weight="${weight}" fill="${esc(fill)}" text-anchor="${anchor}">${esc(_truncateText(_svgSafeText(value), opts.max || 96))}</text>`);
+  };
+  const hline = (yy, color = '#edf2f7') =>
+    add(`<line x1="${left}" y1="${yy}" x2="${right}" y2="${yy}" stroke="${esc(color)}" stroke-width="1"/>`);
+  const section = title => {
+    y += 16;
+    text(left, y, title, { size: 13, weight: 700, fill: '#2d3748', max: 80 });
+    hline(y + 8, accent);
+    y += 22;
+  };
+  const row = (label, value, color = '#1a202c') => {
+    text(left, y, label, { size: 12, fill: '#4a5568', max: 52 });
+    text(right, y, value, { size: 12, weight: 700, fill: color, anchor: 'end', max: 34 });
+    hline(y + 8);
+    y += 22;
+  };
+
+  // Header (shared across all report types — see _svgReportHeader)
+  const periodMap = { today: L.pToday, yesterday: L.pYesterday, week: L.pWeek, month: L.pMonth };
+  const genStr = new Date().toLocaleString(lang === 'en' ? 'en-GB' : 'th-TH', { hour12: false });
+  y = _svgReportHeader({ add, text, left, right, accent, logoB64: brand.logo_b64, brandName, tagline: brand.tagline, title: (title && String(title).trim()) || L.title, subtitle: periodMap[period] || period, generatedLabel: L.generatedAt, genStr, y });
+
+  const kpi = data.kpi || {};
+  section(L.secKpi);
+  row(L.kpiTotal,      num(kpi.total      || 0));
+  row(L.kpiUnique,     num(kpi.unique     || 0), '#22c55e');
+  row(L.kpiNoRead,     num(kpi.noread     || 0), (kpi.noread || 0) > 0 ? '#ef4444' : '#1a202c');
+  row(L.kpiIdentified, num(kpi.identified || 0), '#5b8def');
+  row(L.kpiWatch,      num(kpi.watch      || 0), (kpi.watch || 0) > 0 ? '#ef4444' : '#1a202c');
+
+  if (sections.peak !== false && data.peak) {
+    section(L.secPeak);
+    const peak = data.peak;
+    if (peak.max > 0) {
+      const barW = right - left - 60;
+      for (let i = 0; i < peak.labels.length; i++) {
+        const v = peak.values[i] || 0;
+        if (v === 0) continue;
+        const bLen = Math.max(2, Math.round(v / peak.max * barW));
+        add(`<rect x="${left + 50}" y="${y - 11}" width="${bLen}" height="13" fill="${esc(i === peak.index ? accent : '#cbd5e0')}" rx="2"/>`);
+        text(left, y, String(peak.labels[i] || i), { size: 11, fill: '#4a5568', max: 8 });
+        text(left + 50 + bLen + 4, y, String(v), { size: 10, fill: '#718096', max: 10 });
+        y += 16;
+        if (y > 15600) break;
+      }
+    } else { text(left, y, L.peakNoData, { size: 11, fill: '#a0aec0' }); y += 16; }
+  }
+
+  if (sections.province !== false) {
+    section(L.secProvince);
+    const provs = Array.isArray(data.province) ? data.province.slice(0, 10) : [];
+    if (!provs.length) { text(left, y, '—', { size: 11, fill: '#a0aec0' }); y += 16; }
+    else for (const p of provs) row(_svgSafeText(p.region || '—'), `${num(p.n)} ${L.times}`);
+  }
+
+  if (sections.vtype !== false) {
+    section(L.secVtype);
+    const vtypes = Array.isArray(data.vehicle_type) ? data.vehicle_type.slice(0, 8) : [];
+    if (!vtypes.length) { text(left, y, '—', { size: 11, fill: '#a0aec0' }); y += 16; }
+    else for (const v of vtypes) row(_svgSafeText(v.vehicle_type || '—'), `${num(v.n)} ${L.times}`);
+  }
+
+  if (sections.direction !== false && data.direction) {
+    section(L.secDirection);
+    const d = data.direction;
+    const inTotal  = (d.in  || []).reduce((s, v) => s + v, 0);
+    const outTotal = (d.out || []).reduce((s, v) => s + v, 0);
+    row(L.dirIn,  num(inTotal));
+    row(L.dirOut, num(outTotal));
+  }
+
+  if (sections.watch !== false) {
+    section(L.secWatch);
+    const hits = Array.isArray(data.watch_hits) ? data.watch_hits.slice(0, 10) : [];
+    if (!hits.length) {
+      text(left, y, L.watchNoData, { size: 11, fill: '#22c55e' }); y += 16;
+    } else {
+      for (const h of hits) {
+        const plate = _svgSafeText(h.plate_number || '—');
+        const grp   = _svgSafeText(h.group_name || 'Watchlist');
+        text(left, y, plate, { size: 12, fill: '#ef4444', weight: 700, max: 20 });
+        text(left + 120, y, grp, { size: 11, fill: '#718096', max: 30 });
+        hline(y + 8);
+        y += 18;
+        if (y > 15600) break;
+      }
+    }
+  }
+
+  y += 8; hline(y); y += 18;
+  text(left, y, `${L.generatedAt} ${new Date().toLocaleString(locale, { hour12: false })}`, { size: 10, fill: '#a0aec0', max: 58 });
+  text(right, y, '(c) 2025-2026 DojoJin Tech', { size: 10, fill: '#a0aec0', anchor: 'end', max: 40 });
+  const height = Math.min(16000, Math.max(600, y + 24));
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="100%" height="100%" fill="#ffffff"/><g font-family="Sarabun, Segoe UI, Arial, sans-serif">${rows.join('')}</g></svg>`;
+}
+
+async function renderLprReportImage({ baseUrl, internalToken, brand, period, group, sections, lang, site_id, title, from, to }) {
+  const qs = new URLSearchParams({ period: period || 'today', lang: lang || 'th' });
+  if (group && group !== 'all') qs.set('group', group);
+  if (period === 'custom' && from && to) { qs.set('from', from); qs.set('to', to); }
+  if (site_id) qs.set('site_id', String(site_id));
+  let data = {};
+  try {
+    const r = await fetch(`${baseUrl}/api/stats/lpr/report?${qs}`, { headers: { 'X-Internal-Token': internalToken } });
+    if (r.ok) data = await r.json();
+  } catch (e) { console.warn('[lpr-report] fetch:', e.message); }
+  const logo_b64 = await _fetchLogoDataUri(brand?.logo_url, internalToken);
+  const svg = _renderLprReportSvg(data, { brand: { ...brand, logo_b64 }, sections: sections || {}, period: period || 'today', lang: lang || 'th', title });
+  return sharp(Buffer.from(svg), { density: REPORT_PNG_DENSITY }).png().toBuffer();
+}
+
+async function renderLprReportPdf(opts) {
+  const png = await renderLprReportImage(opts);
+  const b64 = png.toString('base64');
+  const pageLabel = opts.lang === 'en' ? 'Page' : 'หน้า';
+  return _withPage(async (page) => {
+    // max-height keeps the whole image on ONE A4 page (object-fit:contain
+    // scales it down a hair instead of spilling a near-blank page 2).
+    // ponytail: report content is capped (~1 page) so contain never over-shrinks.
+    await page.setContent(`<!DOCTYPE html><html><body style="margin:0;padding:0"><img src="data:image/png;base64,${b64}" style="display:block;width:100%;height:auto;max-height:273mm;object-fit:contain;margin:0 auto"></body></html>`, { waitUntil: 'domcontentloaded' });
+    return page.pdf({ format: 'A4', printBackground: true, margin: { top: '8mm', bottom: '12mm', left: '8mm', right: '8mm' },
+      displayHeaderFooter: true, headerTemplate: '<div></div>',
+      footerTemplate: `<div style="font-size:9px;width:100%;text-align:center;color:#888;font-family:'Sarabun','Segoe UI',sans-serif;padding-bottom:4px">${pageLabel} <span class="pageNumber"></span></div>`,
+      timeout: 60000 });
+  });
+}
+
 module.exports = {
   computeScheduledRange, renderReportPdf, renderReportImage,
   renderHealthReportImage, renderHealthReportPdf,
+  renderFaceReportImage, renderFaceReportPdf,
+  renderLprReportImage, renderLprReportPdf,
   ALL_HEALTH_SECTIONS,
 };

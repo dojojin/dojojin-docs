@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="th" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<title>Person Report Print</title>
+<!--
+  Puppeteer-only render target for the dedicated Person report.
+  Builds the SAME class-based HTML + Chart.js charts as the on-screen
+  preview (via face-report-template.js) so PNG/PDF match the preview.
+  Opened by report-renderer.js with the internal service token injected
+  as an HTTP header → the /api/stats + /snapshots fetches authenticate
+  without the token ever reaching page JS. Not for human navigation.
+-->
+<script src="/vendor/chartjs/chart-4.4.1.umd.min.js"></script>
+<script src="/i18n.js"></script>
+<script src="/face-report-template.js"></script>
+<link rel="stylesheet" href="/index.css">
+<link rel="stylesheet" href="/report-face-print.css">
+</head>
+<body>
+<div id="root" class="rpt-doc"></div>
+<script src="/report-face-print.js"></script>
+</body>
+</html>

@@ -4,7 +4,13 @@
 > Hikvision ISAPI, Dahua CGI, generic ONVIF, pre-alarm clip capture,
 > snapshot logic, and camera lifecycle decisions.
 > Parent index: DECISIONS.md
-> Last updated: 2026-06-08 · v1.5.0
+> Last updated: 2026-06-18 · v1.5.3
+
+> **Per-vendor deep-dives (อ่านแทนไฟล์นี้เมื่อทำงานกับ vendor นั้นโดยตรง):**
+> - Dahua CGI ทุกด้าน → **[`docs/LOGIC_dahua-ingester.md`](LOGIC_dahua-ingester.md)**
+>   (snapshot waterfall 5 ระดับ, pure modules, test coverage, incident log 9 เหตุการณ์)
+> - Hikvision ISAPI ทุกด้าน → **[`docs/LOGIC_hikvision-ingester.md`](LOGIC_hikvision-ingester.md)**
+>   (multipart parser, face capture pipeline, body appearance, people counting, incident log 12 เหตุการณ์)
 
 ---
 
@@ -77,6 +83,7 @@ EMQX default ACL denies `subscribe #` for non-localhost — subscriber uses spec
 `src/ingesters/hikvision-isapi.js` — outbound connection to camera's ISAPI Alert Stream (`GET /ISAPI/Event/notification/alertStream`). Long-lived multipart/mixed HTTP push. HTTP Digest auth hand-rolled (~40 lines, `crypto` only). XML parsing via per-tag regex — zero new npm deps.
 Normalization: Hikvision `eventType` maps to shared `events` table using Bosch vocabulary where applicable (`linedetection → LineDetector/Crossed`). `raw_json.vendor='hikvision'` tags the source.
 Dedup: Hikvision re-posts `eventState=active` ~1×/s. Ingester keeps 3-second per-(camera,eventType) window — repeats within 3s dropped; `inactive` half dropped outright.
+→ **ดูรายละเอียดครบถ้วน:** [`docs/LOGIC_hikvision-ingester.md`](LOGIC_hikvision-ingester.md)
 
 **#115 — `vendor` field is first-class + per-camera stream selection**
 Config fields: `vendor` (`'bosch'|'hikvision'|'dahua'|'onvif'`, absent = `'bosch'`), `clip_stream` (RTSP stream for media-recorder), `snapshot_stream` (stream for still image). Live code branches on `vendor` in `media-recorder.js` `buildRtspUrl()` and `api-server.js` `/api/snapshot/live`. `mqtt-subscriber.js` filters its `cameraMap` to Bosch-only.
@@ -91,9 +98,11 @@ Config fields: `vendor` (`'bosch'|'hikvision'|'dahua'|'onvif'`, absent = `'bosch
 
 **#123 — Dahua VCA events via eventManager CGI stream**
 `src/ingesters/dahua-cgi.js` — outbound `GET /cgi-bin/eventManager.cgi?action=attach`. HTTP Digest auth. Codes must be listed explicitly — `codes=[All]` delivers only Heartbeat + system events, NOT VCA events.
-Event snapshot extracted from media-recorder's RTSP clip buffer (not `snapshot.cgi` — too slow, ~1.6s/grab, misses fast subjects). Current flow: snapManager event JPEG if available → RTSP burst scoring around server receive time → low-confidence/missing/failed first pass is repaired by the clip resolver after `clip_done`. The resolver retries when `clip_done` arrives before first-pass `_snapshot_status` is written.
+Event snapshot extracted from media-recorder's RTSP clip buffer (not `snapshot.cgi` — too slow, ~1.6s/grab, misses fast subjects). Waterfall (5 levels): snapManager JPEG → RTSP burst (11 frames, scored) → RTSP scan (±30s, scored) → single RTSP fallback → CGI live. Low-confidence passes repaired by clip resolver after `clip_done`.
 `data.UTC` is the camera's LOCAL time sent as unix timestamp (NOT UTC). Strip the whole-hour offset before using.
+Pure helper modules: `dahua-protocol.js` (parser) + `dahua-snapshot-selector.js` (scoring). Test coverage: 48 tests.
 Live Dahua snapshot timing and recovery findings are maintained in `DahuaProblem.MD`. Read that file before changing Dahua snapshot selection, `low_confidence` handling, clip resolver behavior, or camera-specific timing offsets.
+→ **ดูรายละเอียดครบถ้วน:** [`docs/LOGIC_dahua-ingester.md`](LOGIC_dahua-ingester.md)
 
 > STUBBORN_FACT: Dahua FaceDetection must NOT route to the face gallery — detection-only, no reliable crop, demographics unreliable on IPC-HFW5541E-ZE. Decision #123. GOTCHAS #39.
 
@@ -156,12 +165,55 @@ LINE delivery, recipient resolution, quiet-hours semantics, and quota rules are 
 
 ---
 
+## Edge Tile Preview Snapshot — vendor method table
+
+> Added 2026-06-26. Context: camera status grid tiles use `/api/snapshot/live/:cameraId`
+> which falls back to `serveLatestSnapshot()` for push_only / unreachable cameras.
+> Without a full-scene source, face-recognition cameras show face crop in tile.
+> Fix: `edge-config-agent.js` runs a staggered `setInterval` (default 120s, `PREVIEW_INTERVAL_MS`)
+> that captures full-scene previews and publishes to `Device/preview` topic →
+> `mqtt-subscriber` writes path to `cameras.tile_snap_file` (migration 069) →
+> `serveLatestSnapshot()` checks `tile_snap_file` first, then falls back to events table.
+
+### Per-vendor snapshot endpoint for tile preview (edge → camera, LAN)
+
+| Vendor | URL | Auth | Notes |
+|---|---|---|---|
+| **Bosch** | `http://{ip}/snap.jpg?JpegSize=1920x1080` | Basic | Native res; VCA overlay via `&VCAOverlay=1` if needed (GOTCHA #68) |
+| **Hikvision** | `http://{ip}/ISAPI/Streaming/channels/102/picture` | Digest | Channel `102` = sub-stream (~720p), avoids 4K main (#77). Full ISAPI via `helpers/digestAuth.js` |
+| **Dahua** | `http://{ip}/cgi-bin/snapshot.cgi?channel=1&subtype=1` | Digest | `subtype=1` = sub-stream (~480p) keeps file ~80–150KB vs 600KB main. Override with `cam.snapshot_path` if needed |
+| **LPR** (`lpr_direction` set) | **excluded** | — | LPR cameras get tile image from lpr-core push events; periodic preview skipped |
+| **ONVIF generic** | Falls through to Bosch Basic path | Basic | Works for cameras that serve `/snap.jpg`; may need `snapshot_path` override |
+
+### Why sub-stream for preview
+
+Main stream (Bosch 8100i = 3840×2160 ~920KB, Dahua main = ~600KB) is fetched
+from edge over Cloudflare tunnel on **every page load** — no disk cache for proxy buf
+(PDPA decision, `api-server.js:513`). Sub-stream size (50–200KB) is acceptable;
+tile is resized to `?w=400` anyway before reaching browser.
+
+Hikvision channel 102 = sub-stream by convention (#77). Dahua `subtype=1`
+reduces ~600KB → ~80–150KB. Bosch `snap.jpg` goes through `sharp` resize on central.
+
+### Code location
+- Capture loop: `src/edge-config-agent.js` — `capturePreview()` + `_fetchJpeg()`
+- Auth helper: `src/helpers/digestAuth.js` — `parseChallenge()` / `buildDigestHeader()`
+- MQTT handler: `src/mqtt-subscriber.js` — `eventType === 'preview'` branch
+- Fallback query: `src/routes/cameras.js` — `serveLatestSnapshot()` checks `cameras.tile_snap_file` first
+- DB column: `db/db_migration_069_tile_snap.sql`
+
+---
+
 ## Related files
 - `src/mqtt-subscriber.js` — Bosch MQTT ingestion
 - `src/ingesters/hikvision-isapi.js` — Hikvision ISAPI Alert Stream
 - `src/ingesters/dahua-cgi.js` — Dahua CGI eventManager
+- `src/ingesters/dahua-protocol.js` — Dahua parser (pure, testable)
+- `src/ingesters/dahua-snapshot-selector.js` — Dahua scoring/selection (pure, testable)
 - `src/media-recorder.js` — RTSP rolling buffer + clip dump
 - `docs/LOGIC_line-notifications.md` — LINE alert delivery and recipient behavior
+- **`docs/LOGIC_dahua-ingester.md`** — Dahua deep-dive (waterfall, modules, incidents)
+- **`docs/LOGIC_hikvision-ingester.md`** — Hikvision deep-dive (face, body, people counting, incidents)
 - `cameras-config.json` — source of truth for camera list
 - `db/db_migration_clip_capture.sql` — clip toggles schema
 - `db/db_migration_018_*.sql` — camera_status_log + camera_offline_alerts

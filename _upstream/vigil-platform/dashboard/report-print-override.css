@@ -1,0 +1,20 @@
+/* ============================================================
+ * Vigil Platform — PDF print override (Puppeteer only)
+ * Loaded via page.addStyleTag({url}) by report-renderer.js.
+ * DO NOT merge into report-print.css — the PNG screenshot path
+ * needs body padding as a visual border; this zeroes it for PDF.
+ * ============================================================ */
+
+body {
+  padding: 0 !important;
+  width: auto !important;
+  max-width: 100% !important;
+}
+tr,
+h2,
+h3 {
+  page-break-inside: avoid;
+}
+table {
+  page-break-inside: auto;
+}

@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MultiPicker · ต้นแบบ multi-select</title>
+<link rel="stylesheet" href="multipicker.css">
+</head>
+<body>
+<div class="demo-wrap">
+  <div class="demo-head">
+    <h1>MultiPicker — ต้นแบบ multi-select ทุกหมวด</h1>
+    <button class="demo-btn" id="mobBtn" type="button">📱 ดูแบบมือถือ</button>
+  </div>
+  <p class="demo-sub">checkbox-dropdown · ค้นหาในลิสต์ยาว · เลือกทั้งหมด/ล้าง · มือถือเป็น bottom-sheet · backed by hidden &lt;select multiple&gt; (อ่านค่าแบบ form ได้)</p>
+
+  <div class="demo-card">
+    <h2>ตัวกรอง (ตัวอย่างหน้า ป้ายทะเบียน)</h2>
+    <div class="demo-filters">
+
+      <div class="demo-fg">
+        <label>กล้อง (ลิสต์ยาว → มี search)</label>
+        <div class="mp" data-mp-unit="กล้อง" data-mp-label="เลือกกล้อง" data-mp-placeholder="ทั้งหมด" data-mp-search="ค้นหากล้อง...">
+          <select id="fCam" multiple>
+            <option value="HIKVISION_LPR_GATE1">HIKVISION_LPR_GATE1 · ประตูหน้า</option>
+            <option value="HIKVISION_LPR_GATE2">HIKVISION_LPR_GATE2 · ประตูหลัง</option>
+            <option value="BOSCH_8100iX_LOBBY">BOSCH_8100iX_LOBBY · ล็อบบี้</option>
+            <option value="BOSCH_3100i_DOCK1">BOSCH_3100i_DOCK1 · ท่าขนถ่าย 1</option>
+            <option value="BOSCH_3100i_DOCK2">BOSCH_3100i_DOCK2 · ท่าขนถ่าย 2</option>
+            <option value="DAHUA_ANPR_EXIT">DAHUA_ANPR_EXIT · ทางออก</option>
+            <option value="DAHUA_ANPR_ENTRY">DAHUA_ANPR_ENTRY · ทางเข้า</option>
+            <option value="HIKVISION_CAM01">HIKVISION_CAM01 · โกดัง A</option>
+            <option value="HIKVISION_CAM02">HIKVISION_CAM02 · โกดัง B</option>
+            <option value="HIKVISION_CAM03">HIKVISION_CAM03 · ลานจอด 1</option>
+            <option value="HIKVISION_CAM04">HIKVISION_CAM04 · ลานจอด 2</option>
+            <option value="HIKVISION_CAM05">HIKVISION_CAM05 · ออฟฟิศ</option>
+            <option value="BOSCH_FLEXI_R1">BOSCH_FLEXI_R1 · ถนนวงใน</option>
+            <option value="BOSCH_FLEXI_R2">BOSCH_FLEXI_R2 · ถนนวงนอก</option>
+            <option value="DAHUA_DOME_W1">DAHUA_DOME_W1 · คลังสินค้า W1</option>
+            <option value="DAHUA_DOME_W2">DAHUA_DOME_W2 · คลังสินค้า W2</option>
+            <option value="ONVIF_GEN_01">ONVIF_GEN_01 · ป้อมยาม</option>
+            <option value="ONVIF_GEN_02">ONVIF_GEN_02 · รั้วทิศเหนือ</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="demo-fg">
+        <label>จังหวัด (ลิสต์ยาว → มี search)</label>
+        <div class="mp" data-mp-unit="จังหวัด" data-mp-label="เลือกจังหวัด" data-mp-placeholder="ทั้งหมด" data-mp-search="ค้นหาจังหวัด...">
+          <select id="fProv" multiple>
+            <option value="BKK">กรุงเทพมหานคร</option>
+            <option value="NB">นนทบุรี</option>
+            <option value="PT">ปทุมธานี</option>
+            <option value="SP">สมุทรปราการ</option>
+            <option value="CM">เชียงใหม่</option>
+            <option value="CR">เชียงราย</option>
+            <option value="KK">ขอนแก่น</option>
+            <option value="NM">นครราชสีมา</option>
+            <option value="CB">ชลบุรี</option>
+            <option value="RY">ระยอง</option>
+            <option value="PK">ภูเก็ต</option>
+            <option value="SK">สงขลา</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="demo-fg">
+        <label>ประเภทรถ (ลิสต์สั้น → ไม่มี search)</label>
+        <div class="mp" data-mp-unit="ประเภท" data-mp-label="เลือกประเภทรถ" data-mp-placeholder="ทั้งหมด">
+          <select id="fType" multiple>
+            <option value="sedan">รถเก๋ง</option>
+            <option value="pickup">รถกระบะ</option>
+            <option value="mpv">MPV / SUV</option>
+            <option value="truck">รถบรรทุก</option>
+            <option value="motorcycle">รถจักรยานยนต์</option>
+            <option value="bus">รถบัส</option>
+          </select>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="demo-card">
+    <h2>โหมดเลือกเดี่ยว (single — picker เดียวกัน, dev ใส่ data-mp-mode="single")</h2>
+    <div class="demo-filters">
+
+      <div class="demo-fg">
+        <label>กล้องหลัก (เลือกตัวเดียว · ลิสต์ยาว → ยังมี search)</label>
+        <div class="mp" data-mp-mode="single" data-mp-label="เลือกกล้องหลัก" data-mp-placeholder="ทั้งหมด" data-mp-search="ค้นหากล้อง...">
+          <select id="fCamSingle" multiple>
+            <option value="HIKVISION_LPR_GATE1">HIKVISION_LPR_GATE1 · ประตูหน้า</option>
+            <option value="HIKVISION_LPR_GATE2">HIKVISION_LPR_GATE2 · ประตูหลัง</option>
+            <option value="DAHUA_ANPR_EXIT">DAHUA_ANPR_EXIT · ทางออก</option>
+            <option value="DAHUA_ANPR_ENTRY">DAHUA_ANPR_ENTRY · ทางเข้า</option>
+            <option value="BOSCH_8100iX_LOBBY">BOSCH_8100iX_LOBBY · ล็อบบี้</option>
+            <option value="HIKVISION_CAM01">HIKVISION_CAM01 · โกดัง A</option>
+            <option value="HIKVISION_CAM02">HIKVISION_CAM02 · โกดัง B</option>
+            <option value="ONVIF_GEN_01">ONVIF_GEN_01 · ป้อมยาม</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="demo-fg">
+        <label>เรียงตาม (ลิสต์สั้น → ไม่มี search)</label>
+        <div class="mp" data-mp-mode="single" data-mp-label="เรียงตาม" data-mp-placeholder="เวลาล่าสุด">
+          <select id="fSort" multiple>
+            <option value="newest" selected>เวลาล่าสุด</option>
+            <option value="oldest">เวลาเก่าสุด</option>
+            <option value="conf">ความมั่นใจสูงสุด</option>
+          </select>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="demo-card demo-readout-card">
+    <h2>ค่าที่เลือก (อ่านผ่าน MultiPicker.values — เหมือนที่ param-builder จะใช้)</h2>
+    <div class="demo-out" id="readout">— ยังไม่เลือก —</div>
+  </div>
+
+  <p class="demo-mobile-cap" id="mobCap" hidden>โหมดมือถือ: popup เป็น bottom-sheet · ลองเปิดตัวกรองด้านบน · (มือถือจริงใช้ media query แท้)</p>
+</div>
+
+<script src="multipicker.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

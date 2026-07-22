@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Dev Portal — Vigil Platform</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="overlay"></div>
+<div class="layout">
+<nav class="nav" id="nav"></nav>
+<button id="ham">☰</button>
+
+<div class="main">
+<h1 class="ph">Vigil Platform — Dev Portal</h1>
+
+<p>แผนที่โค้ดสำหรับผู้พัฒนา ใช้เมื่อต้องแก้งานโดยไม่มี AI ช่วย หน้านี้ไม่ duplicate เนื้อหาจากเอกสารอื่น — ชี้ทางว่าต้องเปิดไฟล์ไหนเท่านั้น</p>
+
+<div class="krow">
+  <div class="kpi"><div class="kn">26</div><div class="kl">src/ modules</div></div>
+  <div class="kpi"><div class="kn">27</div><div class="kl">route files</div></div>
+  <div class="kpi"><div class="kn">95</div><div class="kl">migrations</div></div>
+  <div class="kpi"><div class="kn">22</div><div class="kl">page files</div></div>
+</div>
+
+<h2>ถ้าต้องการแก้ X → เปิดไฟล์ Y</h2>
+
+<table>
+<thead>
+<tr><th>ต้องการ</th><th>ไฟล์หลัก</th><th>หมายเหตุ</th></tr>
+</thead>
+<tbody>
+<tr>
+  <td>เพิ่ม / แก้ REST endpoint</td>
+  <td><code>src/api-server.js</code> หรือ <code>src/routes/&lt;name&gt;.js</code></td>
+  <td>endpoint ที่แยกเป็น route module ดู <a href="add-route.html">Recipe: เพิ่ม REST Route</a></td>
+</tr>
+<tr>
+  <td>แก้ auth / RBAC / session</td>
+  <td><code>src/auth.js</code></td>
+  <td>อ่านประกอบ <code>docs/LOGIC_auth-security.md</code></td>
+</tr>
+<tr>
+  <td>แก้ Bosch MQTT ingestion</td>
+  <td><code>src/mqtt-subscriber.js</code></td>
+  <td>EMQX config ที่ port 1883 / 18083 (localhost only)</td>
+</tr>
+<tr>
+  <td>แก้ Hikvision ISAPI</td>
+  <td><code>src/ingesters/hikvision-isapi.js</code></td>
+  <td>—</td>
+</tr>
+<tr>
+  <td>แก้ Dahua CGI</td>
+  <td><code>src/ingesters/dahua-cgi.js</code></td>
+  <td>อ่าน <code>DahuaProblem.MD</code> ก่อนแตะ snapshot timing</td>
+</tr>
+<tr>
+  <td>แก้ LPR gallery/watchlist/ANPR ingest</td>
+  <td><code>src/lpr-receiver.js</code>, <code>src/lpr-core.js</code>, <code>src/routes/lpr.js</code>, <code>lpr-query.js</code>, <code>lpr-watchlist.js</code> + <code>dashboard/page-lpr.js</code></td>
+  <td>HTTP push receiver (PM2: lpr-receiver, port 3003); parse/ingest logic ใน lpr-core.js; ITC XML fields → docs/LOGIC_hikvision-ingester.md §15</td>
+</tr>
+<tr>
+  <td>แก้ LINE alert / rule matching</td>
+  <td><code>src/alert-worker.js</code> + <code>src/alert-engine.js</code></td>
+  <td><code>alert-engine.js</code> เป็น library; <code>alert-worker.js</code> เป็น process</td>
+</tr>
+<tr>
+  <td>แก้ LINE sender / imgbb / Flex message</td>
+  <td><code>src/line-sender.js</code></td>
+  <td>—</td>
+</tr>
+<tr>
+  <td>แก้รายงาน PDF/PNG / Puppeteer</td>
+  <td><code>src/report-worker.js</code> + <code>src/report-renderer.js</code></td>
+  <td>Health Report ใช้ SVG+sharp (ไม่ใช่ Puppeteer) — strip emoji เสมอ</td>
+</tr>
+<tr>
+  <td>แก้ report template HTML</td>
+  <td><code>dashboard/report-template.js</code></td>
+  <td>ไฟล์เดียวที่ build analytics report HTML — ห้ามสร้าง template ซ้ำ</td>
+</tr>
+<tr>
+  <td>แก้ dashboard UI หลัก</td>
+  <td><code>dashboard/page-*.js</code> + <code>dashboard/dashboard.js</code></td>
+  <td>S5 split ✅ — UI แต่ละหน้าอยู่ใน <code>dashboard/page-&lt;name&gt;.js</code> (21 ไฟล์); <code>dashboard.js</code> ~1,379 บรรทัด = core globals + WS + group mgmt + bootstrapApp — ดู <a href="add-dashboard-page.html">Recipe: เพิ่ม Dashboard Page</a></td>
+</tr>
+<tr>
+  <td>แก้ i18n strings (Thai/English)</td>
+  <td><code>dashboard/i18n.js</code></td>
+  <td>ต้องใส่ทั้ง <code>th:</code> และ <code>en:</code> ดู <a href="add-i18n.html">Recipe: เพิ่ม i18n String</a></td>
+</tr>
+<tr>
+  <td>แก้ design tokens / CSS variables</td>
+  <td><code>dashboard/design-tokens.js</code> + <code>dashboard/index.css</code></td>
+  <td>อ่านประกอบ <code>DESIGN.md</code> (tri-layer token system)</td>
+</tr>
+<tr>
+  <td>แก้ icons (SVG sprite)</td>
+  <td><code>dashboard/icons.svg</code></td>
+  <td>ใช้ <code>&lt;use href="icons.svg#symbol-id"/&gt;</code></td>
+</tr>
+<tr>
+  <td>เพิ่ม migration ใหม่</td>
+  <td><code>db/db_migration_&lt;NNN&gt;_&lt;topic&gt;.sql</code></td>
+  <td>Next number: ตรวจ <code>ls db/db_migration_0*.sql | sort | tail -3</code> ดู <a href="add-migration.html">Recipe</a></td>
+</tr>
+<tr>
+  <td>แก้ schema สำหรับ fresh install</td>
+  <td><code>db/init.sql</code></td>
+  <td>ทำ migration ก่อน แล้วค่อยอัปเดต init.sql ให้ตรงกัน</td>
+</tr>
+<tr>
+  <td>แก้ license / EULA</td>
+  <td><code>src/license.js</code></td>
+  <td>อ่านประกอบ <code>docs/LOGIC_license.md</code></td>
+</tr>
+<tr>
+  <td>แก้ push notification (mobile)</td>
+  <td><code>src/push-sender.js</code></td>
+  <td>ต้องการ FCM/APNs credentials ใน .env</td>
+</tr>
+<tr>
+  <td>start / stop services</td>
+  <td><code>scripts/services.sh</code></td>
+  <td>ห้ามจาก Claude shell / tmux — ดู <a href="restart-services.html">LNP trap</a></td>
+</tr>
+<tr>
+  <td>backup / restore database</td>
+  <td><code>scripts/backup.sh</code> / <code>scripts/restore.sh</code></td>
+  <td><code>pg_dump -Fc</code> = binary — ห้าม cat ดู <code>GOTCHAS #20</code></td>
+</tr>
+</tbody>
+</table>
+
+<h2>โครงสร้าง src/ — ภาพรวม</h2>
+
+<div class="cg">
+  <div class="card">
+    <h3>Core Server</h3>
+    <p><code>src/api-server.js</code> — Express API, WebSocket bridge, static serving, auth gate. Entry point หลัก (~1,893 บรรทัด)</p>
+    <p><code>src/auth.js</code> — <code>requireAuth</code> / <code>requireAdmin</code> / <code>requireAdminOrAuditor</code></p>
+    <p><code>src/migrate.js</code> — Migration runner (fail-fast before listen)</p>
+    <p><code>src/singleton.js</code> — PID lock สำหรับ long-running processes</p>
+  </div>
+  <div class="card">
+    <h3>Route Modules (src/routes/)</h3>
+    <p>Factory pattern: <code>module.exports = function nameRoutes(app, pool, deps) {}</code></p>
+    <p>27 files: <code>alert-rules</code>, <code>appearances</code>, <code>auth</code>, <code>branding</code>, <code>cameras</code>, <code>categories</code>, <code>eula</code>, <code>events</code>, <code>face-push</code>, <code>faces</code>, <code>groups</code>, <code>health</code>, <code>license</code>, <code>line</code>, <code>lpr</code>, <code>lpr-alerts</code>, <code>lpr-gates</code>, <code>lpr-query</code>, <code>lpr-watchlist</code>, <code>map</code>, <code>ops</code>, <code>report-schedules</code>, <code>reports</code>, <code>settings</code>, <code>sites</code>, <code>stats</code>, <code>users</code></p>
+    <p>Loaded via <code>require('./routes/&lt;name&gt;')(app, pool, deps)</code> ใน <code>api-server.js</code> — ดู <a href="add-route.html">Recipe: เพิ่ม REST Route</a></p>
+  </div>
+  <div class="card">
+    <h3>Dashboard Pages (dashboard/page-*.js)</h3>
+    <p>S5/MAINT-FE-001 ✅ — 22 page files แยกจาก dashboard.js; load เป็น classic <code>&lt;script&gt;</code> ก่อน <code>dashboard.js</code> ใน index.html</p>
+    <p><code>page-alerts</code> · <code>page-appearance</code> · <code>page-branding</code> · <code>page-camera-settings</code> · <code>page-cameras</code> · <code>page-categories</code> · <code>page-events</code> · <code>page-executive-summary</code> · <code>page-face-gallery</code> · <code>page-face-matches</code> · <code>page-health</code> · <code>page-lpr</code> · <code>page-lpr-settings</code> · <code>page-map</code> · <code>page-map-settings</code> · <code>page-media</code> · <code>page-nav-bindings</code> · <code>page-reports</code> · <code>page-snapshots</code> · <code>page-stats</code> · <code>page-system</code> · <code>page-user-mgmt</code></p>
+    <p><code>dashboard.js</code> (core: globals + pagination + WS + group mgmt + bootstrapApp ~1,379 ลบ.) — ดู <a href="add-dashboard-page.html">Recipe: เพิ่ม Dashboard Page</a></p>
+    <p><code>dashboard/multipicker.js</code> — component multi/single-select แบบ checkbox-dropdown ที่ใช้แทน native <code>&lt;select&gt;</code> ใน filter bar ทุกหน้า (LPR/Events/Face ฯลฯ); ต้นแบบทดสอบที่ <code>public/others/demo/multipicker/</code> ก่อน rollout จริง</p>
+  </div>
+  <div class="card">
+    <h3>Helpers (src/helpers/)</h3>
+    <p><code>routeError.js</code> — standard error handler สำหรับ routes</p>
+    <p><code>getSystemSetting.js</code> — Map cache + invalidate</p>
+    <p><code>normalizeTimeOfDay.js</code> — quiet hours normalization</p>
+    <p><code>face-multipart.js</code> — Hikvision FAS multipart parser (<code>parseFaceAlarmMultipart</code> + <code>faceAlarmToRecord</code>); shared ระหว่าง hikvision-isapi ingester + face-push receiver</p>
+  </div>
+  <div class="card">
+    <h3>Edge Runtime (src/edge/) — VIGIL-ARCH-003</h3>
+    <p><code>bridge.js</code> — NanoMQ → central EMQX WSS bridge (PM2 process <code>edge-bridge</code>); publish MQTT heartbeat ทุก 60s → <code>projects/&lt;site&gt;/_edge/heartbeat</code> (EM1)</p>
+    <p><code>publisher.js</code> — <code>publishEdgeEvent()</code> helper; lazy MQTT singleton ไปยัง NanoMQ local</p>
+    <p><code>edge-config-agent.js</code> — รับ config push จาก central ผ่าน MQTT <code>_config/cameras</code>; Bosch Tier-2 snapshot capture + publish base64 via MQTT</p>
+    <p>ใช้เฉพาะเมื่อ <code>EDGE_MODE=1</code> ใน <code>src/.env</code> — central deploy ไม่โหลด runtime path นี้</p>
+    <p>ดู <a href="../docs/REF_edge-install.md">REF_edge-install.md</a> + <a href="../docs/LOGIC_edge-ingester-divergence.md">LOGIC_edge-ingester-divergence.md</a></p>
+  </div>
+  <div class="card">
+    <h3>Ingesters</h3>
+    <p><code>src/mqtt-subscriber.js</code> — Bosch BVMS MQTT</p>
+    <p><code>src/ingesters/hikvision-isapi.js</code> — Hikvision ISAPI stream</p>
+    <p><code>src/ingesters/dahua-cgi.js</code> — Dahua CGI events</p>
+    <p><code>src/media-recorder.js</code> — RTSP clip buffer</p>
+  </div>
+  <div class="card">
+    <h3>Alert / LINE</h3>
+    <p><code>src/alert-worker.js</code> — process; subscribe <code>pg_notify('alert_event')</code></p>
+    <p><code>src/alert-engine.js</code> — library module (matching logic)</p>
+    <p><code>src/line-sender.js</code> — LINE push API, imgbb upload</p>
+  </div>
+  <div class="card">
+    <h3>Reports</h3>
+    <p><code>src/report-worker.js</code> — scheduler loop; HTTP endpoint <code>127.0.0.1:3001/run/:id</code></p>
+    <p><code>src/report-renderer.js</code> — Puppeteer PDF/PNG; SVG+sharp Health Report</p>
+    <p><code>dashboard/report-template.js</code> — analytics report HTML builder</p>
+  </div>
+</div>
+
+<h2>เอกสารอ้างอิงหลัก — เปิดเมื่อต้องการ</h2>
+
+<table>
+<thead>
+<tr><th>งาน</th><th>ไฟล์</th></tr>
+</thead>
+<tbody>
+<tr><td>System map, data flow, DB schema groups</td><td><code>ARCHITECTURE.md</code></td></tr>
+<tr><td>Design tokens, SVG icons, component patterns</td><td><code>DESIGN.md</code></td></tr>
+<tr><td>Known failures / footguns (#1–#112)</td><td><code>GOTCHAS.md</code></td></tr>
+<tr><td>Decision index (#1–#218)</td><td><code>DECISIONS.md</code></td></tr>
+<tr><td>Full REST API reference (126 routes / 22 groups — จำนวน route ต้อง cross-check กับ 27 route ไฟล์จริง)</td><td><code>docs/REF_api-reference.md</code></td></tr>
+<tr><td>Full DB schema (all tables / columns / indexes)</td><td><code>docs/REF_database-schema.md</code></td></tr>
+<tr><td>Auth, RBAC, security audit</td><td><code>docs/LOGIC_auth-security.md</code></td></tr>
+<tr><td>LINE alerts, imgbb, recipient onboarding</td><td><code>docs/LOGIC_line-notifications.md</code></td></tr>
+<tr><td>Stats, reports, Puppeteer</td><td><code>docs/LOGIC_stats-reports.md</code></td></tr>
+<tr><td>Camera ingesters, clip capture</td><td><code>docs/LOGIC_dahua-ingester.md</code> + <code>docs/LOGIC_hikvision-ingester.md</code></td></tr>
+<tr><td>Migrations, backup, service lifecycle</td><td><code>docs/LOGIC_infra-ops.md</code></td></tr>
+<tr><td>Troubleshooting steps</td><td><code>docs/REF_troubleshooting.md</code></td></tr>
+<tr><td>SQL snippets, service commands</td><td><code>docs/REF_operator-sql.md</code></td></tr>
+<tr><td>Daily start/stop/health</td><td><code>service_start.md</code></td></tr>
+<tr><td>Pending work</td><td><code>ROADMAP.md</code></td></tr>
+</tbody>
+</table>
+
+<h2>How-to Recipes — ขั้นตอนทำเองทีละ step</h2>
+
+<div class="cg">
+  <div class="card">
+    <h3><a href="add-route.html">เพิ่ม REST Route</a></h3>
+    <p>Factory pattern, auth gate, RBAC level, register ใน api-server.js</p>
+  </div>
+  <div class="card">
+    <h3><a href="add-migration.html">เพิ่ม Migration</a></h3>
+    <p>Idempotent patterns, migration runner, อัปเดต init.sql</p>
+  </div>
+  <div class="card">
+    <h3><a href="add-i18n.html">เพิ่ม i18n String</a></h3>
+    <p>เพิ่มทั้ง th + en, <code>I18N.t('key')</code>, <code>data-i18n</code> attribute</p>
+  </div>
+  <div class="card">
+    <h3><a href="add-dashboard-page.html">เพิ่ม Dashboard Page/Widget</a></h3>
+    <p>Vanilla JS, semantic tokens, SVG sprite, responsive</p>
+  </div>
+  <div class="card">
+    <h3><a href="restart-services.html">Restart Services (LNP)</a></h3>
+    <p>กับดัก LNP — อ่านก่อนแตะ PM2 ทุกครั้ง</p>
+    <span class="badge b-red">Critical</span>
+  </div>
+</div>
+
+<div class="ref">
+  <p>เปิดด้วย local server (ต้องการสำหรับ MD viewer): <code>python3 -m http.server 8081 --directory /Users/dojojin/vigil-platform</code> → <code>http://localhost:8081/dev-docs/</code> · ไม่ได้ deploy จริง · Registry: <code>docs/ARCH_documentation-governance.md</code></p>
+</div>
+</div>
+</div>
+
+<script src="nav.js"></script>
+</body>
+</html>

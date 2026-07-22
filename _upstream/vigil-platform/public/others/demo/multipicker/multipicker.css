@@ -1,0 +1,116 @@
+/* ============================================================
+   MultiPicker component + demo styles · token-based (mirrors prod design system)
+   ============================================================ */
+:root {
+  --surface-base: #f4f6fb;
+  --surface-elevated: #ffffff;
+  --surface-overlay: #eef1f7;
+  --text-primary: #1a2230;
+  --text-secondary: #6b7688;
+  --border-hairline: #dfe4ec;
+  --accent: #2563eb;
+  --accent-muted: #e3ebfd;
+  --status-bad: #ef4444;
+  --radius: 9px;
+  --ui-font: 'Noto Sans Thai', 'Noto Sans', -apple-system, 'Segoe UI', system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--surface-base); color: var(--text-primary); font-family: var(--ui-font); font-size: 14px; }
+
+/* ---- demo chrome ---- */
+.demo-wrap { max-width: 1100px; margin: 0 auto; padding: 24px 20px 80px; }
+.demo-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 6px; }
+.demo-head h1 { font-size: 20px; margin: 0; font-weight: 700; }
+.demo-sub { color: var(--text-secondary); font-size: 13px; margin: 0 0 22px; }
+.demo-card { background: var(--surface-elevated); border: 1px solid var(--border-hairline); border-radius: 14px; padding: 20px; margin-bottom: 18px; }
+.demo-card h2 { font-size: 13px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: .04em; margin: 0 0 14px; }
+.demo-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; }
+.demo-fg { min-width: 0; }
+.demo-fg > label { display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 5px; }
+.demo-out { background: var(--surface-base); border: 1px dashed var(--border-hairline); border-radius: 8px; padding: 12px 14px; font-size: 12px; color: var(--text-secondary); white-space: pre-wrap; word-break: break-word; font-family: ui-monospace, monospace; }
+.demo-btn { background: var(--surface-elevated); border: 1px solid var(--border-hairline); color: var(--text-primary); border-radius: 8px; padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
+.demo-btn.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+.demo-mobile-cap { font-size: 12px; color: var(--text-secondary); margin-top: 14px; }
+
+/* ============================================================
+   MultiPicker component  (the part that ports to prod)
+   ============================================================ */
+.mp { position: relative; }
+
+/* trigger looks like a .form-input <select> */
+.mp-trigger {
+  width: 100%; display: flex; align-items: center; gap: 8px;
+  background: var(--surface-elevated); border: 1px solid var(--border-hairline);
+  border-radius: var(--radius); padding: 9px 11px; font-size: 13px; font-family: inherit;
+  color: var(--text-primary); cursor: pointer; text-align: left; min-height: 38px;
+  transition: border-color .12s, box-shadow .12s;
+}
+.mp-trigger:hover { border-color: var(--accent); }
+.mp.open .mp-trigger { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-muted); }
+.mp-summary { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mp-trigger:not(.mp-has) .mp-summary { color: var(--text-secondary); }
+.mp-caret { width: 16px; height: 16px; flex: 0 0 auto; color: var(--text-secondary); transition: transform .15s; }
+.mp.open .mp-caret { transform: rotate(180deg); }
+
+/* popup panel (desktop: anchored under trigger) */
+.mp-pop {
+  position: absolute; top: calc(100% + 5px); left: 0; right: 0; z-index: 50;
+  background: var(--surface-elevated); border: 1px solid var(--border-hairline);
+  border-radius: 10px; box-shadow: 0 10px 34px rgba(0,0,0,.18);
+  display: none; flex-direction: column; max-height: 320px; overflow: hidden; min-width: 220px;
+}
+.mp.open .mp-pop { display: flex; }
+.mp-backdrop { display: none; }
+
+.mp-sheet-head { display: none; }  /* shown only on mobile bottom-sheet */
+.mp-search { display: flex; align-items: center; gap: 7px; margin: 8px; padding: 8px 10px; border: 1px solid var(--border-hairline); border-radius: 7px; background: var(--surface-base); }
+.mp-search:focus-within { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-muted); }
+.mp-search svg { width: 15px; height: 15px; color: var(--text-secondary); flex: 0 0 auto; }
+.mp-search-input { flex: 1; border: 0; background: transparent; font-size: 13px; font-family: inherit; color: var(--text-primary); outline: none; min-width: 0; }
+.mp-empty { padding: 16px 10px; text-align: center; color: var(--text-secondary); font-size: 12px; }
+.mp-actions { display: flex; align-items: center; gap: 6px; padding: 7px 11px; border-bottom: 1px solid var(--border-hairline); }
+.mp-actions button { background: none; border: 0; color: var(--accent); font-size: 12px; font-weight: 600; cursor: pointer; padding: 2px 4px; font-family: inherit; }
+.mp-actions button:hover { text-decoration: underline; }
+.mp-count { margin-left: auto; font-size: 11px; color: var(--text-secondary); }
+
+.mp-list { overflow-y: auto; padding: 4px; }
+.mp-row { display: flex; align-items: center; gap: 9px; padding: 8px 9px; border-radius: 7px; cursor: pointer; font-size: 13px; }
+.mp-row:hover { background: var(--surface-overlay); }
+.mp-row input { position: absolute; opacity: 0; pointer-events: none; }
+.mp-row-lbl { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* custom checkbox: box + checkmark, aligned at the row start */
+.mp-box { flex: 0 0 auto; width: 17px; height: 17px; border: 1.5px solid var(--border-hairline);
+  border-radius: 5px; background: var(--surface-elevated); display: flex; align-items: center; justify-content: center;
+  transition: background .1s, border-color .1s; }
+.mp-row:has(input:checked) .mp-box { background: var(--accent); border-color: var(--accent); }
+.mp-check { width: 13px; height: 13px; color: #fff; opacity: 0; }
+.mp-row:has(input:checked) .mp-check { opacity: 1; }
+/* single-mode: round indicator (radio cue), no select-all/clear */
+.mp-single .mp-box { border-radius: 50%; }
+.mp-done { display: none; }
+
+/* ---- mobile bottom-sheet ---- */
+/* Real mobile = the @media query (this is what ships to prod).               */
+/* The demo also previews it via body.force-mobile (a real iframe can't be     */
+/* used: /others CSP sends frame-ancestors 'none', which blocks same-origin    */
+/* framing too). Both branches share the same rules.                          */
+@media (max-width: 768px) {
+  .mp-backdrop { display: block; }
+  .mp.open .mp-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 60; }
+  .mp-pop { position: fixed; top: auto; bottom: 0; left: 0; right: 0; z-index: 61;
+    border-radius: 16px 16px 0 0; max-height: 80vh; box-shadow: 0 -8px 34px rgba(0,0,0,.3); }
+  .mp-sheet-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid var(--border-hairline); }
+  .mp-sheet-title { font-weight: 700; font-size: 14px; }
+  .mp-done { display: inline-block; background: none; border: 0; color: var(--accent); font-weight: 700; font-size: 14px; cursor: pointer; font-family: inherit; }
+  .mp-row { padding: 11px 12px; }
+}
+/* demo-only preview (mirrors the @media block, centred at phone width) */
+body.force-mobile .demo-wrap { max-width: 414px; }
+body.force-mobile .mp-backdrop { display: block; }
+body.force-mobile .mp.open .mp-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 60; }
+body.force-mobile .mp-pop { position: fixed; top: auto; bottom: 0; left: 50%; right: auto; transform: translateX(-50%);
+  width: 100%; max-width: 414px; z-index: 61; border-radius: 16px 16px 0 0; max-height: 80vh; box-shadow: 0 -8px 34px rgba(0,0,0,.3); }
+body.force-mobile .mp-sheet-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid var(--border-hairline); }
+body.force-mobile .mp-sheet-title { font-weight: 700; font-size: 14px; }
+body.force-mobile .mp-done { display: inline-block; background: none; border: 0; color: var(--accent); font-weight: 700; font-size: 14px; cursor: pointer; font-family: inherit; }
+body.force-mobile .mp-row { padding: 11px 12px; }

@@ -94,6 +94,14 @@ Sidebar section "ประวัติและบันทึก" รวมท�
 - แกลเลอรีกรองได้ + แถบสรุป demographic
 - Modal รายละเอียดต่อใบหน้า: ภาพพื้นหลัง + คลิป pre-alarm + ตารางคุณสมบัติ
 
+### 📋 Automatic Number Plate Recognition (ANPR) — **v1.5.3**
+Ingester HTTP-push จากกล้อง Hikvision ITCCAM ANPR ป้อนเข้า **แกลเลอรี "ป้ายทะเบียน"** พร้อม search, watchlist, และ KPI:
+- **Tab แกลเลอรี**: ล่าสุด (24h) · ค้นหา (ข้อความ/กล้อง/พื้นที่/วันที่) · Watchlist (ปักธงป้าย → แจ้ง LINE)
+- **ค้นหาป้ายทะเบียน**: ค้นข้อความ, filter กล้อง, filter จังหวัด, ช่วงวันที่
+- **จัดการ watchlist**: Admin ปักธง/ยกเลิก, rule auto-fire alert, toggle ผู้รับรายคน
+- **KPI**: ป้ายวันนี้ทั้งหมด, ป้ายที่ไม่ซ้ำ, top brand (ป้ายทะเบียน DLT synthetic ที่ดูถูกต้อง)
+- **เก็บข้อมูล**: Event LPR normalize ลง `license_plates` table ร่วม (retention policy เหมือน events)
+
 ### 🎥 บันทึกคลิปวิดีโอก่อนเกิดเหตุ — **v1.2.1 (Phase 6.1)**
 - RTSP rolling buffer 24/7 ต่อกล้อง (Stream 2 — ~1080p / 2 Mbps)
 - Event trigger → dump เป็น MP4 (ตั้ง pre/post seconds ได้); รองรับทั้ง 3 vendor

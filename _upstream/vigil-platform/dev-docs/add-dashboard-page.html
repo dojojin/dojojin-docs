@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>เพิ่ม Dashboard Page — Dev Portal</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="overlay"></div>
+<div class="layout">
+<nav class="nav" id="nav"></nav>
+<button id="ham">☰</button>
+
+<div class="main">
+<h1 class="ph">Recipe: เพิ่ม Dashboard Page / Widget</h1>
+
+<p>Dashboard เป็น Vanilla JS SPA — ไม่มี build step, ไม่มี framework เปิดไฟล์แก้ได้เลย ไม่ต้อง compile</p>
+
+<div class="wbox">
+  <h4>STUBBORN_FACT</h4>
+  <p>ห้าม import React / Vue / Svelte / Material Web Components — Vanilla JS เป็นการตัดสินใจถาวร (DECISIONS.md #1)</p>
+</div>
+
+<div class="ibox">
+  <h4>ทำไม S5 ถึงแยก dashboard.js → 21 page files (MAINT-FE-001)</h4>
+  <ul>
+    <li><strong>อ่านได้ทันที</strong> — ไฟล์ 80–1,500 ลบ. เห็น context เต็มในหน้าเดียว vs dashboard.js เดิม ~10,500 ลบ.</li>
+    <li><strong>AI context ใช้งานจริง</strong> — โหลดเฉพาะ <code>page-cameras.js</code> เมื่อแก้กล้อง ไม่กิน context ของส่วนอื่น</li>
+    <li><strong>หาเจ้าของโค้ดชัดขึ้น</strong> — "หน้า Stats มีปัญหา" → เปิด <code>page-stats.js</code> ได้เลย</li>
+    <li><strong>browser dev cache</strong> — แก้ <code>page-events.js</code> → browser invalidate แค่ไฟล์นั้น ไม่ทั้ง 10k บรรทัด</li>
+    <li><strong>แก้ไม่กระทบส่วนอื่น</strong> — แก้ executive summary ไม่มีทางพลาดแตะ nav bindings หรือ health check</li>
+    <li><strong>Runtime / bundle size ไม่เปลี่ยน</strong> — classic <code>&lt;script&gt;</code> multi-file บน HTTP/2 แทบไม่ต่าง; globals ยังแชร์ผ่าน window เหมือนเดิม</li>
+  </ul>
+</div>
+
+<h2>โครงสร้าง dashboard/ (หลัง S5 split)</h2>
+
+<p>S5/MAINT-FE-001 ✅ — UI แต่ละหน้าถูก extract ออกมาเป็น <code>page-*.js</code> แยก (21 ไฟล์); <code>dashboard.js</code> ~1,379 บรรทัด = core globals, pagination, WS, group mgmt, bootstrapApp เท่านั้น</p>
+
+<table>
+<thead><tr><th>ต้องการแก้อะไร</th><th>ไฟล์</th></tr></thead>
+<tbody>
+<tr><td>Cameras / Camera Settings</td><td><code>page-cameras.js</code> / <code>page-camera-settings.js</code></td></tr>
+<tr><td>Events live feed</td><td><code>page-events.js</code></td></tr>
+<tr><td>Appearances / Stats / Reports</td><td><code>page-appearance.js</code> / <code>page-stats.js</code> / <code>page-reports.js</code></td></tr>
+<tr><td>Map / Map settings</td><td><code>page-map.js</code> / <code>page-map-settings.js</code></td></tr>
+<tr><td>Health / System / Alerts / Categories</td><td><code>page-health.js</code> / <code>page-system.js</code> / <code>page-alerts.js</code> / <code>page-categories.js</code></td></tr>
+<tr><td>User mgmt / Branding / Snapshots / Media / Face gallery</td><td><code>page-user-mgmt.js</code> / <code>page-branding.js</code> / <code>page-snapshots.js</code> / <code>page-media.js</code> / <code>page-face-gallery.js</code></td></tr>
+<tr><td>Executive summary (SMB briefing)</td><td><code>page-executive-summary.js</code></td></tr>
+<tr><td>Nav chrome / sidebar handlers / dynamic handlers</td><td><code>page-nav-bindings.js</code></td></tr>
+<tr><td>Core globals / WebSocket / group mgmt / bootstrapApp</td><td><code>dashboard.js</code></td></tr>
+</tbody>
+</table>
+
+<h2>เพิ่ม Page ใหม่</h2>
+
+<div class="step">
+  <div class="step-num">1</div>
+  <div class="step-body">
+    <p>เพิ่ม nav item ใน sidebar HTML ใน <code>dashboard/index.html</code>:</p>
+<pre>&lt;a data-page="my-feature" data-i18n="nav.myFeature"&gt;&lt;/a&gt;</pre>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">2</div>
+  <div class="step-body">
+    <p>เพิ่ม i18n key — ดู <a href="add-i18n.html">Recipe: เพิ่ม i18n String</a></p>
+<pre>// dashboard/i18n.js
+th: { 'nav.myFeature': 'ฟีเจอร์ของฉัน', 'page.myFeature': 'หน้า Feature' }
+en: { 'nav.myFeature': 'My Feature',     'page.myFeature': 'Feature Page' }</pre>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">3</div>
+  <div class="step-body">
+    <p>สร้างไฟล์ใหม่ <code>dashboard/page-my-feature.js</code> (พร้อม copyright header) แล้วเพิ่ม render function:</p>
+<pre>// ============================================================
+// Vigil Platform — My Feature Page
+// @author    Prakasit Rochanavipart (Dojo-mAn)
+// @copyright (c) 2025-2026 Prakasit Rochanavipart. All Rights Reserved.
+// @license   Proprietary
+// ============================================================
+
+async function renderMyFeature() {
+  const container = document.getElementById('page-my-feature');
+  if (!container) return;
+  container.innerHTML = '&lt;p style="color:var(--dim)"&gt;กำลังโหลด...&lt;/p&gt;';
+
+  try {
+    const res = await fetch(`${API}/api/my-feature`, {
+      headers: { Authorization: `Bearer ${_token}` }
+    });
+    const data = await res.json();
+    container.innerHTML = buildMyFeatureHTML(data);
+  } catch (e) {
+    container.innerHTML = `&lt;p style="color:var(--status-bad)"&gt;โหลดไม่สำเร็จ: ${e.message}&lt;/p&gt;`;
+  }
+}
+
+function buildMyFeatureHTML(data) {
+  // Build HTML string — use template literals
+  return `
+    &lt;h2 style="color:var(--text-primary)"&gt;${I18N.t('page.myFeature')}&lt;/h2&gt;
+    &lt;table&gt;...&lt;/table&gt;
+  `;
+}</pre>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">4</div>
+  <div class="step-body">
+    <p>เพิ่ม container ใน <code>dashboard/index.html</code> และ hook ใน page switch handler:</p>
+<pre>&lt;div id="page-my-feature" class="page" style="display:none"&gt;&lt;/div&gt;</pre>
+    <p>เพิ่ม <code>&lt;script&gt;</code> tag ใน <code>index.html</code> ก่อน <code>dashboard.js</code>:</p>
+<pre>&lt;script src="/page-my-feature.js"&gt;&lt;/script&gt;
+&lt;script src="/dashboard.js"&gt;&lt;/script&gt;</pre>
+    <p>ค้น <code>case 'appearances':</code> (หรือ page ที่ใกล้เคียง) ใน page switch logic (<code>page-nav-bindings.js</code>) แล้วเพิ่ม:</p>
+<pre>case 'my-feature':
+  renderMyFeature();
+  break;</pre>
+  </div>
+</div>
+
+<h2>Design Tokens — ใช้ให้ถูก (DECISIONS.md #173)</h2>
+
+<p>new code (2026-05-29+) ใช้ semantic token เท่านั้น — ห้ามใช้ legacy names:</p>
+
+<table>
+<thead><tr><th>ต้องการ</th><th>ใช้</th><th>ห้ามใช้</th></tr></thead>
+<tbody>
+<tr><td>พื้นหลังหลัก</td><td><code>--surface-base</code></td><td><code>--bg</code></td></tr>
+<tr><td>card / panel</td><td><code>--surface-elevated</code></td><td><code>--panel</code></td></tr>
+<tr><td>modal / dropdown</td><td><code>--surface-overlay</code></td><td><code>--panel2</code></td></tr>
+<tr><td>ตัวอักษรหลัก</td><td><code>--text-primary</code></td><td><code>--text</code></td></tr>
+<tr><td>label / caption</td><td><code>--text-secondary</code></td><td><code>--dim</code></td></tr>
+<tr><td>hover ของ accent</td><td><code>--accent-muted</code></td><td><code>--accent2</code></td></tr>
+<tr><td>amber / warning</td><td><code>--warn</code></td><td><code>--amber</code></td></tr>
+<tr><td>online / healthy</td><td><code>--status-ok</code></td><td><code>--green</code></td></tr>
+<tr><td>offline / error</td><td><code>--status-bad</code></td><td><code>--red</code></td></tr>
+<tr><td>เส้นแบ่ง</td><td><code>--border-hairline</code></td><td><code>--border</code></td></tr>
+</tbody>
+</table>
+
+<pre>// ตัวอย่าง card ที่ถูกต้อง
+`&lt;div style="
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-hairline);
+  border-radius: 8px;
+  padding: 1rem;
+"&gt;
+  &lt;p style="color: var(--text-primary)"&gt;หัวข้อ&lt;/p&gt;
+  &lt;p style="color: var(--text-secondary)"&gt;รายละเอียด&lt;/p&gt;
+&lt;/div&gt;`</pre>
+
+<h2>SVG Icons</h2>
+
+<p>Icons อยู่ใน <code>dashboard/icons.svg</code> เป็น sprite — ใช้ <code>&lt;use&gt;</code>:</p>
+
+<pre>&lt;svg class="icon" width="16" height="16" viewBox="0 0 24 24"&gt;
+  &lt;use href="icons.svg#eye"&gt;&lt;/use&gt;
+&lt;/svg&gt;</pre>
+
+<p>ดู symbol IDs ที่มีอยู่: <code>grep 'id="' dashboard/icons.svg</code></p>
+
+<div class="wbox">
+  <h4>ห้ามใช้ emoji เป็น UI icon</h4>
+  <p>ใช้ SVG sprite (<code>currentColor</code>) — ไม่ใช่ emoji และไม่ใช้ icon webfont. Health Report PNG ที่ render ผ่าน SVG+sharp จะ abort ถ้ามี emoji (GOTCHAS #25a)</p>
+</div>
+
+<h2>Responsive — ≤768px บังคับ</h2>
+
+<p>ก่อน commit UI ทุกครั้ง — ทดสอบใน DevTools ที่ขนาด ≤768px เสมอ:</p>
+
+<ul>
+  <li>ใช้ CSS Grid <code>grid-template-columns: repeat(auto-fill, minmax(Xpx, 1fr))</code> แทน fixed columns</li>
+  <li>Grid children ที่มี content กว้าง — ต้องใส่ <code>min-width: 0</code> (GOTCHAS #29)</li>
+  <li>Table บน mobile — อาจต้องใส่ <code>overflow-x: auto</code> ใน wrapper</li>
+  <li>ห้าม hardcode width เป็น <code>px</code> กว้าง — ใช้ <code>%</code> หรือ <code>fr</code></li>
+</ul>
+
+<h2>Fetch Pattern ที่ถูก</h2>
+
+<pre>// ใช้ fetch + API base + Bearer token
+const res = await fetch(`${API}/api/endpoint`, {
+  headers: { Authorization: `Bearer ${_token}` }
+});
+
+// ไม่มี apiFetch() helper ใน codebase — ใช้ fetch() ตรงๆ เสมอ</pre>
+
+<div class="ref">
+  <p><a href="index.html">← กลับ Navigator</a> · อ้างอิง: <code>DESIGN.md</code> · DECISIONS.md #1, #142–145, #173 · GOTCHAS #29–#31, #35, #42</p>
+</div>
+</div>
+</div>
+
+<script src="nav.js"></script>
+</body>
+</html>

@@ -101,6 +101,18 @@ After editing code or docs:
 - State honestly what was not validated.
 - Provide git commands if the user asks for commit guidance.
 
+**Owner's machine-wide cycle — PLAN → EXECUTE → AUDIT → STOP → COMMIT (added 2026-06-16; mirrors CLAUDE.md Working Agreement #4):**
+
+Every "go do it" command runs this 5-step cycle without the owner re-asking:
+
+1. **PLAN** — plan first; reproduce/audit the plan step by step before acting. If the codebase/process is already clear, proceed; if not, crystallize a clear **spec (absolute path + done criteria)** before any mechanical execution.
+2. **EXECUTE** — only fully-specced mechanical work. Patch narrowly (see §4).
+3. **AUDIT** — after the change, re-run the original repro at runtime, then audit the result. Report as Fact / Opinion.
+4. **STOP** — stop and wait for the owner's explicit confirmation. **Do not commit on your own** (consistent with §4 and §12).
+5. **COMMIT** — only after the owner confirms.
+
+> Green-light to **execute** ("ทำเลย / จัดการเลย / ต่อเลย") is **not** green-light to **commit** — the STOP gate at step 4 always applies. Under Claude Code these map to Advisor=plan/audit, Sonnet=execute (CLAUDE.md #4); Codex runs the same cycle with its own model.
+
 ---
 
 ## 4. Codex behavior rules

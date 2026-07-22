@@ -7,7 +7,7 @@
 > **SQL snippets + service commands** → `docs/REF_operator-sql.md`
 > **Design rationale** → `docs/LOGIC_*.md` files
 >
-> Last updated: 2026-06-08 · v1.5.3
+> Last updated: 2026-06-15 · v1.5.3
 
 ---
 
@@ -292,7 +292,7 @@ The dashboard is bilingual — engine: `dashboard/i18n.js` (vanilla, no dependen
 
 **Check for leaked strings:**
 ```bash
-grep -rn '[฀-๿]' dashboard/index.html dashboard/dashboard.js | grep -v 'data-i18n'
+grep -rn '[฀-๿]' dashboard/index.html dashboard/dashboard.js dashboard/page-*.js | grep -v 'data-i18n'
 ```
 
 **Report exports:** analytics report is always Thai (Puppeteer runs in a fresh context with no language setting). Health report follows the selected language (`HR_LABELS.{th,en}` dict in `report-renderer.js`).
@@ -398,12 +398,19 @@ View status: Settings → 🔐 License.
 Dahua VCA events use `src/ingesters/dahua-cgi.js` via the eventManager CGI.
 Dahua snapshots do not rely primarily on `snapshot.cgi` because it is slow and often misses fast-moving subjects.
 
-Current snapshot flow:
+**Pure helper modules (testable in isolation):**
+- `src/ingesters/dahua-protocol.js` — parser: `parseDahuaEventText`, `parseSnapManagerCode`, `extractObjectClass`, `DAHUA_EVENT_MAP`
+- `src/ingesters/dahua-snapshot-selector.js` — scoring: `scoreFrameForObject`, `scoreFrameMotion`, `chooseBestSnapshotCandidate`, `selectScanSegments` + constants
 
-1. Use `snapManager` event JPEG if the camera includes one
-2. If unavailable, use RTSP rolling buffer burst scoring around the server receive time
-3. If the first pass is `low_confidence` / `missing` / `failed`, or the status has not been written by the time `clip_done` fires, the clip resolver retries and selects a frame from `media/<eventId>.mp4`
-4. Single RTSP fallback and live CGI fallback are treated as `low_confidence` so the clip resolver can continue
+Current snapshot waterfall (in order):
+
+1. **snapManager event JPEG** — camera-embedded JPEG delivered alongside the event text (`dahua-event-snapshot`)
+2. **RTSP buffer burst** — score 11 candidate frames around server receive time via motion-diff + ROI detail (`dahua-rtsp-buffer-best`); segment "closed" check uses mtime fallback (`SEGMENT_CLOSE_AGE_MS = 2000`) so sparse buffers still yield candidates
+3. **RTSP buffer scan** — if burst returns 0 candidates, scan up to 5 closed segments within ±30 s of event time, score each, pick best (`dahua-rtsp-buffer-scan`, `low_confidence`)
+4. **Single RTSP fallback** — dumb single frame at the computed target timestamp, no scoring (`dahua-rtsp-buffer`, `low_confidence`)
+5. **CGI live** — last resort; always late relative to the event (`dahua-cgi-live`, `low_confidence`)
+
+Steps 3–5 are all marked `low_confidence` so the clip resolver continues to upgrade them when `clip_done` fires. The clip resolver selects the best frame from `media/<eventId>.mp4` and promotes status to `ok`.
 
 Inspect results:
 
@@ -414,16 +421,19 @@ SELECT
   event_time AT TIME ZONE 'Asia/Bangkok' AS local_time,
   raw_json->>'_snapshot_source' AS source,
   raw_json->>'_snapshot_status' AS status,
-  raw_json->'_snapshot_debug'->>'confidence' AS confidence
+  raw_json->'_snapshot_debug'->>'confidence' AS confidence,
+  raw_json->'_snapshot_debug'->>'strategy' AS strategy
 FROM events
 WHERE camera_id IN ('DAHUA_CAM01', 'BMA-EAST_DAHUA_CAM01')
 ORDER BY event_time DESC
 LIMIT 20;
 ```
 
+Expected statuses: `dahua-clip-resolver / ok` (best), `dahua-rtsp-buffer-best / ok` (burst hit).
+`dahua-rtsp-buffer-scan / low_confidence` = scan fallback fired (burst found 0 candidates — usually right after camera reconnect).
+`missing` = clip + all buffer paths failed.
+
 If `BMA-EAST_DAHUA_CAM01` is still missing frames, read `DahuaProblem.MD` before touching code.
-Expected statuses after the fix: `dahua-clip-resolver / ok` or
-`dahua-rtsp-buffer-best / ok`. `missing` typically means clip/buffer failed.
 
 ---
 
@@ -496,4 +506,4 @@ docker exec vigil-postgres psql -U vigil_sql -d vigil_platform -c "SELECT versio
 
 ---
 
-<sub>**SKILL.md** v1.5.3 — slim core · Detailed content in `docs/REF_*` · Vigil Platform · Updated 2026-06-08</sub>
+<sub>**SKILL.md** v1.5.3 — slim core · Detailed content in `docs/REF_*` · Vigil Platform · Updated 2026-06-15</sub>

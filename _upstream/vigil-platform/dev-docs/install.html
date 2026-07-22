@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ติดตั้งระบบ — Dev Portal</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="overlay"></div>
+<div class="layout">
+<nav class="nav" id="nav"></nav>
+<button id="ham">☰</button>
+
+<div class="main">
+<h1 class="ph">คู่มือติดตั้งระบบ — From Zero to Running</h1>
+
+<p>ครอบคลุมการติดตั้งบน macOS (เครื่อง owner) และ Linux server ใหม่ทั้งหมด — ตั้งแต่ clone จนถึง login ครั้งแรก</p>
+
+<div class="wbox">
+  <h4>สำหรับ daily start/stop ใช้ <a href="restart-services.html">Restart Services</a> แทน</h4>
+  <p>หน้านี้คือ from-scratch install เท่านั้น — ถ้าระบบ install อยู่แล้วและต้องการแค่ restart ดูที่ <a href="restart-services.html">Restart Services (LNP)</a></p>
+</div>
+
+<h2>Prerequisites</h2>
+<table>
+<thead><tr><th>สิ่งที่ต้องมี</th><th>เวอร์ชัน</th><th>วิธีเช็ค</th></tr></thead>
+<tbody>
+<tr><td>macOS / Linux</td><td>macOS 12+ หรือ Ubuntu 22.04+</td><td><code>sw_vers</code> หรือ <code>lsb_release -a</code></td></tr>
+<tr><td>Node.js</td><td>18+</td><td><code>node --version</code></td></tr>
+<tr><td>npm</td><td>9+</td><td><code>npm --version</code></td></tr>
+<tr><td>Docker Desktop</td><td>4.x+</td><td><code>docker --version</code></td></tr>
+<tr><td>PM2</td><td>5+</td><td><code>pm2 --version</code> (install: <code>npm i -g pm2</code>)</td></tr>
+<tr><td>Git</td><td>2.x+</td><td><code>git --version</code></td></tr>
+<tr><td>Cameras</td><td>Bosch MQTT / Hikvision ISAPI / Dahua CGI</td><td>—</td></tr>
+</tbody>
+</table>
+
+<h2>ขั้นตอนติดตั้ง (8 ขั้นตอน)</h2>
+
+<div class="step">
+  <div class="step-num">1</div>
+  <div class="step-body">
+    <p><strong>Clone repository</strong></p>
+<pre>git clone &lt;repo-url&gt; vigil-platform
+cd vigil-platform</pre>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">2</div>
+  <div class="step-body">
+    <p><strong>ตั้งค่า Environment Variables</strong></p>
+<pre>cp .env.example .env
+nano .env   # แก้ค่าเหล่านี้:
+            # DB_PASSWORD — รหัสผ่าน PostgreSQL
+            # SESSION_SECRET — random 32 bytes (ดูขั้นตอน 3)
+            # MAPBOX_TOKEN — สำหรับ map page (ขอได้ที่ mapbox.com)
+            # LINE_CHANNEL_ACCESS_TOKEN — สำหรับ LINE alerts (ถ้าใช้)</pre>
+<pre># Generate SESSION_SECRET
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"</pre>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">3</div>
+  <div class="step-body">
+    <p><strong>เริ่ม Docker services (PostgreSQL + EMQX)</strong></p>
+<pre>docker compose up -d
+# ตรวจสอบ:
+docker ps   # ควรเห็น vigil-postgres + vigil-emqx สถานะ "Up"</pre>
+    <div class="wbox" style="margin-top:0.75rem">
+      <h4>EMQX = MQTT broker เท่านั้น</h4>
+      <p>อย่าสับสนกับ Mosquitto — ระบบใช้ EMQX 5.8 เพราะ Mosquitto 2.x reject packet บางรูปแบบของ Bosch (GOTCHAS #33)</p>
+    </div>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">4</div>
+  <div class="step-body">
+    <p><strong>Initialize database</strong></p>
+<pre># Init schema (ทำครั้งเดียวบน volume ใหม่)
+docker exec -i vigil-postgres psql -U vigil_sql -d vigil_platform &lt; db/init.sql
+
+# ตรวจสอบ — ควรเห็น 14+ tables
+docker exec -it vigil-postgres psql -U vigil_sql -d vigil_platform -c "\dt"</pre>
+    <div class="ibox" style="margin-top:0.75rem">
+      <h4>Volume เก่า — ไม่ต้อง init ซ้ำ</h4>
+      <p>ถ้า volume มีข้อมูลอยู่แล้ว ไม่ต้อง init ซ้ำ — schema migration จะ apply อัตโนมัติเมื่อ api-server boot (ขั้นตอน 6)</p>
+    </div>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">5</div>
+  <div class="step-body">
+    <p><strong>Install Node.js dependencies</strong></p>
+<pre>cd src && npm ci
+cd ..   # กลับ repo root</pre>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">6</div>
+  <div class="step-body">
+    <p><strong>Start services ด้วย PM2</strong></p>
+    <div class="dbox" style="margin-bottom:0.75rem">
+      <h4>LNP Trap — ต้องรันจาก macOS GUI Terminal เท่านั้น</h4>
+      <p>ห้ามรันจาก tmux / SSH / Claude shell — กล้อง Bosch จะ disconnect (GOTCHAS #84) ดู <a href="restart-services.html">Restart Services</a></p>
+    </div>
+<pre># วิธีที่ 1 — ผ่าน .command script (แนะนำ)
+open -a Terminal /Users/dojojin/vigil-platform/scripts/pm2-lan-safe-restart.command
+
+# วิธีที่ 2 — PM2 โดยตรง (ใน macOS GUI Terminal)
+pm2 start ecosystem.config.js
+
+# ตรวจสอบ
+pm2 status
+# ควรเห็น 7 workers: api-server, mqtt-subscriber, hikvision-isapi,
+# dahua-cgi, media-recorder, alert-worker, report-worker</pre>
+    <p>ครั้งแรก api-server boot — migrate.js จะ apply schema migrations อัตโนมัติ ดู log ได้ที่:</p>
+<pre>pm2 logs api-server --lines 50</pre>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">7</div>
+  <div class="step-body">
+    <p><strong>ตั้ง PM2 autostart (launchd)</strong></p>
+<pre># ตั้งครั้งเดียว — PM2 จะ start อัตโนมัติเมื่อ reboot
+pm2 startup
+# รัน command ที่ PM2 แสดงออกมา (sudo ...)
+
+pm2 save   # บันทึก process list ปัจจุบัน</pre>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">8</div>
+  <div class="step-body">
+    <p><strong>เข้าใช้งานครั้งแรก</strong></p>
+<pre># Local
+open http://localhost:3000
+
+# Flow: /disclaimer.html → /login.html → /
+# Default credentials:
+#   Username: admin
+#   Password: changeme  (ระบบบังคับเปลี่ยนรหัสครั้งแรก)</pre>
+  </div>
+</div>
+
+<h2>Production Deploy — Cloudflare Tunnel</h2>
+
+<div class="sbox">
+  <h4>ข้ามได้ถ้า local-only</h4>
+  <p>ถ้าใช้งานเฉพาะ LAN ข้ามหัวข้อนี้ได้ — ไม่ต้อง public domain</p>
+</div>
+
+<pre># ติดตั้ง cloudflared
+brew install cloudflared   # macOS
+# หรือ wget/dpkg สำหรับ Linux
+
+# Login + สร้าง tunnel
+cloudflared tunnel login
+cloudflared tunnel create vigil-platform
+cloudflared tunnel route dns vigil-platform dashboard.yourdomain.com
+
+# Config ไฟล์ (~/.cloudflared/config.yml)
+# tunnel: &lt;tunnel-id&gt;
+# credentials-file: ~/.cloudflared/&lt;tunnel-id&gt;.json
+# ingress:
+#   - hostname: dashboard.yourdomain.com
+#     service: http://localhost:3000
+#   - service: http_status:404
+
+# เริ่ม tunnel
+cloudflared tunnel run vigil-platform</pre>
+
+<p>ดู LOGIC_infra-ops.md §Deployment สำหรับ launchd autostart ของ cloudflared</p>
+
+<h2>Migration จาก Version เก่า</h2>
+
+<pre># 1. Backup ก่อนเสมอ
+./scripts/backup.sh
+
+# 2. Schema migrations apply อัตโนมัติเมื่อ api-server boot
+pm2 restart api-server
+pm2 logs api-server --lines 30   # ดู "Migration applied: ..."
+
+# Manual run (ถ้าต้องการรันก่อน)
+cd src && npm run migrate</pre>
+
+<div class="dbox">
+  <h4>Migration fail = api-server ไม่ start (by design)</h4>
+  <p>ถ้า migration error → ไม่ comment out → restore backup แล้วแก้ SQL ให้ถูกต้อง (GOTCHAS #19)</p>
+</div>
+
+<h2>Backup / Restore</h2>
+
+<pre># Backup manual
+./scripts/backup.sh   # → backups/vigil_platform_YYYY-MM-DD_hhmmss.dump
+
+# ตั้ง daily auto-backup (launchd)
+cp scripts/com.dojojin.dashboard.backup.plist ~/Library/LaunchAgents/
+launchctl load -w ~/Library/LaunchAgents/com.dojojin.dashboard.backup.plist
+
+# Restore
+./scripts/restore.sh backups/vigil_platform_2026-05-29_030000.dump</pre>
+
+<div class="ibox">
+  <h4>pg_dump -Fc ไม่ใช่ plain SQL</h4>
+  <p><code>cat backup.dump</code> จะเห็น binary — ใช้ <code>pg_restore --list</code> เพื่อดู TOC (GOTCHAS #20)</p>
+</div>
+
+<div class="ref">
+  <p><a href="index.html">← กลับ Navigator</a> · อ้างอิง: <code>README.md §Quick Start</code> · <code>service_start.md</code> · <a href="restart-services.html">Restart Services (LNP)</a> · GOTCHAS #19, #20, #33, #84</p>
+</div>
+</div>
+</div>
+
+<script src="nav.js"></script>
+</body>
+</html>

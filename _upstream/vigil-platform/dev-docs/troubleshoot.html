@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>แก้ปัญหาเบื้องต้น — Dev Portal</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="overlay"></div>
+<div class="layout">
+<nav class="nav" id="nav"></nav>
+<button id="ham">☰</button>
+
+<div class="main">
+<h1 class="ph">แก้ปัญหาเบื้องต้น — Symptom Index</h1>
+
+<p>เลือกอาการที่พบ → กดดูขั้นตอนละเอียดใน <code>REF_troubleshooting.md</code> หรือ <code>GOTCHAS.md</code></p>
+
+<div class="ibox">
+  <h4>อ่านรายละเอียดเพิ่มได้ที่</h4>
+  <p>
+    <a href="md-viewer.html?src=../docs/REF_troubleshooting.md">REF_troubleshooting.md</a> (§8.1–§8.18) ·
+    <a href="md-viewer.html?src=../GOTCHAS.md">GOTCHAS.md</a> (#1–#84) ·
+    <a href="restart-services.html">Restart Services (LNP trap)</a>
+  </p>
+</div>
+
+<h2>Camera / Event ไม่เข้าระบบ</h2>
+<table>
+<thead><tr><th>อาการ</th><th>ไปที่</th><th>GOTCHAS</th></tr></thead>
+<tbody>
+<tr>
+  <td>กล้อง "Online" แต่ไม่มี Events เลย</td>
+  <td><a href="md-viewer.html?src=../service_start.md">service_start.md</a> §Troubleshooting กล้อง "Online"</td>
+  <td>#81</td>
+</tr>
+<tr>
+  <td>Events จากบางกล้องแต่ไม่ใช่ทุกกล้อง (old-firmware Bosch)</td>
+  <td><a href="md-viewer.html?src=../docs/REF_troubleshooting.md">REF_troubleshooting §8.14</a></td>
+  <td>—</td>
+</tr>
+<tr>
+  <td>กล้องพลาด event บางส่วน (ข้ามเส้นแต่ไม่ขึ้น)</td>
+  <td><a href="md-viewer.html?src=../docs/REF_troubleshooting.md">REF_troubleshooting §8.15</a></td>
+  <td>—</td>
+</tr>
+<tr>
+  <td>Category ใหม่แสดง 0 ทั้งที่มี events อยู่</td>
+  <td><a href="md-viewer.html?src=../docs/REF_troubleshooting.md">REF_troubleshooting §8.1</a></td>
+  <td>—</td>
+</tr>
+<tr>
+  <td>Comparison แสดง ▲ 9000% (ผิดปกติ)</td>
+  <td><a href="md-viewer.html?src=../docs/REF_troubleshooting.md">REF_troubleshooting §8.2</a></td>
+  <td>—</td>
+</tr>
+<tr>
+  <td>Daily/Weekly/Monthly view ว่างเปล่า</td>
+  <td><a href="md-viewer.html?src=../docs/REF_troubleshooting.md">REF_troubleshooting §8.3</a></td>
+  <td>—</td>
+</tr>
+<tr>
+  <td>Mapping rule ไม่ขึ้นในรายการหลัง Add</td>
+  <td><a href="md-viewer.html?src=../docs/REF_troubleshooting.md">REF_troubleshooting §8.4</a></td>
+  <td>—</td>
+</tr>
+<tr>
+  <td>GlobalSceneChange เข้ามาตลอดทั้งที่ disable แล้วใน CM</td>
+  <td><a href="md-viewer.html?src=../docs/REF_troubleshooting.md">REF_troubleshooting §8.16</a></td>
+  <td>—</td>
+</tr>
+<tr>
+  <td>Camera config มีอยู่ แต่ events ไม่ขึ้น</td>
+  <td><a href="md-viewer.html?src=../docs/REF_troubleshooting.md">REF_troubleshooting §8.13</a></td>
+  <td>#32 (invisible chars)</td>
+</tr>
+</tbody>
+</table>
+
+<h2>MQTT / Connection</h2>
+<table>
+<thead><tr><th>อาการ</th><th>ไปที่</th><th>GOTCHAS</th></tr></thead>
+<tbody>
+<tr>
+  <td>ทุกกล้อง "Offline" ทั้งที่ online จริง</td>
+  <td><a href="md-viewer.html?src=../docs/REF_troubleshooting.md">REF_troubleshooting §8.5</a></td>
+  <td>—</td>
+</tr>
+<tr>
+  <td>EHOSTUNREACH — Bosch MQTT disconnect ทันที restart PM2</td>
+  <td><a href="restart-services.html">Restart Services (LNP)</a></td>
+  <td>#84</td>
+</tr>
+<tr>
+  <td>MQTT subscriber ไม่รับ event (EMQX ACL)</td>
+  <td><a href="md-viewer.html?src=../service_start.md">service_start.md §MQTT subscriber ไม่รับ event</a></td>
+  <td>#33</td>
+</tr>
+<tr>
+  <td>Camera reconnect ทุก 30s — "disconnected due to malformed packet"</td>
+  <td><a href="md-viewer.html?src=../GOTCHAS.md">GOTCHAS #33</a> (Mosquitto → EMQX)</td>
+  <td>#33</td>
+</tr>
+<tr>
+  <td>Health page แสดง MQTT stale ทั้งที่ events ไหลอยู่</td>
+  <td><a href="md-viewer.html?src=../docs/REF_troubleshooting.md">REF_troubleshooting §8.9</a></td>
+  <td>#14 (camera clock skew)</td>
+</tr>
+</tbody>
+</table>
+
+<h2>LINE Alerts</h2>
+<table>
+<thead><tr><th>อาการ</th><th>ไปที่</th><th>GOTCHAS</th></tr></thead>
+<tbody>
+<tr>
+  <td>LINE alert มาแต่เป็น text-only (ไม่มีรูป)</td>
+  <td><a href="md-viewer.html?src=../docs/REF_troubleshooting.md">REF_troubleshooting §8.6</a></td>
+  <td>—</td>
+</tr>
+<tr>
+  <td>LINE alert ไม่ส่ง — status='failed' + "monthly limit"</td>
+  <td><a href="md-viewer.html?src=../docs/REF_troubleshooting.md">REF_troubleshooting §8.7</a></td>
+  <td>—</td>
+</tr>
+</tbody>
+</table>
+
+<h2>Storage / Retention</h2>
+<table>
+<thead><tr><th>อาการ</th><th>ไปที่</th><th>GOTCHAS</th></tr></thead>
+<tbody>
+<tr>
+  <td>Snapshot disk เต็ม — retention ไม่ทำงาน</td>
+  <td><a href="md-viewer.html?src=../docs/REF_troubleshooting.md">REF_troubleshooting §8.10</a></td>
+  <td>#13 (cp -p mtime)</td>
+</tr>
+<tr>
+  <td>Clip จบก่อน object ข้ามเส้นเสร็จ</td>
+  <td><a href="md-viewer.html?src=../docs/REF_troubleshooting.md">REF_troubleshooting §8.12</a></td>
+  <td>—</td>
+</tr>
+</tbody>
+</table>
+
+<h2>Reports / Puppeteer</h2>
+<table>
+<thead><tr><th>อาการ</th><th>ไปที่</th><th>GOTCHAS</th></tr></thead>
+<tbody>
+<tr>
+  <td>Health Report PNG abort / Node process crash</td>
+  <td><a href="md-viewer.html?src=../GOTCHAS.md">GOTCHAS #25, #25a</a> (emoji ใน SVG)</td>
+  <td>#25, #25a</td>
+</tr>
+<tr>
+  <td>Report logo ว่าง / ไม่ขึ้น</td>
+  <td><a href="md-viewer.html?src=../GOTCHAS.md">GOTCHAS #21, #22</a></td>
+  <td>#21, #22</td>
+</tr>
+</tbody>
+</table>
+
+<h2>Schema / Migration</h2>
+<table>
+<thead><tr><th>อาการ</th><th>ไปที่</th><th>GOTCHAS</th></tr></thead>
+<tbody>
+<tr>
+  <td>api-server ไม่ start — migration error</td>
+  <td><a href="md-viewer.html?src=../GOTCHAS.md">GOTCHAS #19</a> · restore backup แล้วแก้ SQL</td>
+  <td>#19</td>
+</tr>
+<tr>
+  <td>Migration ลำดับผิด / ต้องการ order</td>
+  <td><a href="add-migration.html">Recipe: เพิ่ม Migration</a> · <a href="md-viewer.html?src=../GOTCHAS.md">GOTCHAS #18</a></td>
+  <td>#18</td>
+</tr>
+</tbody>
+</table>
+
+<h2>UI / Mobile</h2>
+<table>
+<thead><tr><th>อาการ</th><th>ไปที่</th><th>GOTCHAS</th></tr></thead>
+<tbody>
+<tr>
+  <td>Mobile layout พัง — horizontal scroll</td>
+  <td><a href="md-viewer.html?src=../docs/REF_troubleshooting.md">REF_troubleshooting §8.11</a></td>
+  <td>#29, #30, #31</td>
+</tr>
+<tr>
+  <td>Browser favicon ไม่เปลี่ยนหลัง upload logo</td>
+  <td><a href="md-viewer.html?src=../docs/REF_troubleshooting.md">REF_troubleshooting §8.8</a></td>
+  <td>#12 (hard-reload)</td>
+</tr>
+</tbody>
+</table>
+
+<h2>Port 3000 / Service ขึ้นไม่ได้</h2>
+<table>
+<thead><tr><th>อาการ</th><th>วิธีแก้</th></tr></thead>
+<tbody>
+<tr>
+  <td>Port 3000 ถูกใช้ไปแล้ว (EADDRINUSE)</td>
+  <td><pre style="margin:0">lsof -i :3000      # หา PID
+kill -9 &lt;PID&gt;     # kill process เก่า
+pm2 restart api-server</pre></td>
+</tr>
+<tr>
+  <td>Docker container ไม่ขึ้น</td>
+  <td><pre style="margin:0">docker ps -a       # ดู status
+docker logs vigil-postgres  # ดู error
+docker compose up -d --force-recreate</pre></td>
+</tr>
+</tbody>
+</table>
+
+<div class="ref">
+  <p><a href="index.html">← กลับ Navigator</a> · อ้างอิง: <a href="md-viewer.html?src=../docs/REF_troubleshooting.md">REF_troubleshooting.md</a> · <a href="md-viewer.html?src=../GOTCHAS.md">GOTCHAS.md</a> · <a href="restart-services.html">Restart Services</a></p>
+</div>
+</div>
+</div>
+
+<script src="nav.js"></script>
+</body>
+</html>

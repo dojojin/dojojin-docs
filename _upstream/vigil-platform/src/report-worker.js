@@ -63,6 +63,8 @@ const REPORT_TITLE_TH = {
   weekly: 'รายงานรายสัปดาห์',
   monthly: 'รายงานรายเดือน',
   health: 'รายงานสุขภาพระบบ',
+  face: 'รายงานการจดจำใบหน้า',
+  lpr: 'รายงานป้ายทะเบียน',
 };
 
 // ── Helpers (copied from api-server — NOT moved to avoid touching those call sites) ──
@@ -73,6 +75,7 @@ async function getBrandForReport() {
     const r = await pool.query("SELECT key, value FROM system_settings WHERE key LIKE 'brand_%'");
     for (const row of r.rows) {
       if (row.key === 'brand_name')          b.name = row.value;
+      if (row.key === 'brand_tagline')       b.tagline = row.value;
       if (row.key === 'brand_primary_color') b.primary_color = row.value;
       if (row.key === 'brand_logo_path' && row.value) {
         b.logo_url = `${API_BASE_URL}/branding/${row.value}`;
@@ -127,22 +130,114 @@ async function runScheduledReport(schedule) {
   const logHistory = (fields) => pool.query(
     `INSERT INTO report_history
        (schedule_id, report_type, range_from, range_to, image_layout,
-        file_path, recipients_sent, sent_count, total_recipients, status, error_message)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+        file_path, recipients_sent, sent_count, total_recipients, status, error_message, report_family)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
     [
       schedule.id, fields.report_type, fields.range_from || null, fields.range_to || null,
       fields.image_layout || null, fields.file_path || null, fields.recipients_sent || null,
       fields.sent_count || 0, fields.total_recipients || 0,
       fields.status, fields.error_message ? String(fields.error_message).slice(0, 500) : null,
+      fields.report_family || null,
     ]
   ).catch(() => {});
 
   try {
+    // R4: Dispatch by report_family (or fallback to legacy report_type for health)
+    const family = schedule.report_family || (schedule.report_type === 'health' ? 'health' : 'analytics');
+    const brand = await getBrandForReport();
+    let png, fname, rangeFrom, rangeTo, rangeLabel;
+    const tzForName = await getDisplayTz();
+
+    // ── R4: Face/LPR path (render first, BEFORE LINE config gate) ──────
+    if (family === 'face') {
+      try {
+        const range = reportRenderer.computeScheduledRange(schedule.report_type);
+        rangeFrom = range.from;
+        rangeTo = range.to;
+        rangeLabel = range.label;
+        // Map report_type cadence to period string
+        const periodMap = { daily: 'yesterday', weekly: 'week', monthly: 'month' };
+        const period = periodMap[schedule.report_type] || 'today';
+        png = await reportRenderer.renderFaceReportImage({
+          baseUrl: API_BASE_URL,
+          internalToken: INTERNAL_API_TOKEN,
+          brand,
+          period,
+          sections: (schedule.section_config && typeof schedule.section_config === 'object') ? schedule.section_config : {},
+          lang: 'th',
+          site_id: schedule.site_id || null,
+        });
+        const fnameDate = new Date(rangeFrom).toLocaleDateString('sv', { timeZone: tzForName });
+        fname = `report_face_${fnameDate}_${Date.now()}.png`;
+        await fs.promises.writeFile(path.join(REPORTS_DIR, fname), png).catch(() => {});
+        // PDPA: No LINE send for face; log success with no recipients
+        await record('success', null);
+        await logHistory({
+          report_type: schedule.report_type, range_from: rangeFrom, range_to: rangeTo,
+          image_layout: null, file_path: fname,
+          recipients_sent: null, sent_count: 0, total_recipients: 0,
+          status: 'success', report_family: 'face',
+        });
+        console.warn(`📅 schedule #${schedule.id} (face): generated report — LINE auto-send disabled (PDPA — imgbb egress)`);
+      } catch (e) {
+        await record('failed', e.message);
+        await logHistory({
+          report_type: schedule.report_type, status: 'failed', error_message: e.message, report_family: 'face',
+        });
+        console.error(`📅 schedule #${schedule.id} (face) failed:`, e.message);
+      }
+      return;
+    }
+
+    if (family === 'lpr') {
+      try {
+        const range = reportRenderer.computeScheduledRange(schedule.report_type);
+        rangeFrom = range.from;
+        rangeTo = range.to;
+        rangeLabel = range.label;
+        const periodMap = { daily: 'yesterday', weekly: 'week', monthly: 'month' };
+        const period = periodMap[schedule.report_type] || 'today';
+        png = await reportRenderer.renderLprReportImage({
+          baseUrl: API_BASE_URL,
+          internalToken: INTERNAL_API_TOKEN,
+          brand,
+          period,
+          sections: (schedule.section_config && typeof schedule.section_config === 'object') ? schedule.section_config : {},
+          lang: 'th',
+          site_id: schedule.site_id || null,
+        });
+        const fnameDate = new Date(rangeFrom).toLocaleDateString('sv', { timeZone: tzForName });
+        fname = `report_lpr_${fnameDate}_${Date.now()}.png`;
+        await fs.promises.writeFile(path.join(REPORTS_DIR, fname), png).catch(() => {});
+        // PDPA: No LINE send for lpr; log success with no recipients
+        await record('success', null);
+        await logHistory({
+          report_type: schedule.report_type, range_from: rangeFrom, range_to: rangeTo,
+          image_layout: null, file_path: fname,
+          recipients_sent: null, sent_count: 0, total_recipients: 0,
+          status: 'success', report_family: 'lpr',
+        });
+        console.warn(`📅 schedule #${schedule.id} (lpr): generated report — LINE auto-send disabled (PDPA — imgbb egress)`);
+      } catch (e) {
+        await record('failed', e.message);
+        await logHistory({
+          report_type: schedule.report_type, status: 'failed', error_message: e.message, report_family: 'lpr',
+        });
+        console.error(`📅 schedule #${schedule.id} (lpr) failed:`, e.message);
+      }
+      return;
+    }
+
+    // ── Health/Analytics path (requires LINE config) ────────────────────
     const cfgRes = await pool.query('SELECT * FROM line_config WHERE id = 1');
     const cfg = cfgRes.rows[0];
     if (!cfg || !cfg.enabled || !cfg.channel_access_token) {
       await record('failed', 'LINE is not enabled / no channel access token');
-      await logHistory({ report_type: schedule.report_type, image_layout: schedule.image_layout, status: 'failed', error_message: 'LINE is not enabled / no channel access token' });
+      await logHistory({
+        report_type: schedule.report_type, image_layout: schedule.image_layout,
+        status: 'failed', error_message: 'LINE is not enabled / no channel access token',
+        report_family: family,
+      });
       console.warn(`📅 schedule #${schedule.id}: LINE not configured — skipped`);
       return;
     }
@@ -152,16 +247,17 @@ async function runScheduledReport(schedule) {
     const recipientIds = roster.filter(r => r.enabled && wanted.includes(r.id)).map(r => r.id);
     if (recipientIds.length === 0) {
       await record('failed', 'no enabled LINE recipients');
-      await logHistory({ report_type: schedule.report_type, image_layout: schedule.image_layout, status: 'failed', error_message: 'no enabled LINE recipients' });
+      await logHistory({
+        report_type: schedule.report_type, image_layout: schedule.image_layout,
+        status: 'failed', error_message: 'no enabled LINE recipients', report_family: family,
+      });
       console.warn(`📅 schedule #${schedule.id}: no recipients — skipped`);
       return;
     }
 
-    const title = REPORT_TITLE_TH[schedule.report_type] || schedule.report_type;
-    const brand = await getBrandForReport();
-    let png, fname, rangeFrom, rangeTo, rangeLabel;
+    const title = REPORT_TITLE_TH[family] || REPORT_TITLE_TH[schedule.report_type] || schedule.report_type;
 
-    if (schedule.report_type === 'health') {
+    if (family === 'health') {
       const sections = Array.isArray(schedule.health_sections) && schedule.health_sections.length
         ? schedule.health_sections : null;
       png = await reportRenderer.renderHealthReportImage({
@@ -175,6 +271,7 @@ async function runScheduledReport(schedule) {
       rangeTo    = new Date().toISOString();
       rangeLabel = '7 วันล่าสุด';
     } else {
+      // analytics (family === 'analytics')
       const range = reportRenderer.computeScheduledRange(schedule.report_type);
       rangeFrom  = range.from;
       rangeTo    = range.to;
@@ -188,9 +285,8 @@ async function runScheduledReport(schedule) {
       });
     }
 
-    const tzForName = await getDisplayTz();
     const fnameDate = new Date(rangeFrom).toLocaleDateString('sv', { timeZone: tzForName });
-    fname = `report_${schedule.report_type}_${fnameDate}_${Date.now()}.png`;
+    fname = `report_${family}_${fnameDate}_${Date.now()}.png`;
     await fs.promises.writeFile(path.join(REPORTS_DIR, fname), png).catch(() => {});
 
     const result = await lineSender.sendReportToLine({
@@ -207,8 +303,9 @@ async function runScheduledReport(schedule) {
         image_layout: schedule.image_layout || null, file_path: fname,
         recipients_sent: recipientIds.join(','), sent_count: result.sentCount,
         total_recipients: result.totalRecipients || recipientIds.length, status: 'success',
+        report_family: family,
       });
-      console.log(`📅 schedule #${schedule.id} (${schedule.report_type}) → sent to ${result.sentCount} LINE recipient(s)`);
+      console.log(`📅 schedule #${schedule.id} (${family}) → sent to ${result.sentCount} LINE recipient(s)`);
     } else {
       const errMsg = result.error || `sent ${result.sentCount}/${result.totalRecipients}`;
       await record('failed', errMsg);
@@ -217,13 +314,17 @@ async function runScheduledReport(schedule) {
         image_layout: schedule.image_layout || null, file_path: fname,
         recipients_sent: recipientIds.join(','), sent_count: result.sentCount || 0,
         total_recipients: result.totalRecipients || recipientIds.length,
-        status: 'failed', error_message: errMsg,
+        status: 'failed', error_message: errMsg, report_family: family,
       });
       console.error(`📅 schedule #${schedule.id} → LINE send failed:`, result.error);
     }
   } catch (e) {
+    const family = schedule.report_family || (schedule.report_type === 'health' ? 'health' : 'analytics');
     await record('failed', e.message);
-    await logHistory({ report_type: schedule.report_type, image_layout: schedule.image_layout, status: 'failed', error_message: e.message });
+    await logHistory({
+      report_type: schedule.report_type, image_layout: schedule.image_layout,
+      status: 'failed', error_message: e.message, report_family: family,
+    });
     console.error(`📅 schedule #${schedule.id} failed:`, e.message);
   }
 }

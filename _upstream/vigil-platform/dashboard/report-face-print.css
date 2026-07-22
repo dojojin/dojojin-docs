@@ -1,0 +1,43 @@
+/* Print overrides for the Person report render target (report-face-print.html).
+   Loaded AFTER index.css to neutralise the dashboard shell (body overflow:hidden,
+   .rpt-doc card chrome) and add A4 pagination rules. External file — CSP
+   style-src-elem 'self' forbids inline <style>. */
+
+html, body {
+  overflow: visible !important;
+  height: auto !important;
+  margin: 0;
+  background: #fff !important;
+}
+body {
+  width: 820px;
+  padding: 24px;
+  font-size: 13px;
+}
+#root.rpt-doc {
+  box-shadow: none;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  min-height: 0;
+  overflow: visible;
+  background: #fff;
+}
+
+/* Keep each suspect card / chart / header whole across an A4 page boundary.
+   NOT applied to .rpt-section so the long suspects section can paginate. */
+.cmp-card { break-inside: avoid; page-break-inside: avoid; }
+.rpt-head, .rpt-chartbox, .rpt-acc-item, .rpt-exec { break-inside: avoid; }
+.rpt-sec-head { break-after: avoid; }
+
+/* Keep the wide-layout grids at A4 width — the ≤768px responsive breakpoint
+   in index.css would otherwise stack the demographics charts and drop the
+   accessories tiles to 2 columns, diverging from the preview. */
+.rpt-2col { grid-template-columns: 1fr 1fr !important; }
+.rpt-acc-grid { grid-template-columns: repeat(4, 1fr) !important; }
+
+@page { size: A4; margin: 10mm; }
+
+@media print {
+  body { width: auto; padding: 0; }
+}

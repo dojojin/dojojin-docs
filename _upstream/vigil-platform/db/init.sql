@@ -67,6 +67,7 @@ CREATE TABLE IF NOT EXISTS cameras (
   model           VARCHAR(100),                 -- เช่น "FlexiDome 8100i"
   firmware        VARCHAR(50),
   serial_number   VARCHAR(100),
+  recording_nvr_id VARCHAR(100),                -- camera_id ของ NVR ที่บันทึกจริง (ถ้าไม่ได้บันทึกที่ตัวกล้องเอง)
 
   -- Location (สำหรับแผนที่)
   latitude        DOUBLE PRECISION,
@@ -128,6 +129,7 @@ CREATE TABLE IF NOT EXISTS events (
   object_id           VARCHAR(50),              -- track ID ของวัตถุที่ตรวจจับ
   object_class        VARCHAR(30),              -- "Person" / "Vehicle" / "Bicycle" / "Animal"
   likelihood          REAL,                     -- confidence score (0.0-1.0)
+  vehicle_type        VARCHAR(30),              -- LPR only — denormalized from license_plates (#089), avoids join in stats
 
   -- Snapshot
   snapshot_filename   VARCHAR(255),             -- ไฟล์ภาพที่บันทึก (relative path)
@@ -278,6 +280,12 @@ CREATE TABLE IF NOT EXISTS alert_rules (
   -- Behavior
   cooldown_seconds    INT DEFAULT 60,
   send_snapshot       BOOLEAN DEFAULT true,
+  -- Migration 044 — ตั้งค่าแล้ว rule กลายเป็น dwell alert: ยิงเมื่อมีคน
+  -- "ยังอยู่ในโซน" นานเกิน N วินาที (ไม่ยิงต่อ event); NULL = rule ปกติ
+  dwell_threshold_sec INT,
+  -- Migration 045 — likelihood ขั้นต่ำ (0..1): กรอง ghost detection;
+  -- event ที่ไม่มี likelihood ผ่านเสมอ; NULL = ไม่กรอง
+  min_likelihood      REAL,
   message_template    TEXT DEFAULT '🚨 [{camera}] {rule}
 ⏰ {time}
 👤 {object_class} ({likelihood})',
@@ -510,6 +518,7 @@ CREATE TABLE IF NOT EXISTS event_category_rules (
   rule_name     VARCHAR(200),
   event_type    VARCHAR(80),
   object_class  VARCHAR(40),
+  vehicle_type  VARCHAR(30),
   match_state   VARCHAR(10) DEFAULT 'true',
   priority      INT NOT NULL DEFAULT 0,
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()

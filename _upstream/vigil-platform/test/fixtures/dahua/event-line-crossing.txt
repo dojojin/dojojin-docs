@@ -1,0 +1,1 @@
+Code=CrossLineDetection;action=Start;index=0;data={"UTC":1781701300,"UTCMS":0,"EventID":12,"Direction":"LeftToRight","Object":{"ObjectID":99,"ObjectType":"Vehicle","BoundingBox":[100,200,800,600]},"Name":"LineCross1"}

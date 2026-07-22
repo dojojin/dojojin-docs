@@ -1,0 +1,577 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Product & Coding Review 2026-06-16 — Vigil Platform</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    /* report-only additions */
+    .score { display:flex; align-items:baseline; gap:6px; margin:4px 0 10px; }
+    .score .num { font-size:28px; font-weight:900; color:var(--accent); line-height:1; }
+    .score .den { font-weight:700; color:var(--dim); }
+    .pill { display:inline-flex; align-items:center; padding:2px 10px; border:1px solid var(--border);
+            border-radius:999px; background:var(--surface2); color:var(--dim); font-size:12px; }
+    .section-sep { border:none; border-top:1px solid var(--border); margin:2.5rem 0 0; }
+  </style>
+</head>
+<body>
+<div class="layout">
+<div class="main">
+
+  <h4>Product & Coding Review · 2026-06-16</h4>
+  <h1 class="ph">Vigil Platform — วิเคราะห์ระบบโดยรวมและคุณภาพโค้ดเชิงลึก</h1>
+
+  <p>
+    รายงานนี้ประเมินทั้งมุม product, architecture, operations, security, data, frontend,
+    reporting, multi-vendor ingestion และ coding practice ของระบบ Vigil Platform จากไฟล์จริงใน repository
+    และผล audit รอบ 4 วันที่ 2026-06-16
+  </p>
+
+  <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:1.5rem">
+    <span class="pill">Generated: 2026-06-16</span>
+    <span class="pill">Scope: Full repository review</span>
+    <span class="pill">Runtime: Docker + PM2</span>
+    <span class="pill">Frontend: Vanilla JS</span>
+    <span class="pill">Database: PostgreSQL 16</span>
+  </div>
+
+  <div class="ibox">
+    <h4>สารบัญ</h4>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:0.5rem">
+      <a href="#executive">ภาพรวม</a>
+      <a href="#scores">คะแนนประเมิน</a>
+      <a href="#product">Product Review</a>
+      <a href="#architecture">Architecture</a>
+      <a href="#components">Components</a>
+      <a href="#security">Security</a>
+      <a href="#operations">Operations</a>
+      <a href="#frontend">Frontend</a>
+      <a href="#data">Data & DB</a>
+      <a href="#risks">Risks</a>
+      <a href="#coding">Coding Deep Dive</a>
+      <a href="#conclusion">Conclusion</a>
+    </div>
+  </div>
+
+  <!-- ── Executive Summary ── -->
+  <hr class="section-sep" id="executive">
+  <h2>บทสรุปภาพรวม</h2>
+  <h4>Executive Summary</h4>
+
+  <div class="sbox">
+    Vigil Platform อยู่ในสถานะ "production-grade pragmatic system" มากกว่าระบบ prototype:
+    มี real runtime topology, auth boundary, multi-vendor ingestion, report delivery, health monitoring,
+    license/EULA, audit trail, backup, และ operational runbook ครบพอสำหรับการใช้งานจริง
+  </div>
+
+  <p>
+    จุดแข็งที่สุดของระบบนี้คือการเลือก architecture ที่ตรงกับโจทย์งาน CCTV/physical security จริง:
+    ไม่พยายามเป็น cloud SaaS ทั่วไป แต่ยืนบนแนวคิด self-hosted, local media, raw event history,
+    LINE notification สำหรับตลาดไทย, และการควบคุมข้อมูลตาม PDPA/ลูกค้าองค์กร
+  </p>
+
+  <p>
+    จาก repository ปัจจุบัน ระบบไม่ได้เป็นแค่ dashboard แสดง event แต่เป็น platform ที่มีวงจรครบ:
+    รับ event จาก Bosch/Hikvision/Dahua, normalize เข้าฐานข้อมูล, ส่ง WebSocket,
+    สร้าง alert ตาม rule, บันทึก clip/snapshot, สร้าง report, ส่ง LINE, ตรวจ health,
+    จัดการ license, และรองรับ operator/admin/auditor role
+  </p>
+
+  <div class="cg">
+    <div class="card">
+      <h3>Product maturity</h3>
+      <p>มี feature operational ครบ: monitoring, alert, report, health, audit, license, EULA, branding</p>
+    </div>
+    <div class="card">
+      <h3>Engineering maturity</h3>
+      <p>มี decisions/gotchas/runbooks ชัดเจน, route split แล้ว, worker split แล้ว, PM2 production runtime</p>
+    </div>
+    <div class="card">
+      <h3>Remaining maturity gap</h3>
+      <p>ยังต้องเพิ่ม integration smoke tests, health endpoint guard, backup temp cleanup, และ UI/i18n cleanup</p>
+    </div>
+  </div>
+
+  <h3>Fact ที่ยืนยันจาก repo / audit</h3>
+  <ul>
+    <li>Tracked code/docs subset ที่นับในรอบนี้ประมาณ 37,404 lines จาก <code>src</code>, <code>dashboard</code>, <code>test</code>, <code>scripts</code>, <code>db</code></li>
+    <li><code>src/routes/</code> มี 19 route modules หลัง refactor campaign</li>
+    <li><code>dashboard/page-*.js</code> มี 19 page modules หลัง frontend split</li>
+    <li><code>src/package.json</code> มี direct runtime dependencies 12 ตัว ถือว่าควบคุม dependency surface ได้ดี</li>
+    <li>PM2 ecosystem มี 7 apps: API, MQTT subscriber, media recorder, Hikvision, Dahua, report worker, alert worker</li>
+    <li>Database migration ล่าสุดเป็น <code>db/db_migration_045_alert_min_likelihood.sql</code></li>
+    <li>Audit รอบ 4 รัน syntax check, unit test, npm audit และ Docker compose config ผ่าน</li>
+  </ul>
+
+  <!-- ── Scores ── -->
+  <hr class="section-sep" id="scores">
+  <h2>คะแนนประเมินแบบวิศวกรรม</h2>
+  <h4>Assessment Scores</h4>
+
+  <p>คะแนนนี้เป็น opinion จาก evidence ใน repo ไม่ใช่ benchmark เชิงตัวเลขจาก production load test</p>
+
+  <div class="krow">
+    <div class="kpi">
+      <div class="kn">9.0</div>
+      <div class="kl">Product fit /10</div>
+    </div>
+    <div class="kpi">
+      <div class="kn">8.6</div>
+      <div class="kl">Architecture /10</div>
+    </div>
+    <div class="kpi">
+      <div class="kn">8.4</div>
+      <div class="kl">Security /10</div>
+    </div>
+    <div class="kpi">
+      <div class="kn">8.1</div>
+      <div class="kl">Code quality /10</div>
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr><th>มิติ</th><th>ประเมิน</th><th>เหตุผลหลัก</th><th>ช่องว่างที่เหลือ</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Product strategy</td>
+        <td><span class="badge b-green">Strong</span></td>
+        <td>แก้ pain จริง: vendor lock-in, LINE notification, self-hosting, Thai ops workflow</td>
+        <td>ยังควรทำ packaging/onboarding สำหรับลูกค้าใหม่ให้ซ้ำได้ง่ายขึ้น</td>
+      </tr>
+      <tr>
+        <td>Runtime architecture</td>
+        <td><span class="badge b-green">Strong</span></td>
+        <td>Docker สำหรับ infra, PM2 สำหรับ workers, pg_notify แยก event/alert/clip flow</td>
+        <td>health/details ยังหนัก และ Docker runtime smoke ยังไม่ได้ automated</td>
+      </tr>
+      <tr>
+        <td>Security</td>
+        <td><span class="badge b-green">Strong with watchlist</span></td>
+        <td>RBAC, CSP, private media, secret hygiene, EMQX auth, auth-gated static</td>
+        <td>ต้องมี integration tests ป้องกัน regression ที่ boundary</td>
+      </tr>
+      <tr>
+        <td>Maintainability</td>
+        <td><span class="badge b-green">Good</span></td>
+        <td>route split 19 files, docs/decisions/gotchas ดีมาก, helper-first pattern</td>
+        <td><code>cameras.js</code>, <code>stats.js</code>, <code>health.js</code> ยังใหญ่</td>
+      </tr>
+      <tr>
+        <td>Testing</td>
+        <td><span class="badge b-amber">Needs next layer</span></td>
+        <td>unit tests ผ่าน 43 tests, dependency audit clean</td>
+        <td>integration smoke tests ยังขาด</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- ── Product ── -->
+  <hr class="section-sep" id="product">
+  <h2>วิเคราะห์ระบบในฐานะ Product</h2>
+  <h4>Product Review</h4>
+
+  <h3>1. Product positioning ชัดและมีเหตุผล</h3>
+  <p>
+    Vigil Platform วางตัวเป็น CCTV analytics platform สำหรับองค์กรที่ต้องการควบคุมข้อมูลเอง
+    จุดยืนนี้แข็งแรง เพราะ media เป็นข้อมูลละเอียดอ่อน, latency สำคัญ, กล้องแต่ละ vendor มี event shape ไม่เหมือนกัน
+    และ operator ไทยมักใช้ LINE เป็นช่องทางแจ้งเตือนจริง
+  </p>
+
+  <div class="two">
+    <div class="card">
+      <h3>จุดดีด้าน product</h3>
+      <ul>
+        <li>รองรับ Thai-first workflow พร้อม English layer</li>
+        <li>LINE alert/report delivery ตรงกับพฤติกรรมผู้ใช้งานไทย</li>
+        <li>Self-hosted ช่วยเรื่อง PDPA และ vendor lock-in</li>
+        <li>Multi-vendor ลดการผูกกับ Bosch อย่างเดียว</li>
+        <li>มี branding/license/EULA ทำให้ productization จริงจัง</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>ความต่างจาก dashboard ทั่วไป</h3>
+      <ul>
+        <li>ไม่ได้แค่แสดง event แต่มี alert engine, report scheduler, health report</li>
+        <li>มี operational history: audit log, alert log, camera status log, report history</li>
+        <li>มี route และ data boundary สำหรับ private snapshots/media</li>
+        <li>มี gotchas จาก incident จริง สะท้อน production learning</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>2. Feature coverage ครบวงจรสำหรับ security operations</h3>
+  <table>
+    <thead><tr><th>Workflow</th><th>สิ่งที่ระบบรองรับ</th><th>คุณค่า</th></tr></thead>
+    <tbody>
+      <tr><td>Live monitoring</td><td>Events, snapshots, WebSocket, filters, map, stats</td><td>Operator เห็นเหตุการณ์ใกล้ real-time และ drill-down ได้</td></tr>
+      <tr><td>Alerting</td><td>Rule matching, cooldown, quiet hours, LINE recipients, push tokens</td><td>ลด noise และส่งเฉพาะเหตุการณ์ที่ต้อง action</td></tr>
+      <tr><td>Evidence</td><td>Snapshots, clips, media recorder, report history</td><td>มีหลักฐานย้อนหลัง ไม่ใช่แค่ log text</td></tr>
+      <tr><td>Operations</td><td>Health Check, camera status log, service controls, backup scripts</td><td>ดูแลระบบหลัง deploy ได้จริง</td></tr>
+      <tr><td>Governance</td><td>Admin/viewer/auditor, audit log, EULA, license</td><td>เหมาะกับลูกค้าองค์กรที่ต้องแยกสิทธิ์และตรวจสอบย้อนหลัง</td></tr>
+    </tbody>
+  </table>
+
+  <h3>3. จุดเด่นที่มีมูลค่าเชิงธุรกิจ</h3>
+  <ul>
+    <li><strong>Vendor abstraction:</strong> Bosch, Hikvision, Dahua normalize เข้า event model เดียว</li>
+    <li><strong>Local-first evidence:</strong> snapshot/media อยู่ local และ auth-gated</li>
+    <li><strong>LINE-native delivery:</strong> ตรงตลาดไทยมากกว่าการส่ง email อย่างเดียว</li>
+    <li><strong>White-label:</strong> branding และ primary color ช่วยให้ขายซ้ำหลายลูกค้าได้</li>
+    <li><strong>Operational memory:</strong> <code>GOTCHAS.md</code> และ <code>DECISIONS.md</code> ทำให้ incident knowledge ไม่หาย</li>
+  </ul>
+
+  <!-- ── Architecture ── -->
+  <hr class="section-sep" id="architecture">
+  <h2>วิเคราะห์ Architecture ภาพรวม</h2>
+  <h4>Architecture</h4>
+
+  <pre>Camera vendors
+  -> MQTT / ISAPI / CGI / RTSP
+  -> Ingester processes + media-recorder
+  -> PostgreSQL events + snapshots/clips metadata
+  -> api-server.js + routes + WebSocket
+  -> Vanilla JS dashboard + LINE/report workers</pre>
+
+  <h3>จุดที่ architecture แข็งแรง</h3>
+  <div class="two">
+    <div class="card">
+      <h3>Process separation</h3>
+      <p>การแยก <code>alert-worker</code>, <code>report-worker</code>, <code>media-recorder</code>, <code>mqtt-subscriber</code>,
+        <code>hikvision</code>, <code>dahua</code> ออกจาก API server ลด blast radius ได้ดี</p>
+    </div>
+    <div class="card">
+      <h3>Database-centered event pipeline</h3>
+      <p>PostgreSQL เป็น event ledger ที่ดีสำหรับระบบนี้ เพราะต้อง query history, aggregate stats, report, audit</p>
+    </div>
+    <div class="card">
+      <h3>pg_notify เหมาะกับ scale ปัจจุบัน</h3>
+      <p><code>LISTEN/NOTIFY</code> ให้ realtime glue ที่เบาและตรงโจทย์ ไม่ต้องเพิ่ม Kafka/Redis ก่อนจำเป็น</p>
+    </div>
+    <div class="card">
+      <h3>No framework frontend มีเหตุผล</h3>
+      <p>Vanilla JS ลด build complexity, ลด dependency risk, และเหมาะกับ dashboard ที่ deploy ผ่าน static assets</p>
+    </div>
+  </div>
+
+  <h3>จุดที่ architecture ยังควรระวัง</h3>
+  <ul>
+    <li><code>api-server.js</code> ยังเป็น composition root ขนาดใหญ่ 1,893 lines แม้ route split แล้ว</li>
+    <li><code>src/routes/cameras.js</code> 1,186 lines รวมหลาย concern: config, EMQX provision, probe, snapshot, audit, status</li>
+    <li><code>src/routes/health.js</code> รวม health detail, service control, report render/send-now ในไฟล์เดียว 631 lines</li>
+    <li>Event table scale/partition ยังเป็น deferred plan ไม่ใช่ default path</li>
+  </ul>
+
+  <div class="ibox">
+    <strong>Architectural verdict:</strong> โดยรวม architecture "เลือกน้อยแต่ถูก" มากกว่า "กระจาย service เกินจำเป็น"
+    การเลือก raw SQL, PM2, Docker, pg_notify, vanilla JS เป็นชุดที่ practical และ owner เข้าใจได้
+  </div>
+
+  <!-- ── Components ── -->
+  <hr class="section-sep" id="components">
+  <h2>วิเคราะห์ส่วนประกอบสำคัญของระบบ</h2>
+  <h4>Component Analysis</h4>
+
+  <h3>1. API Server และ Route Modules</h3>
+  <table>
+    <thead><tr><th>Route group</th><th>บทบาท</th><th>ประเมิน</th></tr></thead>
+    <tbody>
+      <tr><td><code>cameras.js</code></td><td>Camera config, license cap, EMQX provisioning, probes, snapshots, status log</td><td>สำคัญมากและมี guard เยอะ แต่ควรแตก helper/service เพิ่มเมื่อแตะครั้งใหญ่</td></tr>
+      <tr><td><code>health.js</code></td><td>Health details, service control, health report data/render/send</td><td>Feature ครบ แต่ endpoint หนัก ควรมี timeout/cache/duration metrics</td></tr>
+      <tr><td><code>stats.js</code> + <code>stats-summary-route.js</code></td><td>Aggregation, heatmap, summary, dwell, charts</td><td>ใช้ SQL ตรงประเด็น เหมาะกับ Postgres</td></tr>
+      <tr><td><code>line.js</code> + <code>alert-rules.js</code></td><td>LINE config, webhook, recipients, alert rule CRUD</td><td>ดีตรงมี recipient lifecycle และ quota visibility</td></tr>
+      <tr><td><code>reports.js</code> + <code>report-schedules.js</code></td><td>Report history, export, scheduled/on-demand report flow</td><td>แยกจาก worker ดี เหลือ smoke test สำหรับ worker down/fallback</td></tr>
+    </tbody>
+  </table>
+
+  <h3>2. Ingestion Layer</h3>
+  <div class="cg">
+    <div class="card">
+      <h3>Bosch MQTT</h3>
+      <p>เหมาะกับ ONVIF Profile M/MQTT flow, มี ignore list, event normalization, snapshot handling, appearance extraction</p>
+    </div>
+    <div class="card">
+      <h3>Hikvision ISAPI</h3>
+      <p>รองรับ alert stream, digest auth, smart events, face capture, snapshot stream distinction</p>
+    </div>
+    <div class="card">
+      <h3>Dahua CGI</h3>
+      <p>มี problem log แยกเพราะ quirks เยอะ เช่น event time, Smart Plan, stream fps, snapshot timing</p>
+    </div>
+  </div>
+
+  <h3>3. Media Recorder</h3>
+  <p><code>src/media-recorder.js</code> ใช้ ffmpeg rolling buffer + event-driven clip dump: มี backoff, stale pending cleanup, credential redaction และ integration กับ <code>pg_notify</code></p>
+
+  <h3>4. Alert Worker</h3>
+  <p>การย้าย alert evaluation ออกเป็น <code>alert-worker</code> ดีมาก เพราะ rule matching, LINE sending, cooldown, quiet hours และ push notification ไม่ควร block API server</p>
+
+  <h3>5. Report Worker และ Report Renderer</h3>
+  <p>Analytics report ใช้ Puppeteer/HTML, Health Report PNG ใช้ SVG + sharp เพื่อเลี่ยง Puppeteer hang path ตาม gotcha เดิม</p>
+
+  <!-- ── Security ── -->
+  <hr class="section-sep" id="security">
+  <h2>วิเคราะห์ Security Posture</h2>
+  <h4>Security Review</h4>
+
+  <div class="sbox">
+    <strong>ภาพรวม:</strong> security posture ดีขึ้นมากหลัง hardening รอบก่อน โดยเฉพาะ CSP, auth gate,
+    private media, RBAC, secret hygiene และ EMQX auth แต่ยังต้องเพิ่ม integration smoke tests
+  </div>
+
+  <h3>จุดแข็ง</h3>
+  <ul>
+    <li><strong>Global <code>/api</code> auth gate:</strong> ลดโอกาสลืมใส่ auth middleware ใน route ใหม่</li>
+    <li><strong>RBAC:</strong> admin/viewer/auditor/internal token แยกหน้าที่ชัดเจน</li>
+    <li><strong>Private media:</strong> snapshots/media/dashboard private assets ไม่ถูก public โดย default</li>
+    <li><strong>CSP:</strong> dashboard และ <code>/others</code> มี Content-Security-Policy ที่ลด CDN/inline script risk</li>
+    <li><strong>Credential handling:</strong> camera credential encryption, log redaction, env ignored</li>
+    <li><strong>EMQX auth:</strong> MQTT <code>1883</code> เปิด LAN ได้โดยมี AUTHN เป็น boundary</li>
+    <li><strong>Audit log:</strong> camera/user/admin actions มี audit trail ช่วย governance</li>
+  </ul>
+
+  <h3>จุดที่ต้องคุมต่อ</h3>
+  <table>
+    <thead><tr><th>Risk</th><th>สถานะ</th><th>แนวทางที่ควรทำ</th></tr></thead>
+    <tbody>
+      <tr><td>Route/media auth regression</td><td><span class="badge b-amber">Open guard gap</span></td><td>เพิ่ม smoke tests ยิง <code>/snapshots/*</code>, <code>/media/*</code>, admin write routes แบบไม่มี token</td></tr>
+      <tr><td>EMQX auth drift</td><td><span class="badge b-amber">Accepted risk</span></td><td>เพิ่ม deployment smoke: anonymous publish fail, camera credential pass</td></tr>
+      <tr><td>Internal token misconfig</td><td><span class="badge b-amber">Runtime risk</span></td><td>Production fail-fast หรือ health warning ถ้า <code>INTERNAL_API_SECRET</code> ไม่พร้อม</td></tr>
+      <tr><td>Backup transient secret bundle</td><td><span class="badge b-amber">Local-at-rest window</span></td><td><code>trap cleanup</code>, temp dir 700, <code>umask 077</code></td></tr>
+    </tbody>
+  </table>
+
+  <!-- ── Operations ── -->
+  <hr class="section-sep" id="operations">
+  <h2>วิเคราะห์ Operations และ Reliability</h2>
+  <h4>Operations & Reliability</h4>
+
+  <h3>จุดเด่น operational</h3>
+  <ul>
+    <li>PM2 ecosystem กำหนด 7 apps ชัดเจน พร้อม autorestart, max restart, log timestamp</li>
+    <li>Docker Compose แยก PostgreSQL และ EMQX พร้อม healthcheck และ persistent volumes</li>
+    <li><code>scripts/services.sh</code> เป็น entrypoint ให้ operator ไม่ต้องจำ PM2 commands</li>
+    <li><code>service_start.md</code> มี runbook ครอบคลุม Docker, PM2, Cloudflare, macOS Local Network Privacy</li>
+    <li>Backup script มี local dump และ offsite encrypted remote path</li>
+    <li>Health Check รวม DB, camera status, storage, services, plaintext credential warning</li>
+  </ul>
+
+  <div class="two">
+    <div class="card">
+      <h3>Singleton/PID lock</h3>
+      <p>ช่วยกัน duplicate ingester/recorder ที่ทำให้ event เข้าเบิ้ลหรือ clip pipeline ซ้อนกัน</p>
+    </div>
+    <div class="card">
+      <h3>Backoff/restart policy</h3>
+      <p>PM2 restart guard + recorder backoff ลด crash loop และ noise</p>
+    </div>
+    <div class="card">
+      <h3>Incident-driven docs</h3>
+      <p>GOTCHAS จาก real incidents ลดเวลา debug ซ้ำ เช่น Safari ITP, Cloudflare cache, macOS LNP</p>
+    </div>
+    <div class="card">
+      <h3>Retention</h3>
+      <p>มี retention สำหรับ events, snapshots, clips, report PNG, pending recipients และ appearance data</p>
+    </div>
+  </div>
+
+  <div class="wbox">
+    <strong><code>/api/health/details</code> debt:</strong> Health page ควรเบาและ predictable
+    แต่ปัจจุบันทำ live diagnostics หลายชั้นทุก request — ควรเพิ่ม cache 5-15s, timeout per section
+  </div>
+
+  <!-- ── Frontend ── -->
+  <hr class="section-sep" id="frontend">
+  <h2>วิเคราะห์ Frontend และ UX Engineering</h2>
+  <h4>Frontend Review</h4>
+
+  <p>Frontend ใช้ Vanilla JS แบบ module-per-page: ไม่มี build step, deploy ง่าย, dependency ต่ำ, debug ตรงไปตรงมา
+    หลัง split แล้ว <code>dashboard/dashboard.js</code> ยังเป็น core 1,378 lines และ page modules 19 files</p>
+
+  <div class="two">
+    <div class="card">
+      <h3>จุดดี</h3>
+      <ul>
+        <li>แยกหน้าเป็น <code>dashboard/page-*.js</code> แล้ว</li>
+        <li><code>dashboard/i18n.js</code> มี Thai/English layer ชัดเจน</li>
+        <li>มี local vendor assets ลด CDN risk</li>
+        <li>มี cache-busting สำหรับ dashboard JS</li>
+        <li>มี design-token direction และ SVG icon system</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>จุดที่ยังเป็น debt</h3>
+      <ul>
+        <li>ยังมี hardcoded Thai/English dynamic strings ในบาง page modules</li>
+        <li>ยังมี emoji UI legacy จำนวนมาก</li>
+        <li>ยังมี hardcoded colors ในบางส่วน</li>
+        <li><code>page-stats.js</code> 1,483 lines, <code>page-camera-settings.js</code> 1,072 lines</li>
+        <li>การใช้ <code>innerHTML</code> ต้อง maintain discipline เรื่อง <code>escapeHtml()</code></li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ── Data ── -->
+  <hr class="section-sep" id="data">
+  <h2>วิเคราะห์ Data Model, SQL และ Migration</h2>
+  <h4>Data & Database</h4>
+
+  <h3>จุดแข็งของ data architecture</h3>
+  <ul>
+    <li>ใช้ PostgreSQL เป็น event/history store เหมาะกับ query/report/audit</li>
+    <li>แยก camera config JSON กับ runtime DB state ชัดเจน</li>
+    <li>มี <code>events</code>, <code>appearances</code>, <code>alert_logs</code>, <code>report_history</code>, <code>audit_log</code> ครอบคลุม</li>
+    <li>มี migration runner ที่ fail-fast และบันทึกใน <code>schema_migrations</code></li>
+  </ul>
+
+  <div class="two">
+    <div class="card">
+      <h3>สิ่งที่ทำได้ดี</h3>
+      <ul>
+        <li>ส่วนใหญ่ใช้ <code>$n</code> parameter placeholders</li>
+        <li>dynamic update fields มักมาจาก allowlist</li>
+        <li>query/report logic อ่านตรงกับ business question</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>สิ่งที่ต้อง guard</h3>
+      <ul>
+        <li>ห้ามเอา request input ต่อ string SQL โดยตรง</li>
+        <li>ORDER BY/column/update field ต้องผ่าน allowlist</li>
+        <li>migration ต้อง idempotent และ backup ก่อนแตะ data เดิม</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ── Risks ── -->
+  <hr class="section-sep" id="risks">
+  <h2>ความเสี่ยงที่เหลือและลำดับจัดการ</h2>
+  <h4>Risks & Next Actions</h4>
+
+  <table>
+    <thead><tr><th>Priority</th><th>เรื่อง</th><th>ทำไมสำคัญ</th><th>Action ที่แนะนำ</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><span class="badge b-red">P1</span></td>
+        <td>Integration smoke tests</td>
+        <td>กัน media/auth/CSP/RBAC regression ซึ่งเป็น boundary สำคัญสุด</td>
+        <td>เพิ่ม smoke tests สำหรับ <code>/</code>, <code>/api</code>, <code>/snapshots</code>, <code>/media</code>, admin writes, WebSocket</td>
+      </tr>
+      <tr>
+        <td><span class="badge b-amber">P2</span></td>
+        <td><code>/api/health/details</code> guard</td>
+        <td>ลดโอกาส Health page สร้าง load เองเมื่อ data/media โต</td>
+        <td>เพิ่ม cache 5-15s, timeout per section, duration metrics</td>
+      </tr>
+      <tr>
+        <td><span class="badge b-amber">P2</span></td>
+        <td>Backup transient secret bundle</td>
+        <td>ลด secret-at-rest window ถ้า backup interrupted</td>
+        <td>ใช้ temp dir 700, <code>trap cleanup</code>, <code>umask 077</code></td>
+      </tr>
+      <tr>
+        <td><span class="badge b-amber">P2</span></td>
+        <td>EMQX auth smoke</td>
+        <td>MQTT port เปิด LAN ตาม accepted risk จึงต้องพิสูจน์ auth ทุก deployment</td>
+        <td>anonymous publish fail + credentialed publish pass</td>
+      </tr>
+      <tr>
+        <td><span class="badge b-green">P3</span></td>
+        <td>UI/i18n/design cleanup</td>
+        <td>เพิ่ม product polish และ white-label consistency</td>
+        <td>ทำ opportunistic เมื่อแตะ page เดิม ไม่ทำ sweep ใหญ่</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- ── Coding Deep Dive ── -->
+  <hr class="section-sep" id="coding">
+  <h2>วิเคราะห์การเขียนโค้ดของระบบแบบเจาะลึก</h2>
+  <h4>Deep Coding Review</h4>
+
+  <h3>1. Coding philosophy: pragmatic, incident-driven, production-aware</h3>
+  <p>โค้ดของระบบนี้มีลักษณะ pragmatic ชัดเจน: ไม่ over-engineer ด้วย framework/ORM/microservices เกินจำเป็น
+    แต่เพิ่ม guard ตาม incident จริง เช่น Safari ITP, Cloudflare cache, EMQX broker, macOS LNP,
+    Health Report SVG emoji crash, camera invisible character</p>
+
+  <h3>2. Module boundaries</h3>
+  <table>
+    <thead><tr><th>Layer</th><th>Pattern ที่เห็น</th><th>คุณภาพ</th><th>ข้อควรปรับ</th></tr></thead>
+    <tbody>
+      <tr><td>Routes</td><td><code>module.exports = function routes(app, pool, deps)</code></td><td>ดี: dependency injection แบบง่าย</td><td>ไฟล์ใหญ่ควรแตก domain helpers</td></tr>
+      <tr><td>Workers</td><td>process แยก + DB/HTTP/pg_notify integration</td><td>ดีมาก: blast radius ต่ำกว่า monolith loop</td><td>เพิ่ม worker health smoke tests</td></tr>
+      <tr><td>Helpers</td><td><code>routeError</code>, <code>digestAuth</code>, <code>getSystemSetting</code>, <code>normalizeTimeOfDay</code></td><td>ดี: helper-first เริ่มชัด</td><td>ควร extract เพิ่มจาก large routes</td></tr>
+      <tr><td>Frontend pages</td><td>global functions/page modules</td><td>เหมาะกับ vanilla JS แต่ต้องมี discipline</td><td>เพิ่ม shared render utilities</td></tr>
+    </tbody>
+  </table>
+
+  <h3>3. Error handling</h3>
+  <ul>
+    <li>Backend เริ่มมี <code>routeError</code> helper และหลาย route แยก expected validation error กับ server error</li>
+    <li>Network/camera/probe errors ควร sanitize เพื่อไม่ leak internal details เกินจำเป็น</li>
+    <li>Health endpoint ควร degrade section แทน fail ทั้ง response</li>
+  </ul>
+
+  <h3>4. SQL coding</h3>
+  <div class="wbox">
+    Checklist ที่ควร enforce ใน review: user input ต้องเข้าผ่าน <code>$n</code>; dynamic column/table/order field ต้องผ่าน allowlist;
+    SQL fragments ที่ interpolate ได้ต้องเป็น constants หรือ derived จาก enum เท่านั้น
+  </div>
+
+  <h3>5. Async/concurrency design</h3>
+  <ul>
+    <li>ใช้ <code>pg_notify</code> เป็น event bus เบา ๆ เหมาะกับ scale ปัจจุบัน</li>
+    <li>ใช้ <code>execFile</code>/<code>spawn</code> กับ arg array ในหลายจุด ลด shell injection risk</li>
+    <li>มี PM2 restart/backoff ลดผลกระทบจาก transient failures</li>
+    <li>ควรเพิ่ม timeout และ cancellation discipline ใน health/worker probes</li>
+  </ul>
+
+  <h3>6. ไฟล์ที่ควร watch เป็นพิเศษ</h3>
+  <table>
+    <thead><tr><th>File</th><th>Lines</th><th>เหตุผลที่ควร watch</th></tr></thead>
+    <tbody>
+      <tr><td><code>src/api-server.js</code></td><td>1,893</td><td>composition root สำคัญ ต้องไม่เพิ่ม business logic กลับเข้าไป</td></tr>
+      <tr><td><code>src/routes/cameras.js</code></td><td>1,186</td><td>หลาย concern รวมกัน: config, probe, EMQX, snapshot, license, audit</td></tr>
+      <tr><td><code>src/ingesters/dahua-cgi.js</code></td><td>1,281</td><td>Dahua quirks เยอะและ incident-prone</td></tr>
+      <tr><td><code>dashboard/page-stats.js</code></td><td>1,483</td><td>stats UX + charts + drill-down complexity สูง</td></tr>
+      <tr><td><code>dashboard/i18n.js</code></td><td>1,547</td><td>เป็น i18n source ใหญ่ ต้องรักษา parity th/en</td></tr>
+      <tr><td><code>src/report-renderer.js</code></td><td>924</td><td>report path มี Thai/font/PDF/PNG/SVG constraints สูง</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ── Conclusion ── -->
+  <hr class="section-sep" id="conclusion">
+  <h2>สรุปสุดท้าย</h2>
+  <h4>Conclusion</h4>
+
+  <p>Vigil Platform เป็นระบบที่มี foundation แข็งแรงสำหรับตลาด CCTV analytics แบบ self-hosted:
+    product fit ดี, architecture pragmatic, security posture ดีขึ้นมาก, operations มี runbook,
+    และ codebase มี memory จาก incident จริงอย่างละเอียด</p>
+
+  <div class="sbox">
+    <strong>Verdict:</strong> ระบบพร้อมใช้งาน production มากกว่าระบบทั่วไปในระดับเดียวกัน
+    สิ่งที่ควรทำต่อไม่ใช่ rewrite แต่คือเพิ่ม automated confidence layer:
+    integration smoke tests, health endpoint guard, backup cleanup hardening, EMQX auth smoke,
+    และ opportunistic UI/i18n cleanup
+  </div>
+
+  <h3>Evidence used</h3>
+  <ul>
+    <li><code>CODEX_Audit4rd.md</code> audit result, 2026-06-16</li>
+    <li><code>ARCHITECTURE.md</code>, <code>DECISIONS.md</code>, <code>GOTCHAS.md</code>, <code>ROADMAP.md</code>, <code>SKILL.md</code>, <code>service_start.md</code></li>
+    <li><code>src/package.json</code>, <code>ecosystem.config.js</code>, <code>docker-compose.yml</code></li>
+    <li>Repository metrics from <code>find</code>, <code>wc -l</code>, route/page module inventory</li>
+    <li>Prior validation: JS syntax checks, unit tests, npm audit, Docker compose config, PM2 status from audit round 4</li>
+  </ul>
+
+  <p style="color:var(--dim);font-size:12px;margin-top:2rem">
+    Not validated in this report: live browser screenshot, live endpoint auth matrix, real LINE delivery,
+    real Docker container state, real camera MQTT auth smoke, and production-scale EXPLAIN.
+  </p>
+
+</div><!-- .main -->
+</div><!-- .layout -->
+</body>
+</html>

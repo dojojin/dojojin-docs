@@ -44,6 +44,8 @@ Do not edit code until the owner approves, unless the owner’s message already 
 
 For bug / unexpected-behavior tasks, reproduce at runtime before proposing a fix (real SQL on real schema, real endpoint/response shape, real logs) — an unreproduced fix is an Opinion, not a Fact. Verify with the same repro after fixing. See `AGENTS.md` §3.
 
+Every actionable command runs the owner's **PLAN → EXECUTE → AUDIT → STOP → COMMIT** cycle (Working Agreement #4 — `AGENTS.md` §3, `CLAUDE.md` WA #4): plan/spec first, execute only fully-specced mechanical work, re-run the repro and audit after, then **STOP and wait for explicit confirmation — never commit on your own**. Green-light to execute (`ทำเลย`/`จัดการเลย`) is not green-light to commit.
+
 ---
 
 ## Rules to keep in mind
@@ -63,6 +65,7 @@ For bug / unexpected-behavior tasks, reproduce at runtime before proposing a fix
 - Backup before destructive or data-touching migrations.
 - Preserve copyright headers in `.js` files.
 - Do not add `Co-Authored-By` trailers.
+- Follow the PLAN → EXECUTE → AUDIT → STOP → COMMIT cycle (Working Agreement #4); never commit until the owner confirms.
 
 ---
 

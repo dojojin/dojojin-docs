@@ -3,11 +3,167 @@
 > Companion to [CLAUDE.md](CLAUDE.md). Pending work + strategic
 > directions. For shipped work see [CHANGELOG.md](CHANGELOG.md);
 > for design rationale see [DECISIONS.md](DECISIONS.md).
-> Last updated: 2026-06-08
+> Last updated: 2026-07-22
 
 ---
 
 ## 🔜 Pending / Roadmap
+
+### CODEX Audit 5th (optimization) — ✅ 10/12 shipped, 2 remain (decision #220, 2026-07-22)
+
+> เต็ม: [`CODEX/CODEX_Audit_5th_Audit_part_optimization.md`](CODEX/CODEX_Audit_5th_Audit_part_optimization.md) — 12 finding. **Shipped 10/12** (2026-07-21–22, commits `0b40332` `8f46ca6` `a9c9680` `195d743` `053ebe6` `869cfe6` `1a2c7c2` `530ea78` `b03786e` `5312c9f` `aa3a3da` `afe9e28` `bfe9e9f` `1ac1275` `e30de83`): CEN-001–006, EDGE-001, EDGE-003 (NanoMQ half), EDGE-004, EDGE-005. **CEN-005 closed as measured-not-needed** — real `EXPLAIN ANALYZE` showed OFFSET depth isn't the bottleneck at current scale (join plan / `COUNT(*) OVER()` is); keyset would have cost the jump-to-page UI for zero perf gain, so it wasn't implemented. Full narrative → decision #220.
+
+- [ ] **เหลือ 2 finding — รอดูตัวเลขจริงก่อน ไม่เร่งด่วน (ไม่มี incident บ่งชี้):**
+  - **CEN-007 (ครึ่งหลัง)** — pool wait metrics ✅ มีแล้ว (`health.js` `waiting_peak`); ยังไม่มี query-concurrency limiter จำกัด report/stats หนักๆ พร้อมกัน
+  - **EDGE-002 (ครึ่งหลัง)** — SD-status probe stagger ✅ มีแล้ว (เฉพาะ Bosch onvif poll); ยังไม่มี global concurrency limiter ครอบ `_fetchJpeg`/heartbeat/preview/scan ทั้งหมด + per-camera cooldown + probe/timeout counter ใน heartbeat
+
+**ยังไม่ได้อ่าน (มีไฟล์อยู่แล้ว, commit `98b183e`):** [`CODEX/CODEX_Audit_5th_part_security.md`](CODEX/CODEX_Audit_5th_part_security.md) · [`CODEX/CODEX_Audit_6th_live_pentest_summary.md`](CODEX/CODEX_Audit_6th_live_pentest_summary.md)
+
+### Per-Site Access Control (Site-Scoped Viewer) — ✅ P1-P5 + D1-D3 VERIFIED DONE 2026-07-03 (code-audit, not just doc)
+> เป้า: user แยกไซต์ (VSS/BMA/Phuket) = **viewer ที่ act ได้ (ack+comment face & LPR) แต่ตั้งค่าไม่ได้** และเห็น/act เฉพาะ site ตัวเอง. **ไม่ต้อง role ใหม่** — `viewer` + `user_sites` (migration 054). role/write-block layer เสร็จแล้ว (config admin-gated ครบ).
+- [x] **P1** site resolver — `req.user.allowedSites` set ทุก request (`api-server.js:615`) + `siteWhere()` helper (`auth.js:441-443`)
+- [x] **P2** read enforcement — `siteWhere()` เรียกใช้จริง **49 จุด** ข้าม 9 ไฟล์ (faces/lpr-query/lpr-alerts/events/stats/appearances/reports/ops/stats-summary-route)
+- [x] **P3** act enforcement — `POST /api/face-matches/:id/ack` และ `POST /api/lpr/alerts/:id/ack` เช็ค `req.user.isSiteScoped` + verify target camera's site ก่อนเขียน (403 ถ้าไม่อยู่ใน allowed sites)
+- [x] **P4** config-block — ยืนยันแล้วว่า admin-gated ครบ (manual verify; ยังไม่มี automated regression test — minor, ไม่ใช่ security gap)
+- [x] **P5** admin UI — `PUT /api/users/:id/sites` (`routes/users.js:54`) + Settings›Users มี site multi-select ต่อ viewer แล้ว (`page-user-mgmt.js:253-303`)
+- [x] **D1 (health scope)** — moot: `GET /api/health/details` gate ด้วย `requireAdminOrAuditor` อยู่แล้ว → viewer เข้าไม่ถึง endpoint นี้เลยไม่ว่า site scope จะเป็นอะไร
+- [x] **D2 (fail-open policy)** — decided+implemented: fail-closed. `siteWhere(null)`=ALL (admin/auditor sentinel), `siteWhere([])`=`AND FALSE` (viewer ไม่มี `user_sites` row = เห็นศูนย์)
+- [x] **D3 (global data read)** — confirmed: `GET /api/lpr/gates` ไม่มี role gate → viewer อ่าน reference list (watchlist/gates/vehicle-types) ได้ตามที่ตั้งใจ, เฉพาะ hits/events ที่ scope ตาม site
+> แผนเต็ม+endpoint audit เดิม: [`docs/superpowers/plans/2026-07-02-site-rbac.md`](docs/superpowers/plans/2026-07-02-site-rbac.md) (เขียนตอนวางแผน — โค้ดตามทันหมดแล้วเมื่อเช็ค 2026-07-03) · related `project_multisite_camera_sites` (RLS Tier-2 ยัง deferred — app-layer พิสูจน์ตัวแล้ว, defense-in-depth ทำทีหลังได้)
+- **↳ Per-Site Event Categories + Stats dashboard** — 📋 PLANNED 2026-07-02 (**for Sonnet**, depends on site-RBAC P1). Stats page (สถิติเหตุการณ์) + จัดการหมวดหมู่ Event กลายเป็น per-site: `event_categories` += `site_id` (unique per site); dashboard เดียวกันทุก site ต่างที่ category; "ทั้งหมด" = union ของทุก site (multi-site users). 🔴 **BLOCKER invariant:** rule `camera_id IS NULL` = cross-site wildcard → ต้อง constrain `e.camera_id IN (cameras ของ site)` ทุก subquery เสมอ (`site_id` แค่คุมว่าโชว์ card ไหน). Phases SC0-SC6 + coding how-to + leak-test: [`docs/superpowers/plans/2026-07-02-site-event-categories.md`](docs/superpowers/plans/2026-07-02-site-event-categories.md)
+
+### LPR System Settings + เฝ้าระวัง re-architecture (Phase F-R) — ✅ RF1-RF4 DONE 2026-06-21 (RF5 deferred)
+
+> เจ้าของสั่ง: แท็บ "เฝ้าระวัง" หน้า LPR = **แสดงผลอย่างเดียว**; ส่วนตั้งค่าทั้งหมดย้ายไป
+> **การตั้งค่า > การตั้งค่าระบบ LPR**. แผนเต็ม + เหตุผล: [`docs/superpowers/plans/2026-06-18-lpr-receiver.md`](docs/superpowers/plans/2026-06-18-lpr-receiver.md) (§ Phase F-R).
+> แบ่ง Phase ตามเส้น "ต้อง restart PM2 ไหม" — frontend block ก่อน แล้ว backend.
+
+- [x] ~~**RF1**~~ — done 2026-06-21 (commit `4191628`). gallery `#lprTabWatchlist` → read-only: `_renderWatchlistRO` (chips `lprWlRoBar` + cards `lprWlRoList`, ไม่มีฟอร์ม/toggle/delete) + hint ชี้ไป Settings.
+- [x] ~~**RF2**~~ — done 2026-06-21 (commit `4191628`). ย้าย watchlist mgmt (ฟอร์ม+group bar+editable list, **คง id เดิม** reuse functions) → Settings › ระบบ LPR (`#set-lpr` card); + **group manager** (rename/สี/ลบ/เพิ่ม) ใหม่; backend `PATCH /api/lpr/watchlist/groups/:id`. ⚠️ incident: harness แก้ groups จริง → กู้แล้ว (GOTCHAS #95).
+- [x] ~~**RF3**~~ — done 2026-06-21 (commit `af4cda2`). watchlist ref-image = drag&drop zone `#wlDrop` (drop+click, instant preview, clear) → existing sharp 400×400 endpoint. drag listeners ใน `_bindStaticHandlers` (addEventListener, CSP) + ACTION_MAP `wlDropClear`.
+- [x] ~~**RF4**~~ — config (3 ส่วนครบ 2026-06-21):
+  - [x] ~~**LPR retention**~~ — done 2026-06-21 (commit `aed4428`). **decoupled 2 setting:** `lpr_image_retention_days`=7 (รูป `snapshots/lpr/` — PII+disk) + `lpr_retention_days`=30 (rows anprAlarm+license_plates). `src/lpr-retention.js` (`enforceLprRetention`: per-file mtime+rmdir empty date-dir, เว้น `lpr-watchlist/` sibling; batched row delete; image capped ≤ meta) + api-server `_runLprRetention` schedule 120s/daily + 2 validator + `db_migration_lpr_retention.sql` (idempotent). verified e2e 11/11. **+ UI fallback** (รูปถูกลบ → plaque/vehicle-vector ใน gallery modal, commit `5859dc2`). **apply ตอน api-server restart** (no-op จนกว่า LPR cutover). ⚠️ gap เดิม `enforceSnapshotRetention` ข้าม subdir = สาเหตุ `snapshots/lpr/` ไม่เคยถูกลบ — ปิดแล้ว
+  - [x] ~~**จุดเข้า-ออก (gate) — config**~~ — done 2026-06-21 (commit `7b8e99d`). อยู่ใน **Settings › ระบบ LPR** (`data-sec=lpr` + `#set-lpr` + `loadLprSettings`, `page-lpr-settings.js`). table `lpr_gates` (id/name/camera_id/rules JSONB) + `routes/lpr-gates.js` CRUD (verified 10/10) + UI lane→เข้า/ออก/ไม่นับ (CSP data-action). **consumption (filter by gate + direction stats) = RF5/increment ถัดไป** ยังไม่ wire. migration apply ตอน restart
+  - [x] ~~**ประเภทรถที่แสดงผล**~~ — done 2026-06-21 (commit `5b839a2`). card ใน Settings›LPR: toggle visibility + label override ต่อ vehicle_type → เก็บ JSON `lpr_vehicle_types` (system_settings) + GET/PUT `/api/lpr/vehicle-types`; page-lpr.js `_lprVType` ใช้ label override + donut/filter ซ่อน `on:false`. verified e2e 8/8
+- [x] ~~**RF5 + Tier-1**~~ — ✅ done 2026-06-23 (commit `3e49b60`), **verified กับ data สด 2026-07-03**. per-camera direction: `cameras.lpr_direction` (in/out, migration 063) + `/api/lpr/stats` direction agg (join `c.id=e.camera_id`, BKK hour เท่า hourly) + `PUT /api/lpr/camera-direction` + chart `lprChDir` (in/out / fallback "ผ่าน") + assignment UI Settings›LPR (scope cam_role='lpr'). **ไม่ infer** ทิศ (operator-set). `lpr_gates` (per-lane) = latent advanced ไม่แตะ. **Verify:** ตั้ง `HKT-ANPR-UVSS1 = 'เข้า'` ผ่าน UI จริง → เช็ค DB confirm → กราฟ "ทิศทางรายชั่วโมง" ขึ้นเส้น "ขาเข้า" (`--status-ok`) พร้อมตัวเลขจริงตามชั่วโมง ถูกต้อง.
+- [x] ~~**RF-IMG**~~ — done 2026-06-23 (commit `a96ee28`, live). ย่อ scene ตอน ingest ใน `lpr-core.js` (`resizeScene`: `sharp().rotate().resize(W,H,{fit:inside,withoutEnlargement}).jpeg({quality})`, default **1080p/q80**, cache settings 60s, resize-fail→เก็บต้นฉบับ ไม่ทิ้งรูป; **plate ไม่แตะ**). resize อยู่ใน lpr-core → ทำงานใน **lpr-receiver** (ingest path จริง). settings GET/PUT `/api/lpr/scene-image` (routes/lpr-gates.js) + migration 061 seed `lpr_scene_resolution`/`lpr_scene_quality` + UI Settings›LPR card. self-check 4096×2160→1920×1013 (noise worst-case −94%). 🟡 −% จริง + lock default รอ sample กล้องสด (LPR data ยังไม่ไหล). forward→CIB moot (กล้องชี้ CIB ตรง ISAPI repoint).
+- [x] ~~**RF-ALERT**~~ — done 2026-06-23 (commits `f9252ed` backend + `f2082b8` frontend, main). `GET /api/lpr/alerts` = anprAlarm ⨝ active watchlist + LEFT JOIN `lpr_alert_acks` (migration 060) paginate server-side; `/count` (today+unacked); `POST /:id/ack` (mirror FP5). Frontend: alarm strip overview + tab "การแจ้งเตือน" (badge/period/group/search/pager 15) + alert modal (captured↔reference side-by-side + ack+log). 🟡 เหลือ: browser-check ด้วย data จริง (LPR ยังไม่ไหล) + LINE push (LPR ส่ง `new_event` ไม่ใช่ `alert_event` → ยังไม่เข้า alert-engine) + reference-image upload UI.
+- [ ] **LPR Scale — Search + File Storage** — 📋 **PLANNED 2026-07-01** (do before full deploy, ~10M rec/เดือน = 120M/ปี). ปัจจุบัน: unpartitioned + `OFFSET` + exact `COUNT(*)` (ช้าตาม N) + scene JPG 317KB×ล้าน = disk driver. แผน 3 เฟส: **P0 now** (86k = ยังไหว ไม่ต้องทำ) → **P1 ก่อน cutover**: keyset/cursor pagination แทน OFFSET (เลิก jump-to-page → "โหลดเพิ่ม") + ตัด exact count (ใช้ estimate) + default bounded window + retention prune แบบ drop-dir-by-age → **P2 full scale**: monthly RANGE partition บน `event_time` (retention=DROP PARTITION) + parse fields ที่ filter จริงเป็น indexed column (เลิก LIKE rawXml) + parse used-fields→column (rawXml trim = HOLD, keep-set ยังไม่นิ่ง). **Storage:** prod=Linux → disk เป็น sizing (740GB@7d ลง server ได้, sharding date/cam/4h-slot พอแล้ว—verified worst 10.5k/dir, XFS/ext4 รับได้); Postgres partition host-independent รันบน Linux ปกติ; object-storage = optional ops win ไม่ใช่ prerequisite. แผนเต็ม+projection: [`docs/superpowers/plans/2026-07-01-lpr-scale-search-storage.md`](docs/superpowers/plans/2026-07-01-lpr-scale-search-storage.md)
+- [ ] **Retention Architecture (prod)** — 📋 **PLANNED 2026-07-01**. Retention split by **data class × location** (edge/central) แทน retention เดียว. 6 class (A-edge Bosch scene / A-central LPR / B clips / C biometric / D rawXml / E plate-log slim / F aggregate) + legal-hold mechanism. **✅ DONE:** A-edge pruner+inventory `d87649c` + Health `d4e2ba5` · **P2/2A** seatbelt→column `b2741cc` · **D** rawXml time-retention (strip >90d) `d5fc975` · **E** decouple mechanism (exclude anprAlarm จาก general retention) `39552ee` (⚠️ number คง 30 — **flip เป็นปี gated on P2/2B**). **⏸️ DEFERRED (YAGNI 2026-07-01):** **F** rollup (ไม่มี consumer อ่าน trend) + **legal-hold flag** (ไม่มี trigger set — watchlist/acks ว่าง) — add when consumer/trigger exists. **NEXT = P2/2B partitioning** (draft พร้อม, gate ของ E number-flip). Do-not: split-drop unknown fields ตอน ingest (per-camera/time ไม่นิ่ง). แผนเต็ม: [`docs/superpowers/plans/2026-07-01-retention-architecture.md`](docs/superpowers/plans/2026-07-01-retention-architecture.md)
+- [ ] **Driver Face Capture (Hik Face Picture Matting)** — ⏸️ **DEFERRED 2026-07-01**. Hik ANPR อัปรูปหน้าคนขับเป็น multipart part `pilotPicture.jpg` จริง (verified live HKT-ANPR-02) แต่ ingest **drop ทิ้ง** (`lpr-core.js` `classifyImage()` รู้จักแค่ scene/plate → part อื่น=unknown ไม่ save) = ไม่มีรูปหน้าในระบบ (PDPA-safe by default). จูนกล้อง (Medium/ratio3/contrast50/Face-Close-up✓) → รูปโต 1.5KB→4.5–10.8KB คมขึ้น 3–7× แต่**หน้ายังไม่เห็น** เพราะกระจกเปียกสะท้อนฟ้า (ฝน) + มุมกล้องสูง = optical limit แก้ที่ matting ไม่ได้. **Resume เมื่อ:** อากาศดี + กล้อง/มุมที่เห็นคนขับชัด. **Build (gated on quality+PDPA):** `classifyImage` add `pilotpicture`→face, save `lpr_face_*.jpg` + `face_image` column (migration), modal face box + access-control, retention สั้นกว่า scene. recipe re-probe + แผนเต็ม: [`docs/superpowers/plans/2026-07-01-driver-face-capture-DEFERRED.md`](docs/superpowers/plans/2026-07-01-driver-face-capture-DEFERRED.md)
+- [ ] **Camera Delete — Edge Media Cleanup** — 📋 **PLANNED 2026-07-16**. `DELETE /api/cameras/:id` (แม้เลือก "ลบข้อมูลทั้งหมด") ลบแค่ DB row (cameras/events/appearances/license_plates) — **ไม่เคยลบไฟล์ภาพจริงเลย**, ไม่มี code path ไหนเรียก `unlink`/`fs.rm` ในเส้นนี้. สำหรับกล้อง EDGE_MODE ไฟล์อยู่บน **edge disk** (คนละเครื่องจาก central api-server) และไม่มีช่องทาง command จาก central→edge สำหรับ "ลบไฟล์" เลย (มีแค่ config-push `_config/cameras`, ทางเดียว) — เจอ orphaned files ค้าง 2 ครั้งจริงในสนาม (`hdy-nvr1-ch0/ch1` 112M, `HDY-NVR-04-ch0` + preview 2 ไฟล์) ต้องลบมือทุกครั้ง. **แผน:** reuse pattern `_config/scan-nvr`/`scan-result` (request/reply ผ่าน MQTT ที่มีอยู่แล้ว) เพิ่ม `_config/delete-media` (**retain:false** — ต่างจาก config-push ที่ retain:true เพราะเป็น one-shot action ไม่ใช่ state ถ้า retain แล้ว camera_id ถูกใช้ซ้ำจะโดนลบไฟล์ผิดคน) + `_config/delete-media-result`. Edge (`edge-config-agent.js`) subscribe ใหม่ → sanitize camera_id ด้วย regex เดียวกับ `snapPath()` (กัน path traversal) → ลบ **2 shape** ที่ต้อง handle ทั้งคู่ (เจอจริงตอนสำรวจ): nested `{events,face,lpr}/{date}/{camId}/{slot}/` + flat `preview/{camId}.jpg`. Central (`cameras.js` DELETE) publish command นี้เมื่อ `keep_data` ไม่ใช่ 1 (fire-and-forget แบบ `publishSiteConfig`) + ลบ `SNAPSHOT_DIR` ของตัวเองสำหรับกล้อง Bosch/direct-pull (ไฟล์อยู่ central เครื่องเดียวกัน ไม่ต้องผ่าน MQTT). **Known limitation:** edge offline ตอนสั่ง = คำสั่งหาย (ไม่ retain/queue) — ยอมรับได้ (disk hygiene ไม่ใช่ data integrity). **Test:** pure function คำนวณ path ที่ต้องลบ (เหมือน `snapPath`) + unit test sanitize + เคส exact-match (ห้าม `ch0` ไปโดน `ch01` โดย prefix match ผิด). **ขนาดงาน:** ~ไฟล์ใหม่ 2 + แก้ 2 ไฟล์เดิม + test, พอๆ กับ nvr_channel-fix + delete-modal ที่ทำไปวันเดียวกันรวมกัน. **เกิดจาก:** incident ลบกล้อง `hdy-nvr1`/`HDY-NVR-04` 2026-07-16 (แก้ manual ไปก่อน, ยังไม่ automate)
+- [ ] **Auto Model Detect — Recurring, not One-Time** — 📋 **PLANNED 2026-07-20**. `scripts/fill-model.js` ถูกออกแบบเป็น "one-time" script โดยตั้งใจ (comment ในไฟล์ระบุชัด) — รันครั้งเดียวตอน feature นี้ merge (2026-07-17) fill ได้ 43/58 ตัว ณ ตอนนั้น. **gap ที่พบจริง:** กล้อง 4 ตัว (`hdy-anpr-bangfab1/2`, `hdy-motor-bangfab1/2`) ถูกสร้างใน DB เวลาไล่เลี่ยกับตอน feature merge (`created_at` 2026-07-17 04:30 UTC, ก่อน commit feature 23:55 +07 ในวันเดียวกัน) แต่ไม่ติดในรอบ fill ครั้งนั้น (เพราะ script อ่านจาก `cameras-config.json` ของ **edge ณ ขณะรัน** ไม่ใช่ query DB กลาง — ถ้า edge ยังไม่ sync คอนฟิกที่เพิ่ง publish จาก central มา กล้องใหม่จะหลุดจากรอบนั้นไปเลย) → ต้องรันมือซ้ำ (สังเกตพบ + แก้ 2026-07-20, live-verified 4/4). เพราะเป็น one-time ไม่มี cron/trigger รันซ้ำ **กล้องใหม่ทุกตัวที่เพิ่มหลังจากนี้จะไม่มี model/firmware/serial จนกว่าจะมีคนนึกได้มารันมือ** (`hdy-motor-r52` ก็อยู่ใน batch เดียวกันแต่ probe "no model" — สาเหตุต่างกัน กล้องไม่ตอบสนอง ต้องเช็คแยก). **แผน:** เปลี่ยนจาก one-time เป็น recurring — ตัวเลือก (a) hook เข้า flow ตอนเพิ่มกล้องใหม่ผ่าน UI (`POST /api/cameras`) ยิง `detectModel()` ทันทีถ้ากล้องอยู่ใน network เดียวกับ central (Bosch/direct-pull) หรือ queue ให้ edge รันตอน sync ถัดไป (Dahua/Hik ผ่าน edge) หรือ (b) cron รายสัปดาห์บน edge (เหมือน `fill-model.js` เดิม แต่ auto, ข้ามเฉพาะกล้องที่มี model อยู่แล้ว = idempotent) แล้ว POST ผลกลับ central endpoint ใหม่ (`PATCH /api/cameras/:id/model-detect` หรือคล้ายกัน). **เลือก (b) น่าจะง่ายกว่า** — ไม่ต้องแก้ create-camera flow, ทำงานได้ทั้ง Dahua/Hik/Bosch ผ่าน `detectModel()` เดิม, edge cron เดียวครอบคลุมกล้องใหม่ทุกตัวในไซต์นั้นอัตโนมัติ. **ขนาดงาน:** เล็ก — reuse `detectModel()`/`fill-model.js` เกือบทั้งหมด, เพิ่มแค่ cron scheduler (edge) + endpoint รับผล (central, POST-only เหมือน current manual apply) + skip-if-already-filled guard.
+
+### Ingester Method — push vs pull (Phase IM, started 2026-06-19)
+
+> ปัญหาเดิม: Hikvision ingester pull `alertStream` กับ **ทุก** กล้องรวม push-only/remote
+> → `connect ETIMEDOUT` retry-spam ทุก ~80s. push-only (FAS/ANPR) ส่ง event มาเองอยู่แล้ว
+> + remote site ดึงเข้าไม่ถึง (NAT/VPN). กล้องที่ flip ได้ใช้ `push_only` boolean ใน
+> `cameras-config.json` (ingester อ่านผ่าน `fs.watch`→`syncCameras()`, ไม่ต้อง restart).
+
+- [x] ~~**IM1** — ingester honor `push_only`~~ — done 2026-06-19 (commit `7660379`). `loadHikvisionCameras()` กรอง `.filter(c => !c.push_only)`; `main()` log กล้องที่ข้าม. Verified live: LPR (10.11.100.4) = 0 ETIMEDOUT หลัง restart; remote pull cam (HKT01) ยัง timeout ตามจริง.
+- [x] ~~**IM2** — ingest-method UI~~ — done 2026-06-19 (commit `af09889`). Checkbox "รับเฉพาะ Push" ในฟอร์มกล้อง (Hikvision-gated) → persist `push_only` ลง config (body-wins-else-preserve, ปิด latent wipe bug). `!prev` sync branch เคลียร์ `_destroyed` → flip push→pull reconnect ได้ไม่ต้อง restart. Storage = boolean (ไม่ทำ enum — auto = IM4).
+- [x] ~~**IM3**~~ — cross-site face push receiver (FAS LAN path): **code done** 2026-06-19 (commit `5a2ff8b`) — FAS receiver resolve push_only cam จาก config (`_matchPushCam`), boot guard `require.main===module`, test 5 เคส. **↳ SUPERSEDED by IM3-R (LIVE 2026-06-23):** cross-site ใช้ Cloudflare tunnel `/face-push/:token` แทน FAS LAN — device-side HKT01 (Alarm Server→IP:3010) moot, ไม่ต้องทำ. bind/allowlist ใน code ไม่แตะ (GOTCHAS #57)
+- [x] ~~**IM4** — auto-detect ingest method~~ — done 2026-06-19 (commit `3640f1e`). Test Connection (Hikvision) + unreachable → นัดจ์ suggest `push_only` (one-directional, hik+!reachable+unchecked เท่านั้น; ไม่นัดจ์ตอน reachable/auth-fail; เคลียร์ตอนสลับ vendor). **suggest-only โดยตั้งใจ** (ไม่ auto-tick): test-connection เป็น TCP-reachability proxy → blip ชั่วคราวจะหยุด pull กล้องที่ใช้งานได้แบบเงียบ ๆ. **upgrade ที่เป็นไปได้ (ยังไม่ทำ):** auto-set checkbox + reversible note — รับ footgun เงียบนั้นแลกความสะดวก. pure frontend.
+- [~] **IM5** — site-link health (แยก "link down" จาก "camera down"). design = ติดป้าย "ไซต์" แบบ explicit — **ห้าม**เดาจาก subnet/ping gateway (กฎ ห้ามเดา network).
+  - [x] ~~**IM5 Phase 1 — site label foundation**~~ — done 2026-06-21 (commit `e41b9f3`). เพิ่ม field `site` ต่อกล้อง (เลือก field แยกแทน reuse group เพราะ camera-groups = vendor-based BOSCH/HIK/DAHUA → ชน map grouping). `cameras.js` persist body-wins-else-preserve (all vendors, empty=clear); GET /api/cameras คืนอัตโนมัติ (config spread); editor UI input "ไซต์ (Site)" + hint + i18n th/en. **owed:** owner ตั้งค่า site ต่อกล้องผ่าน UI (HKT01+HKT02=ไซต์เดียวกัน; LPR/office แยก) + live-check input save→reopen.
+  - [ ] **IM5 Phase 2 — detector** *(deferred 2026-06-25)* — correlation: กล้องในไซต์เดียวกัน ≥2 ตัว offline พร้อมกัน → mark "site down" 1 เหตุการณ์ (suppress รายตัว). **สถานะ:** EM6 (alert-worker) ปิด full-site-down scenario แล้วผ่าน `edge_status.last_seen_at` stale → LINE alert; partial-failure (กล้องบางตัวใน site) ยังไม่เคยเกิดในสนาม + `camera_offline_alerts` ทุกตัว enabled=FALSE → ยังไม่มีของจริงให้ verify. **trigger:** เปิด per-camera offline-alert จริง + ≥2 remote cam/ไซต์ online + เห็น false-alert storm จริง. reachability-probe ใช้ไม่ได้กับ push_only (server เข้าไม่ถึงโดยตั้งใจ). backend
+
+#### 🔵 Network finding (2026-06-19) — ทำไม VPN หลุดแต่ LPR push ทะลุมาได้ + ที่อยู่ที่ remote ยิงถึง
+
+> **ไล่ path LPR แล้ว (verify ด้วย curl สด):**
+> `กล้อง → HTTPS:443 dashboard.dojojin.tech/lpr → Cloudflare edge (SIN) → cloudflared tunnel → localhost:3000/lpr`.
+> `POST /lpr` คืน **HTTP 200**, `GET /lpr` คืน **404 จาก app เรา** (route POST-only) = request ทะลุถึง api-server จริง; header ไม่มี CF Access → **เปิด public ไม่มี auth**.
+>
+> - api-server bind **`127.0.0.1` loopback เท่านั้น** (api-server.js:1411, `BIND_HOST` default; ไม่ override ใน `.env`) → camera ยิง `192.168.10.31:3000` ตรงไม่ได้ ต้องเข้าทาง tunnel.
+> - tunnel config `~/.cloudflared/config.yml`: `dashboard.dojojin.tech → http://localhost:3000` (มี config เดียว).
+> - **เหตุผล VPN-down ไม่กระทบ LPR:** push = ขาออก (camera → public internet → Cloudflare) ไม่พึ่ง VPN; pull = ขาเข้า (server → private IP กล้องผ่าน VPN/route) ← อันนี้ที่หลุด. LPR pull ก็ ETIMEDOUT เหมือน HKT01 (ก่อน IM1) — ต่างกันแค่ LPR **push** อยู่.
+> - **HKT01 ปัจจุบัน:** push face ไป **HCP** (Hikvision VMS) ที่ `202.124.201.105:10001`, URL = UUID `/v2/019e49f5-...` (UUID = capability token ใน path). FAS server เรา (`192.168.10.31:3010`) **LAN-only ไม่ได้อยู่หลัง tunnel** → Phuket ยิงไม่ถึง.
+
+- [x] ~~**IM3-R**~~ — ✅ **LIVE 2026-06-23 (on-site Phuket)**. HKT01+HKT02 face push ผ่าน Cloudflare tunnel `POST /face-push/:token` HTTPS:443 ทำงานจริง; multi-slot (HCP slot1 + Vigil slot2) — ไม่ต้องเลือก. v1 = ingest-only (event+images+notify; ไม่มี alerting/HCP relay). code: commit `9575318`; `src/helpers/face-multipart.js` (shared). **v2 (ยังไม่ทำ):** LINE alert, HCP relay, token-set UI, body-appearance. แผนเดิม:
+  1. route ใหม่บน api-server (เช่น `POST /face-push/:token`) — **token ใน path เป็น secret** (อย่าเปิดโล่งแบบ `/lpr`; cf. pattern UUID ของ HCP). parse multipart เดิม (ย้าย/แชร์ `parseFaceAlarmMultipart` + `ingestFaceAlarmEvent`/`ingestBodyAppearance` จาก hikvision-isapi.js — ปัจจุบันอยู่ในตัว ingester).
+  2. resolve กล้องด้วย **token → camera_id** (ไม่พึ่ง source IP เพราะผ่าน Cloudflare = source เป็น CF edge/loopback). `_matchPushCam` (IM3) อาจ reuse บางส่วนแต่ตัวคีย์เปลี่ยนจาก IP→token.
+  3. ไม่แตะ FAS LAN เดิม (กล้อง local .235 ยังใช้ FAS:3010 ได้) — IM3-R เป็น path เพิ่มสำหรับ cross-site.
+  4. **on-site Phuket (ห้ามเดา — verify จริง):** (a) firmware HKT01 รองรับ Alarm Server **ตัวที่ 2** ไหม (อย่าทับของ HCP) — ปุ่ม +Add มี แต่บางรุ่นยิงปลายทางเดียว; (b) ตั้ง Destination = `dashboard.dojojin.tech` Port `443` Protocol `HTTPS` URL `/face-push/<token>`; (c) กด Test ในกล้อง + ดู api-server log ว่า event เข้า.
+  - **ทำผ่าน Advisor-led cycle (PLAN→EXECUTE→AUDIT→STOP→COMMIT).** ออกแบบ token store + Access bypass สำหรับ path นี้ = security review (CLAUDE.md #17 + GOTCHAS #57).
+
+#### Resilience / Process Isolation (พบ 2026-06-20 จากอาการ hikvision crash-loop ↺2800+ ที่บ้าน)
+- [x] ~~**IM6 — FAS bind ต้อง degrade ไม่ crash**~~ ✅ done 2026-06-20 (commit `7fee413`). เพิ่ม `srv.on('error')` ก่อน `srv.listen` ใน `startFaceAlarmServer()` → EADDRNOTAVAIL/EADDRINUSE log warning แล้วไปต่อ (face push DISABLED, ingester ทำงานต่อให้ pull cams + sync). **Verified live:** restart count คงที่ (เลิกไต่จาก ↺3690), status online, uptime ไต่ขึ้น, log แสดง `[FAS] ... DISABLED, ingester continues` แทน EADDRNOTAVAIL throw. หมายเหตุ: degrade message ขึ้นซ้ำทุก sync cycle (~94s) — log noise เล็กน้อย; guard "เคย fail แล้วไม่ลองซ้ำ" ยกไปทำตอน IM7.
+- [~] **IM7 — แยก `hikvision-receiver` เป็น process ของตัวเอง** — **CORE DONE = CS7** (commit `f213cca`): `/lpr` + `/face-push` ย้ายไป `lpr-receiver` standalone (PM2 id 8, port 3003) แล้ว — isolate crash/load จาก api-server core ✅. **🔲 เหลือ:** รวม **FAS LAN :3010** (`startFaceAlarmServer()` ยังอยู่ใน `hikvision-isapi.js:979`) เข้ามาที่ receiver เดียว — ตอนนี้ Hikvision push ยัง split 2 ที่ (FAS LAN 3010 ใน ingester + tunnel /lpr,/face-push ใน lpr-receiver). `dahua-receiver` = future (Dahua = `eventManager.cgi?action=attach` **pull** ยืนยันจากโค้ด — ไม่ push). ⚠️ ระวัง tunnel reachability. ทำผ่าน Advisor-led cycle
+
+### Camera Settings UX redesign + LPR Forwarding (Phase CS, planned 2026-06-20 · design CONFIRMED)
+
+> **บริบท:** หน้า Settings › Cameras บวม — ฟอร์มแก้กล้อง (~30 field/5 section) + list render-all อยู่ scroll เดียว = ใช้งานจริงไม่ได้ที่ระดับ 1,000–3,000 กล้อง (เป้า `HARDWARE_SIZING_GUIDE`). + ต้องเพิ่ม per-camera **LPR forward** (CIB) ที่ scale หลายกล้อง.
+> **DESIGN ที่ confirm = demo `public/others/demo/camerasettings.html` (v7)** — reproduce ด้วย Puppeteer แล้ว (pagination 25/หน้า → DOM 616 node vs render-all 13,269; render 9–14ms ที่ 1k–3k). ยึด DESIGN.md token เท่านั้น · ≤768px first · reuse pattern เดิม (backdrop/drawer, `--surface-overlay`, `.tab`, vendor-conditional render).
+> **i18n บังคับ (gotcha #42):** ทุก string ใหม่ลง **ทั้ง `th` และ `en` ใน `dashboard/i18n.js`** + ใช้ `data-i18n` ห้าม hardcode. คำให้ standard (เช่น "Data Forwarding / Endpoint URL", "Ingest method", "Pull/Push").
+> **save semantics (confirmed):** **save-all ปุ่มเดียว** (full-page scroll เดียว ไม่ซ่อน field = ไม่ลืมกด); backend เบื้องหลังคง 2 PUT เดิม (camera PUT + offline-alert PUT) ได้ — แต่ UX = ปุ่มเดียว.
+
+**Pre / hygiene**
+- [x] ~~**CS0**~~ — done 2026-06-20 (พร้อม CS1, commit `7b642c2`). revert temp probe ใน `lpr.js` แล้ว (ไม่เผลอ commit). [memory `project_lpr_cimb_forward`]
+
+**Backend unblockers (อิสระจาก redesign — ship ได้เลย)**
+- [x] ~~**CS1 — ทาง A: push receiver honor `paused`**~~ done 2026-06-20 (commit `7b642c2`, deployed). `/lpr`: paused → forward + return (ข้าม ingest); `/face-push`: paused → return. verified live (wipe loop: paused LPR → events คง 0). CS0 (revert temp probe) done พร้อมกัน.
+- [x] ~~**CS2 — Forward config-driven (hikvision-scoped) — decision B (opt-in)**~~ code done 2026-06-20 (รอ commit+restart). `forwardToPhuket(body,ct,targetUrl)` parse URL (http/https, port default) + **default-off**: ไม่ forward เว้นแต่กล้องมี `cam.lpr_forward_url` (หรือ admin ตั้ง `system_settings.lpr_forward_default` = optional global, default null). URL พัง → skip+log (ไม่ throw). `cameras.js` persist `lpr_forward_url` hikvision-scoped (body-wins-else-preserve). `HIK-V_LPR01.lpr_forward_url` = CIB ตั้ง explicit ใน config. **decision B (PDPA)**: กล้องใหม่ไม่ auto-forward → ไม่มี sentinel disable (ไม่ตั้ง URL = ไม่ forward). **⚠️ ผลข้างเคียง:** ถ้า HIK-V_LPR01 match mac/ip พลาด (drift) → CIB ขาดฟีดเงียบ (ไม่มี catch-all fallback แล้ว). verified: repro read 4 เคส (no-URL/cam-URL/malformed/unidentified) + write 3 เคส (set/preserve/non-hik). 🟡 SSRF validate + UI → CS6.
+
+**⚠️ Data wipe (re-surface — owner เลือก: ทั้งหมด + backup ก่อน)** — MacBook ใกล้เต็ม: backup DB (pg_dump **นอก repo**) → clear ~38GB (`snapshots/`+`media/`) + truncate events/license_plates/appearances → restructure storage → start ทีละ source. **ตัดสินก่อน CS3–CS6** ว่าต้องมาก่อนไหม (disk วิกฤต = CS1+wipe ก่อน).
+
+**UI — list (frontend, `page-camera-settings.js` `renderAdminCameras` + `index.html` toolbar)**
+- [x] ~~**CS3 — Pagination + search + filters**~~ — done 2026-06-20 (commit `719c4ed`). paginate 25/หน้า (client-side) + search + filter vendor/status/location; `_filterPaginate()`/`_camDistinctLocations()` + reuse `renderPagination`/`pgGo`. i18n th+en.
+
+**UI — editor (frontend, biggest; relocate ของเดิม ห้าม rebuild logic)**
+- [x] ~~**CS4 — Editor = full-page overlay + section nav (scrollspy)**~~ — done 2026-06-21 (commit `6d620f4`). full-page editor; `#set-cameras.cam-editing` view-swap; horizontal pill nav scrollspy; Esc/back; mobile overflow fix (`.settings-content width:100%`). i18n th+en.
+- [x] ~~**CS5 — Ingest method UX**~~ — done 2026-06-21 (commit `6cccec7`). Pull/Push radios = VIEW of canonical `#frmCamPushOnly`; `_syncIngestRadios()`/`_setIngestRec()` advisory-only. Hik=choice, Bosch/Dahua=info, ONVIF=hidden. i18n th+en.
+- [x] ~~**CS6 — Data Forwarding section (Hikvision-only)**~~ — done (verified 2026-06-23). `frmFwdSection` ใน Camera Settings: Endpoint URL (`frmCamFwdUrl`→`lpr_forward_url`) + desc (`cs.fwdDesc`) + **PDPA note** (`cs.fwdPdpa`, PII egress + audit) + nav pill. render เฉพาะ `vendor==='hikvision'` (`page-camera-settings.js:499`). on/off = เว้นว่าง=ปิด (แทน toggle แยก — เทียบเท่า, hint ชัด). backend `_validateForwardUrl` SSRF guard (http/https only, private-IP flag, empty=off) → `lpr_forward_url_invalid`; เปลี่ยน URL ลง audit_log. i18n th+en ครบ 7 keys. validator self-check 6/6.
+
+- [x] ~~**CS7** = IM7~~ — done 2026-06-21 (commit `f213cca`). lpr-receiver standalone process (PM2 id 8, port 3003) + `src/lpr-core.js`/`lpr-forward.js`/`lpr-receiver.js` + disk spool/retry + CF tunnel route `^/(lpr$|face-push/)` → :3003. ✅ receiver core→DB→notify→forward verified 14/14 synthetic e2e.
+
+**ลำดับแนะนำ:** CS0 → CS1 → CS2 → [data-wipe?] → **CS3** (list, value สูง risk ต่ำ) → **CS4** (editor, ก้อนใหญ่) → CS5 → CS6. แต่ละ UI phase: i18n th+en + ตรวจ ≤768px + token-only ก่อน commit.
+
+### Reports Redesign (Phase R) — ✅ R1-R5 VERIFIED DEPLOYED 2026-07-03 (code-audit, not just doc)
+
+> หน้า Reports ออกแบบใหม่ครบใน demo `public/others/demo/report/` (`?v=r8`) เมื่อ 2026-06-22
+> **แล้วขึ้น production จริงระหว่าง 2026-06-26–28** ผ่าน commit ชุด `a6e305d`→`3c0d9f0`
+> (เช็คแล้วว่าไม่ใช่โค้ดเก่าที่คล้ายกันโดยบังเอิญ — วันที่ commit หลัง demo และข้อความ commit
+> ระบุ R1-R5 ตรงตัว). ROADMAP เดิม checklist ไม่เคยถูกติ๊ก ทั้งที่โค้ดตามทันหมดแล้ว.
+
+- [x] **R1** — `/api/stats/face/report` (`src/routes/faces.js:255`) + `/api/stats/lpr/report` (`src/routes/lpr-query.js:470`) exist and are live-called from `dashboard/page-reports.js`
+- [x] **R2** — Reports page tabbed shell (`tabFace`/`tabLpr` + others, `page-reports.js:1050-1053`) consuming R1 — commit `a6e305d` "redesign Reports page — 6-tab layout matching demo" (2026-06-26)
+- [x] **R3** — `report-renderer.js` face/LPR templates confirmed: `renderFaceReportImage`/`Pdf` (:992,:1005), `renderLprReportImage`/`Pdf`/`_renderLprReportSvg` (:1047-1192)
+- [x] **R4** — `db_migration_068_report_family.sql` + scheduler dispatch — commit `6b6b431` "R4 — report_family axis + face/LPR schedule dispatch" (2026-06-26)
+- [x] **R5** — commit `0924eed` "R5 multi-site scope bar + face/LPR site filtering" (2026-06-27); confirmed `siteWhere()`/`allowedSites` used throughout `src/routes/reports.js` + `src/routes/stats.js`, `GET /api/sites` exists (`src/routes/sites.js:27`). MS-1..MS-8 gate was cleared by the [[project_multisite_camera_sites]] work (migrations 052-056,062-063) before this shipped.
+- ค้าง (owner ปรับเอง): frame รถเฝ้าระวัง (LPR watch card) detail · ภาพ captured+ref จริง
+- Follow-on commits after R1-R5 also shipped: B1/B2 multi-domain analytics (face/person/lpr), C1-C3 PDF parity, D1-D3+H1-H3 bug patches, person-report redesign (`81a4588`) — all confirmed live per [[project_reports_domain_plan]]/[[project_person_data_redesign]] memory, verified 2026-07-02.
+> เดิม: [`docs/superpowers/plans/2026-06-22-reports-redesign-prod.md`](docs/superpowers/plans/2026-06-22-reports-redesign-prod.md) (เขียนตอนวางแผน — โค้ดตามทันหมดแล้วเมื่อเช็ค 2026-07-03)
+
+### Face Page Redesign (FACE-UI, FP1–FP6) — ✅ ALL PHASES LIVE 2026-06-22
+
+> หน้า **ข้อมูลใบหน้า** ออกแบบใหม่ใน demo `public/others/demo/face/` (`?v=f7`, commits
+> `693409c`→`b4c97f6`): 4 แท็บ (ภาพรวม/แจ้งเตือนบุคคล/ค้นหา/ตั้งค่า) theme เดียวกับ LPR.
+> **ตัดแท็บเฝ้าระวังออก** — face = read-only ฝั่งเรา (FDLib อยู่ที่กล้อง, ไม่มีตาราง face-watchlist).
+> modal: crop ↔ FD ref คู่กัน + ฉากเต็ม thumbnail + Body Appearance (vocab จริง) + operator note +
+> **ภาพถูกลบ→avatar จาก metadata**. **แผน deploy เต็ม:** [`docs/superpowers/plans/2026-06-22-face-page-redesign-prod.md`](docs/superpowers/plans/2026-06-22-face-page-redesign-prod.md).
+
+- [x] ~~**FP1**~~ — done 2026-06-22 (commit `c5eb368`). 4-tab structure + capture→ค้นหา / match+miss→แจ้งเตือนบุคคล; CSP+i18n+responsive.
+- [x] ~~**FP2**~~ — done 2026-06-22 (commit `338a355`). แท็บภาพรวม + `GET /api/faces/stats` (peak period-adaptive + gender/age/expression).
+- [x] ~~**FP3**~~ — done 2026-06-22 (commit `92614d4`). modal rework: crop↔FD ref pair + Body Appearance + deleted-image→avatar from metadata; `recog-feed`/`ov-top`/`f-card` demo parity (commit `bade691`).
+- [x] ~~**FP4**~~ — done 2026-06-22 (commit `64f6207`, migration 057 `face_event_notes`). `POST/GET /api/face-matches/:id/note`; operator note free-text in modal.
+- [x] ~~**FP5**~~ — done 2026-06-22 (commit `fea95e8`, migration 058 `face_event_acks`). blacklist ack; unacked badge on เฝ้าระวัง segment; `GET /api/faces/counts` + `unacked_watch`.
+- [x] ~~**FP6**~~ — done 2026-06-22 (commit `0c4ad8a`, migration 059 `face_settings`). `face_similarity_min`(80) + `face_show_expression`(1) seeded; threshold applied query-time (reversible); tab 4→3; Settings›ระบบใบหน้า.
+
+### Person Data Redesign (BODY-UI, BP1–BP4) — ✅ BP1-3 VERIFIED DEPLOYED 2026-07-03 (BP4 optional, not started)
+
+> หน้า **ข้อมูลบุคคล** (body appearance) ออกแบบใหม่ใน demo `public/others/demo/body/` (`?v=b1`,
+> commit `ebbbd2d`) แล้วขึ้น production จริงใน `dashboard/page-appearance.js` — commit `bd5a969`
+> "deploy body appearance redesign" (2026-06-26). Confirmed live: peak/by-camera chart + KPI
+> aggregate (`page-appearance.js:818-885`), color swatch bar (`:778`). theme เดียวกับ Face:
+> 2 แท็บ (ภาพรวม/ค้นหา); คง engine forensic เดิม (timeline/ตามคนนี้/map). **แผนเดิม:**
+> [`docs/superpowers/plans/2026-06-22-person-data-redesign-prod.md`](docs/superpowers/plans/2026-06-22-person-data-redesign-prod.md) (โค้ดตามทันหมดแล้ว ยกเว้น BP4).
+
+- [x] **BP1** — extend `GET /api/appearances/stats`: peak (period-adaptive) + by-camera + KPI aggregate. done + runtime reproduced 2026-06-22
+- [x] **BP2** — แท็บภาพรวม re-skin + KPI/peak/by-camera + forensic collapsible (consume BP1). done 2026-06-22
+- [x] **BP3** — แท็บค้นหา re-skin + color swatch picker + search-by-example + Face time/camera cross-link + modal fallback จาก metadata (อิง retention setting จริง). done + runtime reproduced 2026-06-22
+- [ ] **BP4** *(optional)* — ทิศทาง→เข้า/ออก ต่อกล้อง (reuse LPR gate). restart
+- endpoint `/api/appearances/*` มีครบแล้ว → เบากว่า FACE-UI (restart ~1–2 ครั้ง)
 
 ### Operational Roadmap Ph.1-Ph.6 (approved 2026-05-23, decisions #134-#135)
 
@@ -48,7 +204,30 @@ Canonical behavior and shipped implementation details live in [docs/LOGIC_line-n
 
 **Phase 2 — Route Module Split** *(= Microservice Phase A, opportunistic)*
 - [x] ~~สร้าง `src/helpers/routeError.js` ก่อน (SEC-2T-004)~~ — ✅ DONE 2026-06-05; wired 5 routes (api/users, auth/sessions, eula/status, line-config, line-config/quota)
-- [ ] Extract route groups เมื่อแตะแต่ละ subsystem → `src/routes/*.routes.js`
+- [x] ~~Extract route groups เมื่อแตะแต่ละ subsystem → `src/routes/`~~ — ✅ **DONE** — 19 ไฟล์ครบ (2026-06-14; faces 2 routes hold รอ FR module)
+  - **สถานะ api-server.js (อัปเดต 2026-06-14):** peak 7,156 ลบ. (`fdbb14d` 2026-06-13) → ปัจจุบัน **1,893 ลบ.** (−5,263 ลบ., −73%); extracted by splitting ~5,395 ลบ. (ส่วนต่าง ~132 ลบ. = features ที่เพิ่มระหว่าง campaign)
+  - **✅ Done — 19 ไฟล์ / ~135 routes:**
+    - `routes/categories.js` (7) — `b8122a8`
+    - `routes/branding.js` (3) — `926962c`
+    - `routes/eula.js` (3) — `926962c`
+    - `routes/groups.js` (3) — `23fc063`
+    - `routes/settings.js` (3) — `23fc063`
+    - `routes/users.js` (7 incl. audit-log + csp-report) — `0e19dc7`
+    - `routes/alert-rules.js` (5 incl. suggestions) — `3caa6b1`
+    - `routes/report-schedules.js` (5 incl. /run proxy) — `7160e68`
+    - `routes/ops.js` (8 — backups + alert-logs + push) — `7f352de`
+    - `routes/auth.js` (6) — `1205361`
+    - `routes/license.js` (4) — `a084038`
+    - `routes/events.js` (4) + `routes/appearances.js` (4) — `cd54b64`
+    - `routes/cameras.js` (15) — `daff4bf`
+    - `routes/stats.js` (20 — stats + occupancy + heatmap) — `21fe1f3`
+    - `routes/map.js` (10 — map areas/download + tiles proxy) — `60ab7d2`
+    - `routes/line.js` (12 — line-config + pending/blocked/webhook) — `97e8c8e`
+    - `routes/health.js` (7 — health details/report + /api/services) — `e81399e`
+    - `routes/reports.js` (6 — report-history + pdf/daily/weekly) — `90b831f`
+  - **🔲 Hold:**
+    - *(faces 2 routes — รอ Face Recognition module FR.1–FR.4 ค่อย merge ใน `routes/faces.js`)*
+  - helpers ที่ extract ได้แล้ว: `helpers/routeError.js`, `helpers/getSystemSetting.js`, `helpers/normalizeTimeOfDay.js`
 - [x] ~~`SEC-2T-008` (tiles auth-gate)~~ — **✅ WON'T FIX / public by design** (2026-06-05): `/tiles/` ให้ผ่าน PUBLIC_PREFIXES; กระเบื้องเป็น PNG เฉย, overlay ของกล้องถูก gate ที่ `/api/cameras`; ค่าใช้จ่ายถ้า gate = getUserFromToken DB query × 100+ tiles/view; fingerprint risk (tile set เปิดเผยพื้นที่ monitor) — ยอมรับเพราะ weak recon; สอดคล้องกับ SEC-2T-001 (JS = gate, PNG = ไม่ gate)
 - [x] ~~Merge `SEC-2T-005` (line-config role) ระหว่างทาง~~ — ✅ DONE 2026-06-05 (commit `fdc50a4`)
 
@@ -74,7 +253,7 @@ endpoint เดิม. LLM ไม่แตะ SQL โดยตรง.
 **Backend ready:**
 - ✅ `GET /api/appearances/search` (`api-server.js:4821`) — มีแล้ว; **ต้องเพิ่ม `camera_ids[]` (Phase 0)**
 - ✅ `GET /api/events` (`api-server.js:2526`) — ครอบทุกกล้อง
-- ❌ LPR plate search endpoint — ตาราง + index มีแต่ยังไม่มี search endpoint
+- ✅ LPR plate search endpoint — `GET /api/lpr` (`routes/lpr-query.js:41`) search + KPI + 6 MultiPicker filters (region/type/color/plate-color/lane/camera); + `/api/lpr/plate-history`, `/api/lpr/stats` (done 2026-06-23)
 
 **Prerequisites ก่อนเริ่ม:**
 1. รัน coverage query (§2 ใน spec) บน production — รู้ว่า appearances data พร้อมแค่ไหน
@@ -212,14 +391,19 @@ endpoint เดิม. LLM ไม่แตะ SQL โดยตรง.
 
 - [ ] **Ph.0 — Config กล้อง (ฝั่งเจ้าของ, ศูนย์โค้ด):** rule แยกทิศบน 3100i (วิธีทางการ
       ของ Bosch) · เสียบ BOSCH_8100i กลับ (Appearance เต็มชุดไหลทันที) · เปิด Appearance
-      ใน 8000i config · (เลือกได้) เพิ่ม task Crowd/Start-stop บน 3100i
+      ใน 8000i config ~~← ผิด: 8000i (CPP7.3) ไม่รองรับ ดู AP.2~~ · (เลือกได้) เพิ่ม task Crowd/Start-stop บน 3100i
 - [x] ~~**Ph.1 — Dwell time จากคู่ `IsInside` true→false**~~ — done 2026-06-10:
       `GET /api/stats/dwell` (summary + episodes) — window-function pairing บน
       `event_state`, ตัดคู่ห่าง >24 ชม.; verified ข้อมูลจริง: "คนเปิดตู้เย็น" 50 ครั้ง/3วัน
       เฉลี่ย 2s สูงสุด 21s. **Follow-up:** Stats UI card ✅ done 2026-06-10
       (card "เวลาอยู่ในโซน" หน้า Statistics — ตาราง per camera+rule, group filter
-      ฝั่ง client) · เหลือ alert "อยู่นานผิดปกติ" — gate: ต้อง repro long dwell
-      (>5 นาที) หน้ากล้องก่อน เพื่อพิสูจน์ pairing + เห็น distribution ตั้ง threshold
+      ฝั่ง client) · alert "อยู่นานผิดปกติ" ✅ done 2026-06-11 (migration 044:
+      `alert_rules.dwell_threshold_sec` — ตั้งแล้ว rule เปลี่ยนเป็น dwell mode:
+      alert-worker เช็ค open episode ทุก 60s, ยิง LINE ระหว่างคนยังอยู่,
+      cooldown = ระยะเตือนซ้ำ, `{duration}` ใช้ใน template ได้; reuse
+      recipients/quiet-hours/log เดิมทั้งหมด). ⚠️ caveat ที่รู้: open episode
+      อาจ stale ได้ถ้ากล้องพลาดขาออก (เห็นจริง 2026-06-11 ดึก: true ค้าง 3.8 ชม.
+      หลังเลิกงาน) — cooldown กัน spam, operator ดู {duration} ผิดปกติ = เช็คกล้อง
       (หมายเหตุ: Dahua ยังไม่มีคู่ — ส่งแต่ enter, รอ Ph.2)
 - [x] ~~**Ph.2 — Dahua Direction + BoundingBox**~~ — done 2026-06-10:
       พบ bug แฝง — dahua-cgi hardcode `event_state='true'` ทุก event ทั้งที่กล้องส่ง
@@ -244,6 +428,78 @@ endpoint เดิม. LLM ไม่แตะ SQL โดยตรง.
 - [ ] **Ph.4 — ONVIF RTSP metadata ingester (Bosch geometry)** — ⏸ defer รอ signal
       ลูกค้า (ingester ใหม่ทั้งตัว; Ph.2 ให้ geometry จาก Dahua ฟรีก่อนแล้ว)
 
+**Appearance unification (สำรวจ 2026-06-12)** — coverage จริง 7 วัน: 8100iX_02
+197 rows เต็มชุด Pro (เพศ+เสื้อผ้า+สี) · 3100i 208 rows โทนสีอย่างเดียว (non-Pro) ·
+**Hikvision 0 rows** (เพศ/อายุ/แว่น/หมวก/mask/อารมณ์ติดอยู่ใน raw_json/หน้า Faces
+เท่านั้น) · 8000i 0 (ยังไม่เปิดบนกล้อง) · Dahua 0 (กล้องส่งสีเป็นศูนย์):
+- [x] ~~**AP.1 — Hikvision FaceCapture → appearances**~~ — done 2026-06-12:
+      ingest live (เพศ normalize เป็น Male/Female + แว่น รวม sunglasses; **hat จงใจ
+      ไม่ map** — helmet ของ Bosch คือหมวกนิรภัย คนละความหมาย) + backfill 776 แถว ·
+      verified: search gender=Female ได้ Hik 59 + Bosch 141, glasses=true ได้
+      Hik 124 + Bosch 49 — ครอบข้าม vendor แล้ว
+- [x] ~~**AP.2 — เปิด Appearance บน BOSCH_8000i**~~ — ❌ **ตกไป 2026-06-12: กล้อง
+      ไม่รองรับ** (verify: ONVIF probe = FLEXIDOME IP starlight 8000i FW 7.93 =
+      CPP7.3; เอกสาร Bosch: IVA Pro Appearance ต้องการ CPP13 FW8.47+/CPP14 FW9.40+
+      เฉพาะรุ่น 8100i/5100i/DINION 7100i/5100i — CPP7.3 อัป firmware ข้ามสายไม่ได้)
+      · โบนัส: 3100i = DINION 3100i CPP14 แต่เอกสารระบุ "ยกเว้น 3000 series" →
+      Appearance เต็มไม่ได้เช่นกัน (ตรงกับที่ส่งแค่ Class+Color) · note เดิมใน Ph.0
+      ที่ว่า "เปิด Appearance ใน 8000i config" = ข้อมูลผิด แก้แล้ว
+- [x] ~~**AP.3 — เปิด Object Attribute extraction บน Dahua**~~ — ❌ **ตกไป
+      2026-06-12: รุ่นที่มีไม่รองรับสีเสื้อ** (verify ด้วย CGI probe จริง):
+      BMA-EAST = DH-IPC-HFW2241S-S (2-series) ไม่มี attribute config ใดๆ ·
+      DAHUA_CAM01 = IPC-HFW5541E-ZE (AI 5-series) มีเฉพาะ **face** features
+      (FaceDetection rule + Age/Sex/Glasses/Emotion เปิดอยู่) — ไม่มี
+      HumanTrait/clothing color ใน VideoAnalyseRule ทั้งชุด → MainColor=0 คือ
+      ขีดจำกัดรุ่น · ไม่เปิดรับ Dahua FaceDetection แทน: ขัด decision #117
+      (demographics ไม่น่าเชื่อถือ) ซึ่ง GOTCHAS #87 สนับสนุนเพิ่ม ·
+      ผลพลอยได้: dahua-cgi มี unmapped-code log-once แล้ว (เหมือนฝั่ง Hik)
+- [x] ~~**AP.4 — color_clusters สำหรับแถว Pro**~~ — done 2026-06-12: clusters ติด
+      ป้าย `part` ('top'/'bottom') กัน cross กับกติกา upper/lower ของ Ph.3 · search
+      containment แยกตาม part · แก้ bug แฝง ColorCluster array → null · backfill
+      654 แถวเก่า · verified: Blue/Black row — upper=Blue ✓, upper=Black ✗ (no
+      cross), lower=Black ✓, non-Pro 181 แถวค้นได้เหมือนเดิม
+- [x] ~~**AP.5 — Forensic timeline**~~ — ✅ DONE 2026-06-12 (5a/5b/5c ครบ; endpoints `GET /api/appearances/timeline` + `/similar-timeline` ยืนยันใน `routes/appearances.js:375,415`). แผนละเอียด 2026-06-12 (ฐานพร้อม: appearances
+      ครอบ 3 แหล่งหลัง AP.1/AP.4; กล้องมี lat/long; ผูกกับ NLQ Phase 3):
+      - [x] ~~**AP.5a — Timeline จาก filter (MVP)**~~ — done 2026-06-12:
+            `GET /api/appearances/timeline` (filter builder ใช้ร่วมกับ search,
+            group กล้องเดิมห่าง ≤180s เป็น segment, cap 2000 rows) + ปุ่ม
+            "เส้นเวลา" ในหน้า Appearance Search → เส้นเวลาแนวตั้ง วัน/เวลา/
+            กล้อง/location/thumb/chips + disclaimer · PDPA: จำกัด admin/auditor
+            (403) + ลง audit_log 'forensic_timeline' ทุกครั้ง · verified:
+            เสื้อดำวันนี้ 157 rows → 91 segments ข้ามกล้อง
+      - [x] ~~**AP.5b — "ตามคนนี้"**~~ — done 2026-06-12:
+            `GET /api/appearances/similar-timeline?event_id=` — similarity จาก
+            weight pool ของ attribute ที่ anchor มีจริง (สีบน/ล่าง 3, โทน 4,
+            หมวดเสื้อ 1, แว่น 1, เพศ 0.5 ตาม #87; "เทียบไม่ได้"≠"ไม่ตรง" —
+            ตัดออกจาก pool ทำให้ cross-fidelity Pro↔3100i ผ่าน threshold ได้
+            สองทิศ) · ปุ่ม "ตามคนนี้" บน card ค้นหา + ทุก segment ของ timeline ·
+            แสดง ~score% ต่อ segment · PDPA gate + audit 'forensic_follow' ·
+            verified: anchor ชายเบจ/น้ำเงิน 86003 → 76 rows/27 segments รวม
+            ข้าม vendor ไป Hikvision 2 segments; unit 8 เคสรวม #87 gender-mismatch
+      - [x] ~~**AP.5c — เส้นทางบนแผนที่**~~ — done 2026-06-12: ปุ่ม "แสดงเส้นทาง
+            บนแผนที่" ใน timeline → สลับหน้า Map วาด polyline เส้นประ + จุดเรียง
+            หมายเลขพร้อมช่วงเวลา (ยุบ segment กล้องเดิมติดกัน, ข้ามกล้องไร้พิกัด
+            พร้อมแจ้ง) + fit extent + ปุ่มล้างเส้นทางบน toolbar · verified logic
+            กับข้อมูลจริง: 91 segments → 49 จุดสลับกล้อง
+      - ข้อจำกัดติดประกาศใน UI: เป็น **attribute matching ไม่ใช่ระบุตัวตน**
+        (สองคนเสื้อเหมือนกันปนได้) — ออกแบบให้เสียบ Face Recognition/pgvector
+        (REF_face-recognition.md) ภายหลังได้
+      - **PDPA:** จำกัด role admin/auditor + ลง audit_log ทุกครั้งที่ใช้
+      - ลำดับแนะนำ: 5a → 5c → 5b
+
+**Hikvision People Counting (2026-06-12)** — ingest ✅ done (commit `cb64976`);
+⚠️ **หยุดไหล 2026-06-12 เย็น**: เจ้าของเปิด Face Capture กลับ — กล้องรุ่นนี้เปิดคู่
+People Counting ไม่ได้ (memory กล้องไม่พอ) → เลือก Face; PC.1 card คงอยู่
+(แสดงข้อมูลช่วงที่เคยเปิด) พร้อมใช้ทันทีถ้าสลับกลับ:
+กล้อง push enter/exit ทุก 15 นาที → เก็บเป็น `CountAggregation/PeopleCounting`
+(ซ่อนจาก Events list อัตโนมัติผ่าน filter ตระกูล Aggregation เดิม; กัน duplicate
+retransmission ด้วย window_start) · verified ค่าจริง enter=1 จากการเดินผ่านเส้น:
+- [x] ~~**PC.1 — กราฟ traffic เข้า-ออก บนหน้า Stats**~~ — done 2026-06-12
+      (commit `e81e8d3`): card "คนเข้า-ออก" bar chart enter/exit, bucket อัตโนมัติ
+      15m/1h/1d, group filter ได้, badge ยอดรวม; verified ข้อมูลเที่ยงวันแรก 32/19
+- [ ] **PC.2** (ตัวเลือก) — สรุปลง Health/Executive report รายวัน (คนเข้าร้านวันนี้
+      X คน) เมื่อ PC.1 เสถียร
+
 ### Phase 7 follow-ups (audited 2026-05-15)
 - [x] ~~**Puppeteer browser pool**~~ — done 2026-05-15 (commit `36475d2`). Module-level `_getBrowser()` launches Chromium once, `_withPage()` opens a fresh page per render and closes it on exit. `disconnected` event triggers transparent relaunch on next call. `SIGINT`/`SIGTERM` close the pool cleanly. Verified: render 1=1419ms (cold), 2=159ms, 3=152ms — **~9× faster warm**. See decision #95.
 - [x] ~~**WS new_event via Postgres LISTEN/NOTIFY**~~ — done 2026-05-15 (commit `1ffba23`). mqtt-subscriber now `pg_notify('new_event', <id>)` after INSERT; api-server's existing `listenClient` picked up a second channel, queries the row by id, applies the same occupancy feed + `isMetricEventType`/`isHiddenAnalyticsEvent` filters, then broadcasts. The `setInterval(..., 1000)` poll + `lastEventId` watermark are gone. End-to-end smoke verified (insert → NOTIFY → WS row delivered). See decision #96.
@@ -258,10 +514,10 @@ endpoint เดิม. LLM ไม่แตะ SQL โดยตรง.
 - [x] ~~Auto-store report history with browsable list~~ — done Ph.2 (migration 021): `report_history`, Settings › LINE "📜 ประวัติรายงาน", PNG download, CSV export, 90d row retention / 30d PNG retention
 
 ### Future versions (per Roadmap slide)
-- **v1.4 (Q4 2026):** Mobile App (iOS + Android native), Push notifications, Biometric login
-- **v1.5 (Q1 2027):** AI Anomaly detection, Person re-identification, Search by image
-- **v2.0 (Q2 2027):** Multi-tenant SaaS, Tenant isolation, Cross-site analytics
-- **v2.1 (Q3 2027):** Predictive analytics, BI dashboard, API marketplace
+- **v1.4** *(milestone passed — current: v1.5.3)*: Push notifications ✅ (`push-sender.js`, `push_tokens`, Expo Push API — shipped); Mobile App (vigil-mobile — push infra ✅, UX phases 1–6 pending); Biometric login ❌ deferred
+- **v1.5 (current — v1.5.3):** AI Anomaly detection ❌, Person re-identification ❌, Search by image ❌ — deferred to future phase
+- **v2.0:** Multi-tenant SaaS, Tenant isolation, Cross-site analytics
+- **v2.1:** Predictive analytics, BI dashboard, API marketplace
 
 ### Design System Migration — 6-Phase Plan (#173)
 
@@ -286,7 +542,8 @@ endpoint เดิม. LLM ไม่แตะ SQL โดยตรง.
 
 - [x] ~~**Phase 4 — Chart/Map Token Wiring**~~ — done 2026-05-29. ~20 hex replaced: OpenLayers cluster fill/stroke, chart axis ticks, stats colorize, trend arrows, per-camera bar, category chip fallback, health badge. Categorical palette arrays (COLORS[], group picker) intentionally kept. Static analysis only — runtime verify recommended.
 
-- [x] ~~**Phase 5 — Sidebar SVG**~~ — done (verified 2026-05-29, ROADMAP stale). nav items 12 รายการ (lines 1254–1265) ใช้ `<svg><use href="#icon-..."/>` ครบ; ทุก ID resolve ใน `icons.svg`. หมายเหตุ: 14 icon IDs อื่นนอก sidebar (`icon-bell`, `icon-save`, `icon-list` ฯลฯ) ยังไม่มี symbol → render blank — เป็น Phase 3 opportunistic backlog.
+- [x] ~~**Phase 5 — Sidebar SVG**~~ — ✅ done, **ไม่มี backlog จริง** (2026-07-03 ถอนคำแก้ก่อนหน้าในวันเดียวกัน — เช็คผิดไฟล์). ทุก `href="#icon-*"` resolve จาก **inline sprite ใน `dashboard/index.html`** (`<div style="display:none"><svg>...</svg></div>`, comment บอกไว้ตรงๆ ว่า "inline so `<use>` works without CORS") — ไม่ใช่จาก `dashboard/icons.svg`. เช็คจริงผ่าน browser DOM (`getElementById` ต่อทุก id ที่ใช้ใน `dashboard/*.js`+`index.html`): **ครบทั้ง 44 symbol ที่ต้องใช้ ไม่มี blank**. `dashboard/icons.svg` (31 symbols, นับได้เดิม 14/20 "ขาด") เป็นไฟล์ orphaned — grep ทั้ง repo ไม่มีที่ไหน `<link>`/`fetch`/`<object>` เรียกมันเลย เป็น "Phase 0 skeleton" ที่ถูกแทนที่ด้วย inline sprite ตอน Phase 5 แล้วไม่มีใครลบไฟล์ทิ้ง — เก็บไว้เป็น dead reference ก็ได้ หรือลบทิ้งก็ได้ (ไม่กระทบ production ทั้งคู่).
+  > **บั๊กใหม่ที่เจอระหว่างตรวจ (แยกเรื่อง ไม่ใช่ icon backlog):** 3 ปุ่มบน Map (STREETS/CARTO/ONLINE — `togStyle`/`togProvider`/`togSource`) ไอคอนหายจริงในหน้าเว็บ (ยืนยันผ่าน DOM: `querySelector('svg')` คืน null) — root cause คือ `page-map.js:214,225,243` เซ็ต `btn.textContent = ...` ตอน toggle (และตอน sync ค่าจาก localStorage ตอนโหลดหน้าด้วย) ซึ่งลบ child `<svg>` ทิ้งทั้งก้อน ไม่ใช่ symbol หาย. ยังไม่แก้ — รอ confirm.
 
 - [x] ~~**Phase 6 — Polish**~~ — done 2026-05-29 (most items). Health card titles stripped (8 cards), automation/image-quality data rows, map toggle buttons (STREETS/LIGHT/CARTO/MAPBOX/ONLINE/OFFLINE), Settings Save → icon-save SVG, user role chips text, camera group ALL tab, Stats 📊→icon-stats SVG, report schedule ✏️/🗑️→SVG/⏳→…, i18n values (rep./hr./rh./rs./bk./mapMgr.*), language switcher, "All categories" option. Remaining carve-outs: LINE alert template, EULA/license modals (DESIGN.md §4). Audit log actionIcons map deferred (needs SVG sprite expansion → separate session).
 
@@ -370,6 +627,11 @@ endpoint เดิม. LLM ไม่แตะ SQL โดยตรง.
   - ✅ PostgreSQL/EMQX/cloudflared: ออกนอก scope (self-heal via `restart:unless-stopped`; docker socket = root-eq)
   - ✅ Browser verify passed: Health card renders, Restart hikvision OK, audit_log row confirmed, responsive ≤768px OK
 
+- [x] **Follow-ups / gaps (พบ 2026-06-20):** — ✅ Q1 + Q4 ปิดครบ
+  - [x] ~~**Stop ไม่โผล่ตอน crash-loop** (Q1)~~ — ✅ **DONE** (commit `ec90931`, 2026-06-26, ตรวจโค้ดยืนยัน 2026-07-03): `page-health.js:62` `canStop = name!=='api-server' && status!=='stopped'` — ครอบทุก non-stopped status (errored/waiting restart/launching/online) แล้ว, ไม่ใช่ allowlist เฉพาะ online/launching แบบเดิม
+  - [x] ~~**alert-worker / report-worker Stop เด้ง 400** (Q4)~~ — ✅ **DONE** (verify 2026-06-26): `health.js:20` `_SVC_NAMES` = {api-server, mqtt-subscriber, media-recorder, hikvision, dahua, **alert-worker, report-worker, lpr-receiver**} — allowlist sync ครบแล้ว, backend ไม่ reject 400 อีก
+  - **Q3 (ยืนยัน by-design, no action):** api-server stop/start ถูกห้ามไว้ (`health.js:312`) เพราะ stop = brick UI เอง — ถูกต้องแล้ว (ตอกย้ำเหตุผล IM7 ต้องแยก receiver)
+
 ### Performance & Sustainability Optimization (audit 2026-06-06)
 
 > ตรวจสอบจาก `pg_stat_user_tables`, pool config จริง, และ file analysis — ทุก item มี Fact รองรับ
@@ -381,10 +643,10 @@ endpoint เดิม. LLM ไม่แตะ SQL โดยตรง.
   - `application_name` ครบทุก 7 worker — ระบุตัวเองใน `pg_stat_activity`
   - `max_connections=100`; headroom **~63** connections (หลัง superuser reserve 3)
 
-- [ ] **P2 — Cache `system_settings` ใน api-server** *(effort ~1-2 ชั่วโมง, risk ต่ำ)*
-  - ปัจจุบัน: `pg_stat` นับ **27,240 seq_scans** บน system_settings (index = 0) — ทุก request ยิง `SELECT WHERE key=` ซ้ำ
-  - Keys ที่โดนซ้ำ: `display_timezone`, `analytics_event_display`, `brand_%`, `data_retention_days`, `snapshot_retention_days`, `clip_retention_days`, `mapbox_token`
-  - เสนอ: Map cache TTL 60s — `getSystemSetting(key)` helper แทน query ตรงๆ — ลด DB round-trip ได้ ~80%
+- [x] ~~**P2 — Cache `system_settings` ใน api-server**~~ — **DONE 2026-06-13** (commit `a8f4304`)
+  - สร้าง `src/helpers/getSystemSetting.js` — Map cache TTL 60s, 3 exports: `getSystemSetting`, `getSystemSettings` (multi-key single query), `invalidateSystemSetting`
+  - migrate 13 call sites ใน api-server.js จาก raw `pool.query` → helper; เพิ่ม `invalidateSystemSetting()` ทุก write path (4 จุด)
+  - ลด seq_scans บน `system_settings` ได้ ~80%; fork-mode single-instance → ไม่ต้องใช้ Redis/pg_notify cross-process
 
 - [x] ~~**P3 — Drop `idx_events_raw_gin` (GIN, 0 scans)**~~ — **DONE 2026-06-06** (commit `9df3731`, migration 039)
   - `idx_events_raw_gin` ลบแล้ว ✓; ไม่มี endpoint JSONB full-text search
@@ -463,11 +725,32 @@ endpoint เดิม. LLM ไม่แตะ SQL โดยตรง.
   - report-worker: `GET /health` บน port 3001 — ok, uptime, pid, memory, db.latency, scheduler.last_check_at
   - api-server: `/api/health/details` aggregate workers จากทั้งสอง port แล้ว
 
-- [x] **S4 — Route split (MAINT-2T-001)** — *template split เสร็จ 2026-06-06 commit `b8122a8`*
-  - สร้าง `src/routes/` + factory pattern (`module.exports = function(app, pool) {}`)
-  - ย้าย 7 routes categories & mapping-rules ออกจาก api-server.js (-111 lines)
-  - smoke-tested: 401/200/404/403 (requireAdminForWrites ยังทำงาน) ✓
-  - ที่เหลือ: opportunistic ตาม WA#2 — ทำเมื่อแตะ subsystem นั้น
+- [x] **S4 — Route split (MAINT-2T-001)** — **✅ COMPLETE 2026-06-14** (19/19 ไฟล์, faces 2 routes hold รอ FR module)
+  - api-server.js peak 7,156 ลบ. → **1,893 ลบ.** (−5,263 ลบ., −73%)
+  - ดูรายละเอียดครบใน CHANGELOG.md รายการ 2026-06-14
+
+- [x] **S5 — dashboard.js split (MAINT-FE-001)** — **✅ FULLY COMPLETE 2026-06-15** (19 page files)
+  - dashboard.js peak ~10,500 ลบ. → **1,379 ลบ.** (−9,121 ลบ., −87%)
+  - `dashboard/page-appearance.js` (618 ลบ.) — `dd35f68`
+  - `dashboard/page-reports.js` (770 ลบ.) — `236ef27`
+  - `dashboard/page-alerts.js` (693 ลบ.) — `1d98f3c`
+  - `dashboard/page-stats.js` (1,483 ลบ.) — `43da0f7`
+  - `dashboard/page-map.js` (770 ลบ.) — `92baf8a`
+  - `dashboard/page-events.js` (289 ลบ.) — `27ef402`
+  - `dashboard/page-cameras.js` (756 ลบ.) — `bb3bacd`
+  - `dashboard/page-camera-settings.js` (1,066 ลบ.) — `7254960`
+  - `dashboard/page-face-gallery.js` (233 ลบ.) — `8bf203b`
+  - `dashboard/page-snapshots.js` (479 ลบ.) — `ba91e89`
+  - `dashboard/page-media.js` (164 ลบ.) — `3249116`
+  - `dashboard/page-map-settings.js` (357 ลบ.) — `a1d61b3`
+  - `dashboard/page-branding.js` (81 ลบ.) — `298b34f`
+  - `dashboard/page-user-mgmt.js` (398 ลบ.) — `298b34f`
+  - `dashboard/page-categories.js` (303 ลบ.) — `cbf1698`
+  - `dashboard/page-system.js` (218 ลบ.) — `a7b7951`
+  - `dashboard/page-health.js` (257 ลบ.) — `3324210`
+  - `dashboard/page-executive-summary.js` (486 ลบ.) — `b7bbedf`
+  - `dashboard/page-nav-bindings.js` (473 ลบ.) — `e90877e`
+  - dashboard.js ที่เหลือ = core globals + pagination + WS + group mgmt + bootstrapApp
 
 ---
 
@@ -485,6 +768,41 @@ endpoint เดิม. LLM ไม่แตะ SQL โดยตรง.
 - [x] ~~**FIT button — recenter map to visible cameras**~~ — done 2026-05-28 (commit `cdf427c`). `recenterMap()` fits view to `_camRawSrc.getExtent()` (visible cameras only per `hiddenGroupIds`). SVG crosshair button ใน map toolbar. CSS class `body.map-wall-mode` ซ่อน sidebar/topbar ขยาย map 100vh, WALL/EXIT WALL buttons, Fullscreen API, `localStorage` persist. decision #161 · [docs/LOGIC_map-features.md § I](docs/LOGIC_map-features.md)
 - [ ] Audit Log CSV export — filter-aware export for user/camera/action audit rows
 - [x] ~~**Convert "ดาวน์โหลด PDF" — html2canvas+jsPDF cleanup**~~ — done commit `2d9ba48`; CDN scripts removed from index.html.
+
+---
+
+## 🏢 Strategic direction — Multi-Site (Edge ↔ Cloud)  [PLAN 2026-06-22]
+
+> ลูกค้าหลาย Site (BMA / ภูเก็ต / Main · **200 กล้อง/site = ตัวเลขเผื่อ** ไม่ใช่ของจริงช่วงแรก) อยู่คนละ network →
+> กระจาย ingest ไป **edge แต่ละ site**, รวม dashboard/DB ที่ **cloud**.
+> **ออกแบบเต็ม (13 section · diagram + cost + install runbook + POC):** `public/others/demo/multi-site/index.html` (commit `05f048e`)
+> **DB/app-tenancy plan:** `docs/superpowers/specs/2026-06-21-camera-status-multisite-design.md` (MS-1..MS-8 — gate R5)
+> เกี่ยวข้อง: IM3-R (cross-site push) · RF5 (`lpr_direction`) · camera-status demo (`public/others/demo/site/`)
+
+**สถาปัตยกรรม (decisions ที่ตกผลึก):**
+- **Central = Bangmod.Cloud 3 VMs** — `vigil-edge-01` (Public IP + WireGuard + nginx = gateway) · `vigil-core-01` (Node api + EMQX + Rule) · `vigil-db-01` (PG16 + **RLS**). OPEX ~5,517฿/ด (VM+Storage จากภาพ; ยังไม่รวม Dev Tools). Public IP **ฟรีในแพ็กเกจ** (Bangmod confirm). ⚠ `vigil-edge-01` (cloud gw) ≠ Site Edge (N150)
+- **Transport = WireGuard** (site edge dial-out → Public IP ของ vigil-edge-01) → **ไม่ต้อง tunnel บน cloud**. core/db = private net. firewall edge-01: `51820/udp` + `443` + SSH จำกัด
+- **Site Edge = N150** (4C/16GB/512GB) **dual-NIC**: onboard=กล้อง (isolated) · USB=WAN+WireGuard (WAN ฝั่ง USB ปลอดภัยเพราะ ANR buffer). `edge.config.json` toggle ingester **ต่อ vendor + capability** (Hik Smart/Face/ANPR แยก). **nanoMQ รันเฉพาะมี Bosch**
+- **Transfer mode ต่อ type:** LPR=metadata-only (plaque เรนเดอร์จาก text) · Face=thumbnail · full-res เก็บที่ edge, pull on-demand. on-site ดูรูป local ผ่าน **Caddy** (`bma/phuket.dojojin.tech` → LAN IP + wildcard cert; **media local · data ยังผ่าน cloud**). **ANR** = store-and-forward (ลิงก์ล่ม→buffer→backfill)
+- **Config flow: central → edge (pull ผ่าน WireGuard)** — central UI → central DB (+`site_id`) → edge pull → `cameras-config.json` → `fs.watch` hot-reload. *config ลง · event ขึ้น · WireGuard เส้นเดียว*. reuse `page-camera-settings.js` + `cameras-config.json`
+
+**Rollout (Phase 0 POC → Phase 1 Deploy):**
+- **Phase 0 POC บน macOS** (central หลัง NAT → **Cloudflare Tunnel/Tailscale · ยังไม่ใช้ WireGuard** · `bma.dojojin.tech` ผ่าน `/etc/hosts` + Caddy `tls internal`): 0a same-LAN (กล้องไม่กี่ตัว) → 0b remote → 0c ready · งบ $0
+- **Phase 1 Deploy Bangmod.Cloud** (WireGuard + Public IP) = **re-point edge endpoint** (Mac → vigil-edge-01); software edge เดิม
+
+**DB prep:**
+- **Tier 1** ✅ DONE 2026-06-21 (migrations 052–056, 062–063): `sites` table + `cameras.site_id` FK + `user_sites` + `cameras.cam_role` + `cameras.lpr_direction` — applied; backfill VSS (migration 055). ปลดล็อก camera-status + RF5. `/api/cameras` scoped by user_sites (fail-open: 0 rows = ทุก site).
+- **Tier 2** ❌ pending: **RLS policy** + ขยาย `users.role` (เดิม CHECK admin/viewer/auditor). **⚠️ เหตุผล defer เดิมเป็นเท็จแล้ว (แก้ 2026-07-05)** — เคยเขียนว่า "กล้องทุกตัวอยู่ main site 100% ปัจจุบัน" แต่เช็ค DB จริงพบ **main=11 + vss=6 กล้อง (2 site จริงแล้ว)** และมี user scoped จริง 3 คน (`vss`/`phuket`/`service`) ที่พึ่ง `siteWhere()` (`src/auth.js`) เป็นกำแพงกั้นชั้นเดียว — ไม่มี DB-level enforcement เลย (`pg_tables.rowsecurity` = 0 ทุกตาราง, ยืนยัน 2026-07-05). ความเสี่ยง = route ใหม่ในอนาคตที่ลืมเรียก `siteWhere()` จะรั่วข้าม site ทันทีไม่มีเซฟตี้เน็ต. **ทำไมยังไม่ทำ (เหตุผลทางเทคนิคจริง ไม่ใช่ผัดวันประกันพรุ่ง):** (1) RLS ต้องมีกลไกบอก DB ว่า request เป็นของ site ไหนต่อ query (`SET LOCAL` ต้น transaction) แต่ระบบใช้ connection pool เดียว/role เดียวทุก request — ต้องรื้อ connection handling; (2) `users.role` CHECK ต้องขยายให้ DB role แยกได้ (admin/auditor ต้อง `BYPASSRLS`); (3) ต้องเขียน policy ครบทุกตารางที่มี `camera_id`/`site_id` — เสี่ยง silently หัก query ที่ไม่คาดคิดถ้าพลาด. จัดอยู่กลุ่ม "Security & auth" ใน Model Assignment (CLAUDE.md) — ต้องวางแผนละเอียด ไม่ใช่ retrofit เร็วๆ.
+
+**Cost buckets (แยก 3 ก้อน):** OPEX cloud (Bangmod รายเดือน) · CAPEX edge (N150 ×2 site ครั้งเดียว · 🟡 ราคา probe จริง) · Internet line ราย-site (True capped 100GB / Fiber). **30Mbps พอ · กำแพงคือ quota** (LPR-heavy → Fiber; metadata-only ช่วยให้ capped พอ)
+
+**Open decisions (gate ก่อน MS-1):**
+1. **Staging fork** *(กำหนด scope migration ทั้งหมด)*: single-site interim (cam_role ก่อน) vs full multi-site
+2. App-layer บน WireGuard: HTTP forwarder (A, แนะนำ) vs MQTT bridge → EMQX (B)
+3. `site_id`+RLS vs `site` free-text (IM5) — แทนที่/อยู่ร่วม? · camera creds key mgmt (AES `CAMERA_SECRET_KEY`)
+4. Public ingress: Cloudflare หน้า dashboard (CDN/DDoS) หรือ nginx+Public IP ตรง
+
+> **Docs governance:** `vigil-docs-v2` + `dev-docs` **ยังไม่ต้อง update** — ทั้งคู่อธิบาย "ของที่ ship แล้ว"; plan นี้ยังไม่ implement. trigger ตอน ship จริง: `04-components.html`/`12-scale-up.html` (vigil-docs-v2) · `index.html`/`restart-services.html` (dev-docs) เมื่อมี edge module/PM2 worker/RBAC role จริง
 
 ---
 
@@ -827,4 +1145,4 @@ Local apps unbroken. **Remaining:** `hostssl` enforcement in `pg_hba.conf` (scop
 
 ---
 
-<sub>End of ROADMAP.md · Companion to CLAUDE.md · Updated 2026-06-08</sub>
+<sub>End of ROADMAP.md · Companion to CLAUDE.md · Updated 2026-06-26</sub>

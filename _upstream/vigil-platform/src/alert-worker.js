@@ -87,6 +87,24 @@ listenForAlerts().catch((e) => {
   process.exit(1);
 });
 
+// ── Dwell alert loop (migration 044) ─────────────────────────────
+// เช็ค "อยู่นานผิดปกติ" ทุก 60s — อยู่ที่ worker นี้ตัวเดียวเท่านั้น
+// (alert-engine ถูก init ใน api-server/ingesters ด้วย ถ้า engine ตั้ง
+// interval เองทุก process จะยิงซ้ำ). cooldown ของ rule กันเตือนถี่อยู่แล้ว
+setInterval(() => {
+  alertEngine.checkDwellRules()
+    .catch((e) => console.error('[alert-worker] dwell check error:', e.message || e));
+}, 60 * 1000);
+console.log('[alert-worker] ⏱️ dwell alert loop every 60s');
+
+// ── Edge stale alert loop (EM6) ───────────────────────────────────
+// เช็คทุก 5 นาที — site ที่ไม่ส่ง heartbeat > EDGE_HEARTBEAT_STALE_SEC ส่ง LINE
+setInterval(() => {
+  alertEngine.checkEdgeStale()
+    .catch((e) => console.error('[alert-worker] edge stale check error:', e.message || e));
+}, 5 * 60 * 1000);
+console.log('[alert-worker] ⏱️ edge stale alert loop every 5m');
+
 // ── Health endpoint ──────────────────────────────────────────────
 // Bound to loopback only; no auth required (no secrets exposed).
 http.createServer((req, res) => {

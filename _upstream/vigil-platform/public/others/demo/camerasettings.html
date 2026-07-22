@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Camera Settings — Redesign Demo v2 · Vigil</title>
+  <link rel="stylesheet" href="camerasettings.css?v=8">
+</head>
+<body>
+  <div class="wrap">
+    <div class="page-h">
+      <h1>การตั้งค่ากล้อง</h1>
+      <span class="demo-tag">DEMO v2 · Phase CS</span>
+    </div>
+    <p class="lede">list = default view → คลิก "แก้ไข" เปิด <b>full-page editor</b> (section nav + scroll เดียว — ไม่ซ่อน field = ไม่ลืมตั้ง). section "การส่งต่อข้อมูล" โผล่เฉพาะ Hikvision.</p>
+
+    <div class="subbar">
+      <button class="tab active">กล้อง</button>
+      <button class="tab">กลุ่ม</button>
+      <button class="tab">Status Log</button>
+    </div>
+
+    <div class="toolbar">
+      <input type="search" id="q" placeholder="ค้นหา ชื่อ / ID / IP / ตำแหน่ง…">
+      <select id="fVendorFilter">
+        <option value="">ทุก vendor</option>
+        <option value="Bosch">Bosch</option>
+        <option value="Hikvision">Hikvision</option>
+        <option value="Dahua">Dahua</option>
+        <option value="ONVIF">ONVIF</option>
+      </select>
+      <select id="fStatusFilter">
+        <option value="">ทุกสถานะ</option>
+        <option value="ok">ออนไลน์</option>
+        <option value="bad">ออฟไลน์</option>
+        <option value="paused">หยุดชั่วคราว</option>
+      </select>
+      <select id="fLocFilter"><option value="">ทุกตำแหน่ง</option></select>
+      <span id="count" class="count"></span>
+    </div>
+    <div class="list">
+      <div class="list-head"><div>กล้อง / IP</div><div>Vendor</div><div>ตำแหน่ง</div><div>สถานะ</div><div></div></div>
+      <div id="camRows"></div>
+    </div>
+    <div class="pager" id="pager"></div>
+  </div>
+
+  <!-- ===== full-page editor ===== -->
+  <div class="editor" id="editor" aria-hidden="true">
+    <div class="ed-head">
+      <button class="ed-back" data-action="close">&larr; กลับไปรายการ</button>
+      <span class="badge" id="edBadge">Vendor</span>
+      <span class="ed-title" id="edTitle">กล้อง</span>
+    </div>
+
+    <nav class="ed-nav" id="edNav">
+      <a href="#sec-info" class="active">ข้อมูลกล้อง</a>
+      <a href="#sec-conn">การเชื่อมต่อ</a>
+      <a href="#sec-map">ตำแหน่งบนแผนที่</a>
+      <a href="#sec-media">ภาพนิ่ง &amp; Media</a>
+      <a href="#sec-alert">การแจ้งเตือนออฟไลน์</a>
+      <a href="#sec-fwd" id="navFwd" hidden>การส่งต่อข้อมูล</a>
+    </nav>
+
+    <div class="ed-body" id="edBody">
+     <div class="inner">
+
+      <section class="sec" id="sec-info">
+        <h2>ข้อมูลกล้อง</h2>
+        <div class="grid2">
+          <div class="field"><label>Camera ID <span class="req">*</span></label><input type="text" id="fId"></div>
+          <div class="field"><label>ชื่อกล้อง</label><input type="text" id="fName"></div>
+        </div>
+        <div class="field"><label>ยี่ห้อกล้อง (Vendor)</label>
+          <select id="fVendor">
+            <option value="bosch">Bosch — MQTT (ONVIF Profile M)</option>
+            <option value="hikvision">Hikvision — ISAPI Alert Stream</option>
+            <option value="dahua">Dahua — VCA / Face (CGI)</option>
+            <option value="onvif">ONVIF ทั่วไป — Monitor อย่างเดียว</option>
+          </select>
+        </div>
+        <div class="field"><label>ตำแหน่งติดตั้ง</label><input type="text" id="fLoc"></div>
+        <div class="field"><label>Notes</label><input type="text" id="fNotes"></div>
+      </section>
+
+      <section class="sec" id="sec-conn">
+        <h2>การเชื่อมต่อ</h2>
+        <div class="grid2">
+          <div class="field"><label>IP Address <span class="req">*</span></label><input type="text" id="fIp"></div>
+          <div class="field"><label>HTTP Port</label><input type="number" placeholder="80"></div>
+        </div>
+        <div class="grid2">
+          <div class="field"><label>Username</label><input type="text" value="admin"></div>
+          <div class="field"><label>Password</label><input type="password" value="123456"></div>
+        </div>
+        <div class="row-inline"><button class="btn sm" data-action="noop">Test Connection</button><span class="hint" style="margin:0">ทดสอบการเข้าถึงกล้อง</span></div>
+
+        <div class="subhead">วิธีรับข้อมูล (Ingest method)</div>
+
+        <!-- non-Hikvision: single info line -->
+        <div class="ingest ok" id="ingestInfo" hidden><span class="dot ok"></span><span id="ingestInfoTxt">—</span></div>
+
+        <!-- Hikvision: recommendation + explicit mode choice -->
+        <div id="ingestChoose" hidden>
+          <div class="ingest" id="ingestRec"><span class="dot"></span><b style="color:var(--text-primary)">คำแนะนำ:&nbsp;</b><span id="recText">—</span><button class="btn sm" data-action="noop" style="margin-left:auto">ตรวจสอบอีกครั้ง</button></div>
+          <div class="check-wrap" style="margin-top:10px">
+            <label class="check"><input type="radio" name="ingest" id="modePull" value="pull"><span>Pull — server <b>ดึง</b> alertStream จากกล้อง<div class="hint" id="pullStat"></div></span></label>
+            <label class="check"><input type="radio" name="ingest" id="modePush" value="push"><span>Push — กล้อง <b>ส่ง</b> event มาหา server เอง (push_only, ไม่ pull)<div class="hint" id="pushStat"></div></span></label>
+          </div>
+          <div class="note accent" style="margin-top:0"><b>เลือกยังไง:</b> Test Connection เข้าถึงกล้องได้ → <b>Pull</b> · เข้าไม่ถึง (ข้ามไซต์ / หลัง NAT) หรือกล้อง push อย่างเดียว (เช่น ANPR) → <b>Push</b></div>
+        </div>
+
+        <div id="fwdGenWrap" hidden>
+          <div class="field" style="margin-top:12px"><label>Face Push URL (ข้ามไซต์)</label>
+            <div class="row-inline"><span class="code" style="flex:1">— ยังไม่ได้สร้าง —</span><button class="btn sm" data-action="noop">สร้าง URL</button></div>
+            <div class="hint">ตั้งใน Alarm Server ของกล้อง: HTTPS 443, URL = path นี้. สร้างใหม่ = URL เดิมใช้ไม่ได้</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="sec" id="sec-map">
+        <h2>ตำแหน่งบนแผนที่</h2>
+        <div class="map-stub">[ map picker — OpenLayers · คลิกเพื่อปักหมุด ]</div>
+        <div class="grid2" style="margin-top:12px">
+          <div class="field"><label>Latitude</label><input type="text" value="7.8804"></div>
+          <div class="field"><label>Longitude</label><input type="text" value="98.3923"></div>
+        </div>
+        <button class="btn sm" data-action="noop">ใช้ตำแหน่งปัจจุบัน</button>
+      </section>
+
+      <section class="sec" id="sec-media">
+        <h2>ภาพนิ่ง &amp; Media</h2>
+        <div class="field" id="fldSnapPath" hidden><label>Snapshot URL Path</label>
+          <div class="row-inline"><input type="text" placeholder="กดตรวจหาอัตโนมัติ หรือกรอกเอง" style="flex:1"><button class="btn sm" data-action="noop">ตรวจหาอัตโนมัติ</button></div>
+          <div class="row-inline" style="margin-top:8px"><button class="btn sm" data-action="noop">Preview Snapshot</button></div>
+          <div class="hint">Dahua / ONVIF — path สำหรับดึงภาพนิ่ง</div>
+        </div>
+        <div class="check-wrap">
+          <label class="check"><input type="checkbox" checked><span>เปิด Snapshot capture<div class="hint">ดึงภาพ JPEG ตอน alarm</div></span></label>
+          <label class="check" id="chkVca" hidden><input type="checkbox" checked><span>เปิด VCA Object Overlay<div class="hint">กรอบรอบ object — เฉพาะ Bosch</div></span></label>
+          <label class="check" id="chkBbox" hidden><input type="checkbox" checked><span>แสดงกรอบวัตถุบนภาพ (BBox)<div class="hint">วาดจากพิกัด event — Dahua / Hikvision face</div></span></label>
+          <label class="check" id="chkZone" hidden><input type="checkbox" checked><span>แสดงโซนกฎบนภาพ (Zone)<div class="hint">polygon/เส้นของ rule — Dahua / Hikvision smart events</div></span></label>
+          <label class="check"><input type="checkbox"><span>เปิด Pre-alarm Video Clip (RTSP rolling buffer)<div class="hint">server stream RTSP จากกล้องตลอดเวลา (~2 Mbps/cam)</div></span></label>
+        </div>
+        <div class="note accent" id="dahuaNote" hidden><b>กล้อง Dahua:</b> ภาพ snapshot ตอน alarm ถูกตัดเฟรมจาก RTSP buffer ภายในให้อัตโนมัติ — ไม่ต้องเปิด Pre-alarm Video Clip ก็ได้ภาพครบ (server stream RTSP ~2 Mbps เพื่อใช้เป็น buffer)</div>
+        <div class="grid2">
+          <div class="field"><label>Pre-alarm (วินาที)</label><input type="number" value="10"></div>
+          <div class="field"><label>Post-alarm (วินาที)</label><input type="number" value="5"></div>
+        </div>
+        <div class="grid2">
+          <div class="field"><label>Clip Stream</label><input type="number" placeholder="2"><div class="hint">RTSP inst สำหรับคลิป</div></div>
+          <div class="field" id="fldSnapStream" hidden><label>Snapshot Stream</label><input type="number" placeholder="1"><div class="hint">Hikvision / Dahua — stream ภาพนิ่ง</div></div>
+        </div>
+        <div class="field"><label>ความละเอียดปุ่ม "ดูภาพเต็ม"</label>
+          <select><option>เต็ม — native (ไม่ cap)</option><option>1920</option><option>1280</option></select>
+          <div class="hint">ขนาดภาพตอนกด "ดูภาพเต็ม" — ต้นฉบับเก็บ native เสมอ</div>
+        </div>
+        <div class="field"><label>Suppress event types (ปิดที่ต้นทาง — ต่อกล้อง)</label>
+          <div class="check-wrap" style="margin-top:6px">
+            <label class="check"><input type="checkbox"><span>GlobalSceneChange</span></label>
+            <label class="check"><input type="checkbox"><span>ImageTooBright</span></label>
+            <label class="check"><input type="checkbox"><span>ImageTooBlurry</span></label>
+            <label class="check"><input type="checkbox"><span>ImageTooDark</span></label>
+            <label class="check"><input type="checkbox"><span>TamperDetection</span></label>
+            <label class="check"><input type="checkbox"><span>Trigger/DigitalInput</span></label>
+          </div>
+          <div class="hint">ปิดที่ต้นทาง — ไม่เก็บ DB / ไม่ snapshot / ไม่แจ้งเตือน</div>
+        </div>
+      </section>
+
+      <section class="sec" id="sec-alert">
+        <h2>การแจ้งเตือนเมื่อกล้องออฟไลน์</h2>
+        <label class="check"><input type="checkbox"><span>เปิดใช้การแจ้งเตือนออฟไลน์</span></label>
+        <div class="grid2" style="margin-top:10px">
+          <div class="field"><label>แจ้งครั้งแรกหลังออฟไลน์ (วินาที)</label><input type="number" value="300"></div>
+          <div class="field"><label>แจ้งซ้ำทุก ๆ (นาที)</label><input type="number" value="60"></div>
+        </div>
+        <div class="grid2">
+          <div class="field"><label>เริ่มเวลาเงียบ</label><input type="time"></div>
+          <div class="field"><label>สิ้นสุดเวลาเงียบ</label><input type="time"></div>
+        </div>
+        <div class="subhead">ผู้รับ LINE (ไม่เลือก = ส่งทุกคน)</div>
+        <label class="check"><input type="checkbox"><span>VSS Dev &amp; Test</span></label>
+        <label class="check"><input type="checkbox"><span>Dojo-mAn</span></label>
+        <label class="check"><input type="checkbox"><span>Mr. Dojo</span></label>
+      </section>
+
+      <section class="sec" id="sec-fwd" hidden>
+        <h2>การส่งต่อข้อมูล (Data Forwarding)</h2>
+        <div class="desc">ส่งต่อ event ANPR ที่กล้องนี้ push เข้ามา ไปยัง endpoint ภายนอก (Hikvision เท่านั้น)</div>
+        <label class="check"><input type="checkbox" id="fFwdEnable"><span>เปิดส่งต่อข้อมูลสำหรับกล้องนี้</span></label>
+        <div class="field" style="margin-top:12px"><label>Endpoint URL <span class="hint" style="display:inline">(เว้นว่าง = ใช้ค่า default ของระบบ)</span></label>
+          <input type="text" id="fFwdUrl" placeholder="http://202.124.201.106:10001/receive_hik_phuket">
+          <div class="hint">default ระบบ: <span class="code">http://202.124.201.106:10001/receive_hik_phuket</span> (CIB)</div>
+        </div>
+        <div class="note accent"><b>ทำไมต้องส่งต่อ:</b> กล้อง Hikvision LPR push ได้ slot เดียว — เรายึด slot มา ingest แล้ว relay ต่อให้ปลายทางเดิม (CIB) ไม่งั้นเขาขาดข้อมูล</div>
+        <div class="note"><b>PDPA:</b> ส่งภาพ/ทะเบียนรถ (PII) ออกนอกระบบ — บันทึกว่ากล้องไหนส่งต่อไป partner ไหน</div>
+      </section>
+
+     </div>
+    </div>
+
+    <div class="ed-foot">
+      <span class="foot-hint">บันทึกทั้งหมดในปุ่มเดียว — ไม่มี save แยกที่ลืมกดได้</span>
+      <div class="row-inline"><button class="btn" data-action="close">ยกเลิก</button><button class="btn primary" data-action="save">บันทึกการตั้งค่า</button></div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast">บันทึกแล้ว (demo)</div>
+  <script src="camerasettings.js?v=8"></script>
+</body>
+</html>

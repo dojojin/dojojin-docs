@@ -1,0 +1,1 @@
+Code=CrossRegionDetection;action=Start;index=0;data={"UTC":1781701182,"UTCMS":0,"EventID":7,"Direction":"Enter","RegionName":"Region1","Object":{"ObjectID":42,"ObjectType":"Human","BoundingBox":[3200,1600,5200,4800]},"Name":"EnterZone"}

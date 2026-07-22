@@ -29,6 +29,7 @@ const NAV_ITEMS = [
   { href: '12-scale-up.html',         label: '12 Scale Up' },
   { href: '13-procurement-tor.html',  label: '13 TOR ภาครัฐ' },
   { href: '14-appearances.html',      label: '14 Appearances' },
+  { href: '15-api-overview.html',     label: '15 ภาพรวม REST API' },
   { section: 'อ้างอิง' },
   { href: '../vendor-comparison.html', label: '↗ Vendor Comparison', target: '_blank' },
 ];

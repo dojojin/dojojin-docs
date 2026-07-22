@@ -39,6 +39,10 @@ function formatMessage(template, event) {
     .replace(/\{object_class\}/g, event.object_class || 'Unknown')
     .replace(/\{likelihood\}/g, likelihood)
     .replace(/\{event_type\}/g, event.event_type || '')
+    // {duration} — dwell alert (migration 044): "อยู่มานานเท่าไหร่แล้ว"
+    .replace(/\{duration\}/g, event.duration_text || '-')
+    .replace(/\{person_name\}/g, event.person_name || '-')
+    .replace(/\{match_confidence\}/g, event.match_confidence || '-')
     .substring(0, 4900); // LINE max 5000 chars (กันเกิน)
 }
 
@@ -81,13 +85,26 @@ function _imgbbUpload(imageBase64, imgbbKey) {
 }
 
 // ── Upload snapshot file to imgbb ───────────────────────────
-function uploadToImgbb(snapshotFilename, imgbbKey) {
-  if (!snapshotFilename) return Promise.resolve(null);
+// Local-first, then Tier-2 edge proxy (same fetch pattern as api-server:466).
+async function uploadToImgbb(snapshotFilename, imgbbKey) {
+  if (!snapshotFilename || !imgbbKey) return null;
   const filePath = path.join(SNAPSHOT_DIR, snapshotFilename);
-  if (!fs.existsSync(filePath)) return Promise.resolve(null);
-  try {
-    return _imgbbUpload(fs.readFileSync(filePath, 'base64'), imgbbKey);
-  } catch { return Promise.resolve(null); }
+  let b64;
+  if (fs.existsSync(filePath)) {
+    try { b64 = fs.readFileSync(filePath, 'base64'); } catch { return null; }
+  } else {
+    const u = process.env.SNAPSHOT_PROXY_URL, s = process.env.SNAPSHOT_PROXY_SECRET;
+    if (!u || !s) return null;
+    try {
+      const up = await fetch(
+        `${u}/snapshots/${encodeURIComponent(snapshotFilename).replace(/%2F/g, '/')}`,
+        { headers: { Authorization: `Bearer ${s}` }, signal: AbortSignal.timeout(8000) }
+      );
+      if (!up.ok) return null;
+      b64 = Buffer.from(await up.arrayBuffer()).toString('base64');
+    } catch { return null; }
+  }
+  return _imgbbUpload(b64, imgbbKey);
 }
 
 // ── Upload an in-memory image Buffer to imgbb ───────────────

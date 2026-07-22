@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>FAQ — Dev Portal</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .faq-q {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text);
+      margin: 2rem 0 0.5rem 0;
+      padding-left: 0.75rem;
+      border-left: 3px solid var(--accent);
+    }
+    .faq-a {
+      padding-left: 0.75rem;
+      margin-bottom: 0.25rem;
+    }
+    .faq-a p { color: var(--text); }
+    .faq-src {
+      font-size: 11px;
+      color: var(--dim);
+      margin-top: 0.4rem;
+    }
+    .faq-src a { color: var(--accent); }
+  </style>
+</head>
+<body>
+<div id="overlay"></div>
+<div class="layout">
+<nav class="nav" id="nav"></nav>
+<button id="ham">☰</button>
+
+<div class="main">
+<h1 class="ph">FAQ — Frequently Asked Questions</h1>
+
+<p>คำถามที่พบบ่อยจากการ maintain / develop ระบบ — sourced จาก GOTCHAS.md และ DECISIONS.md</p>
+
+<h2>Architecture &amp; Stack Decisions</h2>
+
+<div class="faq-q">ทำไมต้อง Vanilla JS ไม่ใช้ React / Vue / Svelte?</div>
+<div class="faq-a">
+  <p>เป็น deliberate decision ถาวร (DECISIONS.md #1) — ไม่มี build step = เปิดไฟล์แก้ได้เลย, ไม่มี dependency hell, bundle size เล็ก, dashboard ทำงานได้แม้ Node ตายชั่วคราว (static files serve ได้จาก nginx/CDN). Dashboard = งานวิเคราะห์ไม่ใช่ interactive app ที่ต้องการ component reactivity ซับซ้อน</p>
+  <p class="faq-src">อ้างอิง: <a href="md-viewer.html?src=../DECISIONS.md">DECISIONS.md #1</a></p>
+</div>
+
+<div class="faq-q">ทำไม auth ต้องมี 3 layer (cookie + localStorage + sessionStorage)?</div>
+<div class="faq-a">
+  <p>Safari ITP (Intelligent Tracking Prevention) บล็อก cross-site cookie เมื่อเข้าผ่าน Cloudflare Tunnel — ถ้าใช้แค่ cookie, Safari users login ไม่ได้. Triple-layer: server-side session cookie + localStorage token + sessionStorage fallback ครอบคลุม browser policy ทุก variant</p>
+  <p class="faq-src">อ้างอิง: <a href="md-viewer.html?src=../GOTCHAS.md">GOTCHAS #2</a> · <a href="md-viewer.html?src=../DECISIONS.md">DECISIONS.md #2</a></p>
+</div>
+
+<div class="faq-q">ทำไมไม่ใช้ ORM (Prisma / Drizzle / Sequelize)?</div>
+<div class="faq-a">
+  <p>Raw SQL เพียงพอสำหรับ scale นี้ — ORM เพิ่ม complexity layer โดยไม่ได้ประโยชน์ชัดเจน. Query ที่ซับซ้อน (date_bin density, analyticsEventClause, EXPLAIN tuning) อ่านง่ายกว่าในรูป SQL ตรงๆ และ debug ง่ายกว่ามาก</p>
+  <p class="faq-src">อ้างอิง: <a href="md-viewer.html?src=../DECISIONS.md">DECISIONS.md #3</a></p>
+</div>
+
+<div class="faq-q">ทำไม EMQX แทน Mosquitto?</div>
+<div class="faq-a">
+  <p>Bosch IVA (firmware เก่า) ส่ง MQTT packet แบบที่ Mosquitto 2.x strict validator reject — camera reconnect ทุก 30–300 วินาที log ว่า "disconnected due to malformed packet". EMQX 5.8 tolerant กว่า ไม่มี config knob ให้ relax ใน Mosquitto</p>
+  <p class="faq-src">อ้างอิง: <a href="md-viewer.html?src=../GOTCHAS.md">GOTCHAS #33</a> · <a href="md-viewer.html?src=../DECISIONS.md">DECISIONS.md #112</a></p>
+</div>
+
+<h2>PM2 &amp; Services</h2>
+
+<div class="faq-q">ทำไม restart PM2 แล้วกล้อง Bosch disconnect / EHOSTUNREACH?</div>
+<div class="faq-a">
+  <p>macOS Local Network Privacy (LNP) — process ที่ spawn จาก terminal ที่ไม่ใช่ macOS GUI จะไม่ได้ LNP permission → เมื่อ PM2 restart และ spawn child process ใหม่, child ไม่มี LNP → EMQX broker บน LAN เข้าไม่ได้ (EHOSTUNREACH). ต้องรัน restart จาก macOS GUI Terminal ผ่าน .command script เท่านั้น</p>
+  <p class="faq-src">อ้างอิง: <a href="restart-services.html">Restart Services (LNP)</a> · <a href="md-viewer.html?src=../GOTCHAS.md">GOTCHAS #84</a></p>
+</div>
+
+<div class="faq-q">pm2 มี 7 workers ทำอะไรบ้าง?</div>
+<div class="faq-a">
+  <table>
+    <thead><tr><th>Process</th><th>หน้าที่</th></tr></thead>
+    <tbody>
+      <tr><td><code>api-server</code></td><td>Express API + WebSocket + static serving</td></tr>
+      <tr><td><code>mqtt-subscriber</code></td><td>Bosch BVMS MQTT ingestion</td></tr>
+      <tr><td><code>hikvision-isapi</code></td><td>Hikvision ISAPI Alert Stream</td></tr>
+      <tr><td><code>dahua-cgi</code></td><td>Dahua CGI events</td></tr>
+      <tr><td><code>media-recorder</code></td><td>RTSP rolling buffer + clip dump</td></tr>
+      <tr><td><code>alert-worker</code></td><td>LINE alert rule matching</td></tr>
+      <tr><td><code>report-worker</code></td><td>Report scheduler</td></tr>
+    </tbody>
+  </table>
+  <p class="faq-src">อ้างอิง: <code>ecosystem.config.js</code> · <a href="restart-services.html">Restart Services</a></p>
+</div>
+
+<h2>Schema &amp; Migration</h2>
+
+<div class="faq-q">Migration fail แล้ว api-server ไม่ start — ทำยังไง?</div>
+<div class="faq-a">
+  <p>By design — failing migration abort startup ทันที (GOTCHAS #19). ห้าม comment out migration หรือ try/catch ครอบ. แนวทาง: (1) restore backup ล่าสุด, (2) แก้ SQL ให้ handle live schema จริง, (3) restart</p>
+<pre>./scripts/restore.sh backups/vigil_platform_&lt;latest&gt;.dump
+# แก้ db/db_migration_NNN_xxx.sql
+pm2 restart api-server
+pm2 logs api-server --lines 30</pre>
+  <p class="faq-src">อ้างอิง: <a href="md-viewer.html?src=../GOTCHAS.md">GOTCHAS #19</a> · <a href="add-migration.html">Recipe: เพิ่ม Migration</a></p>
+</div>
+
+<div class="faq-q">Migration numbering ต้องทำยังไง — มีกฎอะไรบ้าง?</div>
+<div class="faq-a">
+  <p>ใช้ 3-digit prefix เสมอ (เช่น <code>db_migration_046_my_feature.sql</code>) เพราะ runner sort ตาม filename. Migration ต้องเป็น idempotent (IF NOT EXISTS, ADD COLUMN IF NOT EXISTS, ON CONFLICT DO NOTHING). ตรวจ next number ก่อนสร้างไฟล์ใหม่ทุกครั้ง</p>
+<pre>ls db/db_migration_*.sql | tail -5   # ดู number ล่าสุด</pre>
+  <p class="faq-src">อ้างอิง: <a href="md-viewer.html?src=../GOTCHAS.md">GOTCHAS #18</a> · <a href="add-migration.html">Recipe: เพิ่ม Migration</a></p>
+</div>
+
+<h2>Camera Configuration</h2>
+
+<div class="faq-q">เพิ่มกล้องแล้ว events ไม่เข้า — camera_id ถูกต้อง?</div>
+<div class="faq-a">
+  <p>ตรวจ invisible characters ใน camera_id — เกิดจากพิมพ์ด้วย keyboard ภาษาไทย (Thai phinthu U+0E3A prepend, invisible to the eye). POST /api/cameras ตอนนี้ sanitize แล้ว แต่ถ้า config เก่า อาจมีค่าผิด</p>
+<pre># ตรวจ camera_id ใน config
+node -e "
+const c = require('./config/cameras-config.json');
+c.forEach(cam => console.log(JSON.stringify(cam.camera_id), cam.camera_id.length));
+"</pre>
+  <p class="faq-src">อ้างอิง: <a href="md-viewer.html?src=../GOTCHAS.md">GOTCHAS #32</a></p>
+</div>
+
+<div class="faq-q">Mapping rule ตั้งแล้วแต่ category ยังเป็น 0 — เช็คอะไร?</div>
+<div class="faq-a">
+  <p>Bosch LineDetector event มี <code>object_class</code> แต่ไม่มี <code>state</code> — ถ้า mapping rule ตั้ง match_state='true' จะ miss events ทั้งหมด. สำหรับ "นับทุก crossing" ให้ตั้ง State เป็น <code>(any)</code> (NULL)</p>
+  <p class="faq-src">อ้างอิง: <a href="md-viewer.html?src=../GOTCHAS.md">GOTCHAS #9</a> · <a href="md-viewer.html?src=../SKILL.md">SKILL.md §3</a></p>
+</div>
+
+<h2>i18n &amp; UI</h2>
+
+<div class="faq-q">เพิ่ม string ใน th: แล้ว English mode เห็น "undefined"</div>
+<div class="faq-a">
+  <p>ต้องใส่ key ทั้ง th: และ en: block พร้อมกันเสมอ — ขาด en: → I18N.t() return undefined เมื่อ user เปลี่ยน language (GOTCHAS #42)</p>
+  <p class="faq-src">อ้างอิง: <a href="md-viewer.html?src=../GOTCHAS.md">GOTCHAS #42</a> · <a href="add-i18n.html">Recipe: เพิ่ม i18n String</a></p>
+</div>
+
+<div class="faq-q">Health Report PNG abort — Node.js crash / "Could not load fallback font"</div>
+<div class="faq-a">
+  <p>SVG text ที่ render ผ่าน sharp มี emoji → librsvg/Pango abort เพราะไม่มี emoji font. ใช้ <code>report-renderer._svgSafeText()</code> strip emoji ก่อนใส่ใน SVG template เสมอ. LINE alert และ dashboard HTML ใช้ emoji ได้ (คนละ render path)</p>
+  <p class="faq-src">อ้างอิง: <a href="md-viewer.html?src=../GOTCHAS.md">GOTCHAS #25a</a> · DECISIONS.md #144, #148</p>
+</div>
+
+<div class="faq-q">Mobile layout พัง — horizontal scroll ทั้งหน้า</div>
+<div class="faq-a">
+  <p>CSS Grid item ที่มี content กว้าง (table ยาว, canvas) ไม่ shrink เพราะ min-width: auto. แก้: ใส่ <code>min-width: 0</code> ที่ grid child. เริ่มจาก <code>html, body { overflow-x: hidden }</code> แล้วค่อย trace element ที่ overflow</p>
+  <p class="faq-src">อ้างอิง: <a href="md-viewer.html?src=../GOTCHAS.md">GOTCHAS #29, #30, #31</a></p>
+</div>
+
+<h2>Database / Reports</h2>
+
+<div class="faq-q">pg_dump backup ดูไม่ได้ — cat แล้วเห็น binary garbage</div>
+<div class="faq-a">
+  <p><code>pg_dump -Fc</code> สร้าง custom-format archive ไม่ใช่ plain SQL. ดู TOC ด้วย <code>pg_restore --list backup.dump</code> หรือแปลงเป็น plain SQL ด้วย <code>pg_restore -f output.sql backup.dump</code></p>
+  <p class="faq-src">อ้างอิง: <a href="md-viewer.html?src=../GOTCHAS.md">GOTCHAS #20</a></p>
+</div>
+
+<div class="faq-q">License ไม่ enforce ในตอน dev — ปกติไหม?</div>
+<div class="faq-a">
+  <p>ปกติ — ถ้า LICENSE_PUBLIC_KEY ใน .env ยังเป็น placeholder, middleware detect ด้วย <code>isPublicKeyConfigured()</code> แล้ว bypass enforcement เพื่อไม่ให้ dev locked out ตัวเอง. Production deployment จะมี key จริง</p>
+  <p class="faq-src">อ้างอิง: <a href="md-viewer.html?src=../GOTCHAS.md">GOTCHAS #27</a> · <code>src/license.js</code></p>
+</div>
+
+<div class="ref">
+  <p><a href="index.html">← กลับ Navigator</a> · Sources: <a href="md-viewer.html?src=../GOTCHAS.md">GOTCHAS.md</a> · <a href="md-viewer.html?src=../DECISIONS.md">DECISIONS.md</a> · <a href="troubleshoot.html">Symptom Index</a></p>
+</div>
+</div>
+</div>
+
+<script src="nav.js"></script>
+</body>
+</html>

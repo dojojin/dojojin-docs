@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ภาพรวม REST API — Vigil Platform Live Docs</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="overlay"></div>
+<div class="layout">
+<nav class="nav" id="nav">
+</nav>
+
+<button id="ham">☰</button>
+
+<div class="main">
+<!-- SOURCE: docs/REF_api-reference.md · src/api-server.js · src/routes/ | Update: New API group added, auth flow changes, WebSocket protocol changes -->
+<h1 class="ph">15 ภาพรวม REST API</h1>
+
+<h2>ภาพรวม</h2>
+<p>Vigil Platform เปิดให้ใช้งาน REST API ครบชุดสำหรับ operators, integrators และแอป Vigil Mobile เพื่อดึงข้อมูลเหตุการณ์ ค้นหา ตั้งค่ากฎแจ้งเตือน จัดการรายงาน และตรวจสอบสถานะระบบ — ทั้งหมดผ่าน HTTPS ที่ต้องผ่านการยืนยันตัวตน</p>
+
+<ul>
+  <li>Protocol: <strong>HTTPS REST</strong> (JSON request/response)</li>
+  <li>Realtime: <strong>WebSocket</strong> ต่อเดียวต่อ tab — push เหตุการณ์ใหม่โดยไม่ต้อง refresh</li>
+  <li>Auth: JWT-based, 3 วิธี (ดูหัวข้อถัดไป)</li>
+  <li>ทุก endpoint ที่ไม่ใช่ public ต้องผ่าน session ที่ valid</li>
+</ul>
+
+<h2>การยืนยันตัวตน (Authentication)</h2>
+
+<p>ระบบรองรับ 3 วิธีในการส่ง token — ทุกคำขอ API ตรวจสอบตามลำดับนี้:</p>
+
+<table>
+<thead>
+<tr>
+<th>วิธี</th>
+<th>รูปแบบ</th>
+<th>ใช้เมื่อ</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><strong>Cookie (httpOnly)</strong></td>
+  <td>ตั้งอัตโนมัติเมื่อ login ผ่านเบราว์เซอร์</td>
+  <td>Dashboard มาตรฐาน — แนะนำสำหรับเบราว์เซอร์</td>
+</tr>
+<tr>
+  <td><strong>Bearer Token</strong></td>
+  <td><code>Authorization: Bearer &lt;token&gt;</code></td>
+  <td>API client, mobile app, third-party integration</td>
+</tr>
+<tr>
+  <td><strong>URL Token</strong></td>
+  <td><code>?token=&lt;token&gt;</code></td>
+  <td>ลิงก์รายงาน PDF/PNG ที่ต้องการ auth โดยไม่มี header</td>
+</tr>
+</tbody>
+</table>
+
+<h3>ระดับสิทธิ์ (RBAC)</h3>
+<table>
+<thead>
+<tr>
+<th>Role</th>
+<th>สิทธิ์</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><strong>admin</strong></td>
+  <td>เข้าถึงได้ทั้งหมด — อ่าน เขียน ลบ จัดการผู้ใช้ ตั้งค่าระบบ</td>
+</tr>
+<tr>
+  <td><strong>viewer</strong></td>
+  <td>อ่านอย่างเดียว — ดูเหตุการณ์ สถิติ แผนที่ กล้อง</td>
+</tr>
+<tr>
+  <td><strong>auditor</strong></td>
+  <td>อ่าน + export รายงาน — ไม่สามารถเปลี่ยนการตั้งค่า</td>
+</tr>
+<tr>
+  <td><strong>public</strong></td>
+  <td>ไม่ต้อง login — เฉพาะ endpoint ที่กำหนด (branding, health ping)</td>
+</tr>
+</tbody>
+</table>
+
+<h2>กลุ่ม API หลัก (API Groups)</h2>
+
+<table>
+<thead>
+<tr>
+<th>กลุ่ม</th>
+<th>Path prefix</th>
+<th>สิ่งที่ทำได้</th>
+<th>สิทธิ์ขั้นต่ำ</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><strong>เหตุการณ์</strong></td>
+  <td><code>/api/events</code></td>
+  <td>ค้นหา กรอง ดูรูปสแนปช็อต ดูคลิปวิดีโอ · param <code>exclude_types=</code> ข้าม LPR/Face จาก feed</td>
+  <td>viewer</td>
+</tr>
+<tr>
+  <td><strong>การปรากฏตัวบุคคล</strong></td>
+  <td><code>/api/appearances</code></td>
+  <td>ค้นหาลักษณะบุคคล timeline similarity</td>
+  <td>viewer</td>
+</tr>
+<tr>
+  <td><strong>ใบหน้า &amp; Face Recognition</strong></td>
+  <td><code>/api/faces</code>, <code>/api/face-matches</code>, <code>/api/faces/counts</code></td>
+  <td>ค้นหาภาพใบหน้าจาก Face Capture · รายการจับคู่จาก Hikvision Face Recognition + body appearance · จำนวน face</td>
+  <td>viewer</td>
+</tr>
+<tr>
+  <td><strong>ป้ายทะเบียน &amp; Watchlist (ANPR)</strong></td>
+  <td><code>/api/lpr</code>, <code>/api/lpr/brands</code>, <code>/api/lpr/stats</code>, <code>/api/lpr/watchlist</code>, <code>/api/lpr/alerts</code>, <code>/api/lpr/camera-direction</code></td>
+  <td>ค้นหาป้ายทะเบียนจาก Hikvision ITCCAM ANPR · keyset/cursor pagination (headers <code>X-Has-More</code>, <code>X-Estimated-Count</code>) · KPI วันนี้ (total/unique/top brand/plate-color/vehicle-brand) · filters: vehicle brand, color, pedestrian vehicle-type, seatbelt · watchlist (flag plates → alerts) · alert ack tab · lpr_direction ต่อกล้อง</td>
+  <td>viewer / admin</td>
+</tr>
+<tr>
+  <td><strong>สถิติ Face &amp; Person</strong></td>
+  <td><code>/api/faces/stats</code>, <code>/api/appearances/stats</code>, <code>/api/faces/counts</code></td>
+  <td>Face overview (peak/gender/age/expression) · Body appearance KPI + peak-by-hour/camera · จำนวน face unacked per type</td>
+  <td>viewer</td>
+</tr>
+<tr>
+  <td><strong>Sites (Multi-site)</strong></td>
+  <td><code>/api/sites</code></td>
+  <td>CRUD sites (BMA/Phuket/Main) + provision edge bridge (<code>POST /api/sites/:id/push-config</code>)</td>
+  <td>admin</td>
+</tr>
+<tr>
+  <td><strong>กล้อง</strong></td>
+  <td><code>/api/cameras</code></td>
+  <td>รายชื่อกล้อง + สถานะ online/offline + heartbeat</td>
+  <td>viewer</td>
+</tr>
+<tr>
+  <td><strong>สถิติ &amp; Analytics</strong></td>
+  <td><code>/api/stats</code></td>
+  <td>สถิติเหตุการณ์รายชั่วโมง/วัน กราฟแนวโน้ม</td>
+  <td>viewer</td>
+</tr>
+<tr>
+  <td><strong>แผนที่ &amp; Heatmap</strong></td>
+  <td><code>/api/heatmap</code></td>
+  <td>ข้อมูลความหนาแน่นสำหรับแผนที่</td>
+  <td>viewer</td>
+</tr>
+<tr>
+  <td><strong>กฎแจ้งเตือน</strong></td>
+  <td><code>/api/alert-rules</code></td>
+  <td>สร้าง/แก้ไข/ลบกฎ LINE alert + quiet hours</td>
+  <td>admin</td>
+</tr>
+<tr>
+  <td><strong>ประวัติการแจ้งเตือน</strong></td>
+  <td><code>/api/alert-logs</code></td>
+  <td>ประวัติการส่ง LINE alert ทั้งหมด</td>
+  <td>viewer</td>
+</tr>
+<tr>
+  <td><strong>รายงาน</strong></td>
+  <td><code>/api/report-schedules</code></td>
+  <td>ตั้งเวลารายงาน / สั่ง run ทันที</td>
+  <td>admin</td>
+</tr>
+<tr>
+  <td><strong>LINE Config</strong></td>
+  <td><code>/api/line</code></td>
+  <td>ตั้งค่า LINE bot token + ผู้รับ + QR code</td>
+  <td>admin</td>
+</tr>
+<tr>
+  <td><strong>การตั้งค่าระบบ</strong></td>
+  <td><code>/api/settings</code></td>
+  <td>ตั้งค่าทั่วไป ภาษา retention period และอื่น ๆ</td>
+  <td>admin</td>
+</tr>
+<tr>
+  <td><strong>ผู้ใช้ &amp; Session</strong></td>
+  <td><code>/api/users</code></td>
+  <td>จัดการบัญชีผู้ใช้ roles และ session ที่ active</td>
+  <td>admin</td>
+</tr>
+<tr>
+  <td><strong>สุขภาพระบบ</strong></td>
+  <td><code>/api/health</code></td>
+  <td>สถานะ service กล้อง offline disk usage</td>
+  <td>viewer</td>
+</tr>
+<tr>
+  <td><strong>Branding</strong></td>
+  <td><code>/api/branding</code></td>
+  <td>ชื่อ โลโก้ สีหลักของระบบ</td>
+  <td>public</td>
+</tr>
+<tr>
+  <td><strong>Auth</strong></td>
+  <td><code>/api/login</code>, <code>/api/logout</code></td>
+  <td>เข้า/ออกระบบ ตรวจสอบ session</td>
+  <td>public</td>
+</tr>
+</tbody>
+</table>
+
+<h2>WebSocket — Real-time Push</h2>
+
+<p>ทุก session ที่ login แล้วสามารถเปิด WebSocket connection เพื่อรับเหตุการณ์ใหม่แบบ real-time โดยไม่ต้อง reload หน้า</p>
+
+<pre>wss://&lt;host&gt;/ws   (ต้องมี session cookie หรือ Bearer token)</pre>
+
+<h3>ประเภทข้อความที่รับได้</h3>
+<table>
+<thead>
+<tr>
+<th>ประเภท</th>
+<th>เนื้อหา</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><code>new_event</code></td>
+  <td>เหตุการณ์ใหม่จากกล้อง — ID ชนิด กล้อง เวลา มีรูปหรือไม่</td>
+</tr>
+<tr>
+  <td><code>camera_status</code></td>
+  <td>กล้องเปลี่ยนสถานะ online/offline</td>
+</tr>
+<tr>
+  <td><code>alert_fired</code></td>
+  <td>กฎแจ้งเตือนทำงาน — ส่ง LINE แล้ว</td>
+</tr>
+<tr>
+  <td><code>system</code></td>
+  <td>ข้อความระบบ — เช่น service restart, migration สำเร็จ</td>
+</tr>
+</tbody>
+</table>
+
+<div class="ibox">
+  <h4>ข้อควรทราบ</h4>
+  <p>WebSocket ต้องมี session ที่ valid เสมอ — ถ้า session หมดอายุ connection จะถูกตัดและ dashboard จะแสดง toast "session expired" แล้ว redirect ไป login</p>
+</div>
+
+<h2>รูปแบบ Response</h2>
+
+<h3>สำเร็จ</h3>
+<pre>HTTP 200 OK
+Content-Type: application/json
+
+// รายการ (list)
+[{ "id": 1, "event_type": "Motion", ... }, ...]
+
+// รายการเดียว หรือ action result
+{ "id": 1, "enabled": true, ... }
+{ "ok": true }</pre>
+
+<h3>Error</h3>
+<pre>HTTP 4xx / 5xx
+{ "error": "คำอธิบายข้อผิดพลาด" }</pre>
+
+<table>
+<thead>
+<tr>
+<th>HTTP Status</th>
+<th>ความหมาย</th>
+</tr>
+</thead>
+<tbody>
+<tr><td>400</td><td>ข้อมูลที่ส่งมาไม่ถูกต้อง (validation error)</td></tr>
+<tr><td>401</td><td>ไม่มีหรือ session หมดอายุ → ต้อง login ใหม่</td></tr>
+<tr><td>403</td><td>มี session แต่สิทธิ์ไม่พอ (เช่น viewer พยายามแก้ไข)</td></tr>
+<tr><td>404</td><td>ไม่พบ resource ที่ขอ</td></tr>
+<tr><td>503</td><td>Service ภายในไม่พร้อม (เช่น report-worker ยังไม่ start)</td></tr>
+</tbody>
+</table>
+
+<h2>Pagination</h2>
+
+<p>Endpoint ที่คืนรายการจำนวนมาก (events, appearances, alert-logs) รองรับ query params ดังนี้:</p>
+<pre>GET /api/events?limit=50&amp;offset=0&amp;sort=desc
+GET /api/appearances/search?limit=20&amp;offset=0</pre>
+<ul>
+  <li><code>limit</code> — จำนวนรายการต่อหน้า (ค่าเริ่มต้นต่างกันตาม endpoint)</li>
+  <li><code>offset</code> — ตำแหน่งเริ่มต้น (0 = หน้าแรก)</li>
+  <li>Response มี field <code>total</code> สำหรับคำนวณจำนวนหน้า</li>
+</ul>
+
+<h2>ตัวอย่าง: ดึงเหตุการณ์ล่าสุด</h2>
+
+<pre>GET /api/events?limit=20&amp;sort=desc
+Authorization: Bearer &lt;token&gt;
+
+// Response
+[
+  {
+    "id": 5821,
+    "camera_id": "CAM_NORTH_01",
+    "event_type": "Motion",
+    "received_at": "2026-06-14T08:22:10Z",
+    "has_snapshot": true,
+    "snapshot_url": "/api/snapshots/5821"
+  },
+  ...
+]</pre>
+
+<div class="ref">
+  <p><a href="14-appearances.html">← 14 วิเคราะห์ลักษณะบุคคล</a></p>
+</div>
+</div>
+</div>
+
+<script src="nav.js"></script>
+</body>
+</html>

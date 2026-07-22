@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>API Routes Reference — Dev Portal</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .method {
+      display: inline-block;
+      min-width: 52px;
+      padding: 1px 7px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 700;
+      font-family: monospace;
+      text-align: center;
+    }
+    .m-get    { background: rgba(63,185,80,0.15);  color: #3fb950; }
+    .m-post   { background: rgba(88,166,255,0.15); color: #58a6ff; }
+    .m-put    { background: rgba(210,153,34,0.15); color: #d29922; }
+    .m-patch  { background: rgba(188,140,255,0.15); color: #bc8cff; }
+    .m-delete { background: rgba(248,81,73,0.15);  color: #f85149; }
+
+    .auth-tag {
+      display: inline-block;
+      padding: 1px 7px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 600;
+    }
+    .a-pub    { background: rgba(139,148,158,0.15); color: #8b949e; }
+    .a-auth   { background: rgba(63,185,80,0.12);  color: #3fb950; }
+    .a-admin  { background: rgba(248,81,73,0.12);  color: #f85149; }
+    .a-auditor{ background: rgba(210,153,34,0.12); color: #d29922; }
+
+    table td { font-size: 13px; }
+    table td:first-child { white-space: nowrap; }
+    table td code { font-size: 12px; }
+    .mod-header {
+      font-size: 11px;
+      color: var(--dim);
+      padding: 0.3rem 0;
+    }
+  </style>
+</head>
+<body>
+<div id="overlay"></div>
+<div class="layout">
+<nav class="nav" id="nav"></nav>
+<button id="ham">☰</button>
+
+<div class="main">
+<h1 class="ph">API Routes Reference</h1>
+
+<p>ทุก REST endpoint ใน Vigil Platform จัดตาม module · Auth level แสดงด้วย badge · ดู <a href="file-navigator.html">File Navigator</a> สำหรับ source file</p>
+
+<div class="krow">
+  <div class="kpi"><div class="kn">132</div><div class="kl">routes (src/routes/)</div></div>
+  <div class="kpi"><div class="kn">7</div><div class="kl">inline (api-server.js)</div></div>
+  <div class="kpi"><div class="kn">19</div><div class="kl">route modules</div></div>
+  <div class="kpi"><div class="kn">139</div><div class="kl">รวมทั้งหมด</div></div>
+</div>
+
+<div class="ibox">
+  <h4>Auth Levels</h4>
+  <p>
+    <span class="auth-tag a-pub">public</span> — ไม่ต้อง login (branding, health ping, login, eula, tiles) &nbsp;
+    <span class="auth-tag a-auth">auth</span> — viewer / admin / auditor (ทุก role ที่ login แล้ว) &nbsp;
+    <span class="auth-tag a-admin">admin</span> — admin เท่านั้น &nbsp;
+    <span class="auth-tag a-auditor">admin+auditor</span> — admin + auditor (อ่าน+export, ห้าม write)
+  </p>
+</div>
+
+<!-- ========= CAMERAS ========= -->
+<h2>Cameras — <code>src/routes/cameras.js</code> (15 routes)</h2>
+<table>
+<thead><tr><th>Method</th><th>Path</th><th>Auth</th><th>หน้าที่</th></tr></thead>
+<tbody>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/config</code></td><td><span class="auth-tag a-auth">auth</span></td><td>App config (brand, settings) สำหรับ bootstrap</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/cameras</code></td><td><span class="auth-tag a-auth">auth</span></td><td>รายการกล้องทั้งหมด (admin ได้ plaintext credentials)</td></tr>
+<tr><td><span class="method m-post">POST</span></td><td><code>/api/cameras</code></td><td><span class="auth-tag a-admin">admin</span></td><td>เพิ่มกล้องใหม่</td></tr>
+<tr><td><span class="method m-post">POST</span></td><td><code>/api/cameras/:id/mqtt/regenerate</code></td><td><span class="auth-tag a-admin">admin</span></td><td>Regenerate MQTT credentials</td></tr>
+<tr><td><span class="method m-post">POST</span></td><td><code>/api/cameras/test-connection</code></td><td><span class="auth-tag a-admin">admin</span></td><td>ทดสอบการเชื่อมต่อกล้อง (Hikvision/Dahua/ONVIF)</td></tr>
+<tr><td><span class="method m-post">POST</span></td><td><code>/api/cameras/snapshot-preview</code></td><td><span class="auth-tag a-admin">admin</span></td><td>Preview snapshot จาก URL กล้อง</td></tr>
+<tr><td><span class="method m-post">POST</span></td><td><code>/api/cameras/probe-snapshot</code></td><td><span class="auth-tag a-admin">admin</span></td><td>Auto-probe snapshot path จาก vendor</td></tr>
+<tr><td><span class="method m-post">POST</span></td><td><code>/api/cameras/lpr-forward-test</code></td><td><span class="auth-tag a-admin">admin</span></td><td>ทดสอบการเชื่อมต่อ LPR forward URL (SSRF guard ป้องกัน internal access)</td></tr>
+<tr><td><span class="method m-patch">PATCH</span></td><td><code>/api/cameras/:cameraId/pause</code></td><td><span class="auth-tag a-admin">admin</span></td><td>Pause/resume กล้อง (หยุดรับ event ชั่วคราว)</td></tr>
+<tr><td><span class="method m-delete">DELETE</span></td><td><code>/api/cameras/:cameraId</code></td><td><span class="auth-tag a-admin">admin</span></td><td>ลบกล้อง</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/camera-offline-alerts/:cameraId</code></td><td><span class="auth-tag a-auth">auth</span></td><td>ดู offline alert config สำหรับกล้อง</td></tr>
+<tr><td><span class="method m-put">PUT</span></td><td><code>/api/camera-offline-alerts/:cameraId</code></td><td><span class="auth-tag a-admin">admin</span></td><td>ตั้งค่า offline alert (threshold, LINE, push)</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/cameras/status-current</code></td><td><span class="auth-tag a-auth">auth</span></td><td>Online/offline status ปัจจุบัน</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/cameras/status-log</code></td><td><span class="auth-tag a-auth">auth</span></td><td>ประวัติ online/offline status</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/cameras/image-quality-log</code></td><td><span class="auth-tag a-auth">auth</span></td><td>Image quality log (BLUR/DARK/NOISE events)</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/snapshot/live/:cameraId</code></td><td><span class="auth-tag a-auth">auth</span></td><td>Live snapshot ปัจจุบันจากกล้อง</td></tr>
+</tbody>
+</table>
+
+<!-- ========= STATS ========= -->
+<h2>Stats — <code>src/routes/stats.js</code> (20 routes)</h2>
+<table>
+<thead><tr><th>Method</th><th>Path</th><th>Auth</th><th>หน้าที่</th></tr></thead>
+<tbody>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/stats/occupancy</code></td><td><span class="auth-tag a-auth">auth</span></td><td>Occupancy count ปัจจุบัน</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/stats/occupancy/sources</code></td><td><span class="auth-tag a-auth">auth</span></td><td>แหล่งข้อมูล occupancy (กล้องไหนนับ)</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/stats/occupancy/timeline</code></td><td><span class="auth-tag a-auth">auth</span></td><td>Occupancy timeline</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/stats/occupancy/heatmap</code></td><td><span class="auth-tag a-auth">auth</span></td><td>Occupancy heatmap (day × hour)</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/stats/timeline</code></td><td><span class="auth-tag a-auth">auth</span></td><td>Event timeline ตามช่วงเวลา</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/stats/today-counts</code></td><td><span class="auth-tag a-auth">auth</span></td><td>Event counts วันนี้</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/stats/kpi</code></td><td><span class="auth-tag a-auth">auth</span></td><td>KPI summary (total/peak/avg)</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/stats/breakdown</code></td><td><span class="auth-tag a-auth">auth</span></td><td>Event breakdown by category/rule</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/stats/timeseries-rules</code></td><td><span class="auth-tag a-auth">auth</span></td><td>Time series per rule</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/heatmap</code></td><td><span class="auth-tag a-auth">auth</span></td><td>Camera heatmap (spatial)</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/stats/dwell</code></td><td><span class="auth-tag a-auth">auth</span></td><td>Dwell time stats</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/stats/people-counting</code></td><td><span class="auth-tag a-auth">auth</span></td><td>People counting in/out</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/stats/categories</code></td><td><span class="auth-tag a-auth">auth</span></td><td>Stats by category</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/stats/timeline-v2</code></td><td><span class="auth-tag a-auth">auth</span></td><td>Timeline v2 (improved resolution)</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/stats/per-camera-counts</code></td><td><span class="auth-tag a-auth">auth</span></td><td>Event counts per camera</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/stats/heatmap</code></td><td><span class="auth-tag a-auth">auth</span></td><td>Event density heatmap (time-based)</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/stats/quiet-cameras</code></td><td><span class="auth-tag a-auth">auth</span></td><td>กล้องที่ไม่มี event (suspect offline/tamper)</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/stats/top-rules</code></td><td><span class="auth-tag a-auth">auth</span></td><td>Top-N rules by event count</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/stats/timeline-by-category</code></td><td><span class="auth-tag a-auth">auth</span></td><td>Timeline แยก category</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/stats/breakdown-v2</code></td><td><span class="auth-tag a-auth">auth</span></td><td>Breakdown v2 (multi-dimension)</td></tr>
+</tbody>
+</table>
+
+<!-- ========= LINE ========= -->
+<h2>LINE — <code>src/routes/line.js</code> (12 routes)</h2>
+<table>
+<thead><tr><th>Method</th><th>Path</th><th>Auth</th><th>หน้าที่</th></tr></thead>
+<tbody>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/line-config</code></td><td><span class="auth-tag a-auth">auth</span></td><td>ดู LINE config ปัจจุบัน</td></tr>
+<tr><td><span class="method m-put">PUT</span></td><td><code>/api/line-config</code></td><td><span class="auth-tag a-admin">admin</span></td><td>ตั้งค่า LINE channel token</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/line-config/quota</code></td><td><span class="auth-tag a-auth">auth</span></td><td>LINE messaging quota ที่เหลือ</td></tr>
+<tr><td><span class="method m-post">POST</span></td><td><code>/api/line-config/test</code></td><td><span class="auth-tag a-admin">admin</span></td><td>ส่ง test message ไป LINE</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/line-config/qr</code></td><td><span class="auth-tag a-auth">auth</span></td><td>QR code สำหรับ add LINE OA</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/line/pending</code></td><td><span class="auth-tag a-admin">admin</span></td><td>รายการ pending approval requests</td></tr>
+<tr><td><span class="method m-post">POST</span></td><td><code>/api/line/pending/:id/approve</code></td><td><span class="auth-tag a-admin">admin</span></td><td>Approve LINE user</td></tr>
+<tr><td><span class="method m-post">POST</span></td><td><code>/api/line/pending/:id/ignore</code></td><td><span class="auth-tag a-admin">admin</span></td><td>Ignore LINE user request</td></tr>
+<tr><td><span class="method m-post">POST</span></td><td><code>/api/line/pending/:id/block</code></td><td><span class="auth-tag a-admin">admin</span></td><td>Block LINE user</td></tr>
+<tr><td><span class="method m-post">POST</span></td><td><code>/api/line/blocked/:id/unblock</code></td><td><span class="auth-tag a-admin">admin</span></td><td>Unblock LINE user</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/line/blocked</code></td><td><span class="auth-tag a-admin">admin</span></td><td>รายการ blocked LINE users</td></tr>
+<tr><td><span class="method m-post">POST</span></td><td><code>/api/line/webhook</code></td><td><span class="auth-tag a-pub">public</span></td><td>LINE webhook receiver (signature verified ภายใน)</td></tr>
+</tbody>
+</table>
+
+<!-- ========= MAP ========= -->
+<h2>Map — <code>src/routes/map.js</code> (10 routes)</h2>
+<table>
+<thead><tr><th>Method</th><th>Path</th><th>Auth</th><th>หน้าที่</th></tr></thead>
+<tbody>
+<tr><td><span class="method m-post">POST</span></td><td><code>/api/map/estimate</code></td><td><span class="auth-tag a-admin">admin</span></td><td>ประมาณ download size สำหรับ offline map</td></tr>
+<tr><td><span class="method m-post">POST</span></td><td><code>/api/map/download</code></td><td><span class="auth-tag a-admin">admin</span></td><td>เริ่ม download offline map tiles</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/map/progress</code></td><td><span class="auth-tag a-auth">auth</span></td><td>Progress ของการ download</td></tr>
+<tr><td><span class="method m-post">POST</span></td><td><code>/api/map/cancel</code></td><td><span class="auth-tag a-admin">admin</span></td><td>ยกเลิก download</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/map/areas</code></td><td><span class="auth-tag a-auth">auth</span></td><td>รายการ map areas (geofence)</td></tr>
+<tr><td><span class="method m-delete">DELETE</span></td><td><code>/api/map/areas/:areaId</code></td><td><span class="auth-tag a-admin">admin</span></td><td>ลบ map area</td></tr>
+<tr><td><span class="method m-delete">DELETE</span></td><td><code>/api/map/cache</code></td><td><span class="auth-tag a-admin">admin</span></td><td>Clear tile cache</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/map/tiles/mapbox/:style/:z/:x/:y.png</code></td><td><span class="auth-tag a-pub">public</span></td><td>Mapbox tile proxy</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/tiles/:provider/:style/:z/:x/:y.png</code></td><td><span class="auth-tag a-pub">public</span></td><td>Generic tile proxy (CartoDB ฯลฯ)</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/tiles/:style/:z/:x/:y.png</code></td><td><span class="auth-tag a-pub">public</span></td><td>Short-form tile proxy (offline cache)</td></tr>
+</tbody>
+</table>
+
+<!-- ========= AUTH ========= -->
+<h2>Auth — <code>src/routes/auth.js</code> (6 routes)</h2>
+<table>
+<thead><tr><th>Method</th><th>Path</th><th>Auth</th><th>หน้าที่</th></tr></thead>
+<tbody>
+<tr><td><span class="method m-post">POST</span></td><td><code>/api/auth/login</code></td><td><span class="auth-tag a-pub">public</span></td><td>Login — คืน JWT token + set cookie</td></tr>
+<tr><td><span class="method m-post">POST</span></td><td><code>/api/auth/logout</code></td><td><span class="auth-tag a-pub">public</span></td><td>Logout — clear cookie</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/auth/me</code></td><td><span class="auth-tag a-auth">auth</span></td><td>ดู current user + role</td></tr>
+<tr><td><span class="method m-post">POST</span></td><td><code>/api/auth/change-password</code></td><td><span class="auth-tag a-auth">auth</span></td><td>เปลี่ยน password ตัวเอง</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/auth/sessions</code></td><td><span class="auth-tag a-auth">auth</span></td><td>รายการ active sessions</td></tr>
+<tr><td><span class="method m-post">POST</span></td><td><code>/api/auth/sessions/:id/revoke</code></td><td><span class="auth-tag a-auth">auth</span></td><td>Revoke session</td></tr>
+</tbody>
+</table>
+
+<!-- ========= HEALTH ========= -->
+<h2>Health — <code>src/routes/health.js</code> (7 routes)</h2>
+<table>
+<thead><tr><th>Method</th><th>Path</th><th>Auth</th><th>หน้าที่</th></tr></thead>
+<tbody>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/health/details</code></td><td><span class="auth-tag a-auth">auth</span></td><td>System health — DB, PM2 processes, disk, cameras offline</td></tr>
+<tr><td><span class="method m-post">POST</span></td><td><code>/api/services/:name/:action</code></td><td><span class="auth-tag a-admin">admin</span></td><td>Control PM2 service (start/stop/restart)</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/health/report-data/cameras</code></td><td><span class="auth-tag a-auth">auth</span></td><td>Camera data สำหรับ Health Report</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/health/report/preview</code></td><td><span class="auth-tag a-auth">auth</span></td><td>Preview Health Report HTML</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/health/report/pdf</code></td><td><span class="auth-tag a-admin">admin</span></td><td>Download Health Report PDF (SVG+sharp)</td></tr>
+<tr><td><span class="method m-post">POST</span></td><td><code>/api/health/report/send-now</code></td><td><span class="auth-tag a-admin">admin</span></td><td>ส่ง Health Report ทาง LINE ทันที</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/health/report-data/alerts</code></td><td><span class="auth-tag a-auth">auth</span></td><td>Alert data สำหรับ Health Report</td></tr>
+</tbody>
+</table>
+
+<!-- ========= APPEARANCES ========= -->
+<h2>Appearances — <code>src/routes/appearances.js</code> (4 routes)</h2>
+<table>
+<thead><tr><th>Method</th><th>Path</th><th>Auth</th><th>หน้าที่</th></tr></thead>
+<tbody>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/appearances/stats</code></td><td><span class="auth-tag a-auth">auth</span></td><td>Appearance attribute stats (color, gender, age)</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/appearances/search</code></td><td><span class="auth-tag a-auth">auth</span></td><td>Forensic search — filter by attributes + camera + time</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/appearances/timeline</code></td><td><span class="auth-tag a-auth">auth</span></td><td>Timeline ของ appearances (cross-camera)</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/appearances/similar-timeline</code></td><td><span class="auth-tag a-auth">auth</span></td><td>Similar person timeline (appearance matching)</td></tr>
+</tbody>
+</table>
+
+<!-- ========= EVENTS ========= -->
+<h2>Events — <code>src/routes/events.js</code> (4 routes)</h2>
+<table>
+<thead><tr><th>Method</th><th>Path</th><th>Auth</th><th>หน้าที่</th></tr></thead>
+<tbody>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/events</code></td><td><span class="auth-tag a-auth">auth</span></td><td>Event list + filter (camera, category, rule, time, text)</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/events/facets</code></td><td><span class="auth-tag a-auth">auth</span></td><td>Filter options (cameras, categories, rules ที่มีข้อมูล)</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/events/:id/appearance</code></td><td><span class="auth-tag a-auth">auth</span></td><td>Appearance detail สำหรับ event</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/events/:id/dwell</code></td><td><span class="auth-tag a-auth">auth</span></td><td>Dwell time ของ event</td></tr>
+</tbody>
+</table>
+
+<!-- ========= LPR ========= -->
+<h2>LPR — <code>src/routes/lpr*.js</code> (5 route modules: lpr, lpr-query, lpr-watchlist, lpr-gates, lpr-alerts)</h2>
+<table>
+<thead><tr><th>Method</th><th>Path</th><th>Auth</th><th>หน้าที่</th></tr></thead>
+<tbody>
+<tr><td><span class="method m-post">POST</span></td><td><code>/api/lpr</code></td><td><span class="auth-tag a-pub">public</span></td><td>Ingest LPR event จากกล้อง (Hikvision ITCCAM ANPR)</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/lpr</code></td><td><span class="auth-tag a-auth">auth</span></td><td>ค้นหาป้ายทะเบียน — keyset/cursor pagination (before_time, before_id, count=est) + filters: brand, color, vehicle-type, seatbelt</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/lpr/brands</code></td><td><span class="auth-tag a-auth">auth</span></td><td>Distinct vehicle-brand codes + counts (สำหรับ filter dropdown)</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/lpr/stats</code></td><td><span class="auth-tag a-auth">auth</span></td><td>KPI วันนี้ — total/unique/top brand + charts: plate-color, vehicle-brand</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/lpr/watchlist</code></td><td><span class="auth-tag a-auth">auth</span></td><td>Watchlist CRUD — flag suspicious/stolen plates → auto-alert</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/lpr/gates</code></td><td><span class="auth-tag a-admin">admin</span></td><td>LPR forward gate config (URL + SSRF guard)</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/lpr/alerts</code></td><td><span class="auth-tag a-auth">auth</span></td><td>LPR watchlist alert history + ack</td></tr>
+</tbody>
+</table>
+
+<!-- ========= CATEGORIES ========= -->
+<h2>Categories — <code>src/routes/categories.js</code> (7 routes)</h2>
+<table>
+<thead><tr><th>Method</th><th>Path</th><th>Auth</th><th>หน้าที่</th></tr></thead>
+<tbody>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/categories</code></td><td><span class="auth-tag a-auth">auth</span></td><td>รายการ categories</td></tr>
+<tr><td><span class="method m-post">POST</span></td><td><code>/api/categories</code></td><td><span class="auth-tag a-admin">admin</span></td><td>สร้าง category</td></tr>
+<tr><td><span class="method m-put">PUT</span></td><td><code>/api/categories/:id</code></td><td><span class="auth-tag a-admin">admin</span></td><td>แก้ category</td></tr>
+<tr><td><span class="method m-delete">DELETE</span></td><td><code>/api/categories/:id</code></td><td><span class="auth-tag a-admin">admin</span></td><td>ลบ category</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/categories/:id/rules</code></td><td><span class="auth-tag a-auth">auth</span></td><td>Rules ใน category</td></tr>
+<tr><td><span class="method m-post">POST</span></td><td><code>/api/categories/:id/rules</code></td><td><span class="auth-tag a-admin">admin</span></td><td>เพิ่ม rule เข้า category</td></tr>
+<tr><td><span class="method m-delete">DELETE</span></td><td><code>/api/category-rules/:id</code></td><td><span class="auth-tag a-admin">admin</span></td><td>ลบ category rule</td></tr>
+</tbody>
+</table>
+
+<!-- ========= OPS ========= -->
+<h2>Ops — <code>src/routes/ops.js</code> (8 routes)</h2>
+<table>
+<thead><tr><th>Method</th><th>Path</th><th>Auth</th><th>หน้าที่</th></tr></thead>
+<tbody>
+<tr><td><span class="method m-post">POST</span></td><td><code>/api/push/register</code></td><td><span class="auth-tag a-auth">auth</span></td><td>Register Expo push token (mobile app)</td></tr>
+<tr><td><span class="method m-post">POST</span></td><td><code>/api/push/unregister</code></td><td><span class="auth-tag a-auth">auth</span></td><td>Unregister push token</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/alert-logs</code></td><td><span class="auth-tag a-auditor">admin+auditor</span></td><td>Alert log history</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/alert-logs/stats</code></td><td><span class="auth-tag a-auditor">admin+auditor</span></td><td>Alert log stats</td></tr>
+<tr><td><span class="method m-delete">DELETE</span></td><td><code>/api/alert-logs</code></td><td><span class="auth-tag a-admin">admin</span></td><td>Clear alert log</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/backups</code></td><td><span class="auth-tag a-admin">admin</span></td><td>รายการ backups</td></tr>
+<tr><td><span class="method m-post">POST</span></td><td><code>/api/backups/run</code></td><td><span class="auth-tag a-admin">admin</span></td><td>Run backup ทันที</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/backups/:filename</code></td><td><span class="auth-tag a-admin">admin</span></td><td>Download backup file</td></tr>
+</tbody>
+</table>
+
+<!-- ========= REPORTS ========= -->
+<h2>Reports — <code>src/routes/reports.js</code> (6 routes)</h2>
+<table>
+<thead><tr><th>Method</th><th>Path</th><th>Auth</th><th>หน้าที่</th></tr></thead>
+<tbody>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/report-history/stats</code></td><td><span class="auth-tag a-auditor">admin+auditor</span></td><td>Report history stats</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/report-history</code></td><td><span class="auth-tag a-auditor">admin+auditor</span></td><td>รายการ report history</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/report-history/:id/image</code></td><td><span class="auth-tag a-auditor">admin+auditor</span></td><td>ดู/download report image</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/reports/pdf</code></td><td><span class="auth-tag a-auditor">admin+auditor</span></td><td>Generate + download analytics report PDF</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/reports/daily</code></td><td><span class="auth-tag a-auditor">admin+auditor</span></td><td>Daily report</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/reports/weekly</code></td><td><span class="auth-tag a-auditor">admin+auditor</span></td><td>Weekly report</td></tr>
+</tbody>
+</table>
+
+<!-- ========= REPORT SCHEDULES ========= -->
+<h2>Report Schedules — <code>src/routes/report-schedules.js</code> (5 routes)</h2>
+<table>
+<thead><tr><th>Method</th><th>Path</th><th>Auth</th><th>หน้าที่</th></tr></thead>
+<tbody>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/report-schedules</code></td><td><span class="auth-tag a-auditor">admin+auditor</span></td><td>รายการ schedules</td></tr>
+<tr><td><span class="method m-post">POST</span></td><td><code>/api/report-schedules</code></td><td><span class="auth-tag a-admin">admin</span></td><td>สร้าง schedule ใหม่</td></tr>
+<tr><td><span class="method m-put">PUT</span></td><td><code>/api/report-schedules/:id</code></td><td><span class="auth-tag a-admin">admin</span></td><td>แก้ schedule</td></tr>
+<tr><td><span class="method m-delete">DELETE</span></td><td><code>/api/report-schedules/:id</code></td><td><span class="auth-tag a-admin">admin</span></td><td>ลบ schedule</td></tr>
+<tr><td><span class="method m-post">POST</span></td><td><code>/api/report-schedules/:id/run</code></td><td><span class="auth-tag a-admin">admin</span></td><td>Run schedule ทันที (manual trigger)</td></tr>
+</tbody>
+</table>
+
+<!-- ========= ALERT RULES ========= -->
+<h2>Alert Rules — <code>src/routes/alert-rules.js</code> (5 routes)</h2>
+<table>
+<thead><tr><th>Method</th><th>Path</th><th>Auth</th><th>หน้าที่</th></tr></thead>
+<tbody>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/alert-rules</code></td><td><span class="auth-tag a-auth">auth</span></td><td>รายการ alert rules</td></tr>
+<tr><td><span class="method m-post">POST</span></td><td><code>/api/alert-rules</code></td><td><span class="auth-tag a-admin">admin</span></td><td>สร้าง alert rule</td></tr>
+<tr><td><span class="method m-put">PUT</span></td><td><code>/api/alert-rules/:id</code></td><td><span class="auth-tag a-admin">admin</span></td><td>แก้ alert rule</td></tr>
+<tr><td><span class="method m-delete">DELETE</span></td><td><code>/api/alert-rules/:id</code></td><td><span class="auth-tag a-admin">admin</span></td><td>ลบ alert rule</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/alert-rules-suggestions</code></td><td><span class="auth-tag a-auth">auth</span></td><td>Suggested rules จาก event patterns</td></tr>
+</tbody>
+</table>
+
+<!-- ========= USERS ========= -->
+<h2>Users — <code>src/routes/users.js</code> (7 routes)</h2>
+<table>
+<thead><tr><th>Method</th><th>Path</th><th>Auth</th><th>หน้าที่</th></tr></thead>
+<tbody>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/users</code></td><td><span class="auth-tag a-admin">admin</span></td><td>รายการ users</td></tr>
+<tr><td><span class="method m-post">POST</span></td><td><code>/api/users</code></td><td><span class="auth-tag a-admin">admin</span></td><td>สร้าง user</td></tr>
+<tr><td><span class="method m-put">PUT</span></td><td><code>/api/users/:id</code></td><td><span class="auth-tag a-admin">admin</span></td><td>แก้ user (role, name)</td></tr>
+<tr><td><span class="method m-post">POST</span></td><td><code>/api/users/:id/reset-password</code></td><td><span class="auth-tag a-admin">admin</span></td><td>Reset password user อื่น</td></tr>
+<tr><td><span class="method m-delete">DELETE</span></td><td><code>/api/users/:id</code></td><td><span class="auth-tag a-admin">admin</span></td><td>ลบ user</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/audit-log</code></td><td><span class="auth-tag a-auditor">admin+auditor</span></td><td>Audit log (login, config changes)</td></tr>
+<tr><td><span class="method m-post">POST</span></td><td><code>/api/csp-report</code></td><td><span class="auth-tag a-pub">public</span></td><td>CSP violation report receiver</td></tr>
+</tbody>
+</table>
+
+<!-- ========= GROUPS / SETTINGS / LICENSE / BRANDING / EULA ========= -->
+<h2>Groups, Settings, License, Branding, EULA</h2>
+<table>
+<thead><tr><th>Method</th><th>Path</th><th>Auth</th><th>Module</th><th>หน้าที่</th></tr></thead>
+<tbody>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/groups</code></td><td><span class="auth-tag a-auth">auth</span></td><td>groups</td><td>รายการ camera groups</td></tr>
+<tr><td><span class="method m-post">POST</span></td><td><code>/api/groups</code></td><td><span class="auth-tag a-admin">admin</span></td><td>groups</td><td>สร้าง group</td></tr>
+<tr><td><span class="method m-delete">DELETE</span></td><td><code>/api/groups/:groupId</code></td><td><span class="auth-tag a-admin">admin</span></td><td>groups</td><td>ลบ group</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/settings</code></td><td><span class="auth-tag a-auth">auth</span></td><td>settings</td><td>System settings ทั้งหมด</td></tr>
+<tr><td><span class="method m-put">PUT</span></td><td><code>/api/settings/map</code></td><td><span class="auth-tag a-admin">admin</span></td><td>settings</td><td>บันทึก map center/zoom default</td></tr>
+<tr><td><span class="method m-put">PUT</span></td><td><code>/api/settings/:key</code></td><td><span class="auth-tag a-admin">admin</span></td><td>settings</td><td>ตั้งค่า setting ตาม key</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/license/machine-id</code></td><td><span class="auth-tag a-auth">auth</span></td><td>license</td><td>Machine fingerprint สำหรับ activation</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/license/status</code></td><td><span class="auth-tag a-auth">auth</span></td><td>license</td><td>License status (active/expired/trial)</td></tr>
+<tr><td><span class="method m-post">POST</span></td><td><code>/api/license/activate</code></td><td><span class="auth-tag a-admin">admin</span></td><td>license</td><td>Activate license key</td></tr>
+<tr><td><span class="method m-post">POST</span></td><td><code>/api/license/deactivate</code></td><td><span class="auth-tag a-admin">admin</span></td><td>license</td><td>Deactivate license</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/branding</code></td><td><span class="auth-tag a-pub">public</span></td><td>branding</td><td>Branding config (logo URL, brand name)</td></tr>
+<tr><td><span class="method m-post">POST</span></td><td><code>/api/branding/logo</code></td><td><span class="auth-tag a-admin">admin</span></td><td>branding</td><td>Upload brand logo</td></tr>
+<tr><td><span class="method m-delete">DELETE</span></td><td><code>/api/branding/logo</code></td><td><span class="auth-tag a-admin">admin</span></td><td>branding</td><td>ลบ logo (reset to default)</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/eula</code></td><td><span class="auth-tag a-pub">public</span></td><td>eula</td><td>EULA content</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/eula/status</code></td><td><span class="auth-tag a-pub">public</span></td><td>eula</td><td>ตรวจว่า user accept EULA แล้วหรือยัง</td></tr>
+<tr><td><span class="method m-post">POST</span></td><td><code>/api/eula/accept</code></td><td><span class="auth-tag a-pub">public</span></td><td>eula</td><td>Accept EULA</td></tr>
+</tbody>
+</table>
+
+<!-- ========= STANDALONE / INLINE ========= -->
+<h2>Standalone Route + Inline Routes (api-server.js)</h2>
+
+<table>
+<thead><tr><th>Method</th><th>Path</th><th>Auth</th><th>Source</th><th>หน้าที่</th></tr></thead>
+<tbody>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/stats/executive-summary</code></td><td><span class="auth-tag a-auth">auth</span></td><td><code>stats-summary-route.js</code></td><td>Security Morning Briefing data สำหรับ page-executive-summary.js</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/favicon.ico</code></td><td><span class="auth-tag a-pub">public</span></td><td><code>api-server.js</code></td><td>Favicon</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/ , /index.html</code></td><td><span class="auth-tag a-pub">public</span></td><td><code>api-server.js</code></td><td>Serve dashboard SPA shell</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/snapshots/:filename</code></td><td><span class="auth-tag a-auth">auth</span></td><td><code>api-server.js</code></td><td>Serve snapshot image file</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/media/:filename</code></td><td><span class="auth-tag a-auth">auth</span></td><td><code>api-server.js</code></td><td>Serve media (video) file</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/faces</code></td><td><span class="auth-tag a-auth">auth</span></td><td><code>api-server.js</code></td><td>Face detection list + filters (gender, age, expression)</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/faces/summary</code></td><td><span class="auth-tag a-auth">auth</span></td><td><code>api-server.js</code></td><td>Face detection summary (gender split, age bands, mask count)</td></tr>
+</tbody>
+</table>
+
+<div class="wbox">
+  <h4>หมายเหตุ: REF_api-reference.md</h4>
+  <p>docs/REF_api-reference.md อ้าง "126 routes / 22 groups" — ตัวเลขนี้ out-of-date หลัง S4/MAINT-2T-001 split เสร็จ ตัวเลขจริง ณ 2026-06-15 คือ <strong>139 routes / 20 groups</strong> (132 route files + 1 stats-summary-route + 6 inline) แนะนำ update REF_api-reference.md ในรอบถัดไป</p>
+</div>
+
+<div class="ref">
+  <p><a href="file-navigator.html">← File Navigator</a> · <a href="index.html">กลับ Dev Portal</a> · อ้างอิง: <code>src/routes/*.js</code> · <code>src/api-server.js</code> · <code>docs/REF_api-reference.md</code></p>
+</div>
+</div>
+</div>
+
+<script src="nav.js"></script>
+</body>
+</html>

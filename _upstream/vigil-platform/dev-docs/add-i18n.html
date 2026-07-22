@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>เพิ่ม i18n String — Dev Portal</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="overlay"></div>
+<div class="layout">
+<nav class="nav" id="nav"></nav>
+<button id="ham">☰</button>
+
+<div class="main">
+<h1 class="ph">Recipe: เพิ่ม i18n String</h1>
+
+<p>Dashboard รองรับ 2 ภาษา (Thai / English) ผ่าน <code>dashboard/i18n.js</code> ที่ expose <code>I18N</code> object ทุกไฟล์ใน index.html</p>
+
+<div class="dbox">
+  <h4>GOTCHAS #42 — ต้องใส่ทั้ง th และ en เสมอ</h4>
+  <p>ถ้าใส่แค่ <code>th:</code> ไม่ใส่ <code>en:</code> — เมื่อ user เปลี่ยน language เป็น English จะเห็น <code>undefined</code> ในหน้า UI</p>
+</div>
+
+<h2>ขั้นตอน</h2>
+
+<div class="step">
+  <div class="step-num">1</div>
+  <div class="step-body">
+    <p>เปิด <code>dashboard/i18n.js</code> — DICT object มีโครงสร้าง:</p>
+<pre>var DICT = {
+  th: {
+    'existing.key': 'ข้อความไทย',
+    // ... หลายร้อย keys
+  },
+  en: {
+    'existing.key': 'English text',
+    // ...
+  }
+};</pre>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">2</div>
+  <div class="step-body">
+    <p>เพิ่ม key ใหม่ใน <strong>ทั้ง 2 blocks</strong> — key ต้องเหมือนกันทุกตัวอักษร:</p>
+<pre>var DICT = {
+  th: {
+    // ... existing keys ...
+    'myfeature.title':     'ชื่อ Feature ของฉัน',
+    'myfeature.save':      'บันทึก',
+    'myfeature.noData':    'ไม่มีข้อมูล',
+  },
+  en: {
+    // ... existing keys ...
+    'myfeature.title':     'My Feature',
+    'myfeature.save':      'Save',
+    'myfeature.noData':    'No data',
+  }
+};</pre>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">3</div>
+  <div class="step-body">
+    <p>ใช้ใน <code>dashboard/dashboard.js</code> หรือไฟล์ JS อื่น:</p>
+<pre>// Dynamic string (JavaScript)
+element.textContent = I18N.t('myfeature.title');
+
+// ใน HTML string (innerHTML)
+html += `&lt;h2&gt;${I18N.t('myfeature.title')}&lt;/h2&gt;`;
+
+// ใน template literal
+const label = I18N.t('myfeature.save');</pre>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">4</div>
+  <div class="step-body">
+    <p>หรือใช้ <code>data-i18n</code> attribute สำหรับ static markup ใน HTML file:</p>
+<pre>&lt;!-- textContent --&gt;
+&lt;h2 data-i18n="myfeature.title"&gt;&lt;/h2&gt;
+
+&lt;!-- innerHTML (ถ้า value มี HTML tag) --&gt;
+&lt;p data-i18n-html="myfeature.description"&gt;&lt;/p&gt;
+
+&lt;!-- placeholder --&gt;
+&lt;input data-i18n-ph="myfeature.placeholder"&gt;</pre>
+  </div>
+</div>
+
+<h2>Key Naming Convention</h2>
+
+<table>
+<thead><tr><th>Pattern</th><th>ใช้กับ</th><th>ตัวอย่าง</th></tr></thead>
+<tbody>
+<tr>
+  <td><code>nav.xxx</code></td>
+  <td>sidebar nav items</td>
+  <td><code>nav.summary</code>, <code>nav.cameras</code></td>
+</tr>
+<tr>
+  <td><code>page.xxx</code></td>
+  <td>page titles</td>
+  <td><code>page.events</code>, <code>page.health</code></td>
+</tr>
+<tr>
+  <td><code>set.xxx</code></td>
+  <td>settings section</td>
+  <td><code>set.users</code>, <code>set.backup</code></td>
+</tr>
+<tr>
+  <td><code>login.xxx</code></td>
+  <td>login page</td>
+  <td><code>login.username</code></td>
+</tr>
+<tr>
+  <td><code>aux.xxx</code></td>
+  <td>shared UI components</td>
+  <td><code>aux.searchPlaceholder</code>, <code>aux.noMatchItems</code></td>
+</tr>
+<tr>
+  <td><code>myfeature.xxx</code></td>
+  <td>feature-specific strings</td>
+  <td>ใช้ namespace ของ feature</td>
+</tr>
+</tbody>
+</table>
+
+<h2>เช็ค: ค้น key ที่มีอยู่แล้ว</h2>
+
+<pre># ค้น key ที่ขึ้นต้นด้วย namespace
+grep "'myfeature\." dashboard/i18n.js
+
+# ดู key ทั้งหมดใน th block
+grep -A9999 "^  th:" dashboard/i18n.js | grep -B9999 "^  en:" | grep "'"</pre>
+
+<div class="ibox">
+  <h4>Thai เป็น source language</h4>
+  <p>Thai คือ source — ถ้าไม่แน่ใจว่า English translation ควรเป็นอะไร ใส่ English ที่เข้าใจง่ายไปก่อน ไม่ใช้ Google Translate ตรงๆ สำหรับ technical terms</p>
+</div>
+
+<div class="ref">
+  <p><a href="index.html">← กลับ Navigator</a> · อ้างอิง: <code>dashboard/i18n.js</code> · GOTCHAS #42 · DECISIONS.md #128</p>
+</div>
+</div>
+</div>
+
+<script src="nav.js"></script>
+</body>
+</html>
