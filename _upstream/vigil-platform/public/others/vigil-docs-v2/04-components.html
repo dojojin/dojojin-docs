@@ -123,6 +123,7 @@
       <li>7 PM2 processes แยกจาก central: nanomq, hikvision, dahua, lpr-receiver, edge-config-agent, edge-bridge, cloudflared</li>
       <li>Images ไม่ผ่าน MQTT — เฉพาะ metadata + filename ref</li>
       <li>ใช้เมื่อกล้องอยู่ต่าง network segment หรือต้องการ local resilience</li>
+      <li><strong>บริหารจัดการ Edge จากศูนย์กลาง (remote management):</strong> ตรวจจับรุ่น/เฟิร์มแวร์กล้องอัตโนมัติเมื่อกดบันทึกการตั้งค่า, ลบข้อมูล/รูปภาพบน edge อัตโนมัติเมื่อลบกล้องออกจากระบบ — ทำผ่านช่องทางคำสั่งเฉพาะ (MQTT command channel) ยืนยันตัวตนด้วย shared secret ก่อนสั่งการทุกครั้ง</li>
     </ul>
   </div>
 </div>

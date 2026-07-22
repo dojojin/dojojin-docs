@@ -18,7 +18,7 @@
 <!-- SOURCE: CHANGELOG.md (shipped) · ROADMAP.md (planned) | Update: new feature shipped or roadmap shift -->
 <h1 class="ph">02 สิ่งที่ทำได้</h1>
 
-<h2>Feature Matrix — 14 หมวดหลัก</h2>
+<h2>Feature Matrix — 15 หมวดหลัก</h2>
 <p style="font-size:13px;color:var(--dim);margin-bottom:1rem">ฟีเจอร์ที่ใช้งานได้จริงขึ้นกับ <strong>Deployment Profile</strong> ที่เลือก: <strong>A</strong> (สถิติ+แจ้งเตือน), <strong>B</strong> (A + snapshot), <strong>C</strong> (ครบทุกอย่าง รวม pre-alarm video) — ดูรายละเอียดใน <a href="12-scale-up.html">12 Scale Up</a></p>
 <table>
 <thead>
@@ -241,6 +241,42 @@
 <tr>
 <td>Appearance retention setting (default 30 days, max 730)</td>
 <td>v1.5.1</td>
+<td><span class="badge b-green">ใช้งานได้</span></td>
+</tr>
+<tr>
+<td rowspan="7"><strong>ป้ายทะเบียน<br>(LPR / ANPR)</strong></td>
+<td>อ่านป้ายทะเบียนอัตโนมัติ (ANPR) พร้อมจำแนกประเภท/สี/ยี่ห้อรถ — รองรับกล้อง Dahua ITC และ Hikvision ANPR</td>
+<td>v1.2.0</td>
+<td><span class="badge b-green">ใช้งานได้</span></td>
+</tr>
+<tr>
+<td><strong>ตรวจจับไม่สวมหมวกกันน็อค</strong> (helmet detection) — อ่านจาก AI บนตัวกล้องโดยตรง ระบุเป็น flag ค้นหา/กรองได้</td>
+<td>v1.5.2</td>
+<td><span class="badge b-green">ใช้งานได้</span></td>
+</tr>
+<tr>
+<td><strong>ตรวจจับการซ้อนสาม / เกินจำนวนคนซ้อนท้าย</strong> (rider overload — นับจำนวนคน 1/2/3+ บนรถจักรยานยนต์ 1 คัน) — รองรับเฉพาะกล้อง Dahua ITC431 ที่มี field นี้จากตัวกล้อง</td>
+<td>v1.5.3</td>
+<td><span class="badge b-green">ใช้งานได้</span></td>
+</tr>
+<tr>
+<td>ตรวจจับไม่คาดเข็มขัดนิรภัย (seatbelt detection)</td>
+<td>v1.5.0</td>
+<td><span class="badge b-green">ใช้งานได้</span></td>
+</tr>
+<tr>
+<td><strong>ระบบคัดกรองป้ายทะเบียนต้องสงสัย</strong> (สวมทะเบียน/ป้ายซ้ำ) — แจ้งเตือนเมื่อป้ายทะเบียนเดียวกันปรากฏบนรถต่างประเภทกันภายในช่วงเวลาที่กำหนด พร้อมระบบให้เจ้าหน้าที่ตรวจสอบและยกเลิกการแจ้งเตือนที่ผิดพลาดได้ (audit trail)</td>
+<td>v1.5.2</td>
+<td><span class="badge b-green">ใช้งานได้</span></td>
+</tr>
+<tr>
+<td>บัญชีเฝ้าระวังป้ายทะเบียน (Watchlist) — แจ้งเตือนทันทีเมื่อพบป้ายทะเบียนที่อยู่ในบัญชีเฝ้าระวัง พร้อมระบบรับทราบ (acknowledge)</td>
+<td>v1.5.2</td>
+<td><span class="badge b-green">ใช้งานได้</span></td>
+</tr>
+<tr>
+<td>ค้นหา/กรองประวัติป้ายทะเบียนแบบละเอียด (ทิศทาง, ช่วงเวลา, กล้อง, ประเภทรถ, สีป้าย) พร้อมตั้งค่าระยะเวลาเก็บข้อมูลได้เอง</td>
+<td>v1.5.2</td>
 <td><span class="badge b-green">ใช้งานได้</span></td>
 </tr>
 </tbody>

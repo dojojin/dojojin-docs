@@ -703,6 +703,13 @@
     **Diagnostic:** `sudo defaults read /Library/Preferences/com.apple.networkextension.plist | grep -i <binary>`
     **Detection:** `/api/health/details` → `media_buffer[].newest_segment_sec` (ค่าสูงผิดปกติ = recorder wedged)
     **Production Linux:** ไม่มี LNP — ปัญหานี้เป็น macOS-only.
+    **เพิ่มเติม 2026-07-22 (ชี้แจงให้ชัด ไม่ใช่ทุก `pm2 restart` เข้าเงื่อนไขนี้):** เงื่อนไขที่ต้องผ่าน
+    Terminal.app/VigilPM2.app คือ **daemon ต้อง (re)start ใหม่** เท่านั้น (`pm2 kill && pm2 resurrect`,
+    หรือ `pm2 start ecosystem.config.js` รอบแรกหลัง `pm2 kill`) — grant ผูกกับ context ของ daemon process.
+    ส่วน `pm2 restart <app-name>` **ตัวเดียว** (RPC สั่ง daemon ที่ **รันอยู่แล้ว** ให้ respawn แค่ child
+    process นั้น โดย daemon เองไม่ได้ restart) **ไม่ต้อง** ผ่าน Terminal.app — ยิงจาก Claude/ssh/tmux shell
+    ตรงๆ ได้ปลอดภัย (ยืนยันแล้ว: `pm2 restart lpr-receiver` จาก Claude shell ตรงๆ เพื่อ narrow bind
+    `LPR_BIND_HOST`, ทำงานถูกต้อง ไม่เสีย grant — เพราะ `lpr-receiver` เองก็ไม่ใช่ process ที่เชื่อมกล้องเลย).
 
 83. **Node.js v22 (libuv 1.52) EHOSTUNREACH บน secondary-NIC route หลัง LAN re-plug บน macOS** — 2026-06-09:
     ⚠️ **superseded by #84 (2026-06-10)** — root cause จริงคือ macOS LNP per-binary record ไม่ใช่ libuv;
@@ -857,6 +864,14 @@
      **Runbook (จำไว้ใช้ครั้งหน้า):** เว็บล่มแต่ `curl 127.0.0.1:PORT` ปกติ → **อย่าไล่ดูโค้ด/DB ก่อน** → `tail -50 /Library/Logs/com.cloudflare.cloudflared.err.log` ดูว่ามี `"control stream encountered a failure"`/`"canceled by remote"` ถี่ๆ ไหม → ถ้าใช่ restart cloudflared ตามคำสั่งข้างบนได้เลย เป็น fix ที่ risk ต่ำสุด (ไม่กระทบ local service ใดๆ, log ไม่หาย).
      **Lesson:** (1) "connection ไม่เคย re-register นาน X ชม." กับ "connection ตายมา X ชม." เป็นคนละข้อสรุป — connection ที่เสถียรก็ไม่ re-register เหมือนกัน อย่าอ่าน log แบบเดียวแล้วสรุปสถานะที่ log ไม่ได้บอกตรงๆ. (2) ก่อนฟันธง root-cause ที่มีผลต่อคำแนะนำ (เช่น "เครือข่ายเจ้าของมีปัญหา") ต้องมีหลักฐานเชิงลบที่ตรงประเด็นจริง (`ConnectionID` ไม่เปลี่ยน) ไม่ใช่แค่ "เน็ตทั่วไปใช้ได้" (ping/curl ธรรมดาไม่ได้ทดสอบ UDP/QUIC ที่ tunnel ใช้จริง).
 
+115. **`pm2 kill && pm2 resurrect` ไม่ pick up การเปลี่ยน `ecosystem.config.js`'s `env` block — ต้อง `pm2 start ecosystem.config.js && pm2 save` แทน** — 2026-07-22: เพิ่ม `NODE_ENV: 'production'` เข้า shared `base.env` ของ `ecosystem.config.js` (สำหรับ SEC5-MED-005 fail-fast fix) แล้วรัน `scripts/pm2-lan-safe-restart.command` (`pm2 kill && pm2 resurrect`) ตามปกติ — **ค่า `NODE_ENV` ไม่ขึ้นในทุก process เลย**. **Root cause:** `pm2 resurrect` อ่าน state จาก `~/.pm2/dump.pm2` (snapshot ล่าสุดตอน `pm2 save` ครั้งก่อน) ไม่ได้ re-read `ecosystem.config.js` เลย — env ที่ผูกกับ process ถูก cache ไว้ใน dump ตั้งแต่ตอนเริ่ม ไม่ใช่ live-read จากไฟล์ config ทุกครั้งที่ restart.
+     **Fix:** `pm2 start ecosystem.config.js` (apply env ใหม่ให้ process ที่ชื่อตรงกันซึ่ง**กำลังรันอยู่**) → `pm2 save` (persist ให้ resurrect รอบถัดไปจำค่านี้ได้) — รันผ่าน `.command` ใน Terminal.app context เดียวกัน (ยังต้องผ่าน LNP grant เพราะเป็นการ start ใหม่ ไม่ใช่ restart เฉยๆ).
+     **Lesson:** แก้ `ecosystem.config.js`'s `env` block แล้ว **ไม่ใช่แค่ restart** — ต้อง `pm2 start ecosystem.config.js && pm2 save` เสมอ ไม่งั้น dump เก่าจะ mask การเปลี่ยนแปลงไปเรื่อยๆ ทุกรอบ kill+resurrect ถัดไป (silent, ไม่มี error ให้เห็น — verify ด้วย `pm2 jlist | grep NODE_ENV` หรือเทียบเท่าเสมอหลังแก้ env).
+
+116. **`routes/lpr.js`/`routes/face-push.js` mount โดย 2 process แยกกัน (`api-server` central + `lpr-receiver` central+edge) — deploy central อย่างเดียวไม่ครบ ต้อง `git pull`+restart edge แยกต่างหาก และง่ายมากที่จะลืม** — 2026-07-22: แก้ legacy `/lpr` (ปิดเป็น 410) ใน `routes/lpr.js`, deploy central ผ่าน LAN-safe restart แล้วรายงานว่าเสร็จ — **แต่ลืม `git pull` + restart `lpr-receiver` บน hdy-edge/vss-edge เลย** เพราะทั้งสอง site รัน `lpr-receiver.js` เป็น standalone PM2 process ของตัวเอง (mount route module เดียวกัน คนละ process จาก central) ซึ่งไม่ได้ถูกแตะโดยการ restart central แม้แต่นิดเดียว. พบตอนทำ deploy รอบถัดไป (Phase 4b) — pull เข้ามาพร้อมกันเลยตอนนั้นเพราะ edge ยังค้างอยู่ที่ commit เก่า.
+     **Fix:** ตรวจสอบทุกครั้งก่อน deploy ว่าไฟล์ที่แก้ถูก mount โดย process ไหนบ้าง — `grep -rn "routes/lpr\|routes/face-push" src/api-server.js src/lpr-receiver.js` แล้ว deploy ให้ครบทุก process จริง ไม่ใช่แค่ที่ restart central ตามความเคยชิน.
+     **Lesson:** ไฟล์ shared module ที่ถูก mount โดยหลาย entry-point (central + edge) ไม่มีสัญญาณเตือนอัตโนมัติว่า deploy ไม่ครบ — process ที่ไม่ได้ restart จะรันโค้ดเก่าเงียบๆ ต่อไปเรื่อยๆ โดยไม่มี error ก่อน commit ที่แก้ shared route module ให้เช็คจุด mount ทั้งหมดก่อนเสมอ ไม่ใช่แค่จุดที่คุ้นเคย.
+
 ---
 
-<sub>End of GOTCHAS.md · Companion to CLAUDE.md · Updated 2026-07-21 (#114)</sub>
+<sub>End of GOTCHAS.md · Companion to CLAUDE.md · Updated 2026-07-22 (#116)</sub>

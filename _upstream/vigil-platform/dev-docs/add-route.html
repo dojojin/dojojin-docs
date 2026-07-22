@@ -160,6 +160,34 @@ module.exports = function myFeatureRoutes(app, pool, { auth }) {
   </ul>
 </div>
 
+<h2>Token-Pre-Check Gate (สำหรับ push receiver — ไม่ใช้ session)</h2>
+
+<p>Route ที่รับ push จากอุปกรณ์ (กล้อง/edge) ไม่มี session cookie ให้เช็ค — auth เป็น token ที่ฝังใน path เอง (<code>/lpr/:token</code>, <code>/face-push/:token</code>) แทน <code>requireAuth</code> pattern ด้านบน หัวใจของ pattern นี้คือ<strong>เช็ค token ก่อน parse body เสมอ</strong> — ถ้าปล่อยให้ <code>express.raw()</code> parse body ก่อนเช็ค token, request ที่ token ผิด/ไม่มีก็ยัง consume memory เต็มลิมิตอยู่ดี (เพิ่งเป็นบั๊กจริง — ดู LIVE-HIGH-001 ใน <a href="../docs/REF_security-checklist.md">REF_security-checklist.md</a>, เจอ flood จริง ~2 req/s ที่ยิงเข้ามาต่อเนื่องก่อนแก้).</p>
+
+<pre>// ตัวอย่างจาก src/routes/lpr.js — gate เช็คก่อน rawBodyParser เสมอ
+function lprTokenGate(req, res, next) {
+  const cam = camByLprToken(req.params.token);
+  if (!cam) {
+    console.warn('[lpr-push] unknown token — dropped (pre-body)');
+    res.status(200).end('OK');  // ตอบโค้ดเดียวกับที่ device จริงคาดหวัง — ไม่บอกใบ้ว่า "token ผิด" ให้คนสุ่มรู้
+    req.resume();                // drain socket โดยไม่ buffer เข้า memory
+    return;
+  }
+  req._cam = cam;
+  next();
+}
+
+app.post('/lpr/:token', lprTokenGate, rawBodyParser, async (req, res) => { ... });</pre>
+
+<div class="wbox">
+  <h4>ข้อควรระวัง</h4>
+  <ul>
+    <li>ตอบ response code เดียวกับที่ device จริงคาดหวังเสมอ (ในเคสนี้คือ <code>200</code>) แม้ token จะผิด — ไม่ใช่เพราะสุภาพ แต่เพราะเปลี่ยนโค้ดจะทำให้ device ที่ retry-on-error ยิงถี่ขึ้นโดยไม่ตั้งใจ</li>
+    <li>ไม่ต้องตอบ error message ที่บอกว่า "token ผิด" ต่างจาก "ไม่มีข้อมูล" — เป็น oracle ให้คนสุ่ม token ได้</li>
+    <li>ต้อง <code>req.resume()</code> เพื่อ drain socket เมื่อไม่เรียก body parser — ไม่งั้น connection ค้าง</li>
+  </ul>
+</div>
+
 <h2>Response Pattern</h2>
 
 <pre>// รายการ (list)

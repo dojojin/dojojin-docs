@@ -829,6 +829,36 @@ function _diagCutoutResult(cam, outcome, detail) {
   console.log(`  🔬 DIAG-CUTOUT [${cam.camera_id}] ${outcome}`, JSON.stringify(detail));
 }
 
+// Diagnostic (2026-07-22, bigc-scene-drift investigation) — is the never-present
+// miss mechanism a supply shortfall on the camera's OWN snapManager encode
+// pipeline, or a drop somewhere in our own code? Counts text-parts (each one a
+// detection the camera reported) vs image-parts (each one a JPEG the camera
+// actually produced) on the snapManager stream, at the earliest point our
+// process sees them — before the 8MB buffer guard, before FIFO pairing,
+// before any of our own matching logic runs. If image count trails text count
+// by roughly the same margin as the measured miss rate, the camera itself
+// isn't generating an image for every detection under load (this would also
+// explain why the FIFO queue near _snapContexts can never fully recover —
+// it assumes eventual 1:1 supply, only reorders arrival, doesn't manufacture
+// a missing image). Read-only, no behavior change. OFF by default.
+const DIAG_SNAP_SUPPLY_ENABLED = process.env.DIAG_SNAP_SUPPLY_ENABLED === '1';
+const _snapSupplyCounts = new Map(); // deviceKey → { text, image }
+function _diagSnapSupply(deviceKey, kind) {
+  if (!DIAG_SNAP_SUPPLY_ENABLED) return;
+  const c = _snapSupplyCounts.get(deviceKey) || { text: 0, image: 0 };
+  c[kind]++;
+  _snapSupplyCounts.set(deviceKey, c);
+}
+if (DIAG_SNAP_SUPPLY_ENABLED) {
+  setInterval(() => {
+    for (const [key, c] of _snapSupplyCounts) {
+      const deficit = c.text - c.image;
+      const pct = c.text ? ((deficit / c.text) * 100).toFixed(1) : '0.0';
+      console.log(`  🔬 DIAG-SNAP-SUPPLY [${key}] text=${c.text} image=${c.image} deficit=${deficit} (${pct}%)`);
+    }
+  }, 60_000).unref();
+}
+
 // multipart/x-mixed-replace parser. Each part:
 //   --myboundary\r\n  Content-Type:..  [Content-Length:..]  \r\n  <body>
 // Dahua text parts may omit Content-Length → body runs to the next
@@ -879,6 +909,7 @@ function handlePart(device, headers, body, mode = 'event') {
   // captureFrame()/snapManager only.
   if (/image\/jpeg/i.test(ct)) {
     if (mode === 'snap') {
+      _diagSnapSupply(device.key, 'image');
       // FIFO: pair this image with the OLDEST unconsumed text context, not
       // "whatever's there now" — see _snapContexts declaration for why.
       const q = _snapContexts.get(device.key);
@@ -910,6 +941,7 @@ function parseSnapManagerText(device, text) {
   const om = text.match(/Events\[\d+\]\.Object\.ObjectID=(\d+)/);
   const oid = om ? om[1] : null;
   if (!code) return;
+  _diagSnapSupply(device.key, 'text');
   // Push onto the FIFO queue (see _snapContexts declaration) instead of
   // overwriting a single slot — each queued context waits for its own image
   // part, in arrival order. Cap + prune stale entries so a text part whose
