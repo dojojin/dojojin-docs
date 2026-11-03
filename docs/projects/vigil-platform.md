@@ -338,7 +338,7 @@ Selected daily statistics can be published to a partner system per camera, one g
 
 - **Face recognition** — matching against a watchlist gallery, from the face crops supported cameras already capture, is in use, and a matched face raises an alert an operator acknowledges. The server-side embedding engine that would extend this to open re-identification runs today only in internal testing: its face-detection component is not licensed for commercial use, and general availability waits on one that is
 - **Event workflow** — face and LPR watchlist alerts can be acknowledged, which closes the loop on the alerts that need a person to look. Case management proper, where an event is assigned, carries a status and is closed by someone, is not built
-- **Inactivity detection** — a camera that falls quiet against its own normal pattern raises an alert. The statistical side of this, unusual crowd density and zone-level behaviour, is not built
+- **Anomaly alerting** — a camera that falls quiet against its own normal pattern raises an alert. Occupancy and density themselves are measured and charted, as Event Management and Analytics describes, but nothing yet watches those figures and raises an alert when a space becomes unusually crowded
 
 ### Planned
 
