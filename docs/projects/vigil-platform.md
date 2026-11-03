@@ -334,11 +334,14 @@ Selected daily statistics can be published to a partner system per camera, one g
 
 ## Roadmap
 
-The following capabilities are planned for future phases:
+### Partly in place
+
+- **Face recognition** — matching against a watchlist gallery, from the face crops supported cameras already capture, is in use, and a matched face raises an alert an operator acknowledges. The server-side embedding engine that would extend this to open re-identification runs today only in internal testing: its face-detection component is not licensed for commercial use, and general availability waits on one that is
+- **Event workflow** — face and LPR watchlist alerts can be acknowledged, which closes the loop on the alerts that need a person to look. Case management proper, where an event is assigned, carries a status and is closed by someone, is not built
+- **Inactivity detection** — a camera that falls quiet against its own normal pattern raises an alert. The statistical side of this, unusual crowd density and zone-level behaviour, is not built
+
+### Planned
 
 - **ONVIF generic event ingestion** — full event processing for cameras not covered by the current vendor-specific ingesters
-- **Event workflow** — acknowledge, dismiss, and escalate events from the dashboard
-- **Face Recognition AI** — vector-based person re-identification using face embeddings
-- **Anomaly detection** — statistical detection of unusual crowd density or prolonged inactivity in a zone
-- **Email alerts** — SMTP-based alert delivery as an alternative to LINE
+- **Email alerts** — SMTP-based alert delivery, alongside LINE and Telegram
 - **Webhook integrations** — outbound webhook delivery to third-party systems

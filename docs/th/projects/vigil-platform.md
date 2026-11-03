@@ -332,11 +332,14 @@ Telegram ทำงานคู่กับ LINE เป็นช่องทา�
 
 ## Roadmap
 
-ฟีเจอร์ต่อไปนี้วางแผนสำหรับ phase ถัดไป:
+### มีแล้วบางส่วน
+
+- **Face recognition** — การจับคู่ใบหน้ากับ watchlist จากภาพใบหน้าที่กล้องที่รองรับถ่ายไว้อยู่แล้ว ใช้งานได้จริง และเมื่อจับคู่ได้จะมี alert ให้ผู้ปฏิบัติงานกดรับทราบ ส่วนเอนจิน embedding ฝั่งเซิร์ฟเวอร์ที่จะต่อยอดไปถึง re-identification แบบเปิด ตอนนี้ยังอยู่ในขั้นทดสอบภายในเท่านั้น เพราะส่วนตรวจจับใบหน้าที่ใช้อยู่ไม่อนุญาตให้ใช้เชิงพาณิชย์ ต้องรอโมเดลที่ใช้ได้ก่อน
+- **Event workflow** — alert จาก face watchlist และ LPR watchlist กดรับทราบได้ ปิดวงจรของ alert ที่ต้องมีคนดู ส่วนระบบเคสเต็มรูปแบบ ที่มอบหมายผู้รับผิดชอบ มีสถานะ และปิดงานได้ ยังไม่มี
+- **ตรวจจับการนิ่งเงียบ** — กล้องที่เงียบผิดไปจากรูปแบบปกติของตัวเองจะมี alert ส่วนการตรวจเชิงสถิติ เช่น ความหนาแน่นผิดปกติหรือพฤติกรรมระดับ zone ยังไม่มี
+
+### วางแผนไว้
 
 - **ONVIF generic event ingestion** — ประมวลผล event เต็มรูปแบบสำหรับกล้องที่ยังไม่มี vendor-specific ingester
-- **Event workflow** — acknowledge, dismiss, และ escalate event จาก dashboard
-- **Face Recognition AI** — person re-identification แบบ vector-based โดยใช้ face embedding
-- **Anomaly detection** — ตรวจจับความหนาแน่นผิดปกติหรือการนิ่งเงียบยาวนานใน zone
-- **Email alert** — ส่ง alert ทาง SMTP เป็นทางเลือกนอกเหนือจาก LINE
+- **Email alert** — ส่ง alert ทาง SMTP ควบคู่กับ LINE และ Telegram
 - **Webhook integration** — ส่ง outbound webhook ไปยังระบบภายนอก
