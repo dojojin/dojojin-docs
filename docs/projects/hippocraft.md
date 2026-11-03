@@ -13,6 +13,9 @@ The name is a nod to the Hippocratic Oath, a doctor's promise to do no harm. Hip
 
 ---
 
+![HippoCraft home screen, every tool named in Thai](/hippocraft/welcome.webp)
+*Every tool, menu and message is in Thai.*
+
 ## Why It Exists
 
 - Most PDF software **cannot edit Thai text**. Vowels float, tone marks sink, or the whole run turns into boxes
@@ -35,6 +38,9 @@ Click a line or a paragraph and type. The edit keeps the document's own font and
 - The caret lands on the right character after sara am, and backspace deletes the one you meant
 - An edited paragraph remembers where its lines broke, so editing it repeatedly does not reflow it differently each time
 
+![A Thai meeting memo open in HippoCraft with its text blocks outlined for editing](/hippocraft/edit-thai.webp)
+*Click a Thai paragraph and type. The edit keeps the document's own font and size.*
+
 ### Thai Fonts Embedded Correctly
 
 Sarabun, Noto Sans Thai and IBM Plex Sans Thai ship with the application under the Open Font License.
@@ -52,6 +58,12 @@ Scanned Thai pages are read by a PaddleOCR model that runs locally. No file is s
 - Progress is reported as a percentage and can be cancelled, in the desktop app and in the browser
 - English words inside Thai documents are read as English rather than as Thai letters that look similar
 - OCR mistakes can be corrected afterwards, and the white patch covering the original word always stays beneath the replacement text
+
+![The Recognize Text dialog with Thai selected as the document language](/hippocraft/ocr-dialog.webp)
+*Recognising a scanned Thai page. The model runs on the machine.*
+
+![Searching the recognised page for a Thai word, with two matches highlighted](/hippocraft/ocr-searchable.webp)
+*After recognition the scan is searchable: two matches for ภาษาไทย, the image itself unchanged.*
 
 ### Thai Handwriting, Optional
 
