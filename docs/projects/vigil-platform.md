@@ -35,7 +35,7 @@ Vigil ingests security events from cameras of different manufacturers through a 
 
 Supported protocols:
 
-- **Bosch BVMS** — MQTT over ONVIF Profile M; supports IVA Pro and IVA Basic event types (Crossing Line, Object In Field, Loitering, Counting, and more)
+- **Bosch BVMS** — MQTT over ONVIF Profile M; supports IVA Pro and IVA Basic event types (Crossing Line, Object In Field, Loitering, Counting, and more). Event snapshots can be cropped to the object that triggered them, the object's path drawn over the scene, and average speed across a crossing recorded from the camera's metadata. On-camera storage is read over RCP+, and the snapshot source is selectable per camera (MQTT, HTTP, or both)
 - **Hikvision** — ISAPI HTTP alert stream; Smart Events and Face Capture
 - **Dahua** — CGI VCA events: Line Crossing, Intrusion, Smart Motion; ANPR/LPR plate recognition (ITC cameras); Face Capture via NVR-stored crops (RPC2); pre-alarm RTSP clips; multi-channel NVR support
 - **ONVIF generic** — Monitor-only mode (live snapshot + reachability probe); full event ingestion on the roadmap
@@ -151,6 +151,15 @@ Any camera can be placed into Pause / Maintenance Mode while work is performed. 
 - The pause period is excluded from uptime percentage calculations
 - Every pause and resume is written to the audit log with timestamp and operator
 
+### Site Lifecycle and Maintenance
+
+Each site moves through a lifecycle rather than existing only as a row that is created once and never changes.
+
+- **Site maintenance mode** — pause an entire site in one action. Its alerts are muted, its cameras stop being counted as offline, and scheduled retention will not delete the site's data while it is paused, so a site taken down for a week of cabling work does not lose the footage that explains why it was taken down
+- **Archive** — retire a site from live views and revoke its edge credentials while keeping its recorded history searchable
+- **Delete** — remove a site and everything belonging to it, behind a typed confirmation. The dashboard explains what blocks a delete when something still depends on the site
+- **Status badges** — the Manage Sites and Health pages show each site's lifecycle state, so a quiet site is visibly paused rather than looking broken
+
 ### System Health Dashboard
 
 An admin-only page that auto-refreshes every 15 seconds reports: database latency, event rate, MQTT pipeline freshness, camera online/offline counts, snapshot file counts and sizes, disk free/total, process uptime and memory, WebSocket client count, system load average, and image quality per camera.
@@ -188,6 +197,8 @@ Vigil Platform is organized into four layers:
 **Storage Layer** — PostgreSQL 16 stores all events, camera metadata, user accounts, alert rules, LINE configuration, face images, audit logs, and reports.
 
 **Presentation Layer** — A 15-page single-page application built for speed. Pages load in under 2 seconds with server-side pagination and caching.
+
+Pages that summarise long periods read from pre-aggregated hourly and daily tables rather than walking raw events, and those aggregates are reconciled against the raw data daily so that events arriving late are still counted. A nightly probe measures the queries behind each screen and compares the aggregates with raw counts, so a page that has quietly become slow is reported before anyone has to notice it.
 
 **Deployment profiles:**
 
@@ -299,6 +310,25 @@ LINE is integrated natively into Vigil Platform. Alerts are sent with snapshot i
 **Camera offline alerts** — sends a LINE notification when a camera goes offline; sends a recovery notification when it comes back online.
 
 **Scheduled reports** — the Health Report and Analytics Report can be sent automatically to a LINE group on a daily, weekly, or monthly schedule.
+
+### Telegram Notifications
+
+Telegram runs alongside LINE as a second notification channel, for teams that already work there or that want a fallback when one provider is unavailable.
+
+- **Commands** — a commands tab in Telegram Config defines what operators can ask the bot, and answers that carry images are sent as photo albums rather than one message per picture
+- **Onboarding by QR** — a bot QR panel mirrors the LINE self-service flow
+- **Manual send** — face, LPR, and event detail views each have a send-to-Telegram button, so an operator can forward a specific detection to the group without waiting for a rule to fire
+- **Delivery honesty** — when Telegram cannot fetch an image by link the platform uploads the file instead, and a manual send that fails is reported as failed rather than silently counted as sent
+
+### Partner API
+
+Selected daily statistics can be published to a partner system per camera, one grantable column per dimension, so a partner receives exactly the figures agreed with them and nothing else.
+
+- **People statistics** — daily counts by attribute, retained for one year
+- **Traffic enforcement counts** — daily totals per camera
+- Access is granted column by column, and revoking a key states plainly what the revocation stops
+
+---
 
 ---
 

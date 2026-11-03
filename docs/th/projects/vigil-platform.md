@@ -35,7 +35,7 @@ Vigil รับ event จากกล้องหลายยี่ห้อผ�
 
 Protocol ที่รองรับ:
 
-- **Bosch BVMS** — MQTT over ONVIF Profile M; รองรับ IVA Pro และ IVA Basic (Crossing Line, Object In Field, Loitering, Counting และอื่น ๆ)
+- **Bosch BVMS** — MQTT over ONVIF Profile M; รองรับ IVA Pro และ IVA Basic (Crossing Line, Object In Field, Loitering, Counting และอื่น ๆ) ครอป snapshot ให้เหลือเฉพาะวัตถุที่ทำให้เกิด event ได้ วาดเส้นทางการเคลื่อนที่ทับบนภาพได้ และบันทึกความเร็วเฉลี่ยตอนข้ามเส้นจาก metadata ของกล้อง อ่านพื้นที่เก็บข้อมูลบนตัวกล้องผ่าน RCP+ และเลือกแหล่ง snapshot แยกรายกล้องได้ (MQTT, HTTP หรือทั้งคู่)
 - **Hikvision** — ISAPI HTTP alert stream; Smart Events และ Face Capture
 - **Dahua** — CGI VCA events: Line Crossing, Intrusion, Smart Motion; ANPR/LPR อ่านป้ายทะเบียน (กล้อง ITC); Face Capture ผ่านการดึง crop จาก NVR (RPC2); pre-alarm RTSP clips; รองรับ NVR หลาย channel
 - **ONVIF generic** — โหมด monitor-only (live snapshot + reachability probe); full event ingestion อยู่ใน roadmap
@@ -149,6 +149,15 @@ RTSP buffer แบบ rolling บันทึกต่อเนื่องจ�
 - ช่วง pause ถูก exclude จากการคำนวณ uptime percentage
 - ทุก pause และ resume ถูกบันทึก audit log พร้อม timestamp และชื่อ operator
 
+### วงจรชีวิตของไซต์และโหมดซ่อมบำรุง
+
+ไซต์หนึ่งมีสถานะที่เปลี่ยนไปตามการใช้งานจริง ไม่ใช่แค่แถวข้อมูลที่สร้างครั้งเดียวแล้วอยู่อย่างนั้น
+
+- **Site maintenance mode** — หยุดทั้งไซต์ในคลิกเดียว alert ถูกปิดเสียง กล้องในไซต์จะไม่ถูกนับว่า offline และ retention จะไม่ลบข้อมูลของไซต์ระหว่างที่หยุดอยู่ ไซต์ที่ปิดไปหนึ่งสัปดาห์เพื่อเดินสายใหม่จึงไม่สูญเสียภาพที่อธิบายว่าทำไมต้องปิด
+- **Archive** — ปลดไซต์ออกจากหน้าจอ live และเพิกถอน credential ของ edge โดยยังค้นประวัติย้อนหลังได้
+- **Delete** — ลบไซต์พร้อมข้อมูลทั้งหมด ต้องพิมพ์ยืนยันก่อน และถ้ามีอะไรค้างอยู่ระบบจะบอกว่าติดตรงไหน
+- **Status badge** — หน้า Manage Sites และ Health แสดงสถานะของแต่ละไซต์ ไซต์ที่เงียบเพราะถูกพักจึงดูออกว่าพักอยู่ ไม่ใช่ดูเหมือนเสีย
+
 ### System Health Dashboard
 
 หน้า admin-only ที่ auto-refresh ทุก 15 วินาที รายงาน: database latency, event rate, MQTT pipeline freshness, จำนวน online/offline, snapshot file count และขนาด, disk free/total, process uptime และ memory, WebSocket client count, system load average, และคุณภาพภาพต่อกล้อง
@@ -186,6 +195,8 @@ Vigil Platform แบ่งเป็น 4 layer:
 **Storage Layer** — PostgreSQL 16 เก็บ event, camera metadata, user account, alert rule, LINE configuration, face image, audit log, และ report ทั้งหมด
 
 **Presentation Layer** — SPA 15 หน้าสร้างเพื่อความเร็ว หน้าโหลดเสร็จภายใน 2 วินาทีด้วย server-side pagination และ caching
+
+หน้าที่สรุปข้อมูลช่วงยาวอ่านจากตารางสรุปรายชั่วโมงและรายวันที่เตรียมไว้ล่วงหน้า แทนการไล่ event ดิบทั้งหมด และตารางสรุปเหล่านั้นถูกกระทบยอดกับข้อมูลดิบทุกวัน เพื่อให้ event ที่มาถึงช้ายังถูกนับ มี probe รายคืนคอยวัดเวลา query เบื้องหลังแต่ละหน้าและเทียบตัวเลขสรุปกับตัวเลขดิบ หน้าที่ช้าลงเงียบ ๆ จึงถูกรายงานก่อนที่จะมีคนสังเกตเห็น
 
 **Deployment profiles:**
 
@@ -295,6 +306,27 @@ LINE ถูก integrate ใน Vigil Platform แบบ native ส่ง alert 
 **Camera offline alert** — ส่ง LINE notification เมื่อกล้องออฟไลน์; ส่ง recovery notification เมื่อกลับมา online
 
 **Scheduled report** — Health Report และ Analytics Report ส่งอัตโนมัติไปยังกลุ่ม LINE ตามกำหนดรายวัน รายสัปดาห์ หรือรายเดือน
+
+---
+
+## Integration Telegram
+
+Telegram ทำงานคู่กับ LINE เป็นช่องทางแจ้งเตือนที่สอง สำหรับทีมที่ใช้ Telegram อยู่แล้ว หรือไว้เป็นทางสำรองเวลาช่องทางหลักมีปัญหา
+
+- **คำสั่ง** — แท็บ Telegram Config กำหนดได้ว่าผู้ใช้ถามบอทอะไรได้บ้าง คำตอบที่มีรูปจะถูกส่งเป็น photo album ไม่ใช่ทีละข้อความต่อหนึ่งรูป
+- **เข้าใช้งานด้วย QR** — มีแผง QR ของบอท ใช้แนวทางเดียวกับ self-service onboarding ของ LINE
+- **ส่งเอง** — หน้ารายละเอียดของ face, LPR และ event มีปุ่มส่งเข้า Telegram ผู้ปฏิบัติงานจึงส่งเหตุการณ์ที่สนใจเข้ากลุ่มได้ทันที ไม่ต้องรอให้ rule ทำงาน
+- **รายงานผลตามจริง** — ถ้า Telegram ดึงรูปจากลิงก์ไม่ได้ ระบบจะอัปโหลดไฟล์ให้แทน และการส่งเองที่ล้มเหลวจะถูกรายงานว่าล้มเหลว ไม่ถูกนับว่าส่งสำเร็จ
+
+---
+
+## Partner API
+
+เผยแพร่สถิติรายวันบางส่วนให้ระบบของพาร์ตเนอร์แบบรายกล้องได้ โดยให้สิทธิ์ทีละคอลัมน์ต่อหนึ่งมิติข้อมูล พาร์ตเนอร์จึงได้รับเฉพาะตัวเลขที่ตกลงกันไว้เท่านั้น
+
+- **สถิติบุคคล** — จำนวนรายวันแยกตามคุณลักษณะ เก็บไว้ 1 ปี
+- **จำนวนการบังคับใช้กฎจราจร** — ยอดรวมรายวันต่อกล้อง
+- ให้สิทธิ์ทีละคอลัมน์ และเวลาเพิกถอน key ระบบจะบอกชัดว่าการเพิกถอนนั้นหยุดอะไรบ้าง
 
 ---
 
