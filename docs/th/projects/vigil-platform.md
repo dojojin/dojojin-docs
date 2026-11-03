@@ -202,7 +202,7 @@ Vigil Platform แบ่งเป็น 4 layer:
 | B | Profile A + live snapshots |
 | C | Profile B + pre-alarm video clips |
 
-**License tier แยกตามจำนวนกล้อง:**
+**Tier แยกตามจำนวนกล้อง:**
 
 | Tier | กล้อง |
 |---|---|
@@ -254,7 +254,7 @@ Vigil Platform ผ่านการ audit ความปลอดภัย 6 �
 
 ### License Integrity
 
-ระบบ license ใช้ Ed25519 asymmetric cryptography license key ปลอมแปลงไม่ได้หากไม่มี private signing key License ผูกกับเครื่อง deploy และระบุ camera-count ceiling ที่บังคับที่ runtime
+ระบบ license ใช้ Ed25519 asymmetric cryptography license key ปลอมแปลงไม่ได้หากไม่มี private signing key key ระบุ camera-count ceiling ที่บังคับที่ runtime และในกรณีติดตั้งแบบ on-premise จะผูกกับเครื่องที่ออก key ให้
 
 ### PDPA Compliance
 

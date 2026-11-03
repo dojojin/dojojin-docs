@@ -204,7 +204,7 @@ Pages that summarise long periods read from pre-aggregated hourly and daily tabl
 | B | Profile A + live snapshots |
 | C | Profile B + pre-alarm video clips |
 
-**License tiers by camera count:**
+**Tiers by camera count:**
 
 | Tier | Cameras |
 |---|---|
@@ -256,7 +256,7 @@ Vigil Platform has undergone six rounds of security audit covering the full code
 
 ### License Integrity
 
-The license system uses Ed25519 asymmetric cryptography. A license key cannot be forged without access to the private signing key. Licenses are bound to the deployment machine and specify a camera-count ceiling enforced at runtime.
+The license system uses Ed25519 asymmetric cryptography. A license key cannot be forged without access to the private signing key. A key carries a camera-count ceiling that is enforced at runtime, and in an on-premise deployment it is bound to the machine it was issued for.
 
 ### PDPA Compliance
 
