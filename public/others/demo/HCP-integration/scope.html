@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="th" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HCP Integration — Live Demo</title>
+
+<!-- MOCKUP DEMO — กดได้จริง แต่ไม่บันทึกอะไร ไม่ต่อหลังบ้าน
+     โครงหน้าเลียนแบบ "OpenAPI Gateway" ของ HikCentral เอง เพื่อให้เป็นมาตรฐานเดียว
+     กับที่คนเชื่อมต่อคุ้นอยู่แล้ว ไม่ใช่รูปแบบเฉพาะของเรา — ต่างกันตรงรายการสิทธิ์
+     ด้านล่างที่เปลี่ยนเป็นความสามารถของเรา (โจทย์เจ้าของ 2026-08-08)
+     ตัด "Authenticate API / Dual-Server Deployment" ออกตามที่สั่ง
+     Served at: /others/demo/HCP-integration/scope.html
+     แคตตาล็อกความสามารถเต็ม 231 อยู่ที่ ./index.html
+     data-theme="light" ตายตัว — หน้า demo ใช้ light เสมอ -->
+<link rel="stylesheet" href="/vendor/fonts/fonts.css">
+<link rel="stylesheet" href="/index.css">
+<link rel="stylesheet" href="./hcp-demo.css?v=hcp2">
+<link rel="stylesheet" href="./scope-demo.css?v=hcp2">
+</head>
+<body>
+<div class="demo-wrap">
+
+  <div class="demo-banner">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+    <span><b>MOCKUP — กดได้จริง แต่ไม่บันทึกอะไร</b> ·
+    โครงหน้าเลียนแบบ <b>OpenAPI Gateway ของ HikCentral</b> เพื่อให้เป็นมาตรฐานเดียวกับที่คนเชื่อมต่อคุ้นอยู่แล้ว ·
+    ต่างกันตรงรายการสิทธิ์ด้านล่างที่เป็นความสามารถของเรา ·
+    แคตตาล็อกเต็ม 231 อยู่ที่ <a href="./index.html">หน้ารายการทั้งหมด</a></span>
+  </div>
+
+  <!-- ── หน้ารายการ ───────────────────────────────────── -->
+  <div id="pgList">
+    <div class="gw-head">
+      <h1 class="gw-title">HCP Integration</h1>
+      <div class="gw-tabs">
+        <button class="gw-tab active" data-action="tab" data-tab="basic">การตั้งค่าพื้นฐาน</button>
+        <button class="gw-tab" data-action="tab" data-tab="caps">ความสามารถที่เปิดใช้</button>
+        <button class="gw-tab" data-action="tab" data-tab="log">ประวัติการเรียก</button>
+      </div>
+    </div>
+
+    <!-- แท็บ 1 -->
+    <div class="card hcp-card gw-pane" id="paneBasic">
+      <div class="gw-row">
+        <label class="gw-lbl">HCP Integration</label>
+        <button class="gw-switch on" data-action="master" id="gwMaster" aria-pressed="true"><span></span></button>
+        <span class="gw-hint" id="gwMasterHint">เปิดอยู่ — ปิดแล้วทุกการเชื่อมต่อจะหยุดทันทีโดยไม่ต้องลบ</span>
+      </div>
+
+      <h3 class="gw-sec">Integration Partner</h3>
+      <div class="gw-tools">
+        <button class="btn btn-primary" data-action="add">+ เพิ่ม</button>
+        <button class="btn btn-secondary" data-action="del" id="gwDel" disabled>ลบ</button>
+      </div>
+      <div class="gw-tablewrap"><table class="gw-table" id="gwTable"><!-- js --></table></div>
+      <p class="hcp-note">แต่ละแถวคือ HCP หนึ่งเครื่อง — เพิ่มได้หลายเครื่อง เช่น ภูเก็ต กับ หาดใหญ่ แยกกัน ·
+        Key/Secret ออกให้รายเครื่อง เพิกถอนทีละเครื่องได้</p>
+    </div>
+
+    <!-- แท็บ 2 -->
+    <div class="card hcp-card gw-pane hidden" id="paneCaps"><div id="capsSummary"><!-- js --></div></div>
+
+    <!-- แท็บ 3 -->
+    <div class="card hcp-card gw-pane hidden" id="paneLog"><div id="logBody"><!-- js --></div></div>
+  </div>
+
+  <!-- ── หน้าเพิ่ม/แก้ไข ──────────────────────────────── -->
+  <div id="pgForm" class="hidden">
+    <div class="gw-head">
+      <button class="gw-back" data-action="back" aria-label="ย้อนกลับ">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5m7-7-7 7 7 7"/></svg>
+      </button>
+      <h1 class="gw-title" id="formTitle">เพิ่ม Integration Partner</h1>
+    </div>
+
+    <div class="card hcp-card">
+      <h3 class="gw-sec">ข้อมูลพื้นฐาน</h3>
+      <div id="formBasic"><!-- js --></div>
+      <button class="gw-expand" data-action="expand" id="expandBtn">แสดงเพิ่มเติม ⌄</button>
+      <div id="formMore" class="hidden"><!-- js --></div>
+    </div>
+
+    <div class="card hcp-card">
+      <h3 class="gw-sec">ความสามารถที่อนุญาต</h3>
+      <p class="hcp-note" style="margin-top:0">เลือกว่าเครื่องนี้จะให้เรารับอะไรได้บ้าง —
+        ที่ไม่ติ๊กจะไม่ถูกเรียกเลย ไม่ใช่เรียกแล้วทิ้ง</p>
+      <div class="gw-search"><input class="form-input" id="capSearch" data-input="search" placeholder="ค้นหาความสามารถ…"></div>
+      <div class="gw-tree" id="capTree"><!-- js --></div>
+    </div>
+
+    <div class="card hcp-card">
+      <h3 class="gw-sec">ทดสอบการเชื่อมต่อ</h3>
+      <div class="gw-testbar">
+        <button class="btn btn-secondary" data-action="test" id="testBtn">ทดสอบและดึงข้อมูลตัวอย่าง</button>
+        <span class="hcp-inert" id="testHint">ยิงจริงไปที่เครื่องปลายทางด้วยความสามารถที่ติ๊กไว้</span>
+      </div>
+      <div id="testOut"><!-- js --></div>
+    </div>
+
+    <div class="gw-actions">
+      <button class="btn btn-secondary" data-action="back">ยกเลิก</button>
+      <button class="btn btn-primary" data-action="save">เพิ่ม</button>
+      <button class="btn btn-secondary" data-action="saveMore">เพิ่มแล้วทำต่อ</button>
+    </div>
+  </div>
+
+  <footer class="hcp-foot">
+    Vision Meta Hub · หน้าเสนอแนวคิด (mockup) · จะไปอยู่ที่ <b>ตั้งค่า › HCP Integration</b>
+    ถัดจาก <b>เชื่อมต่อภายนอก</b> · ความสามารถอ้างจากคู่มือ HCP OpenAPI V3.0.1
+  </footer>
+</div>
+
+<script src="./scope-data.js?v=hcp2"></script>
+<script src="./scope-demo.js?v=hcp2"></script>
+</body>
+</html>

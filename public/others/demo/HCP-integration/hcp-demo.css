@@ -1,0 +1,115 @@
+/* ============================================================
+   Vigil Platform — HCP integration demo (light theme fixed)
+   @author Prakasit Rochanavipart (Dojo-mAn)
+   @copyright (c) 2025-2026 All Rights Reserved. @license Proprietary
+   ------------------------------------------------------------
+   หน้า demo ใช้ light เสมอ (ธรรมเนียมของ public/others/demo/) จึงกำหนดสีตรงนี้
+   ได้ ต่างจากหน้าจริงที่ต้องมาจาก semantic token เพื่อให้ re-theme ได้
+   ============================================================ */
+
+.demo-wrap{max-width:1180px;margin:0 auto;padding:18px 16px 40px}
+
+.demo-banner{display:flex;gap:9px;align-items:flex-start;padding:11px 14px;margin-bottom:18px;
+  border:1px solid #f0c36d;background:#fdf6e3;border-radius:8px;font-size:12.5px;line-height:1.65;color:#6b4e16}
+.demo-banner svg{flex:0 0 auto;margin-top:2px}
+
+.page-head{margin-bottom:16px}
+.hcp-title{font-size:22px;font-weight:700;margin:0 0 5px;color:#1a202c}
+.hcp-sub{margin:0;font-size:13px;line-height:1.7;color:#4a5568}
+
+.hcp-card{padding:16px;margin-bottom:14px;background:#fff;border:1px solid #e2e8f0;border-radius:10px}
+.hcp-h2{font-size:15px;font-weight:700;margin:0 0 11px;color:#1a202c}
+.hcp-h3{font-size:14px;font-weight:700;margin:0;color:#1a202c;display:flex;align-items:center;gap:7px}
+.hcp-count{font-size:11px;font-weight:600;color:#4a5568;background:#edf2f7;border-radius:9px;padding:1px 8px}
+.hcp-note{margin:9px 0 0;font-size:12px;line-height:1.65;color:#718096}
+
+/* การเชื่อมต่อ */
+.hcp-conn{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:8px 18px}
+.hcp-conn-row{display:flex;gap:10px;font-size:12.5px;padding:4px 0;border-bottom:1px solid #f1f5f9}
+.hcp-conn-row span{flex:0 0 128px;color:#718096}
+.hcp-conn-row b{color:#2d3748;font-weight:600;word-break:break-all}
+
+/* สรุป */
+.hcp-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(178px,1fr));gap:11px;margin-bottom:14px}
+.hcp-kpi{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:13px 14px}
+.hcp-kpi-live{border-color:#3b6fd4;background:#f5f8ff}
+.hcp-kpi-v{font-size:24px;font-weight:700;color:#1a202c;line-height:1.15}
+.hcp-kpi-t{font-size:12px;font-weight:600;color:#2d3748;margin-top:3px}
+.hcp-kpi-s{font-size:11px;color:#718096;margin-top:2px;line-height:1.5}
+
+/* ตัวกรอง */
+.hcp-toolbar{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.hcp-filters{display:flex;gap:7px;flex-wrap:wrap}
+.hcp-chip{border:1px solid #e2e8f0;background:#fff;color:#4a5568;border-radius:999px;
+  padding:5px 13px;font-size:12px;cursor:pointer;font-family:inherit}
+.hcp-chip b{color:#1a202c;margin-left:3px}
+.hcp-chip.active{border-color:#3b6fd4;background:#eef4ff;color:#2c5282}
+.hcp-tools{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+.hcp-check{display:flex;gap:6px;align-items:center;font-size:12px;color:#4a5568;cursor:pointer}
+
+/* รายการ */
+.hcp-theme-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:11px}
+.hcp-theme-sub{font-size:11.5px;color:#718096;margin-top:3px}
+.hcp-allbtn{flex:0 0 auto;font-size:11.5px;padding:5px 11px}
+.hcp-items{display:flex;flex-direction:column;gap:6px}
+
+.hcp-item{display:flex;gap:10px;align-items:flex-start;padding:9px 11px;border:1px solid #edf2f7;
+  border-radius:8px;cursor:pointer;background:#fff}
+.hcp-item:hover{border-color:#cbd5e0}
+.hcp-item.sel{border-color:#3b6fd4;background:#f7faff}
+.hcp-item.dim{background:#fbfcfd}
+.hcp-item.dim .hcp-item-t{color:#718096}
+.hcp-item input{margin-top:2px;flex:0 0 auto}
+.hcp-item-main{flex:1;min-width:0}
+.hcp-item-t{font-size:12.5px;color:#2d3748;line-height:1.5}
+.hcp-item-p{font-size:11px;color:#a0aec0;margin-top:3px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.hcp-item-p code{font-size:10.5px;background:#f7fafc;border:1px solid #edf2f7;border-radius:4px;padding:1px 5px;color:#4a5568;word-break:break-all}
+.hcp-sec{font-size:10.5px;color:#a0aec0}
+.hcp-item-n{font-size:11px;color:#718096;margin-top:4px;line-height:1.55}
+
+.hcp-badge{flex:0 0 auto;font-size:10.5px;font-weight:600;border-radius:999px;padding:3px 9px;white-space:nowrap;align-self:center}
+.hcp-badge.ok{background:#e6f6ec;color:#1e7a3c;border:1px solid #b7e3c6}
+.hcp-badge.warn{background:#fdf6e3;color:#8a6116;border:1px solid #f0c36d}
+.hcp-badge.bad{background:#fdecec;color:#a12b2b;border:1px solid #f3b7b7}
+.hcp-badge.info{background:#eef2f7;color:#4a5568;border:1px solid #dbe3ec}
+
+/* แผน */
+.hcp-plan{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:9px}
+.hcp-plan-row{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;padding:9px 12px;
+  border-radius:8px;border:1px solid #e2e8f0;background:#fff}
+.hcp-plan-row span{color:#718096}
+.hcp-plan-row b{color:#1a202c}
+.hcp-plan-row.ok{border-color:#b7e3c6;background:#f4fbf6}
+.hcp-plan-row.warn{border-color:#f0c36d;background:#fdf9ef}
+.hcp-plan-row.bad{border-color:#f3b7b7;background:#fdf4f4}
+.hcp-plan-empty{font-size:12.5px;color:#718096}
+
+.hcp-warnbox,.hcp-notebox{margin-top:11px;padding:11px 13px;border-radius:8px;font-size:12px;line-height:1.65}
+.hcp-warnbox{border:1px solid #f3b7b7;background:#fdf4f4;color:#7b2222}
+.hcp-notebox{border:1px solid #f0c36d;background:#fdf9ef;color:#6b4e16}
+.hcp-warnbox b,.hcp-notebox b{display:block;margin-bottom:2px}
+
+.hcp-actions{display:flex;gap:9px;align-items:center;margin-top:14px;flex-wrap:wrap}
+.hcp-inert{font-size:11.5px;color:#a0aec0}
+.hcp-empty{font-size:12.5px;color:#718096;text-align:center;padding:26px}
+.hcp-foot{margin-top:22px;font-size:11.5px;color:#a0aec0;line-height:1.7;text-align:center}
+.hcp-foot code{font-size:10.5px;background:#f7fafc;border-radius:4px;padding:1px 5px}
+
+@media (max-width:768px){
+  .demo-wrap{padding:14px 12px 32px}
+  .hcp-title{font-size:19px}
+  .hcp-conn{grid-template-columns:1fr}
+  .hcp-conn-row{flex-direction:column;gap:1px}
+  .hcp-conn-row span{flex:none}
+  .hcp-kpis{grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}
+  .hcp-kpi-v{font-size:20px}
+  .hcp-toolbar{align-items:stretch}
+  .hcp-tools{justify-content:space-between}
+  .hcp-tools .btn{flex:1}
+  .hcp-theme-head{flex-direction:column}
+  .hcp-allbtn{width:100%}
+  /* ป้ายสถานะลงมาอยู่ใต้ข้อความ ไม่บีบคอลัมน์ข้อความจนอ่านไม่ออกบนจอ 390px */
+  .hcp-item{flex-wrap:wrap}
+  .hcp-badge{align-self:flex-start;margin-left:26px}
+  .hcp-plan{grid-template-columns:1fr}
+}

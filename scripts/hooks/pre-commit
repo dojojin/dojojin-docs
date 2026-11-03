@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # pre-commit: scan staged content for known token / secret patterns
 #
-# Install:
-#   cp scripts/hooks/pre-commit .git/hooks/pre-commit
-#   chmod +x .git/hooks/pre-commit
+# Install (once per clone — points git at this versioned directory):
+#   npm run hooks:install        # = git config core.hooksPath scripts/hooks
+#
+# Checks: (1) secret patterns in staged files  (2) since 2026-09-07: when a
+# route file or docs/REF_api-reference.md is staged, scripts/check-api-reference.js
+# must pass (route count + Appendix A in sync).
 #
 # False positive? bypass with: git commit --no-verify
 # Decision: DECISIONS.md #170 · SEC-012
@@ -36,6 +39,72 @@ if [ "$FOUND" -eq 1 ]; then
   echo "[pre-commit] Commit aborted — remove or move the secret to .env before committing."
   echo "[pre-commit] False positive? Use: git commit --no-verify"
   exit 1
+fi
+
+# ── API reference drift guard (2026-09-07) ─────────────────────────────────
+# docs/REF_api-reference.md fell 51 routes behind between 2026-08-12 and 09-06
+# because nothing ran scripts/check-api-reference.js. If this commit touches a
+# route file (or the reference itself), the count and Appendix A must match.
+if echo "$STAGED" | grep -qE '^(src/routes/.*\.js|src/api-server\.js|src/stats-summary-route\.js|docs/REF_api-reference\.md)$'; then
+  if ! node scripts/check-api-reference.js >/tmp/vigil-check-api.$$ 2>&1; then
+    cat /tmp/vigil-check-api.$$; rm -f /tmp/vigil-check-api.$$
+    echo ""
+    echo "[pre-commit] API reference ไม่ตรงกับโค้ด — รัน: npm run check:api -- --list"
+    echo "             แล้วอัปเดตภาคผนวก A + ตัวเลขท้าย docs/REF_api-reference.md"
+    echo "[pre-commit] API reference is out of date — regenerate Appendix A and the count."
+    echo "             Bypass (--no-verify) only with the owner's ok."
+    exit 1
+  fi
+  rm -f /tmp/vigil-check-api.$$
+fi
+
+# ── env registry guard (2026-09-07) ────────────────────────────────────────
+# env 135 ตัวเคยถูกอ่านโดยไม่มีที่ไหนบันทึกไว้เลย · ทุกตัวที่โค้ดอ่านต้องอยู่ใน
+# DEFS ของ src/config.js (default + type อยู่ที่เดียว) — ดู scripts/check-env.js
+if echo "$STAGED" | grep -qE '^(src/.*\.js|\.env\.example)$'; then
+  if ! node scripts/check-env.js >/tmp/vigil-check-env.$$ 2>&1; then
+    cat /tmp/vigil-check-env.$$; rm -f /tmp/vigil-check-env.$$
+    echo ""
+    echo "[pre-commit] มี env ที่โค้ดอ่านแต่ไม่ได้ลงทะเบียน — เพิ่มใน DEFS ที่ src/config.js"
+    echo "             แล้วรันซ้ำ: npm run check:env"
+    echo "[pre-commit] Unregistered env var(s) — add them to DEFS in src/config.js."
+    echo "             Bypass (--no-verify) only with the owner's ok."
+    exit 1
+  fi
+  cat /tmp/vigil-check-env.$$; rm -f /tmp/vigil-check-env.$$
+fi
+
+# ── events/license_plates query guard (2026-09-07) ─────────────────────────
+# คิวรีที่ลืมขอบเวลาไม่ error มันแค่ช้าขึ้นเรื่อย ๆ ตามข้อมูลที่โต แล้วโผล่เป็น
+# "หน้าเว็บช้า" อีกหลายเดือนถัดมา · ที่ลืม siteWhere ก็ไม่ error เหมือนกัน
+if echo "$STAGED" | grep -qE '^src/routes/.*\.js$'; then
+  if ! node scripts/check-events-queries.js >/tmp/vigil-check-ev.$$ 2>&1; then
+    cat /tmp/vigil-check-ev.$$; rm -f /tmp/vigil-check-ev.$$
+    echo ""
+    echo "[pre-commit] handler ที่ viewer เข้าถึงได้ต้องมีขอบเวลา + scope"
+    echo "             ถ้าจงใจ ใส่คอมเมนต์ // unbounded: <เหตุผล> หรือ // unscoped: <เหตุผล>"
+    echo "[pre-commit] Unbounded/unscoped events query — bound it or justify it in a comment."
+    exit 1
+  fi
+  cat /tmp/vigil-check-ev.$$; rm -f /tmp/vigil-check-ev.$$
+fi
+
+# ── i18n guard (2026-09-13) ───────────────────────────────────────────────
+# ตอนไล่ดูคีย์กำพร้าสองตัว เจอของที่ขึ้นจออยู่จริง 7 จุด: หัวตารางหน้าประวัติรายงาน
+# 3 คอลัมน์แสดง "rh.colDate" เป็นตัวอักษรดิบเพราะคีย์ไม่มีในพจนานุกรม · ช่องค้นหา
+# 3 จุดไม่เคยถูกแปลเพราะเขียน data-i18n-placeholder ที่ applyI18n ไม่รองรับ
+# ทั้งหมดไม่มี error ให้เห็น — t() คืนชื่อคีย์เอง และ attribute ผิดก็แค่ถูกเมิน
+if echo "$STAGED" | grep -qE '^(dashboard/.*\.(js|html)|scripts/check-i18n\.js)$'; then
+  if ! node scripts/check-i18n.js >/tmp/vigil-check-i18n.$$ 2>&1; then
+    cat /tmp/vigil-check-i18n.$$; rm -f /tmp/vigil-check-i18n.$$
+    echo ""
+    echo "[pre-commit] พจนานุกรม i18n ไม่ตรงกับโค้ด — รัน: npm run check:i18n"
+    echo "             ทุกคีย์ใหม่ต้องมีทั้ง th และ en (gotcha #42)"
+    echo "[pre-commit] i18n dictionary is out of sync with the code."
+    echo "             Bypass (--no-verify) only with the owner's ok."
+    exit 1
+  fi
+  cat /tmp/vigil-check-i18n.$$; rm -f /tmp/vigil-check-i18n.$$
 fi
 
 exit 0

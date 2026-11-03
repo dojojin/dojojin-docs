@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Demo — Event Statistics (จัดกลุ่มใหม่ + เส้นเทียบ)</title>
+<!-- ============================================================
+  Vigil Platform — DEMO: redesign หน้า Event Statistics (v2)
+  @author Prakasit Rochanavipart (Dojo-mAn)
+  @copyright (c) 2025-2026 Prakasit Rochanavipart. All Rights Reserved.
+  @license Proprietary
+  ------------------------------------------------------------
+  ใช้ข้อมูลจริงผ่าน session ของคนเปิด (login dashboard ค้างไว้)
+  v2 ตาม comment เจ้าของ 2026-08-28:
+  1. กลุ่มกล้อง (/api/groups) กลับมาเป็นแถว filter
+  2. คลิกการ์ดหมวด = เปิด/ปิดเส้นของหมวดนั้นบนกราฟหลัก
+  3. ตัวเลือกช่วงเวลา + เส้นเทียบอัจฉริยะ (วันนี้↔เมื่อวาน · เมื่อวาน↔วานซืน ·
+     7วัน↔7วันก่อน · ชั่วโมงนี้↔ชั่วโมงเดียวกันเมื่อวาน · กำหนดเอง↔ช่วงเท่ากันก่อนหน้า)
+  4. มุมมอง "แยกตามไซต์" ต่อกลุ่ม — หมวดเดียวกันมีแทบทุกไซต์ เทียบข้ามไซต์ได้ทันที
+============================================================ -->
+<link rel="stylesheet" href="stats-demo.css?v=16">
+<script src="/vendor/chartjs/chart-4.4.1.umd.min.js"></script>
+<script src="/vendor/chartjs/chartjs-adapter-date-fns-3.0.0.bundle.min.js"></script>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Event Statistics <span class="tag">DEMO v2</span></h1>
+      <div class="sub" id="pageSub">จัดกลุ่มตามเนื้อหา · คลิกการ์ดเพื่อเปิด/ปิดเส้นบนกราฟ · <a href="categories.html">จัดกลุ่มหมวด (Event Categories demo)</a></div>
+    </div>
+  </header>
+
+  <div class="filterbar">
+    <div class="frow">
+      <span class="flabel">ช่วงเวลา</span>
+      <div class="pills" id="periodPills"></div>
+      <span class="custom" id="customBox" hidden>
+        <input type="date" id="cFrom"> – <input type="date" id="cTo">
+        <button id="cGo">ดู</button>
+      </span>
+      <span class="cmp-note" id="cmpNote"></span>
+    </div>
+    <div class="frow">
+      <span class="flabel">ไซต์</span>
+      <div class="pills" id="sitePills"></div>
+    </div>
+    <div class="frow" id="groupRow">
+      <span class="flabel">กลุ่มกล้อง</span>
+      <div class="pills" id="groupPills"></div>
+    </div>
+  </div>
+
+  <div id="authNote" class="auth-note" hidden>
+    ดึงข้อมูลไม่ได้ (ยังไม่ได้ login?) — เปิด <a href="/">dashboard</a> ให้ login ค้างไว้ก่อน แล้วรีเฟรชหน้านี้
+  </div>
+
+  <section class="card chart-card">
+    <div class="card-head">
+      <div>
+        <div class="card-title">ภาพรวม <b id="chartCmpTitle"></b></div>
+        <div class="card-sub"><b>คลิกการ์ดข้างล่างเพื่อเพิ่ม/เอาเส้นออก</b> · ติ๊ก "เส้นเทียบ" เพื่อวางเส้นช่วงเทียบทาบ (เส้นจางประ)</div>
+      </div>
+      <div class="chart-tools" id="chartTools"></div>
+      <div class="legend" id="mainLegend"></div>
+    </div>
+    <div class="chart-box"><canvas id="mainChart"></canvas>
+      <div class="chart-empty" id="chartEmpty" hidden>ยังไม่ได้เลือกเส้นไหน — คลิกการ์ดข้างล่าง หรือกด “ค่าเริ่มต้น”</div>
+    </div>
+  </section>
+
+  <section id="groups"></section>
+
+  <!-- v15: ส่วน BI — สิ่งที่รอดจากการสำรวจหน้า Statistics เดิม (เก็บ 3 จาก 14) -->
+  <section class="card" id="biHeatCard">
+    <div class="card-head">
+      <div>
+        <div class="card-title">รูปแบบเวลา · ชั่วโมง × วัน</div>
+        <div class="card-sub">ฐาน 28 วันล่าสุด (คงที่ ไม่ตามช่วงที่เลือกข้างบน — pattern รายสัปดาห์ต้องการหลายสัปดาห์)
+          · ตามตัวกรองไซต์/กลุ่มกล้อง · สีเข้ม = เหตุการณ์หนาแน่น</div>
+      </div>
+      <span class="bi-tools">
+        <select id="biHeatCat" class="bi-sel"><option value="">ทุกหมวด</option></select>
+        <button class="tool-btn grp-fold" data-collapse="bi-heat">ซ่อน ▾</button>
+      </span>
+    </div>
+    <div id="biHeatBody">กำลังโหลด…</div>
+  </section>
+
+  <section class="card" id="biDwellCard">
+    <div class="card-head">
+      <div>
+        <div class="card-title">เวลาอยู่ในโซน (Dwell Time)</div>
+        <div class="card-sub">จับคู่เหตุการณ์ เข้า→ออก ต่อโซน (FieldDetector/ObjectsInside) · ตามช่วงเวลาและตัวกรองที่เลือกข้างบน</div>
+      </div>
+      <span class="bi-tools">
+        <button class="tool-btn" data-csv="dwell">CSV</button>
+        <button class="tool-btn grp-fold" data-collapse="bi-dwell">ซ่อน ▾</button>
+      </span>
+    </div>
+    <div id="biDwellBody">กำลังโหลด…</div>
+  </section>
+
+  <footer class="foot">
+    demo เท่านั้น — ของจริงยังอยู่หน้า Statistics เดิม · ข้อมูลดึงสดจาก /api/stats/* ณ <span id="stamp"></span>
+  </footer>
+</div>
+<script src="stats-demo.js?v=16"></script>
+</body>
+</html>

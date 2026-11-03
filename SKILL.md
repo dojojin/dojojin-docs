@@ -7,7 +7,7 @@
 > **SQL snippets + service commands** → `docs/REF_operator-sql.md`
 > **Design rationale** → `docs/LOGIC_*.md` files
 >
-> Last updated: 2026-06-15 · v1.5.3
+> Last updated: 2026-09-06 · v1.5.4
 
 ---
 
@@ -29,6 +29,9 @@
 14. [Dahua snapshot notes](#14-dahua-snapshot-notes)
 15. [Camera Pause](#15-camera-pause)
 16. [Runtime stack reference](#16-runtime-stack-reference)
+17. [File Service](#17-file-service--sharing-files-with-customers)
+18. [Storage management page](#18-storage-management-page)
+19. [Reading list-page counts and defaults](#19-reading-list-page-counts-and-defaults)
 
 ---
 
@@ -92,6 +95,27 @@ The Events page paginates server-side, so all drill filters must reach
 | `RecordingConfig/JobState` | — | — | **Filtered out** before insert |
 
 **Key:** `state` only populated for FieldDetector / SceneChange. LineDetector rows have `state = NULL` → mapping rule with `match_state='true'` will miss them entirely.
+
+### 2.1 Rule (IVA task) name — 64-byte limit
+
+Bosch stores each IVA task (rule) name capped at **64 bytes**, UTF-8 encoded,
+and cuts it mid-character if a name goes over — a Thai rule name is 3 bytes
+per character, so this bites well before 64 Thai characters (about 21). The
+MQTT topic for that rule's events embeds the name (`.../RuleEngine/
+CountAggregation/Counter/&1/<name>`), so a name cut into invalid UTF-8 makes
+the broker either silently drop every event on that topic (NanoMQ) or
+disconnect the camera outright ("malformed packet", Mosquitto 2.x). A name
+containing `+` or `#` is also illegal in an MQTT topic segment and has the
+same effect.
+
+- **How to see it:** Health › Devices — a Bosch camera with an affected rule
+  shows a `ชื่อกฎใช้ไม่ได้ N` / `N rule name(s) unusable` warning chip; hover
+  it for which rule and why. Checked hourly (both edge and central, read-only).
+- **Fix:** rename the offending task on the camera itself (Bosch Configuration
+  Manager or the camera's web UI) to something under 64 bytes with no `+`/`#`.
+  Nothing in Vigil renames it automatically — this is detection only.
+- Also surfaced as a short help line in Settings › Cameras, MQTT Credentials
+  section, for Bosch cameras.
 
 ---
 
@@ -236,10 +260,10 @@ Sidebar → **💓 Health Check** (admin only). Auto-refreshes every 15s.
 
 | Card | Shows |
 |---|---|
-| 🗄️ Database | Postgres latency, total events, 1h/24h event rate |
+| 🗄️ Database | Postgres latency, total events, 1h/24h event rate. **The all-time totals (total / Face / LPR) are approximations** and render with a leading `≈` — full `count(*)` on 40M rows cost 40 s per page load, so total now comes from partition `reltuples` and the Face/LPR splits from the `event_dim_bucket` rollup (within ~0.35% at last check). The 1h and 24h numbers are still exact. No `≈` and a suspiciously round 0 means the query failed, not that the count is zero (decision #263) |
 | 📡 MQTT Pipeline | Last event timestamp, age, status (`healthy`/`idle`/`stale`) |
 | 📷 Cameras | online/offline counts (heartbeat <90s) |
-| ⚙️ Service Processes | PM2 status per worker (`online`/`stopped`/`errored`); uptime; restart count `↺N` (yellow = has restarted); **Restart** button for all 5 controllable workers + **Stop/Start** (except api-server); 7 workers display status but only 5 have action buttons: api-server/mqtt-subscriber/media-recorder/hikvision/dahua (alert-worker + report-worker = status display only) |
+| ⚙️ Service Processes | PM2 status per worker (`online`/`stopped`/`errored`); uptime; restart count `↺N` (yellow = has restarted). **8 tracked services**: api-server, mqtt-subscriber, media-recorder, hikvision, dahua, alert-worker, report-worker, lpr-receiver. All 8 have a **Restart** button; the other 7 additionally show **Stop** while running or **Start** while stopped — never both at once. api-server gets Restart only, because stopping it would brick the dashboard with no way back through the UI. `face-embed-worker` runs under PM2 as the 9th app but is not on this list — check it with `pm2 list`. The action allowlist and the status list are two separate constants in `src/routes/health.js` and must stay identical, or a button renders and then 400s |
 | 📸 Camera Image Quality (24h) | Per-camera auto-analytics count: `too_bright` / `too_blurry` / `too_dark` / `scene_change` — high count = dirty lens / focus drift / changing light / possible obstruction |
 | ⚡ Camera Automation Triggers (24h) | Per-camera Digital Input + Relay event counts + latest trigger time (this event group is hidden in Stats per `analytics_event_display`, but shown here to confirm whether the relay fired today) |
 | 💾 Storage | Snapshot files/size · Clip files/size/count-24h/oldest · disk free/total · retention days (events/snapshots/clips) |
@@ -262,19 +286,32 @@ curl -H "Cookie: <session>" http://localhost:3000/api/health/details | jq
 
 ## 7. Reports overview
 
-Reports tab → 5 types: **Daily / Weekly / Monthly / Custom / 🏥 Health**
+Reports tab → 6 types: **Daily / Weekly / Monthly / Summary / Custom / 🏥 Health**. Five of those are schedulable (`REPORT_TYPES = ['daily','weekly','monthly','summary','health']`); **Custom is manual-only** — a schedule has no way to say "these two dates".
 
 | Type | Range |
 |---|---|
 | Daily | 00:00–23:59 of selected date (display_timezone) |
 | Weekly | Monday 00:00 – Sunday 23:59 |
 | Monthly | First to last day of month |
+| Summary | Three windows off one anchor date, on one page: the anchor day · the 7 days ending on the anchor (anchor−6 … anchor) · the whole calendar month containing the anchor. Scheduled, the anchor is yesterday |
 | Custom | from+to, capped by `custom_range_max_days` |
 | 🏥 Health | 24h/7d/30d/custom — see §11 |
 
 **Scheduled delivery (Phase 7.3):** Settings → 🔔 LINE → Scheduled Delivery. Each schedule generates PNG → LINE via imgbb. `send_day_of_week` gates weekly; `send_days_of_month` gates monthly. Every fire logged to `report_history` — see §10. LINE delivery rules live in `docs/LOGIC_line-notifications.md`.
 
-**Analytics report export:** click Export PDF → Puppeteer renders A4 PDF (Thai fonts, text selectable).
+**Monthly means the previous calendar month** (1st to end of month), changed 2026-09-03 at the owner's request — a report sent on 1 September covers all of August. It used to be a rolling 30 days. Manual monthly reports prefill the previous month to match. Daily and weekly are still rolling windows ending at today 00:00. (decision #269)
+
+**Report options** — set per schedule (`section_config`) or from the report page for a manual export:
+
+| Option | Effect |
+|---|---|
+| Section toggles | Turn individual KPI blocks and sections off; the saved default is "show everything", so an old schedule renders exactly as before |
+| Donut percentages | On by default; turn off to show counts only |
+| Per-day time window | `tod_from` / `tod_to` — HH:MM on 30-minute steps, `from` before `to`, validated server-side. The window is printed in the report header, otherwise a filtered figure reads like a whole-day total |
+| Daily bars split by category | The per-day bar chart stacks by event category instead of one flat total |
+| Category donut merges IN/OUT | The overview donut counts a category's IN and OUT as one slice — direction is not a type, and 8 thin slices read as noise. The category *table* next to it still lists them separately. Sites that do not name cameras IN/OUT are unaffected |
+
+**Analytics report export:** click Export PDF → Puppeteer renders A4 PDF (Thai fonts, text selectable). Since 2026-09-06 the render happens **inside report-worker**, not api-server — one Chromium for the whole box instead of two. If report-worker is down or busy the download still works, it just falls back to rendering in-process (up to 120 s wait first). `REPORT_RENDER_VIA_WORKER=0` forces the old in-process behaviour.
 
 ---
 
@@ -458,7 +495,7 @@ Temporarily stop receiving events and alerts from a camera without removing it f
 
 ## 16. Runtime Stack Reference
 
-Quick reference for ops / troubleshooting — current versions as of v1.5.3
+Quick reference for ops / troubleshooting — current versions as of v1.5.4
 
 | Component | Version | Notes |
 |---|---|---|
@@ -506,4 +543,212 @@ docker exec vigil-postgres psql -U vigil_sql -d vigil_platform -c "SELECT versio
 
 ---
 
-<sub>**SKILL.md** v1.5.3 — slim core · Detailed content in `docs/REF_*` · Vigil Platform · Updated 2026-06-15</sub>
+## 17. File Service — sharing files with customers
+
+Our own file host, so documents and images can be sent to customers without an
+outside service. You get a signed, expiring link to paste into an email or LINE.
+
+**Where:** **System → File Service** in the sidebar (admin only)
+
+| Item | Detail |
+|---|---|
+| Accepted types | **png · jpg · pdf · docx · xlsx** only |
+| Size limit | 25 MB per file (over that returns a readable message, not an error page) |
+| How files are checked | **Magic bytes** of the real content. The extension and the browser's Content-Type are both ignored |
+| File age | Set per file (1–3650 days). Leave blank to use `file_retention_days` (default 90) |
+| Link format | `https://upl.dojojin.tech/pub/fil/<uuid>.<ext>?exp=...&sig=...` |
+| Revoke | Press "Revoke" — **the file is deleted from disk immediately** and links already sent stop working (410) |
+| On expiry | The daily sweep deletes the file from disk. The row stays for the audit trail |
+
+> **Magic bytes** are the first few bytes that identify what a file really is. An
+> HTML file named `.jpg` is rejected because its content is not an image.
+
+**Why a separate hostname (`upl.dojojin.tech`)** — files that people upload should
+not sit on the same origin that carries the dashboard's session cookie. That
+hostname serves `/pub/fil/*` and nothing else: `/index.html` and
+`/api/auth/login` both return **404** there.
+
+**A limit worth knowing:** `docx` and `xlsx` are both zip containers, so magic
+bytes can only prove "this is a zip". The extension picks the label between the
+two, which means a plain zip named `.docx` will be accepted. It is not dangerous:
+every file is served as an `attachment` (download only, never rendered) from a
+hostname that holds none of our cookies, so the recipient simply cannot open it.
+
+---
+
+## 18. Storage management page
+
+Shows where disk space went and lets you delete old files by hand, for the
+central machine and for every edge site.
+
+**Where:** **Health Check → "Storage" tab** (admin only). Pick a machine with the
+buttons at the top (`Central` / `hdy` / `hkt` / `rmutr-v` / `vss`).
+
+| Section | What it is for |
+|---|---|
+| Disk | percent used, GB free, GB total |
+| Retention per category | Set file age and link age per category, then "Save retention" |
+| Manual delete by age | Pick a category and a number of days → **"Check first"** shows the file count and size before you confirm |
+| Category table | size, file count, files with no owner, oldest file, when it was measured |
+| "Measure now" | Runs a fresh scan. Edge machines are asked over MQTT and can take up to 60 seconds |
+
+> The table shows the result of a **scan**, not a live value — always read the
+> "Measured" column with it. Sizes are the space actually **allocated on disk**,
+> which can be twice the sum of the file sizes when there are many small files
+> (the apparent total is shown underneath for comparison).
+
+**Manual deletion is by file age only**, the same rule the automatic sweep uses.
+**Deleting "files with no owner" is deliberately not offered**: about 2.5% of
+events never recorded a filename, so their images look ownerless while still
+being evidence.
+
+**Retention is set on Central only** and pushed to every edge over MQTT. Opening
+an edge tab shows the values read-only; change them on `Central`.
+
+---
+
+## 19. Reading list-page counts and defaults
+
+Two behaviours that look like bugs and are not.
+
+### LPR "ไม่ทราบทะเบียน" (no-read) tab defaults to the last 24 hours
+
+Opening the tab with no date range set does not scan all history — the server applies a 24-hour default and the page writes that range back into the date boxes so you can see what you are actually looking at. The **week** and **month** quick buttons are now usable: no-read is defined as `raw_json->>'plate'` being empty and there is a partial index on exactly that predicate (migration 199), so the wider ranges no longer fall back to a full scan. A weekly self-check re-verifies that the index predicate and the definition still agree — if they ever drift, it shows up in the api-server log as `lpr.noread_check`. (decision #265)
+
+### A count of "10,000+" means the server stopped counting
+
+Events, Snapshots, Media and Appearances stop counting matches at 10,000 (`EVENTS_COUNT_CAP`). When the cap is hit the response carries `X-Total-Capped: 1` and the page shows **10,000+** rather than presenting the floor as a total. Paging still works past it; only the total is capped. Counting the real total meant scanning the whole 40M-row `events` table even for a 50-row page, which is what made these pages slow. Narrow the filter — a camera, a shorter range — and the exact number comes back. (decision #264)
+
+---
+---
+
+<sub>**SKILL.md** v1.5.4 — slim core · Detailed content in `docs/REF_*` · Vigil Platform · Updated 2026-09-06</sub>
+
+## 20. LINE commands — asking the system from the group chat
+
+Operators type an ordinary Thai sentence into a LINE group the bot is in and get a
+card back. Nothing has to be prefixed and the bot is never @-mentioned.
+
+**Who can command.** Only people listed under Settings › LINE / การแจ้งเตือน ›
+คำสั่งผ่าน LINE › ผู้มีสิทธิ์สั่ง. Everyone else is answered with silence — the
+attempt is still written to the usage log. Each operator is bound to one system
+account, and **that account decides what they can ask**: an account that only sees
+four cameras in Phuket gets the total of those four, and the card says so
+("ภูเก็ต (4 จาก 86 กล้อง)"). Prefer a purpose-made viewer account over an admin one.
+
+**Adding an operator.** Have the person post anything once in a group the bot is in,
+then pick their name from the dropdown on that tab — the list is built from people
+who messaged the bot and people seen typing in those groups, with their LINE display
+name resolved for you. Then choose the account they borrow.
+
+**What can be asked** (13 commands, all editable on that tab)
+
+| Ask | Example |
+|---|---|
+| Helmet violations | `ขอทราบยอดคนไม่สวมหมวกนิรภัย ภูเก็ต ชั่วโมงที่แล้ว` |
+| Top offending plates | `ขอป้ายทะเบียนที่ฝ่าฝืน เยอะที่สุดมา 3 ป้าย` |
+| Plates read / unread | `ยอดอ่านป้ายทะเบียนวันนี้` |
+| Plates from one province | `สรุปจำนวนป้ายทะเบียน จังหวัดยะลา ที่หาดใหญ่ เมื่อวาน` |
+| Watch-list hits | `วันนี้เจอรถเฝ้าระวังคันไหนบ้าง` |
+| One plate's history | `ป้าย 1กอ88 เจอที่ไหนบ้าง 7 วัน` |
+| Photos of one plate | `ขอรูปรถป้าย 1กอ88 วันนี้ทั้งหมด` |
+| Vehicles by type (plate-reading cameras) | `ขอจำนวนรถแยกประเภท ภูเก็ต วันนี้` |
+| Event categories (analytics cameras, per site) | `ขอหมวดเหตุการณ์ RMUTR-V วันนี้` |
+| One category only | `ขอหมวดเหตุการณ์ RMUTR-V เมื่อวาน เฉพาะ รถจักรยานยนต์` |
+| Photos from analytics cameras | `ขอรูปรถบรรทุก RMUTR-V เมื่อวาน 18:00-19:00` |
+| Photos of one tracked object | `ขอรูปวัตถุ 121766 เมื่อวาน 18:00-19:00` |
+| Smart search (Phuket only) | `ค้นหาอัจฉริยะ คนถือร่ม เมื่อวานตอนบ่ายโมง` |
+| Face search by description | `ค้นหาใบหน้า ผู้หญิง ใส่เสื้อสีแดง เมื่อวานตอนเช้า` |
+| Count by object type | `สรุปจำนวนรถจักรยานยนต์ เมื่อวานก่อนเที่ยง กล้องฉัตรไชย ทั้งหมด` |
+| Every object type at once | `สรุปชนิดวัตถุ ภูเก็ต เมื่อวาน` |
+| Camera status on HikCentral | `สรุปสถานะกล้องบน HCP เฉพาะที่ดับ` |
+| Cameras offline | `ตอนนี้กล้องดับกี่ตัว` |
+| Everything available, with examples | `ช่วยเหลือ` |
+
+Any of them takes a period (`ชั่วโมงที่แล้ว`, `วันนี้`, `เมื่อวาน`, `7 วัน`,
+`เดือนที่แล้ว`, `1 ก.ย.`), a site by Thai name, and most take a camera by name or by
+the code in its brackets (`กล้อง C20`). Leave the period out and it means today; the
+card always prints back the period and scope it used, so a wrong reading is visible.
+
+**Two ways to count vehicles, and they never agree.** A site can carry both kinds of
+camera. RMUTR-V does: the Bosch units count line crossings (one vehicle in and out is
+two crossings) and the Dahua ANPR counts plates it managed to read. On 8 Sep that was
+12,273 crossings against 7,248 vehicles for the same day. Neither is wrong, they answer
+different questions, so every counting card prints which kind of camera it came from.
+Event categories are set per site (RMUTR-V counts vehicles, VSS counts people at doors),
+so that command always asks which site if the account can see more than one.
+
+**Clock ranges now work.** `เมื่อวาน 18:00-19:00`, `8-12 น.`, `ตอน 18 โมง` narrow the
+answer to those hours. Before this they were read as the whole day without saying so.
+A multi-day span plus a clock range is still answered as whole days, and the card says
+so rather than staying quiet about it.
+
+**On asking for "this vehicle".** A photo request finds vehicles of that *type* in that
+window, and the object code on the event detail screen finds every frame of that one
+pass. It cannot follow the same vehicle across days or cameras: the object code is a
+track number the camera resets each time, and the analytics cameras do not read plates.
+Searching by object code looks at one day at a time, so give it the day.
+
+**Smart search from chat.** `ค้นหาอัจฉริยะ คนถือร่ม เมื่อวานตอนบ่ายโมง` runs the same
+search as the Smart Search page and answers with how many were found, which cameras they
+came from, and the English phrase actually sent to the engine. It takes about 25 seconds,
+so the answer arrives a little after the others. Three things to know: the search engine
+lives in Phuket and nothing else is connected to it, so the card always says ภูเก็ต; the
+per-camera counts come from the 30 most recent hits, not from the whole total; and the
+card repeats the warnings the page shows, including words the translator does not know.
+Ranking is similarity, not correctness, so open the page and look at the pictures before
+concluding anything.
+
+The bot says "กำลังค้น…" first and sends the results when they arrive, with up to ten
+pictures attached.
+
+**Face search from chat.** `ค้นหาใบหน้า ผู้หญิง ใส่เสื้อสีแดง เมื่อวานตอนเช้า` runs the same
+search as the Face Data page and comes back with up to ten face crops, each captioned with
+the time, the camera, and what the camera saw (sex, age band, mask, hat, glasses). It reads
+sex, age band, mask, hat, glasses, expression, shirt and trousers colour, and sleeve type.
+"Not wearing" beats "wearing", so `ไม่สวมหน้ากาก` filters the opposite way from `สวมหน้ากาก`.
+A colour has to be attached to a garment: `เสื้อสีแดง` works, a bare `สีแดง` is ignored
+rather than guessed. The card always prints the conditions it used, so a misreading is
+visible immediately.
+
+**Times can now be spoken the way people say them** in every command: `ตีหนึ่ง`,
+`บ่ายสองโมง`, `สามทุ่ม`, `เที่ยง`, `ตอนเช้า`, `ช่วงบ่าย`, `กลางคืน`. A specific hour always
+wins over a part of the day. Note that `ตอนเช้า` typed at two in the morning means this
+morning, which has not happened yet, and the card says so instead of answering zero.
+
+**Naming a group of cameras.** Cameras are often several at one place, so a partial name
+works and `ทั้งหมด` after it takes all of them: `กล้องฉัตรไชย ทั้งหมด` covers all six there.
+Leave `ทั้งหมด` out and the bot lists them and asks which one, and `ทั้งหมด` is a valid
+answer to that question too. Every card prints the scope it used, including
+"ทุกไซต์ที่ดูได้" when no site was named, so an answer that is wider than intended is
+visible rather than silent.
+
+**`ช่วยเหลือ` now lists every command with a working example under it**, split into
+"ask" and "do", and ends with the time words and scope words you can append. The examples
+live in the settings tab next to each command, so when you add a command you write the
+example people will see.
+
+**Two different camera-status answers, on purpose.** `กล้องดับ` counts from the events
+flowing into this system; `สถานะกล้องบน HCP` reports what HikCentral itself sees, which
+includes cameras only HikCentral manages. The two numbers are not meant to match, and each
+card says which one it is. The HCP one is Phuket-only and needs an admin account.
+
+**What can be done** (not just asked)
+
+| Do | Example | Note |
+|---|---|---|
+| Escalate an alert to another group | `ส่งให้ตำรวจ 1กอ88` | asks to confirm first; sending cannot be undone |
+| Acknowledge | `รับทราบแจ้งเตือน 1กอ88` | no confirmation needed |
+| Silence one plate | `หยุดแจ้งเตือน 1กอ88 3 ชั่วโมง` | **always expires** — 24 h by default, 7 days maximum |
+| Un-silence | `เปิดแจ้งเตือน 1กอ88` | reports the real state, e.g. "but that group is muted" |
+
+A permanent silence is a dashboard action on purpose: a muted card can be a stolen
+vehicle with a police contact on it, and a mute set from chat and forgotten is damage
+nobody notices.
+
+**When the bot does not understand.** The usage log on the same tab marks those lines
+"จับไม่ได้" — they are the sentences no trigger word covers yet. Add the word to the
+command in the form beside it. Two commands fighting over the same sentence is solved
+with "คำที่ต้องมีครบ" on one and "คำที่ห้ามมี" on the other.
+
+Full architecture, tables and incident log: `docs/LOGIC_line-commands.md`.

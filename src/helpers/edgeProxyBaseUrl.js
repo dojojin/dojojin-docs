@@ -20,4 +20,21 @@ function edgeProxyBaseUrl(siteCode, domain) {
   return `https://${siteCode}.${domain}`;
 }
 
-module.exports = { edgeProxyBaseUrl };
+/**
+ * URL ที่ central ใช้ดึงภาพจาก edge — ใส่ `?w=` ไปด้วยเมื่อต้องการภาพย่อ
+ * เพื่อให้ **edge เป็นคนย่อ** ก่อนส่งข้ามอุโมงค์ (ของจริง 703 KB → ~25 KB ต่อภาพ
+ * · หน้า Events โหลด 20 ใบพร้อมกัน = 14 MB ต่อการเปิดหน้าหนึ่งครั้ง จน timeout 8 วิ)
+ * edge รุ่นเก่าที่ยังไม่รู้จัก `?w=` จะไม่พังเพราะ express.static ไม่สนใจ query string
+ * — มันส่งไฟล์เต็มกลับมาเหมือนเดิม แล้ว central ย่อเองตามทางเดิม
+ *
+ * ⚠️ ห้ามใส่ `?w=` เมื่อจะเผากรอบ (`bbox=1`) — กรอบถูกคำนวณบนภาพเต็ม
+ * @param {string} base      จาก edgeProxyBaseUrl()
+ * @param {string} filename  path ใต้ /snapshots (มี `/` คั่นได้)
+ * @param {number|null} w    ความกว้างที่ผ่าน thumbWidth() แล้วเท่านั้น
+ */
+function edgeSnapshotUrl(base, filename, w) {
+  const p = encodeURIComponent(filename).replace(/%2F/g, '/');
+  return `${base}/snapshots/${p}${w ? `?w=${w}` : ''}`;
+}
+
+module.exports = { edgeProxyBaseUrl, edgeSnapshotUrl };

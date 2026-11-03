@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="th" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>รถบรรทุกช่วงห้าม ภูเก็ต</title>
+<!-- Served at: /others/demo/truck-ban/   (auth-gated)
+     data-theme="light" ตายตัว ไม่โหลด /theme-init.js
+     CSP: script-src 'self' — ห้าม inline <script> / inline handler ทุกกรณี
+     หน้าตาตามหน้า "อันดับไม่สวมหมวกนิรภัย" + "สถิติหมวกนิรภัย" (เจ้าของสั่ง 2026-10-26) · แผนงานเต็ม: ./plan.html -->
+<link rel="stylesheet" href="/vendor/fonts/fonts.css">
+<script src="/vendor/chartjs/chart-4.4.1.umd.min.js"></script>
+<link rel="stylesheet" href="/index.css">
+<link rel="stylesheet" href="./truck-ban.css?v=tb14">
+</head>
+<body>
+<div class="tb-wrap">
+
+  <header class="tb-head">
+    <div>
+      <p class="tb-eyebrow">ภูเก็ต · ทางหลวงตั้งแต่ด่านตรวจภูเก็ต</p>
+      <h1>รถบรรทุกวิ่งในช่วงห้าม</h1>
+      <p class="tb-scope">06:00–09:00 และ 16:00–19:00 · ป้ายหมวด 50–99 และ 500–999 · <span id="tbScopeVt">กล้องจัดเป็นรถบรรทุก</span></p>
+    </div>
+    <div class="tb-headbtns">
+      <button class="tb-planlink tb-exportbtn" data-action="exportPage">
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>Export PDF</button>
+      <a class="tb-planlink" href="./plan.html">แผนงาน</a>
+    </div>
+  </header>
+
+  <section class="tb-filterbar" aria-label="ช่วงเวลา">
+    <span class="tb-flabel">ช่วงเวลา</span>
+    <div class="tb-seg" id="tbRange" role="group" aria-label="ช่วงเวลา">
+      <button class="tb-segbtn" data-action="range" data-r="0" aria-pressed="true">วันนี้</button>
+      <button class="tb-segbtn" data-action="range" data-r="y" aria-pressed="false">เมื่อวานนี้</button>
+      <button class="tb-segbtn" data-action="range" data-r="3" aria-pressed="false">3 วัน</button>
+      <button class="tb-segbtn" data-action="range" data-r="7" aria-pressed="false">7 วัน</button>
+      <button class="tb-segbtn" data-action="range" data-r="14" aria-pressed="false">14 วัน</button>
+      <button class="tb-segbtn" data-action="range" data-r="all" aria-pressed="false">ทุกช่วงเวลา</button>
+      <button class="tb-segbtn" data-action="range" data-r="custom" aria-pressed="false">กำหนดเอง</button>
+    </div>
+    <div class="tb-custom" id="tbCustom" hidden>
+      <input type="date" id="tbFrom" aria-label="ตั้งแต่วันที่">
+      <span>–</span>
+      <input type="date" id="tbTo" aria-label="ถึงวันที่">
+    </div>
+    <span class="tb-flabel">กล้อง</span>
+    <button class="tb-cambtn" id="tbCamBtn" data-action="camOpen">ทุกกล้อง</button>
+    <button class="tb-toggle" data-action="light" aria-pressed="false">รวมรถบรรทุกเล็ก</button>
+    <span class="tb-rangeinfo" id="tbRangeInfo"></span>
+  </section>
+
+  <div class="tb-state" id="tbState" role="status" hidden></div>
+
+  <section class="tb-kpis" aria-label="สรุป">
+    <div class="tb-kpi k1"><div class="tb-kpi-l">วิ่งในช่วงห้าม</div><div class="tb-kpi-v" id="kpiViol">—</div><div class="tb-kpi-u" id="kpiViolU">ครั้ง</div></div>
+    <div class="tb-kpi k2"><div class="tb-kpi-l">ป้ายทะเบียนที่เกี่ยวข้อง</div><div class="tb-kpi-v" id="kpiPlates">—</div><div class="tb-kpi-u">คัน (นับป้ายไม่ซ้ำ)</div></div>
+    <div class="tb-kpi k3"><div class="tb-kpi-l">ทำผิดซ้ำ</div><div class="tb-kpi-v" id="kpiRepeat">—</div><div class="tb-kpi-u" id="kpiRepeatU">คัน</div></div>
+    <div class="tb-kpi k4"><div class="tb-kpi-l">ช่วงห้ามที่พบมากที่สุด</div><div class="tb-kpi-v" id="kpiPeak">—</div><div class="tb-kpi-u" id="kpiPeakU"></div></div>
+  </section>
+
+  <section class="tb-card-s" aria-labelledby="tbRankH">
+    <header class="tb-card-h">
+      <div>
+        <h2 id="tbRankH">อันดับป้ายทะเบียนที่ทำผิดซ้ำ</h2>
+        <p class="tb-note">นับ 1 ครั้งต่อป้ายต่อช่วงห้ามต่อวัน · กดป้ายเพื่อดูภาพ</p>
+      </div>
+      <div class="tb-repbtns">
+        <button class="tb-more" data-action="pdf" data-mode="top" disabled>เจาะลึก 10 คัน (PDF)</button>
+        <button class="tb-more" data-action="pdf" data-mode="text" disabled>ตารางข้อความ (PDF)</button>
+        <button class="tb-more" data-action="pdf" data-mode="image" disabled>ตารางพร้อมภาพ (PDF)</button>
+      </div>
+      <button class="tb-more" id="tbRejBtn" data-action="rejList" hidden></button>
+      <button class="tb-more" id="tbDeferBtn" data-action="deferList" hidden></button>
+      <label class="tb-search"><span class="tb-sr">ค้นเลขทะเบียน</span>
+        <input id="tbSearch" type="search" inputmode="numeric" placeholder="ค้นเลขทะเบียน" autocomplete="off">
+      </label>
+    </header>
+    <div class="tb-rank" id="tbRank"></div>
+    <div class="tb-empty" id="tbRankEmpty" hidden>ไม่พบรถบรรทุกในช่วงห้าม</div>
+  </section>
+
+  <div class="tb-exportbar">
+    <button class="tb-planlink tb-exportbtn" data-action="exportCharts">
+      <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>Export PDF</button>
+  </div>
+  <div id="tbCharts">
+  <section class="tb-card-s" id="tbLiveCard" aria-labelledby="tbLiveH">
+    <header class="tb-card-h">
+      <div>
+        <h2 id="tbLiveH">Realtime · รถบรรทุกวันนี้</h2>
+        <p class="tb-note" id="tbLiveSub">วันนี้ · 00:00–23:59 · ทุก 30 นาที</p>
+      </div>
+      <div class="tb-chartkpi"><span>ในช่วงห้าม</span><b id="tbLiveBan">—</b><span id="tbLiveAll"></span></div>
+    </header>
+    <div class="tb-legend"><span class="ln">รถบรรทุก (คัน)</span><span class="band">ช่วงห้าม</span></div>
+    <div class="tb-chart"><canvas id="tbChartLive"></canvas></div>
+  </section>
+
+  <section class="tb-card-s" id="tbDayCard" aria-labelledby="tbDayH">
+    <header class="tb-card-h">
+      <div>
+        <h2 id="tbDayH">24 ชั่วโมง (วันที่ข้อมูลครบสมบูรณ์)</h2>
+        <p class="tb-note" id="tbDaySub"></p>
+      </div>
+      <div class="tb-chartkpi">
+        <span>ในช่วงห้าม</span><b id="tbDayBan">—</b><span id="tbDayAll"></span>
+        <input type="date" id="tbDayPick" aria-label="เลือกวัน">
+      </div>
+    </header>
+    <div class="tb-legend"><span class="ln">รถบรรทุก (คัน)</span><span class="band">ช่วงห้าม</span></div>
+    <div class="tb-chart"><canvas id="tbChartDay"></canvas></div>
+  </section>
+
+  <section class="tb-card-s" id="tbBackCard" aria-labelledby="tbBackH">
+    <header class="tb-card-h">
+      <div>
+        <h2 id="tbBackH">ย้อนหลัง</h2>
+        <p class="tb-note" id="tbBackSub"></p>
+      </div>
+      <div class="tb-chartkpi"><span>วิ่งในช่วงห้าม</span><b id="tbBackTotal">—</b><span>ครั้ง (วันบังคับใช้)</span></div>
+    </header>
+    <div class="tb-backctl">
+      <div class="tb-seg" id="tbBackRange" role="group" aria-label="ย้อนหลัง">
+        <button class="tb-segbtn" data-action="back" data-b="3" aria-pressed="false">3 วัน</button>
+        <button class="tb-segbtn" data-action="back" data-b="5" aria-pressed="false">5 วัน</button>
+        <button class="tb-segbtn" data-action="back" data-b="7" aria-pressed="true">7 วัน</button>
+        <button class="tb-segbtn" data-action="back" data-b="14" aria-pressed="false">14 วัน</button>
+        <button class="tb-segbtn" data-action="back" data-b="custom" aria-pressed="false">กำหนดเอง</button>
+      </div>
+      <div class="tb-custom" id="tbBackCustom" hidden>
+        <input type="date" id="tbBackFrom" aria-label="ย้อนหลังตั้งแต่วันที่">
+        <span>–</span>
+        <input type="date" id="tbBackTo" aria-label="ย้อนหลังถึงวันที่">
+      </div>
+    </div>
+    <div class="tb-legend"><span class="am">ช่วงเช้า</span><span class="pm">ช่วงเย็น</span><span class="off">วันไม่บังคับใช้</span></div>
+    <div class="tb-chart"><canvas id="tbChartBack"></canvas></div>
+  </section>
+
+  <section class="tb-card-s" id="tbMonthCard" aria-labelledby="tbMonthH">
+    <header class="tb-card-h">
+      <div>
+        <h2 id="tbMonthH">รายเดือน (วันที่ 1 ถึงสิ้นเดือน)</h2>
+        <p class="tb-note" id="tbMonthSub"></p>
+      </div>
+      <div class="tb-chartkpi">
+        <span>วิ่งในช่วงห้าม</span><b id="tbMonthTotal">—</b><span>ครั้ง (วันบังคับใช้)</span>
+        <input type="month" id="tbMonthPick" aria-label="เลือกเดือน">
+      </div>
+    </header>
+    <div class="tb-legend"><span class="am">ช่วงเช้า</span><span class="pm">ช่วงเย็น</span><span class="off">วันไม่บังคับใช้</span></div>
+    <div class="tb-chart"><canvas id="tbChartMonth"></canvas></div>
+  </section>
+  </div>
+
+  <div class="tb-lb" id="tbCam" role="dialog" aria-modal="true" aria-labelledby="camTitle" hidden>
+    <div class="tb-lb-panel tb-cam-panel">
+      <header class="tb-lb-head">
+        <div class="tb-lb-t"><h3 id="camTitle">เลือกกล้อง</h3></div>
+        <div class="tb-lb-ctl"><button class="tb-more" data-action="camClose">ปิด</button></div>
+      </header>
+      <div class="tb-cam-tools">
+        <button class="tb-more" data-action="camAll">เลือกทั้งหมด</button>
+        <button class="tb-more" data-action="camNone">ล้างทั้งหมด</button>
+      </div>
+      <div class="tb-lb-body tb-cam-list" id="camList"></div>
+      <footer class="tb-cam-foot">
+        <span class="tb-note" id="camCount"></span>
+        <button class="tb-apply" data-action="camApply">ใช้ตัวเลือกนี้</button>
+      </footer>
+    </div>
+  </div>
+
+  <div class="tb-lb" id="tbLb" role="dialog" aria-modal="true" aria-labelledby="lbTitle" hidden>
+    <div class="tb-lb-panel">
+      <header class="tb-lb-head">
+        <button class="tb-back" id="lbBack" data-action="lbBack" hidden>&#8249; ย้อนกลับ</button>
+        <div class="tb-lb-t"><h3 id="lbTitle"></h3><p class="tb-note" id="lbSub"></p></div>
+        <div class="tb-lb-ctl">
+          <span class="tb-lb-nav" id="lbNav" hidden>
+            <button class="tb-lb-btn" id="lbPrev" data-action="lbPrev" aria-label="ภาพก่อนหน้า">&#8249;</button>
+            <span class="tb-note" id="lbPos"></span>
+            <button class="tb-lb-btn" id="lbNext" data-action="lbNext" aria-label="ภาพถัดไป">&#8250;</button>
+          </span>
+          <button class="tb-more" id="lbDefer" data-action="deferAsk" hidden>ไม่แน่ใจ</button>
+          <button class="tb-apply tb-apply-s" id="lbYes" data-action="yesAsk" hidden>ใช่เป้าหมาย</button>
+          <button class="tb-reject" id="lbReject" data-action="rejAsk" hidden>Reject</button>
+          <button class="tb-lb-btn" data-action="lbClose" aria-label="ปิด">&times;</button>
+        </div>
+      </header>
+      <div class="tb-rejform" id="lbRejForm" hidden>
+        <b id="lbRejT">ไม่ต้องแจ้งป้ายนี้อีก</b>
+        <label for="lbRejReason">เหตุผล</label>
+        <select id="lbRejReason">
+          <option>รถบรรทุกเล็ก/หกล้อ (ไม่ถึง 3 เพลา)</option>
+          <option>รถได้รับอนุญาต</option>
+          <option>อ่านป้ายผิด</option>
+          <option>ไม่ใช่รถบรรทุก</option>
+          <option>อื่น ๆ</option>
+        </select>
+        <button class="tb-reject" data-action="rejConfirm">ยืนยัน Reject</button>
+        <button class="tb-more" data-action="rejCancel">ยกเลิก</button>
+        <span class="tb-rejmsg" id="lbRejMsg" role="status"></span>
+      </div>
+      <div class="tb-lb-body" id="lbBody"></div>
+    </div>
+  </div>
+
+  <div class="tb-zoom" id="tbZoom" role="dialog" aria-modal="true" aria-label="ดูรูปเต็ม" hidden>
+    <button class="tb-lb-btn tb-zoom-x" data-action="zoomClose" aria-label="ปิด">&times;</button>
+    <div class="tb-zoom-in" id="tbZoomIn"></div>
+  </div>
+
+</div>
+<script src="./truck-ban-data.js?v=tb9"></script>
+<script src="./truck-ban-brands.js?v=tb6"></script>
+<script src="./truck-ban.js?v=tb19"></script>
+</body>
+</html>

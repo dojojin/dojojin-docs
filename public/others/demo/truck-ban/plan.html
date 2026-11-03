@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="th" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>แผนงานห้ามรถบรรทุก</title>
+<!-- Served at: /others/demo/truck-ban/plan.html   (auth-gated · เอกสารภายใน)
+     data-theme="light" ตายตัว · CSP: style-src-elem 'self' — ห้าม inline <style> -->
+<link rel="stylesheet" href="/vendor/fonts/fonts.css">
+<link rel="stylesheet" href="/index.css">
+<link rel="stylesheet" href="./truck-ban.css?v=tb5">
+</head>
+<body>
+<main class="tb-wrap pl">
+
+  <header class="tb-head">
+    <div>
+      <p class="tb-eyebrow">แผนงาน · ฉบับร่าง 26 ต.ค. 2569</p>
+      <h1>ตรวจรถบรรทุกวิ่งในช่วงห้าม ภูเก็ต</h1>
+      <p class="tb-scope">ยังไม่ลงมือส่วนที่แตะฐานข้อมูล · ทุกขั้นที่ติดป้าย STOP รอเจ้าของอนุมัติก่อน</p>
+    </div>
+    <a class="tb-planlink" href="./">กลับไปหน้า demo</a>
+  </header>
+
+  <section class="pl-sec">
+    <h2>1. ข้อบังคับที่ต้องตรวจ</h2>
+    <table class="pl-t">
+      <tbody>
+        <tr><th>รถที่ห้าม</th><td>รถบรรทุกตั้งแต่ 3 เพลาขึ้นไป ล้อยางตั้งแต่ 10 ล้อขึ้นไป (สิบล้อและรถพ่วง)</td></tr>
+        <tr><th>เวลา</th><td>06.00–09.00 น. และ 16.00–19.00 น.</td></tr>
+        <tr><th>พื้นที่</th><td>ทางหลวงทุกเส้นทาง ตั้งแต่ด่านตรวจภูเก็ต</td></tr>
+        <tr><th>ยกเว้น</th><td>วันหยุดราชการ วันหยุดนักขัตฤกษ์ และรถที่ได้รับอนุญาตเป็นรายกรณี</td></tr>
+        <tr><th>ที่มา</th><td>ข้อบังคับเจ้าพนักงานจราจรจังหวัดภูเก็ต ลงวันที่ 24 พ.ค. 2567 มีผล 1 ก.ค. 2567 (ข่าวภูเก็ต / มติชน)</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="pl-sec">
+    <h2>2. เกณฑ์ที่ระบบใช้ (ตกลงแล้ว)</h2>
+    <table class="pl-t">
+      <thead><tr><th>เงื่อนไข</th><th>ค่า</th><th>เหตุผล</th></tr></thead>
+      <tbody>
+        <tr><td>หมวดป้าย</td><td>50–99 (6 หลัก) และ 500–999 (ระบบอ่านเป็น 7 หลัก)</td>
+          <td>ประกาศกรมการขนส่งทางบก พ.ศ. 2565 ข้อ 2(4): บรรทุกไม่ประจำทาง 60–79 / 600–799 · บรรทุกส่วนบุคคล 50–59, 80–99 / 500–599, 800–999</td></tr>
+        <tr><td>คลาสจากกล้อง</td><td>truck หรือ buggy</td><td>ภาพภูเก็ต 14 วัน: คลาสนี้กรองรถเล็กออก หมวด 85–99 ที่ตรวจภาพไม่เจอรถเล็กเลย</td></tr>
+        <tr><td>กล้อง</td><td>ทุกกล้องของไซต์ภูเก็ต (ตอนนี้)</td><td>เจ้าของสั่ง · ทำให้เลือกรายกล้องได้ภายหลังโดยไม่แก้โค้ด</td></tr>
+        <tr><td>วันบังคับใช้</td><td>จันทร์–ศุกร์ ที่ไม่ใช่วันหยุดราชการ</td><td>ไม่นับวันหยุดชดเชย · เสาร์–อาทิตย์ไม่บังคับใช้</td></tr>
+        <tr><td>ไม่รวม</td><td>หมวด 10–49 และ 0x</td><td>ตามประกาศเป็นรถโดยสาร/รถเล็ก · ภาพหมวด 10 เป็นรถบัส 11 จาก 15 คัน · หมวด 0x ไม่มีในประกาศ</td></tr>
+      </tbody>
+    </table>
+    <p class="pl-limit">ข้อจำกัด: ทั้งหมวดป้ายและคลาสจากกล้องบอกจำนวนเพลา/ล้อไม่ได้ (หกล้อใช้หมวดเดียวกัน) ⇒ ผลคือรายการให้เจ้าหน้าที่ตรวจภาพยืนยัน ไม่ใช่ใบสั่ง ·
+      กล้องที่ถ่ายท้ายรถพ่วงอ่านป้าย "รถพ่วง" เพี้ยน (เช่น <code>S09A9</code>, <code>56N39</code>) รถกลุ่มนี้ยังหลุดจากเกณฑ์</p>
+  </section>
+
+  <section class="pl-sec">
+    <h2>3. ปฏิทินวันหยุดราชการ และ API ธปท.</h2>
+    <h3>ทำไม API ธปท. อย่างเดียวไม่พอ</h3>
+    <table class="pl-t">
+      <thead><tr><th>กรณี</th><th>ธปท. (วันหยุดสถาบันการเงิน)</th><th>ข้อบังคับต้องการ</th><th>ถ้าไม่แก้</th></tr></thead>
+      <tbody>
+        <tr><td>วันหยุดเฉพาะราชการ (พืชมงคล 13 พ.ค. · เข้าพรรษา 30 ก.ค.)</td><td><b>ไม่มีในรายการ</b></td><td>ยกเว้น</td><td>จับรถบรรทุกผิดวัน</td></tr>
+        <tr><td>หยุดพิเศษเฉพาะ กทม. (16 ต.ค. 2569)</td><td>มี · ชื่อ "…ในพื้นที่กรุงเทพมหานคร"</td><td>ภูเก็ตยังบังคับใช้</td><td>ปล่อยรถบรรทุกทั้งวัน</td></tr>
+        <tr><td>วันหยุดชดเชย (1 มิ.ย. · 7 ธ.ค.)</td><td>มี · ชื่อขึ้นต้น "ชดเชย…" / "Substitution for…"</td><td>ไม่นับ (เจ้าของสั่ง)</td><td>ปล่อยรถบรรทุกทั้งวัน</td></tr>
+      </tbody>
+    </table>
+    <p>ตรวจกับ API จริง 26 ต.ค. 2569: ปี 2569 ได้ 20 วัน (เฉพาะวันทำงาน — วันหยุดที่ตรงเสาร์–อาทิตย์ไม่อยู่ในรายการ) ·
+      ตรงกับรายการใน demo 17 วัน · เกินมา 3 วัน (ชดเชย 2 · กทม. 1) · ขาด 2 วัน (พืชมงคล · เข้าพรรษา) ⇒ ตัวดึงต้องกรอง 3 แบบแรกด้วยชื่อ
+      และ seed 2 วันหลังเป็น <code>kind=gov_only</code> <code>source=admin</code> ทุกปี (หรือแอดมินเพิ่มเอง)</p>
+
+    <h3>ตารางใหม่ <code>public_holidays</code> (migration 284) <span class="pl-stop">STOP</span></h3>
+    <table class="pl-t pl-code">
+      <thead><tr><th>คอลัมน์</th><th>ชนิด</th><th>ความหมาย</th></tr></thead>
+      <tbody>
+        <tr><td>day</td><td>date</td><td>วันที่ (ร่วมกับ scope เป็น key)</td></tr>
+        <tr><td>name</td><td>text</td><td>ชื่อวันหยุด</td></tr>
+        <tr><td>kind</td><td>text</td><td>national · gov_only · special · substitution</td></tr>
+        <tr><td>scope</td><td>text</td><td><code>all</code> หรือรหัสจังหวัด/พื้นที่ เช่น <code>bkk</code></td></tr>
+        <tr><td>source</td><td>text</td><td><code>bot</code> (ดึงอัตโนมัติ) · <code>admin</code> (แอดมินเพิ่ม/แก้)</td></tr>
+        <tr><td>active</td><td>boolean</td><td>แอดมินปิดวันที่ดึงมาได้ โดยไม่ถูกตัวดึงรอบถัดไปเขียนทับ</td></tr>
+        <tr><td>updated_at / updated_by</td><td>timestamptz / text</td><td>ใครแก้เมื่อไร</td></tr>
+      </tbody>
+    </table>
+    <p>วันบังคับใช้ = จันทร์–ศุกร์ <b>และ</b> ไม่มีแถว <code>active</code> ที่ <code>kind ≠ substitution</code> และ <code>scope ∈ {all, phuket}</code></p>
+
+    <h3>ใช้ API ธปท. ตอนไหน</h3>
+    <table class="pl-t">
+      <tbody>
+        <tr><th>นำเข้ารายปี</th><td>ทุกวันที่ 1 ของเดือน 02:30 ลองดึงปีถัดไป · ได้เมื่อ ธปท. ประกาศ (ปกติปลายปี)</td></tr>
+        <tr><th>ซิงก์รายสัปดาห์</th><td>ทุกวันจันทร์ 02:40 ดึงปีปัจจุบันซ้ำ เพื่อเก็บวันหยุดพิเศษที่ ครม. เพิ่มกลางปี</td></tr>
+        <tr><th>กดเองได้</th><td>ปุ่ม "ดึงจาก ธปท. ตอนนี้" ในหน้าตั้งค่า</td></tr>
+        <tr><th>เขียนทับไม่ได้</th><td>แถว <code>source=admin</code> และแถวที่แอดมินปิด (<code>active=false</code>)</td></tr>
+        <tr><th>ล้มเหลว</th><td>ใช้ข้อมูลเดิมในตารางต่อ + บันทึก log + perfWatch เตือนถ้าปีถัดไปยังว่างหลัง 15 ธ.ค.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>ใส่ตรงไหน</h3>
+    <table class="pl-t">
+      <thead><tr><th>อะไร</th><th>ที่ไหน</th><th>ใครทำ</th></tr></thead>
+      <tbody>
+        <tr><td>สร้างแอป + Subscribe "Financial Institutions' Holidays"</td><td>portal.api.bot.or.th</td><td>เจ้าของ</td></tr>
+        <tr><td>token</td><td><code>src/.env</code> บน central บรรทัด <code>BOT_API_TOKEN=…</code></td><td>เจ้าของ (ใส่แล้ว 26 ต.ค.)</td></tr>
+        <tr><td>ประกาศตัวแปร</td><td><code>src/config.js</code> + <code>.env.example</code> (ไม่มีค่า)</td><td>ผม</td></tr>
+        <tr><td>ตัวดึง</td><td><code>src/jobs/holidaySync.js</code> (จัดคิวผ่านตัวจัดคิวงานเดิมใน <code>src/jobs/</code>)</td><td>ผม</td></tr>
+        <tr><td>ปฏิทินที่ทุกส่วนใช้</td><td><code>src/helpers/holidayCalendar.js</code> → <code>isEnforcedDay(day, scope)</code></td><td>ผม</td></tr>
+      </tbody>
+    </table>
+    <h3>รูปแบบ API (ตรวจจริง 26 ต.ค. 2569)</h3>
+    <table class="pl-t pl-code">
+      <tbody>
+        <tr><th>คำขอ</th><td>GET https://gateway.api.bot.or.th/financial-institutions-holidays/?year=2026</td></tr>
+        <tr><th>header</th><td>Authorization: &lt;token&gt; (ไม่มีคำว่า Bearer)</td></tr>
+        <tr><th>ผลลัพธ์</th><td>result.data[] → Date · HolidayDescriptionThai · HolidayDescription · HolidayWeekDay</td></tr>
+        <tr><th>ปีที่ยังไม่ประกาศ</th><td>HTTP 204 ไม่มีเนื้อหา (ปี 2027 ณ วันนี้) — ตัวดึงต้องถือว่า "ยังไม่มี" ไม่ใช่ error</td></tr>
+        <tr><th>token</th><td>src/.env บน central บรรทัด BOT_API_TOKEN (ใส่แล้ว 26 ต.ค.)</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="pl-sec">
+    <h2>4. Code plan</h2>
+    <table class="pl-t pl-code">
+      <thead><tr><th>ขั้น</th><th>ไฟล์</th><th>งาน</th><th>STOP</th></tr></thead>
+      <tbody>
+        <tr><td>0</td><td>public/others/demo/truck-ban/</td><td>demo นี้ · อ่าน /api/lpr ที่มีอยู่ · วันหยุดฝังในไฟล์ชั่วคราว</td><td>commit</td></tr>
+        <tr><td>1</td><td>db/db_migration_284_public_holidays.sql · db/init.sql</td><td>ตารางวันหยุด + seed ปี 2569 จากรายการเดียวกับ demo</td><td class="pl-y">ใช่</td></tr>
+        <tr><td>2</td><td>src/helpers/holidayCalendar.js · test/holiday-calendar.test.js</td><td>isEnforcedDay · cache 10 นาที · เทสต์ 13/16/23 ต.ค. และ 1 มิ.ย.</td><td>—</td></tr>
+        <tr><td>3</td><td>src/jobs/holidaySync.js · src/config.js · .env.example</td><td>ดึง ธปท. · กรอง substitution · ไม่ทับ admin</td><td class="pl-y">ใช่ (เขียน DB prod)</td></tr>
+        <tr><td>4</td><td>src/helpers/truckBan.js · test/truck-ban.test.js</td><td>เกณฑ์ (regex ป้าย · คลาส · ช่วงเวลา · กล้องจาก system_settings.truck_ban)</td><td class="pl-y">ใช่ (สูตรตัวเลข)</td></tr>
+        <tr><td>5</td><td>src/routes/truck-ban.js · src/view-registry.js · docs/REF_api-reference.md</td><td>GET /api/truck-ban/day · GET /api/truck-ban/summary · GET/POST/PATCH /api/holidays (แอดมิน)</td><td class="pl-y">ใช่ (สิทธิ์)</td></tr>
+        <tr><td>6</td><td>dashboard/ (หน้าใหม่ใต้ Traffic) · dashboard/i18n.js th+en</td><td>ย้าย demo เข้า dashboard · หน้าตั้งค่าวันหยุด</td><td>commit</td></tr>
+        <tr><td>✓</td><td>db/db_migration_281_truck_ban_rejections.sql · src/routes/lpr-list.js · test/truck-ban-rejections.test.js</td><td>Reject รายป้าย = ไม่ต้องแจ้งป้ายนี้อีก (เหตุผล · ใครกด · คืนสถานะได้) · GET/POST/DELETE /api/lpr/truck-ban/rejections · เขียนได้เฉพาะ admin/site_admin · ทำแล้ว 26 ต.ค.</td><td>commit</td></tr>
+        <tr><td>7</td><td>ภายหลัง</td><td>แจ้งเตือน LINE (ทดสอบเฉพาะ Dojo-mAn) · ส่งออก CSV · ป้ายรถพ่วง</td><td class="pl-y">ใช่</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="pl-sec">
+    <h2>5. เรื่องที่ต้องตัดสินก่อนขั้น 4</h2>
+    <ol class="pl-ol">
+      <li><b>ผลคิดสด หรือบันทึกตอนตรวจพบ</b> — ถ้าคิดสด แอดมินเพิ่มวันหยุดย้อนหลังแล้วรายการเก่าหายเอง (เหมือนเคส "เกณฑ์ที่คิดสดเขียนทับประวัติเงียบ ๆ") · ถ้าบันทึก ต้องมีตารางผลและงานคำนวณรายวัน · เสนอ: คิดสดสำหรับวันนี้ + บันทึกผลเมื่อจบวัน</li>
+      <li><b>กล้องที่นับ</b> — ตอนนี้ทุกกล้องภูเก็ต (วันที่ 23 ต.ค. มี 18 ตัวที่จับรถกลุ่มนี้ได้) · ต้องการตัดกล้องที่ไม่ได้อยู่บนทางหลวงหรือไม่</li>
+      <li><b>แจ้งเตือน</b> — ต้องการ LINE ระหว่างวันหรือรายงานสรุปท้ายวันเท่านั้น</li>
+    </ol>
+  </section>
+
+</main>
+</body>
+</html>

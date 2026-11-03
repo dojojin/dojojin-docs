@@ -12,6 +12,7 @@ const fs = require('fs');
 const path = require('path');
 const {
   parseDahuaEventText, parseSnapManagerCode, parseSnapManagerIndex, extractObjectClass, DAHUA_EVENT_MAP,
+  parseObjectCutout,
   deviceKey, codesForCategories, channelAllowsCode, extractFaceAttributes,
   faceComparisonListType, FACE_BLACKLIST_SIM_THRESHOLD,
   parseDahuaTrafficJunction, dahuaRgbaToName, normalizeDahuaEmotion,
@@ -139,6 +140,23 @@ describe('parseSnapManagerIndex', () => {
   it('returns null when no index is present', () => {
     assert.equal(parseSnapManagerIndex('Code=CrossRegionDetection;action=Start'), null);
     assert.equal(parseSnapManagerIndex('Heartbeat'), null);
+  });
+
+  it('parses EventBaseInfo.Index= — the NVR face-channel shape', () => {
+    // Live text part, HDY-NVR-03, 2026-07-27. The channel is ONLY under
+    // EventBaseInfo here; returning null instead would let either channel of a
+    // two-channel face NVR claim the other's crop.
+    const faceText = [
+      'Events[0].Object.ObjectType=HumanFace',
+      'Events[0].Code=FaceAnalysis',
+      'Events[0].EventBaseInfo.Code=FaceRecognition',
+      'Events[0].EventBaseInfo.Index=1',
+    ].join('\r\n');
+    assert.equal(parseSnapManagerIndex(faceText), 1);
+  });
+
+  it('direct index= still wins over EventBaseInfo.Index=', () => {
+    assert.equal(parseSnapManagerIndex('index=2\r\nEvents[0].EventBaseInfo.Index=7'), 2);
   });
 
   it('parses a non-zero NVR channel from the array format', () => {
@@ -497,5 +515,56 @@ describe('normalizeDahuaEmotion', () => {
     assert.equal(normalizeDahuaEmotion('Anger'), 'anger');
     assert.equal(normalizeDahuaEmotion(null), null);
     assert.equal(normalizeDahuaEmotion(''), null);
+  });
+});
+
+describe('parseObjectCutout', () => {
+  // Byte windows below are from live snapManager text parts, 2026-07-27.
+  const faceText = [
+    'Events[0].Code=FaceAnalysis',
+    'Events[0].Index=0',
+    'Events[0].Object.ObjectType=HumanFace',
+    'Events[0].Object.ObjectID=1196139',
+    'Events[0].Object.Image.Width=144',
+    'Events[0].Object.Image.Height=208',
+    'Events[0].Object.Image.Offset=99356',
+    'Events[0].Object.Image.Length=1662',
+  ].join('\r\n');
+
+  it('reads the face cutout window from a HumanFace part', () => {
+    assert.deepEqual(parseObjectCutout(faceText), { off: 99356, len: 1662 });
+  });
+
+  it('still reads the car plate cutout (Object.Image under ObjectType=Plate)', () => {
+    const carText = [
+      'Events[0].Code=TrafficJunction',
+      'Events[0].Object.ObjectType=Plate',
+      'Events[0].Object.Image.Offset=81826',
+      'Events[0].Object.Image.Length=2530',
+    ].join('\r\n');
+    assert.deepEqual(parseObjectCutout(carText), { off: 81826, len: 2530 });
+  });
+
+  it('still reads the motorcycle cutout (NonMotor.Plate.PlateImage)', () => {
+    const bikeText = [
+      'Events[0].Code=NonMotorDetect',
+      'Events[0].Object.ObjectType=NonMotor',
+      'Events[0].Object.NonMotor.Plate.PlateImage.Offset=5000',
+      'Events[0].Object.NonMotor.Plate.PlateImage.Length=900',
+    ].join('\r\n');
+    assert.deepEqual(parseObjectCutout(bikeText), { off: 5000, len: 900 });
+  });
+
+  it('returns null when the object carries no cutout of its own', () => {
+    // A Human body detection: ObjectType is neither Plate nor HumanFace, and the
+    // Object.Image numbers must NOT be picked up from it.
+    const humanText = [
+      'Events[0].Code=HumanTrait',
+      'Events[0].Object.ObjectType=Human',
+      'Events[0].Object.Image.Offset=123',
+      'Events[0].Object.Image.Length=45',
+    ].join('\r\n');
+    assert.equal(parseObjectCutout(humanText), null);
+    assert.equal(parseObjectCutout('Heartbeat'), null);
   });
 });

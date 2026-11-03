@@ -19,6 +19,8 @@
 
 const fs   = require('fs');
 const path = require('path');
+const { frozenScope, eachCameraBatch, camClause } = require('./helpers/retentionScope');
+const { safeCamDir } = require('./snapshot-path');
 
 // Matches edge's date-dir naming (src/edge/snapshot-retention.js DATE_RE).
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -28,12 +30,14 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 // new layout (lpr/date/cam/slot/file) by recursing into subdirs and cleaning up
 // empty dirs bottom-up. Per-file mtime — this is the slow-but-exact path, kept
 // for the boundary day (see pruneLprImages) and any non-date-named legacy dir.
-async function _pruneSubdir(dir, cutoffMs, dryRun) {
+// skipNames (เฉพาะชั้นแรกใต้ date-dir = ชื่อโฟลเดอร์กล้อง) — กล้องของไซต์ปิดปรับปรุง ไม่เข้าไปเลย
+async function _pruneSubdir(dir, cutoffMs, dryRun, skipNames) {
   let filesDeleted = 0, bytesFreed = 0;
   const entries = await fs.promises.readdir(dir, { withFileTypes: true }).catch(() => []);
   for (const e of entries) {
     const full = path.join(dir, e.name);
     if (e.isDirectory()) {
+      if (skipNames && skipNames.has(e.name)) continue;
       const r = await _pruneSubdir(full, cutoffMs, dryRun);
       filesDeleted += r.filesDeleted; bytesFreed += r.bytesFreed;
       if (!dryRun) {
@@ -59,21 +63,41 @@ async function _pruneSubdir(dir, cutoffMs, dryRun) {
 // pruneEdgeSnapshots' `< cutoff` boundary — the cutoff day itself always goes
 // through the slow per-file path below, since it may still be receiving
 // today's captures with mixed old/new mtimes.
+//
+// 🧊 opts.frozenDirs (Set ชื่อโฟลเดอร์กล้องจาก safeCamDir) — ไซต์ปิดปรับปรุง:
+//   date-dir ที่มีโฟลเดอร์ของกล้องแช่แข็งอยู่ ห้าม rm -rf ทั้งก้อน → ลบรายโฟลเดอร์กล้องแทน ข้ามตัวแช่แข็ง
+//   วัน boundary/วันใหม่ (เส้นทางรายไฟล์) ก็ข้ามโฟลเดอร์กล้องแช่แข็งเหมือนกัน
+//   ไม่มีอะไรแช่แข็ง (Set ว่าง/ไม่ส่ง) = fast path เดิมทุกประการ
+//   ไฟล์ที่วางตรงใต้ date-dir (layout เก่า lpr/date/file) ไม่รู้เจ้าของ → ลบตามเดิม
 async function pruneLprImages(lprRoot, cutoffMs, opts = {}) {
   const dryRun = !!opts.dryRun;
+  const frozenDirs = opts.frozenDirs && opts.frozenDirs.size ? opts.frozenDirs : null;
   let filesDeleted = 0, bytesFreed = 0, dirsRemoved = 0;
   const cutoffDateStr = new Date(cutoffMs).toISOString().slice(0, 10); // UTC, matches folder naming
   const dateDirs = await fs.promises.readdir(lprRoot, { withFileTypes: true }).catch(() => []);
   for (const dd of dateDirs) {
     if (!dd.isDirectory()) continue;
     const dateDir = path.join(lprRoot, dd.name);
+    if (DATE_RE.test(dd.name) && dd.name < cutoffDateStr && frozenDirs) {
+      const kids = await fs.promises.readdir(dateDir, { withFileTypes: true }).catch(() => []);
+      if (kids.some(k => k.isDirectory() && frozenDirs.has(k.name))) {
+        for (const k of kids) {
+          if (k.isDirectory() && frozenDirs.has(k.name)) continue;
+          const full = path.join(dateDir, k.name);
+          if (dryRun) console.log(`[lpr-retention] (dry-run) would rm -rf ${full}`);
+          else await fs.promises.rm(full, { recursive: true, force: true }).catch(() => {});
+        }
+        console.log(`[lpr-retention] 🧊 ${dd.name}: เก็บโฟลเดอร์กล้องของไซต์ปิดปรับปรุงไว้ ลบเฉพาะกล้องอื่น`);
+        continue;
+      }
+    }
     if (DATE_RE.test(dd.name) && dd.name < cutoffDateStr) {
       if (dryRun) console.log(`[lpr-retention] (dry-run) would rm -rf ${dateDir}`);
       else await fs.promises.rm(dateDir, { recursive: true, force: true }).catch(() => {});
       dirsRemoved++;
       continue;
     }
-    const r = await _pruneSubdir(dateDir, cutoffMs, dryRun);
+    const r = await _pruneSubdir(dateDir, cutoffMs, dryRun, frozenDirs);
     filesDeleted += r.filesDeleted; bytesFreed += r.bytesFreed;
     if (!dryRun) {
       const left = await fs.promises.readdir(dateDir).catch(() => ['_']);
@@ -87,7 +111,26 @@ async function pruneLprImages(lprRoot, cutoffMs, opts = {}) {
 // Batched id-IN-subquery (mirrors enforceRetention) so each batch is a short
 // transaction. Children deleted explicitly — no FK cascade after
 // MANUAL_partition_events_option_a.sql (Option A is app-enforced).
-async function pruneLprRows(pool, cutoffIso, batch) {
+// 🧊 frozen = { frozenCams, liveCams } จาก frozenScope · มีไซต์แช่แข็ง → รายกล้อง (event_type + camera_id
+// + event_time ผ่าน index (camera_id, event_time)) เฉพาะกล้องที่ยังเปิด + แถว camera_id NULL
+// 🟡 แถวของ camera_id ที่ไม่มีในตาราง cameras ไม่ถูกลบระหว่างที่มีไซต์แช่แข็ง (ไม่รู้ว่าของไซต์ไหน)
+async function pruneLprRows(pool, cutoffIso, batch, frozen) {
+  if (frozen && frozen.frozenCams.length) {
+    return eachCameraBatch(frozen.liveCams, {
+      batch,
+      select: async (cam) => {
+        const [w, p] = camClause(cam, [cutoffIso, batch]);
+        const r = await pool.query(
+          `SELECT id FROM events WHERE event_type = 'anprAlarm' AND ${w} AND event_time < $1 ORDER BY event_time LIMIT $2`, p);
+        return r.rows.map(x => x.id);
+      },
+      apply: async (arr) => {
+        await pool.query(`DELETE FROM license_plates WHERE event_id = ANY($1::bigint[])`, [arr]);
+        await pool.query(`DELETE FROM lpr_alert_acks WHERE event_id = ANY($1::bigint[])`, [arr]);
+        return (await pool.query(`DELETE FROM events WHERE id = ANY($1::bigint[])`, [arr])).rowCount;
+      },
+    });
+  }
   let total = 0, n;
   do {
     const ids = await pool.query(
@@ -112,11 +155,14 @@ async function enforceLprRetention({ pool, snapshotDir, metaDays, imageDays, bat
   const iDays = Math.min(mDays, Math.max(1, parseInt(imageDays, 10) || 7)); // image ≤ metadata
   out.metaDays = mDays; out.imageDays = iDays;
 
+  // 🧊 อ่านก่อนลบอะไรทั้งนั้น — โยน (อ่านสถานะไซต์ไม่ได้) = ไม่ลบทั้งแถวและภาพ
+  const frozen = await frozenScope(pool);
   const cutoffIso = new Date(Date.now() - mDays * 86400 * 1000).toISOString();
-  out.rowsDeleted = await pruneLprRows(pool, cutoffIso, batch);
+  out.rowsDeleted = await pruneLprRows(pool, cutoffIso, batch, frozen);
 
   const imgCutoffMs = Date.now() - iDays * 86400 * 1000;
-  const r = await pruneLprImages(path.join(snapshotDir, 'lpr'), imgCutoffMs, { dryRun: dryRunImages });
+  const r = await pruneLprImages(path.join(snapshotDir, 'lpr'), imgCutoffMs,
+    { dryRun: dryRunImages, frozenDirs: new Set(frozen.frozenCams.map(safeCamDir)) });
   out.filesDeleted = r.filesDeleted; out.bytesFreed = r.bytesFreed; out.dirsRemoved = r.dirsRemoved;
   return out;
 }

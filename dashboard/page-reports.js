@@ -6,7 +6,7 @@
 // ============================================================
 
 // Phase 5 — Reports built on Stats v2 endpoints (categories / timeline /
-// breakdown / per-camera / heatmap / top-rules / quiet-cameras).
+// breakdown / per-camera / heatmap / quiet-cameras).
 // 4 report types share the same renderer; only the [from,to] window differs.
 
 function onReportTypeChange() {
@@ -58,6 +58,35 @@ function _normalizeHealthSectionsForUi(sections) {
     else out.push(s);
   });
   return new Set(out);
+}
+
+// Restore the saved analytics option set from section_config (2026-08-23).
+// Distinguishes
+// between "absent" (null/undefined/{}; render everything, legacy) and "empty array" ([]
+// tick nothing). Return { domains, kpis, catsort, title } or null if config is absent.
+function _normalizeAnalyticsOptsForUi(section_config) {
+  if (!section_config || typeof section_config !== 'object') return null;
+  // Legacy rows (saved before this feature) have section_config=null or {}.
+  // We want to render everything for backward compat, which means:
+  // domains = null (render all), kpis = null (render all), secs = null (render all), catsort = 'count', title = '', tod = undefined.
+  if (!section_config.domains && !section_config.kpis && !section_config.secs && !section_config.catsort && !section_config.title
+      && !section_config.cats && !section_config.cats_hide && !section_config.tod
+      && section_config.showDelta === undefined && section_config.showPct === undefined) return null;
+  return {
+    domains: Array.isArray(section_config.domains) ? new Set(section_config.domains) : null,
+    kpis:    Array.isArray(section_config.kpis)    ? new Set(section_config.kpis)    : null,
+    secs:    Array.isArray(section_config.secs)    ? new Set(section_config.secs)    : null,
+    catsort: section_config.catsort || 'count',
+    title:   section_config.title || '',
+    // cats = null แปลว่า "ทุกหมวด" ไม่ใช่ "ไม่เอาสักหมวด" — ตารางเก่าที่บันทึกไว้
+    // ก่อนมีตัวเลือกนี้จึงยังส่งรายงานครบเหมือนเดิม
+    // cats_hide = รูปแบบปัจจุบัน · cats = รูปแบบเก่าก่อน 2026-08-25 (รายชื่อที่เลือก)
+    catsHide:  Array.isArray(section_config.cats_hide) ? new Set(section_config.cats_hide) : null,
+    catsShownLegacy: Array.isArray(section_config.cats) ? new Set(section_config.cats) : null,
+    showDelta: section_config.showDelta !== false,
+    showPct: section_config.showPct !== false,
+    tod: (section_config.tod && section_config.tod.from && section_config.tod.to) ? section_config.tod : null,
+  };
 }
 
 // Custom from/to ISO from the health date row (whole-day BKK boundaries via the
@@ -152,6 +181,12 @@ function _getHealthRecipientIds() {
   return [...document.querySelectorAll('.hrRecipCheck:checked')].map(c => c.value);
 }
 
+// The SITE bar at the top of the Reports page already drives the Events, Face
+// and LPR tabs. Health was the only one ignoring it, so picking "HatYai" left
+// the health report showing all 143 cameras (backend gained site_id 2026-08-03;
+// this is the caller catching up).
+function _hrSiteQs() { return _rptActiveSiteId ? `&site_id=${_rptActiveSiteId}` : ''; }
+
 async function previewHealthReport() {
   const sections = _getHealthSections();
   if (!sections.length) { alert(I18N.t('hr.atLeastOne')); return; }
@@ -159,7 +194,7 @@ async function previewHealthReport() {
   if (rangeQs === null) { alert(I18N.t('hr.needCustomRange')); return; }
   const preview = document.getElementById('hrPreviewDoc');
   preview.innerHTML = `<div style="text-align:center;padding:60px;color:var(--text-secondary)">${escapeHtml(I18N.t('common.loading'))}</div>`;
-  const url = `${API}/api/health/report/preview?sections=${encodeURIComponent(sections.join(','))}&${rangeQs}&lang=${encodeURIComponent((I18N.getLang ? I18N.getLang() : 'th'))}&t=${Date.now()}`;
+  const url = `${API}/api/health/report/preview?sections=${encodeURIComponent(sections.join(','))}&${rangeQs}&lang=${encodeURIComponent((I18N.getLang ? I18N.getLang() : 'th'))}${_hrSiteQs()}&t=${Date.now()}`;
   const img = new Image();
   img.onload = () => {
     preview.innerHTML = '';
@@ -178,7 +213,7 @@ function downloadHealthPng() {
   if (!sections.length) { alert(I18N.t('hr.atLeastOne')); return; }
   const rangeQs = _buildHealthRangeParams();
   if (rangeQs === null) { alert(I18N.t('hr.needCustomRange')); return; }
-  window.location = `${API}/api/health/report/preview?sections=${encodeURIComponent(sections.join(','))}&${rangeQs}&lang=${encodeURIComponent((I18N.getLang ? I18N.getLang() : 'th'))}&title=${encodeURIComponent(document.getElementById('hrTitle')?.value.trim() || '')}&download=1`;
+  window.location = `${API}/api/health/report/preview?sections=${encodeURIComponent(sections.join(','))}&${rangeQs}&lang=${encodeURIComponent((I18N.getLang ? I18N.getLang() : 'th'))}&title=${encodeURIComponent(document.getElementById('hrTitle')?.value.trim() || '')}${_hrSiteQs()}&download=1`;
 }
 
 function downloadHealthPdf() {
@@ -186,7 +221,7 @@ function downloadHealthPdf() {
   if (!sections.length) { alert(I18N.t('hr.atLeastOne')); return; }
   const rangeQs = _buildHealthRangeParams();
   if (rangeQs === null) { alert(I18N.t('hr.needCustomRange')); return; }
-  window.location = `${API}/api/health/report/pdf?sections=${encodeURIComponent(sections.join(','))}&${rangeQs}&lang=${encodeURIComponent((I18N.getLang ? I18N.getLang() : 'th'))}&title=${encodeURIComponent(document.getElementById('hrTitle')?.value.trim() || '')}`;
+  window.location = `${API}/api/health/report/pdf?sections=${encodeURIComponent(sections.join(','))}&${rangeQs}&lang=${encodeURIComponent((I18N.getLang ? I18N.getLang() : 'th'))}&title=${encodeURIComponent(document.getElementById('hrTitle')?.value.trim() || '')}${_hrSiteQs()}`;
 }
 
 function _hrDownloadByFmt() {
@@ -206,7 +241,7 @@ async function sendHealthReportNow() {
     const res = await fetch(`${API}/api/health/report/send-now`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sections, range, recipients, lang: (I18N.getLang ? I18N.getLang() : 'th') }),
+      body: JSON.stringify({ sections, range, recipients, lang: (I18N.getLang ? I18N.getLang() : 'th'), site_id: _rptActiveSiteId || null }),
     });
     const j = await res.json();
     if (!res.ok) throw new Error(j.error || `HTTP ${res.status}`);
@@ -226,7 +261,11 @@ function _computeReportRange() {
   const from = new Date(fStr + 'T00:00:00');
   const to   = new Date(tStr + 'T23:59:59.999');
   if (!(from < to)) return null;
-  const label = `${from.toLocaleDateString(loc)} – ${to.toLocaleDateString(loc)}`;
+  let label = `${from.toLocaleDateString(loc)} – ${to.toLocaleDateString(loc)}`;
+  const tod = _rptTod();
+  if (tod && !tod.error) {
+    label += ` (${tod.from}–${tod.to})`;
+  }
   return { type: _rptBuildType || 'custom', from, to, label };
 }
 
@@ -240,11 +279,268 @@ function _refreshReportRangeNote() {
     .replace('{label}', escapeHtml(r.label)).replace('{days}', days);
 }
 
+// ตัวเลือกเฉพาะหน้ารายงาน (เจ้าของสั่ง 2026-08-21) — เลือกครั้งต่อครั้ง ไม่ได้เก็บไว้
+// ค่าเดินทางไปถึง PDF/PNG ผ่าน query param เส้นทางเดียวกับ domains
+// รายงานสรุปใช้เทมเพลตของตัวเอง (buildSummaryHtml) — ตัวเลือกของรายงานปกติอย่าง
+// การ์ด KPI / หัวข้อที่แสดง / หมวดที่แสดง / คอลัมน์เทียบ / การเรียง / รูปแบบภาพ
+// ไม่มีผลกับมันเลย · ซ่อนทิ้งดีกว่าปล่อยให้ติ๊กแล้วไม่เกิดอะไรขึ้น (เจ้าของทัก 2026-09-04)
+// สิ่งที่ยังมีผลกับรายงานสรุป: ไซต์ · กล้อง · ช่วงเวลาในวัน · % บนโดนัท · หัวข้อรายงาน
+const _RPT_SUMMARY_HIDE = {
+  build:    ['rbKpiWrap', 'rbSecWrap', 'rbCatWrap', 'rbShowDeltaWrap', 'rbCatSortWrap'],
+  schedule: ['rsKpiWrap', 'rsSecWrap', 'rsCatWrap', 'rsShowDeltaWrap', 'rsCatSortWrap',
+             'rsDomainsWrap', 'rsLayoutGroup'],
+};
+function _rptToggleSummaryFields(where, isSummary) {
+  (_RPT_SUMMARY_HIDE[where] || []).forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = isSummary ? 'none' : '';
+  });
+}
+let _rptCatSort = 'count';
+// ช่วงเวลาในวันเป็น dropdown ไม่ใช่ <input type="time"> — Chrome เลือกรูปแบบ 12/24 ชม.
+// จาก locale ของ "เบราว์เซอร์" บังคับด้วย attribute lang ไม่ได้ (ทดสอบแล้ว 2026-09-04:
+// lang=en-GB / th-TH ยังขึ้น AM/PM ทั้งคู่บน locale en-US) · เจ้าของสั่งให้เป็น 24 ชม.
+// เสมอเพื่อกันกรอกพลาด · ผลพลอยได้: เลือกนอกขั้น 30 นาทีไม่ได้เลยตั้งแต่ต้นทาง
+const _TOD_SLOTS = (() => {
+  const out = [];
+  for (let h = 0; h < 24; h++) for (const m of ['00', '30']) out.push(`${String(h).padStart(2, '0')}:${m}`);
+  return out;
+})();
+function _fillTodSelects() {
+  ['rbTodFrom', 'rbTodTo', 'rsTodFrom', 'rsTodTo'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (!el || el.options.length) return;      // เติมครั้งเดียวพอ ไม่ล้างค่าที่เลือกไว้
+    el.innerHTML = '<option value="">--:--</option>'
+      + _TOD_SLOTS.map((t) => `<option value="${t}">${t}</option>`).join('');
+  });
+}
+// หัวข้อนี้เปิดอยู่ไหม — secs ที่ _rptOpts() คืนมาเป็น Array (null = แสดงครบ)
+// ส่วนฝั่ง template เป็น Set · รับทั้งสองแบบไว้ กันเรียก .has() ผิดชนิดอีก
+function _secOn(secs, key) {
+  if (!secs) return true;
+  return typeof secs.has === 'function' ? secs.has(key) : secs.includes(key);
+}
+function _rptOpts() {
+  const boxes = [...document.querySelectorAll('#rbKpiBar input[data-kpi]')];
+  const secBoxes = [...document.querySelectorAll('#rbSecBar input[data-sec]')];
+  const catBoxes = [...document.querySelectorAll('#rbCatPick input[data-cat]')];
+  const hiddenCats = catBoxes.filter(b => !b.checked).map(b => parseInt(b.dataset.cat, 10));
+  return {
+    // ยังไม่ทันเรนเดอร์กล่องตัวเลือก = แสดงครบทุกใบ (พฤติกรรมเดิม) ไม่ใช่ซ่อนหมด
+    kpis: boxes.length ? boxes.filter(b => b.checked).map(b => b.dataset.kpi) : null,
+    secs: secBoxes.length ? secBoxes.filter(b => b.checked).map(b => b.dataset.sec) : null,
+    catsort: _rptCatSort,
+    // เก็บ "หมวดที่ติ๊กออก" ไม่ใช่ "หมวดที่เลือก" — หมวดที่สร้างใหม่ทีหลังจะได้โผล่
+    // ในรายงานเอง แทนที่จะหายเงียบ ๆ เพราะไม่อยู่ในรายชื่อที่บันทึกไว้
+    // ติ๊กครบ = null จะได้ไม่ต้องพก id ไปกับ URL โดยไม่จำเป็น
+    catsHide: hiddenCats.length ? hiddenCats : null,
+    showDelta: document.getElementById('rbShowDelta')?.checked !== false,
+    showPct: document.getElementById('rbShowPct')?.checked !== false,
+  };
+}
+
+// สร้าง checkbox รายหมวดจากข้อมูลที่โหลดมาจริง — หมวดต่างกันตามไซต์ จึง hardcode ไม่ได้
+// เก็บสิ่งที่เคยติ๊กไว้ข้ามการโหลดใหม่ ถ้าหมวดนั้นยังมีอยู่
+function _rptRenderCatPicker(cats) {
+  const wrap = document.getElementById('rbCatPick');
+  if (!wrap) return;
+  const rows = (cats || []).slice();
+  if (!rows.length) { wrap.innerHTML = ''; return; }
+  const prev = new Set([...wrap.querySelectorAll('input[data-cat]')]
+    .filter(b => b.checked).map(b => parseInt(b.dataset.cat, 10)));
+  const hadAny = wrap.querySelector('input[data-cat]') != null;
+  wrap.innerHTML = rows.map(c => {
+    const on = hadAny ? prev.has(c.id) : true;   // ครั้งแรก = ติ๊กครบ
+    return `<label class="rb-dom"><input type="checkbox" data-cat="${c.id}"${on ? ' checked' : ''}>` +
+      `<span class="rb-dom-dot" style="background:${escapeHtml(c.color || 'var(--accent)')}"></span>` +
+      `<span>${escapeHtml(c.name || '')}</span></label>`;
+  }).join('');
+}
+// ── ชื่อหัวข้อรายงานที่ตั้งเองได้ (เจ้าของสั่ง 2026-09-10) ─────────────────────
+// ค่ากลางทั้งระบบ เก็บที่ system_settings.report_section_titles (migration 224)
+// ชื่อเดียวใช้ 3 ที่: รายการติ๊กหน้านี้ · รายการติ๊กหน้ารายงานอัตโนมัติ · หัวข้อในไฟล์รายงาน
+// เขียนได้เฉพาะ admin (requireAdminForWrites ฝั่ง server) ปุ่มดินสอจึงเป็น .admin-only
+// สองรายการนั้นเป็น HTML คนละก้อนกันมาแต่เดิม (index.html #rbSecBar / #rsSecWrap)
+// จึงเดินหาป้ายจาก DOM แทนการรื้อมาสร้างใหม่ — โค้ดที่อ่าน input สองก้อนนั้นยังมีอยู่
+const _RPT_SEC_LABEL_SEL = '#rbSecBar label.rb-dom, #rsSecWrap label.rb-dom';
+
+function _rptSecKeyOf(label) {
+  const inp = label.querySelector('input[type="checkbox"]');
+  return inp ? (inp.dataset.sec || inp.value || '') : '';
+}
+
+// เขียนชื่อลงป้ายที่มีอยู่ + แปะปุ่มดินสอครั้งแรกที่เรียก
+// ⚠️ ตั้งชื่อเองแล้วต้อง **ถอด data-i18n ออก** ด้วย ไม่งั้น I18N.apply() ตอนสลับภาษา
+//    จะเขียนทับชื่อที่ตั้งเองกลับเป็นค่าเริ่มต้นเงียบ ๆ (คืนค่าเริ่มต้น = ใส่ attribute กลับ)
+function _rptApplySecLabels() {
+  if (typeof ReportTemplate === 'undefined') return;
+  const custom = ReportTemplate.getSectionTitles();
+  document.querySelectorAll(_RPT_SEC_LABEL_SEL).forEach((lb) => {
+    const key = _rptSecKeyOf(lb);
+    const def = ReportTemplate.SECTION_TITLE_DEFS[key];
+    if (!def) return;
+    const span = lb.querySelector('span[data-sec-label], span[data-i18n]');
+    if (!span) return;
+    span.setAttribute('data-sec-label', key);
+    if (custom[key]) {
+      span.removeAttribute('data-i18n');
+      span.textContent = custom[key];
+    } else {
+      span.setAttribute('data-i18n', def.labelKey);
+      span.textContent = I18N.t(def.labelKey);
+    }
+    if (!lb.querySelector('[data-sec-edit]')) {
+      lb.insertAdjacentHTML('beforeend',
+        `<button type="button" class="rb-sec-edit admin-only" data-sec-edit="${escapeHtml(key)}"`
+        + ` title="${escapeHtml(I18N.t('rpt.secRename', 'แก้ชื่อหัวข้อ'))}">`
+        + '<svg aria-hidden="true" width="11" height="11"><use href="#icon-edit"/></svg></button>');
+    }
+  });
+}
+
+async function _rptSaveSecTitles(next) {
+  const r = await fetch(`${API}/api/settings/report_section_titles`, {
+    method: 'PUT', credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ value: JSON.stringify(next) }),
+  });
+  if (!r.ok) {
+    const e = await r.json().catch(() => ({}));
+    showToast({ icon: '!', title: I18N.t('rpt.secRenameFailed', 'บันทึกชื่อหัวข้อไม่สำเร็จ'),
+                sub: e.error || ('HTTP ' + r.status) });
+    return false;
+  }
+  ReportTemplate.setSectionTitles(next);
+  _rptApplySecLabels();
+  return true;
+}
+
+// แก้ชื่อในที่ — เปลี่ยนป้ายเป็นช่องกรอกชั่วคราว Enter=บันทึก Esc=ยกเลิก blur=บันทึก
+// ปุ่มอยู่ใน <label> จึงต้อง preventDefault ตอนคลิก ไม่งั้นไปติ๊ก checkbox แทน
+function _rptEditSecTitle(btn) {
+  const key  = btn.dataset.secEdit;
+  const lb   = btn.closest('label.rb-dom');
+  const span = lb && lb.querySelector('[data-sec-label]');
+  if (!span || lb.querySelector('.rb-sec-input')) return;
+  const inp = document.createElement('input');
+  inp.type = 'text';
+  inp.className = 'rb-sec-input';
+  inp.maxLength = 60;
+  // ตั้งไว้แล้ว = ค่าที่ตั้ง · ยังไม่ตั้ง = หัวข้อที่ออกในรายงานจริง ไม่ใช่ป้ายในรายการติ๊ก
+  // (สองคำนี้ต่างกันมาแต่เดิม สิ่งที่แก้คือหัวข้อในรายงาน จึงต้องโชว์ค่านั้น)
+  inp.value = ReportTemplate.getSectionTitles()[key] || ReportTemplate.secTitle(key);
+  span.style.display = 'none';
+  btn.style.display = 'none';
+  span.insertAdjacentElement('afterend', inp);
+  inp.focus();
+  inp.select();
+
+  let closed = false;
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    inp.remove();
+    span.style.display = '';
+    btn.style.display = '';
+  };
+  const commit = async () => {
+    if (closed) return;
+    const v = inp.value.trim();
+    close();
+    const cur  = ReportTemplate.getSectionTitles();
+    const def  = ReportTemplate.SECTION_TITLE_DEFS[key];
+    // ว่าง หรือ พิมพ์ตรงกับค่าเริ่มต้น = คืนค่าเริ่มต้น (ไม่เก็บ) — เก็บไว้จะทำให้
+    // หัวข้อค้างเป็นภาษาเดียวตลอด ทั้งที่ผู้ใช้ไม่ได้ตั้งใจตั้งชื่อเอง
+    const next = Object.assign({}, cur);
+    if (!v || v === I18N.t(def.titleKey)) delete next[key];
+    else next[key] = v;
+    if (JSON.stringify(next) === JSON.stringify(cur)) return;
+    // ตัวอย่างรายงานวาดใหม่ให้เห็นชื่อใหม่ทันที — ยังไม่เคยกดสร้าง (_reportData ว่าง)
+    // ฟังก์ชันนี้จะคืนค่าออกไปเอง ไม่ต้องเช็คซ้ำที่นี่
+    if (await _rptSaveSecTitles(next)) renderReportPreviewV2();
+  };
+  inp.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); commit(); }
+    else if (e.key === 'Escape') { e.preventDefault(); close(); }
+  });
+  inp.addEventListener('blur', commit);
+  // คลิกในช่องกรอกไม่ควรไปสลับ checkbox ของ label ที่ครอบอยู่
+  inp.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); });
+}
+
+function _rptBindSecTitleEdit() {
+  ['rbSecBar', 'rsSecWrap'].forEach((id) => {
+    document.getElementById(id)?.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-sec-edit]');
+      if (!btn) return;
+      e.preventDefault();
+      e.stopPropagation();
+      _rptEditSecTitle(btn);
+    });
+  });
+}
+
+function _rptBindOptionBars() {
+  document.getElementById('rbKpiBar')?.addEventListener('change', (e) => {
+    if (e.target.matches('input[data-kpi]')) renderReportPreviewV2();
+  });
+  document.getElementById('rbSecBar')?.addEventListener('change', (e) => {
+    if (e.target.matches('input[data-sec]')) renderReportPreviewV2();
+  });
+  // เปลี่ยนจาก segmented 2 ปุ่มเป็น select เมื่อมีตัวเลือกที่ 3 (2026-08-21)
+  document.getElementById('rbCatSortSel')?.addEventListener('change', (e) => {
+    _rptCatSort = e.target.value;
+    renderReportPreviewV2();
+  });
+  document.getElementById('rbCatPick')?.addEventListener('change', (e) => {
+    if (e.target.matches('input[data-cat]')) _rptRefetchFiltered();
+  });
+  document.getElementById('rbShowDelta')?.addEventListener('change', renderReportPreviewV2);
+  document.getElementById('rbShowPct')?.addEventListener('change', renderReportPreviewV2);
+  document.getElementById('rbCatAll')?.addEventListener('click', () => {
+    document.querySelectorAll('#rbCatPick input[data-cat]').forEach(c => { c.checked = true; });
+    _rptRefetchFiltered();
+  });
+  document.getElementById('rbCatNone')?.addEventListener('click', () => {
+    document.querySelectorAll('#rbCatPick input[data-cat]').forEach(c => { c.checked = false; });
+    _rptRefetchFiltered();
+  });
+}
+
+// Helper: read tod_from/tod_to from UI elements, validate, return { from, to } or { error: true }
+// Pass element IDs; if not provided, defaults to manual report IDs (rbTodFrom/rbTodTo)
+function _validateTod(fromElemId = 'rbTodFrom', toElemId = 'rbTodTo') {
+  const todFrom = document.getElementById(fromElemId)?.value || '';
+  const todTo   = document.getElementById(toElemId)?.value || '';
+  // Both empty => no filter
+  if (!todFrom && !todTo) return null;
+  // One empty or from >= to or minutes not 00/30 => error
+  if (!todFrom || !todTo) return { error: true };
+  if (todFrom >= todTo) return { error: true };
+  const timeRegex = /^\d{2}:\d{2}$/;
+  if (!timeRegex.test(todFrom) || !timeRegex.test(todTo)) return { error: true };
+  // Validate minutes are 00 or 30
+  const [hf, mf] = todFrom.split(':');
+  const [ht, mt] = todTo.split(':');
+  if (mf !== '00' && mf !== '30') return { error: true };
+  if (mt !== '00' && mt !== '30') return { error: true };
+  return { from: todFrom, to: todTo };
+}
+
+// Backward-compat wrapper for manual report page
+function _rptTod() {
+  return _validateTod('rbTodFrom', 'rbTodTo');
+}
+
 let _reportData = null;
+let _reportFetchCtx = null;
+let _rptRefetchSeq = 0;
 
 async function updateReportPreview() {
   const range = _computeReportRange();
   if (!range) { alert(I18N.t('rep.pickFullRange')); return; }
+  const tod = _rptTod();
+  if (tod && tod.error) { alert(I18N.t('rep.todInvalid')); return; }
   const title = (document.getElementById('rbTitle')?.value || document.getElementById('reportTitle')?.value) || I18N.t('rep.fallbackTitle');
   const catId = '';
   const camIds = getActiveGroupCameraIds ? getActiveGroupCameraIds() : [];
@@ -255,6 +551,7 @@ async function updateReportPreview() {
   const catParam = '';
   const checked = new Set([...document.querySelectorAll('.rb-domains input:checked')].map(c => c.dataset.dom).filter(Boolean));
   const siteParam = _rptActiveSiteId ? `&site_id=${_rptActiveSiteId}` : '';
+  const todParam = tod ? `&tod_from=${encodeURIComponent(tod.from)}&tod_to=${encodeURIComponent(tod.to)}` : '';
 
   const preview = document.getElementById('reportPreview');
   if (checked.size === 0) {
@@ -264,27 +561,81 @@ async function updateReportPreview() {
   preview.innerHTML = `<div style="text-align:center;padding:80px;color:var(--text-secondary)">${escapeHtml(I18N.t('rep.loadingData'))}</div>`;
 
   try {
-    let cats, tl, brk, ppl, veh, heat, top, quiet, cov, ev;
-    if (checked.has('events')) {
-      [cats, tl, brk, ppl, veh, heat, top, quiet, cov, ev] = await Promise.all([
-        fetch(`${API}/api/stats/categories?from=${fromIso}&to=${toIso}${camParam}${siteParam}`).then(r => r.ok ? r.json() : { categories: [] }),
-        fetch(`${API}/api/stats/timeline-by-category?from=${fromIso}&to=${toIso}${camParam}${siteParam}`).then(r => r.ok ? r.json() : { series: [] }),
-        fetch(`${API}/api/stats/breakdown-v2?from=${fromIso}&to=${toIso}${camParam}${siteParam}`).then(r => r.ok ? r.json() : []),
-        fetch(`${API}/api/stats/per-camera-counts?kind=people&from=${fromIso}&to=${toIso}${camParam}${siteParam}`).then(r => r.ok ? r.json() : { per_camera: [] }),
-        fetch(`${API}/api/stats/per-camera-counts?kind=vehicle&from=${fromIso}&to=${toIso}${camParam}${siteParam}`).then(r => r.ok ? r.json() : { per_camera: [] }),
-        fetch(`${API}/api/stats/heatmap?from=${fromIso}&to=${toIso}${camParam}${catParam}${siteParam}&domains=${[...checked].join(',')}`).then(r => r.ok ? r.json() : { cells: [] }),
-        fetch(`${API}/api/stats/top-rules?from=${fromIso}&to=${toIso}${camParam}${siteParam}&limit=10`).then(r => r.ok ? r.json() : { top: [] }),
-        fetch(`${API}/api/stats/quiet-cameras?since_hours=24${siteParam}`).then(r => r.ok ? r.json() : { cameras: [] }),
-        fetch(`${API}/api/stats/event-coverage?from=${fromIso}&to=${toIso}${camParam}${siteParam}`).then(r => r.ok ? r.json() : null),
-        fetch(`${API}/api/stats/evidence?from=${fromIso}&to=${toIso}${camParam}${siteParam}`).then(r => r.ok ? r.json() : null),
+    // CR.5 — Summary type: compute three time windows and fetch each separately
+    if (_rptBuildType === 'summary') {
+      const anchor = new Date(range.from);  // from is already the anchor (yesterday)
+      const windows = ReportTemplate.summaryWindows(anchor);
+      const anchorLabel = anchor.toLocaleDateString(((typeof I18N !== 'undefined' && I18N.getLang()) || 'th') === 'th' ? 'th-TH' : 'en-GB');
+      const todLabel = tod ? `${tod.from} – ${tod.to}` : '';
+
+      const [dayData, weekData, monthData, weekTl] = await Promise.all([
+        fetch(`${API}/api/stats/categories?from=${windows.day.from}&to=${windows.day.to}${camParam}${siteParam}${todParam}`).then(r => r.ok ? r.json() : { categories: [] }),
+        fetch(`${API}/api/stats/categories?from=${windows.week.from}&to=${windows.week.to}${camParam}${siteParam}${todParam}`).then(r => r.ok ? r.json() : { categories: [] }),
+        fetch(`${API}/api/stats/categories?from=${windows.month.from}&to=${windows.month.to}${camParam}${siteParam}${todParam}`).then(r => r.ok ? r.json() : { categories: [] }),
+        fetch(`${API}/api/stats/timeline-by-category?from=${windows.week.from}&to=${windows.week.to}${camParam}${siteParam}${todParam}`).then(r => r.ok ? r.json() : { series: [], buckets: [] }),
       ]);
+
+      const monthLabel = new Date(windows.month.from).toLocaleDateString(
+        ((typeof I18N !== 'undefined' && I18N.getLang()) || 'th') === 'th' ? 'th-TH' : 'en-GB',
+        { month: 'long', year: 'numeric' });
+      const sum = { anchorLabel, todLabel, monthLabel, title,
+                    day: dayData, week: weekData, month: monthData, tl: weekTl };
+      _reportData = { range, title, summaryMode: true, sum, domains: checked };
+      _reportFetchCtx = { fromIso, toIso, camParam, siteParam, todParam, domains: [...checked].join(',') };
+    } else {
+      // top-rules ถูกถอดออก 2026-08-21 — หัวข้อ "Rule ที่ทำงานบ่อยสุด" ไม่มีในรายงานแล้ว
+      // per-camera-counts ถูกถอดออก 2026-08-21 — ดูหมายเหตุใน report-template.js
+      let cats, tl, brk, heat, quiet, cov, ev, daily7Tl = null, monthlyTl = null;
+
+      // CR.8 — Check if daily7 or monthly sections are enabled
+      const opts = _rptOpts();
+      // ⚠️ _rptOpts() คืน secs เป็น **Array** (ไม่ใช่ Set — Set มีเฉพาะฝั่ง
+      //    normalizeOpts ของ template) · เรียก .has() ตรง ๆ = TypeError ทั้งหน้า
+      const wantDaily7 = _secOn(opts.secs, 'daily7');
+      const wantMonthly = _secOn(opts.secs, 'monthly');
+
+      // Compute windows for daily7 and monthly if needed
+      let daily7Windows = null, monthlyWindows = null;
+      if (wantDaily7 || wantMonthly) {
+        const toDate = new Date(range.to);
+        const anchorDate = new Date(toDate);
+        anchorDate.setHours(0, 0, 0, 0);
+        const windows = ReportTemplate.dailyWindows(anchorDate);
+        daily7Windows = windows.daily7;
+        monthlyWindows = windows.monthly;
+      }
+
+      const makeTlQ = (fromIso, toIso) => `from=${encodeURIComponent(fromIso)}&to=${encodeURIComponent(toIso)}${camParam}${siteParam}${todParam}`;
+
+      if (checked.has('events')) {
+        [cats, tl, brk, heat, quiet, cov, ev, daily7Tl, monthlyTl] = await Promise.all([
+          fetch(`${API}/api/stats/categories?from=${fromIso}&to=${toIso}${camParam}${siteParam}${todParam}`).then(r => r.ok ? r.json() : { categories: [] }),
+          fetch(`${API}/api/stats/timeline-by-category?from=${fromIso}&to=${toIso}${camParam}${siteParam}${todParam}`).then(r => r.ok ? r.json() : { series: [] }),
+          fetch(`${API}/api/stats/breakdown-v2?from=${fromIso}&to=${toIso}${camParam}${siteParam}${todParam}`).then(r => r.ok ? r.json() : []),
+          fetch(`${API}/api/stats/heatmap?from=${fromIso}&to=${toIso}${camParam}${catParam}${siteParam}&domains=${[...checked].join(',')}${todParam}`).then(r => r.ok ? r.json() : { cells: [] }),
+          fetch(`${API}/api/stats/quiet-cameras?since_hours=24${siteParam}`).then(r => r.ok ? r.json() : { cameras: [] }),
+          // cov/ev ไม่ได้แสดงแล้ว (report-template E3) — เลิกดึง event-coverage/evidence ที่หนักและถ่วงทั้งรายงาน (audit · D9)
+          Promise.resolve(null),
+          Promise.resolve(null),
+          checked.has('events') && wantDaily7 ? fetch(`${API}/api/stats/timeline-by-category?${makeTlQ(daily7Windows.from, daily7Windows.to)}`).then(r => r.ok ? r.json() : { series: [] }) : Promise.resolve(null),
+          checked.has('events') && wantMonthly ? fetch(`${API}/api/stats/timeline-by-category?${makeTlQ(monthlyWindows.from, monthlyWindows.to)}`).then(r => r.ok ? r.json() : { series: [] }) : Promise.resolve(null),
+        ]);
+      }
+      const [faceData, lprData, personData] = await Promise.all([
+        checked.has('face')   ? fetch(`${API}/api/stats/face/report?period=custom&from=${fromIso}&to=${toIso}&min_score=80${siteParam}`, { cache: 'no-store' }).then(r => r.ok ? r.json() : null).catch(() => null) : Promise.resolve(null),
+        checked.has('lpr')    ? fetch(`${API}/api/stats/lpr/report?period=custom&from=${fromIso}&to=${toIso}${siteParam}`, { cache: 'no-store' }).then(r => r.ok ? r.json() : null).catch(() => null) : Promise.resolve(null),
+        checked.has('person') ? fetch(`${API}/api/appearances/stats?from=${fromIso}&to=${toIso}${siteParam}`, { cache: 'no-store' }).then(r => r.ok ? r.json() : null).catch(() => null) : Promise.resolve(null),
+      ]);
+      _reportData = { range, title, cats, tl, brk, heat, quiet, cov, ev, domains: checked, faceData, lprData, personData, daily7Tl, monthlyTl, daily7Windows, monthlyWindows };
+      // เก็บพารามิเตอร์ไว้ เพราะ /breakdown-v2 กับ /heatmap กรองหมวดที่ SQL
+      // (แถวที่คืนมาไม่มี category_id ให้กรองฝั่ง client) พอผู้ใช้ติ๊กหมวดออก
+      // จึงต้องดึงสองตัวนี้ใหม่ ไม่งั้นหน้าจอจะไม่ตรงกับ PDF/PNG ที่ส่งออกไป
+      _reportFetchCtx = { fromIso, toIso, camParam, siteParam, todParam, domains: [...checked].join(',') };
     }
-    const [faceData, lprData, personData] = await Promise.all([
-      checked.has('face')   ? fetch(`${API}/api/stats/face/report?period=custom&from=${fromIso}&to=${toIso}&min_score=80${siteParam}`, { cache: 'no-store' }).then(r => r.ok ? r.json() : null).catch(() => null) : Promise.resolve(null),
-      checked.has('lpr')    ? fetch(`${API}/api/stats/lpr/report?period=custom&from=${fromIso}&to=${toIso}${siteParam}`, { cache: 'no-store' }).then(r => r.ok ? r.json() : null).catch(() => null) : Promise.resolve(null),
-      checked.has('person') ? fetch(`${API}/api/appearances/stats?from=${fromIso}&to=${toIso}${siteParam}`, { cache: 'no-store' }).then(r => r.ok ? r.json() : null).catch(() => null) : Promise.resolve(null),
-    ]);
-    _reportData = { range, title, cats, tl, brk, ppl, veh, heat, top, quiet, cov, ev, domains: checked, faceData, lprData, personData };
+    // เก็บพารามิเตอร์ไว้ เพราะ /breakdown-v2 กับ /heatmap กรองหมวดที่ SQL
+    // (แถวที่คืนมาไม่มี category_id ให้กรองฝั่ง client) พอผู้ใช้ติ๊กหมวดออก
+    // จึงต้องดึงสองตัวนี้ใหม่ ไม่งั้นหน้าจอจะไม่ตรงกับ PDF/PNG ที่ส่งออกไป
+    _reportFetchCtx = { fromIso, toIso, camParam, siteParam, todParam, domains: [...checked].join(',') };
     renderReportPreviewV2();
     // Mobile UX — once the preview lands, scroll the user to it.
     // Otherwise the form sidebar (stacked above the preview on phones)
@@ -317,6 +668,28 @@ async function initReportCategoryFilter() {
 // (window.ReportTemplate) — used by BOTH this interactive page and the
 // Puppeteer print page (report-print.html) so the "full" scheduled image
 // is byte-for-byte the same report. See Phase 7.3.
+// ดึง brk/heat ใหม่ตามหมวดที่ซ่อน แล้วค่อยวาด — ใช้ seq กันผลลัพธ์เก่ามาทับผลใหม่
+// เมื่อผู้ใช้คลิกรัว ๆ (คำขอที่ยิงก่อนอาจกลับมาทีหลัง)
+async function _rptRefetchFiltered() {
+  const c = _reportFetchCtx;
+  if (!c || !_reportData) { renderReportPreviewV2(); return; }
+  const hide = _rptOpts().catsHide;
+  const hideQ = hide && hide.length ? `&cats_hide=${hide.join(',')}` : '';
+  const seq = ++_rptRefetchSeq;
+  try {
+    const [brk, heat] = await Promise.all([
+      fetch(`${API}/api/stats/breakdown-v2?from=${c.fromIso}&to=${c.toIso}${c.camParam}${c.siteParam}${hideQ}${c.todParam || ''}`)
+        .then(r => r.ok ? r.json() : []),
+      fetch(`${API}/api/stats/heatmap?from=${c.fromIso}&to=${c.toIso}${c.camParam}${c.siteParam}${hideQ}&domains=${c.domains}${c.todParam || ''}`)
+        .then(r => r.ok ? r.json() : { cells: [] }),
+    ]);
+    if (seq !== _rptRefetchSeq) return;      // มีคำขอใหม่กว่าแล้ว ทิ้งผลนี้
+    _reportData.brk = brk;
+    _reportData.heat = heat;
+  } catch { /* ดึงไม่ได้ก็วาดด้วยของเดิม ดีกว่าหน้าว่าง */ }
+  renderReportPreviewV2();
+}
+
 function renderReportPreviewV2() {
   const d = _reportData;
   if (!d) return;
@@ -325,17 +698,70 @@ function renderReportPreviewV2() {
     preview.innerHTML = '<div style="padding:40px;color:#c00">report-template.js not loaded</div>';
     return;
   }
+
+  // CR.5 — Summary report render path
+  if (d.summaryMode && d.sum) {
+    preview.innerHTML = ReportTemplate.buildSummaryHtml(d.sum, _brand, _rptOpts());
+    ReportTemplate.renderShareChart('summaryShareChart', d.sum.day.categories || [], 'count', _rptOpts().showPct);
+    ReportTemplate.renderSummaryTrendChart('summaryTrendChart', d.sum.tl);
+    return;
+  }
+
   if (!d.domains || d.domains.has('events')) {
-    preview.innerHTML = ReportTemplate.buildReportHtml(d, _brand);
-    const t = ReportTemplate.computeTrendPoints(d);
-    if (t.points.length) ReportTemplate.renderReportTrendChart('reportTrendChart', t.points, t.trunc, _brand && _brand.primary_color);
-    ReportTemplate.renderCategoryChart('reportCategoryChart', (d.cats && d.cats.categories) || []);
+    // ตัวเลือกหมวดสร้างจากข้อมูล **ก่อนกรอง** เสมอ ไม่งั้นพอติ๊กออกไปแล้วมันจะหายจาก
+    // รายการ กลับมาติ๊กคืนไม่ได้อีก
+    _rptRenderCatPicker((d.cats && d.cats.categories) || []);
+    const opts = _rptOpts();
+    // กรองที่ข้อมูลก่อนวาด เหมือน report-print.js เป๊ะ ๆ — หน้าจอกับ PDF จึงตรงกัน
+    const dv = ReportTemplate.hideCats(d, opts.catsHide);
+
+    // CR.8 — Build daily7 and monthly data objects (filtered by category)
+    if (!_secOn(opts.secs, 'daily7') && !_secOn(opts.secs, 'monthly')) {
+      // Both off, skip
+    } else {
+      // ⚠️ hideCats ต้องได้ `cats` จริงของรายงาน — timeline endpoint ไม่มี .categories
+      //    ถ้าส่ง [] ไป มันจะคืนของเดิมทั้งชุด = หมวดที่ติ๊กออกยังถูกนับในสองกราฟนี้
+      if (d.daily7Tl && d.daily7Windows && _secOn(opts.secs, 'daily7')) {
+        const d7Filtered = ReportTemplate.hideCats({ cats: d.cats, tl: { series: d.daily7Tl.series || [], trunc: 'day' } }, opts.catsHide);
+        const d7 = ReportTemplate.dailySeries(d7Filtered.tl, new Date(d.daily7Windows.from), new Date(d.daily7Windows.to));
+        dv.daily7 = { from: d7.days[0] || '', to: d7.days[d7.days.length - 1] || '', prepared: d7 };
+      }
+      if (d.monthlyTl && d.monthlyWindows && _secOn(opts.secs, 'monthly')) {
+        const mFiltered = ReportTemplate.hideCats({ cats: d.cats, tl: { series: d.monthlyTl.series || [], trunc: 'day' } }, opts.catsHide);
+        const mPrep = ReportTemplate.dailySeries(mFiltered.tl, new Date(d.monthlyWindows.from), new Date(d.monthlyWindows.to));
+        const monthDate = new Date(d.monthlyWindows.from);
+        const monthLabel = monthDate.toLocaleDateString(((typeof I18N !== 'undefined' && I18N.getLang()) || 'th') === 'th' ? 'th-TH' : 'en-GB', { month: 'short', year: 'numeric' });
+        dv.monthly = {
+          from: mPrep.days[0] || '',
+          to:   mPrep.days[mPrep.days.length - 1] || '',
+          monthLabel,
+          prepared: mPrep,
+        };
+      }
+    }
+
+    const catsShown = (dv.cats && dv.cats.categories) || [];
+    preview.innerHTML = ReportTemplate.buildReportHtml(dv, _brand, opts);
+    const t = ReportTemplate.computeTrendPoints(dv);
+    if (t.points.length) ReportTemplate.renderReportTrendChart('reportTrendChart', dv, _brand && _brand.primary_color);
+    ReportTemplate.renderCategoryChart('reportCategoryChart', catsShown, opts.catsort);
+    // วงในบล็อกหมวดหมู่ = แยก IN/OUT (merge=false) · วงในบล็อก "สัดส่วน" = รวม IN/OUT
+    ReportTemplate.renderShareChart('reportCatShareChart', catsShown, opts.catsort, opts.showPct, false);
+    ReportTemplate.renderShareChart('reportShareChart', catsShown, opts.catsort, opts.showPct);
+    // CR.8 — Render daily7 and monthly bar charts
+    if (dv.daily7) {
+      ReportTemplate.renderDailyBarChart('reportDaily7Chart', dv.daily7.prepared, { labelMode: 'dow' });
+    }
+    if (dv.monthly) {
+      ReportTemplate.renderDailyBarChart('reportMonthlyChart', dv.monthly.prepared, { labelMode: 'day' });
+    }
   } else {
     preview.innerHTML = '';
   }
   if (d.faceData)   preview.insertAdjacentHTML('beforeend', ReportTemplate.buildFaceSection(d.faceData));
   if (d.lprData)    preview.insertAdjacentHTML('beforeend', ReportTemplate.buildLprSection(d.lprData));
   if (d.personData) preview.insertAdjacentHTML('beforeend', ReportTemplate.buildPersonSection(d.personData));
+  else if (d.domains?.has?.('person')) preview.insertAdjacentHTML('beforeend', ReportTemplate.buildPersonUnavailable());
 }
 
 
@@ -345,6 +771,19 @@ function renderReportPreviewV2() {
 // interactive report, uses Chromium's real paginator (no mid-element
 // cuts on long weekly/monthly reports), and respects 8mm A4 margins.
 // The old html2canvas+jsPDF white-rect approach is gone.
+// PNG or PDF — same report, same print page, one download path. The format
+// toggle sets this; the button label follows it.
+let _rbFmt = 'pdf';
+
+function _rbSetFmt(fmt) {
+  _rbFmt = fmt === 'image' ? 'image' : 'pdf';
+  document.querySelectorAll('#rbFmtBar button').forEach(b =>
+    b.classList.toggle('active', b.dataset.rfmt === _rbFmt));
+  const lbl = document.getElementById('rbDownloadLabel');
+  if (lbl) lbl.textContent = _rbFmt === 'pdf' ? I18N.t('rep.btnPdf', 'ดาวน์โหลด PDF')
+                                              : I18N.t('rpt.downloadPng', 'ดาวน์โหลด PNG');
+}
+
 async function downloadPDF() {
   if (!_reportData) { alert(I18N.t('rep.loadDataFirst')); return; }
   const btn = document.activeElement;
@@ -363,10 +802,30 @@ async function downloadPDF() {
       download: '1',
       domains,
     });
+    // CR.5 — summary reports need anchor date for the print page to compute windows
+    if (r.type === 'summary' && _reportData.summaryMode) {
+      const anchor = new Date(r.from);
+      qp.set('anchor', anchor.toISOString());
+      qp.set('rtype', 'summary');
+    }
     if (camIds && camIds.length) qp.set('cameras', camIds.join(','));
     if (_rptActiveSiteId) qp.set('site_id', _rptActiveSiteId);
+    const tod = _rptTod();
+    if (tod && !tod.error) {
+      qp.set('tod_from', tod.from);
+      qp.set('tod_to', tod.to);
+    }
+    // ไฟล์ที่โหลดต้องหน้าตาเหมือนที่เห็นบนจอ — ถ้าไม่ส่งไปด้วย PDF จะกลับไปเป็นค่าเริ่มต้น
+    const dlOpts = _rptOpts();
+    if (dlOpts.kpis) qp.set('kpis', dlOpts.kpis.join(','));
+    if (dlOpts.secs) qp.set('secs', dlOpts.secs.join(','));
+    qp.set('catsort', dlOpts.catsort);
+    if (dlOpts.catsHide) qp.set('cats_hide', dlOpts.catsHide.join(','));
+    if (!dlOpts.showDelta) qp.set('showDelta', 'false');
+    if (!dlOpts.showPct) qp.set('showPct', 'false');
 
-    const res = await fetch(`${API}/api/reports/pdf?${qp}`, { cache: 'no-store' });
+    const isPng = _rbFmt === 'image';
+    const res = await fetch(`${API}/api/reports/${isPng ? 'image' : 'pdf'}?${qp}`, { cache: 'no-store' });
     if (!res.ok) {
       let body = ''; try { body = (await res.text()).slice(0, 200); } catch {}
       throw new Error(`HTTP ${res.status}${body ? ' · ' + body : ''}`);
@@ -377,7 +836,7 @@ async function downloadPDF() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${(_brand?.name || 'vigil').toLowerCase().replace(/\s+/g,'-')}-report-${r.type || 'custom'}-${stamp}.pdf`;
+    a.download = `${(_brand?.name || 'vigil').toLowerCase().replace(/\s+/g,'-')}-report-${r.type || 'custom'}-${stamp}.${isPng ? 'png' : 'pdf'}`;
     document.body.appendChild(a); a.click();
     setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1000);
   } catch (e) {
@@ -397,19 +856,26 @@ const _RS_TYPE_LABEL = {
   daily:   I18N.t('rs.typeDaily'),
   weekly:  I18N.t('rs.typeWeekly'),
   monthly: I18N.t('rs.typeMonthly'),
+  summary: I18N.t('rs.typeSummary'),
   health:  I18N.t('hr.typeHealth'),
+  manual:  I18N.t('rs.typeManual'),
 };
 const _RS_LAYOUT_LABEL = {
   compact: I18N.t('rs.layoutCompact'),
   full:    I18N.t('rs.layoutFull'),
 };
 let _rsRecipients = [];   // LINE recipient roster (from /api/line-config)
+let _rsTelegramChats = [];    // T5: approved Telegram chats (from /api/telegram-config)
+let _rsTelegramLoaded = false; // true only when that fetch actually succeeded — saveReportSchedule
+                                // must not send telegram_chat_ids (and wipe the stored value) on a
+                                // failed load, so it needs to tell "empty roster" from "didn't load"
 const _rsRowMap = new Map(); // id → schedule row (avoids JSON in onclick attrs)
 
 function openReportScheduleModal() {
   document.getElementById('reportScheduleModal').classList.remove('hidden');
   resetReportScheduleForm();
   loadReportScheduleRecipients();
+  loadReportScheduleTelegramChats();
   loadReportSchedules();
 }
 function closeReportScheduleModal() {
@@ -426,14 +892,29 @@ function resetReportScheduleForm() {
   _rsRenderDayOfMonthChips('');
   // reset health sections — all checked by default
   document.querySelectorAll('.hrSecCheck').forEach(c => { c.checked = true; });
+  // analytics option set — same defaults as the interactive form
+  document.querySelectorAll('.rsDomCheck').forEach(c => { c.checked = (c.value === 'events'); });
+  document.querySelectorAll('.rsKpiCheck').forEach(c => { c.checked = true; });
+  document.querySelectorAll('.rsSecCheck').forEach(c => { c.checked = true; });
+  document.getElementById('rsCatSort').value = 'count';
+  document.getElementById('rsShowDelta').checked = true;
+  document.getElementById('rsShowPct').checked = true;
+  document.getElementById('rsTitle').value = '';
+  // Reset time-of-day window
+  document.getElementById('rsTodFrom').value = '';
+  document.getElementById('rsTodTo').value = '';
   _rsToggleTypeFields();
   _rsRenderRecipientsChecklist([]);
+  _rsRenderTelegramChecklist([]);
+  _rsRenderSiteSelect('');
+  _rsLoadCatPicker('', null, null);    // ตารางใหม่ = ทุกหมวด
 }
 
 // R4: show day-of-week select for (family='health') OR (family!='health' AND type='weekly')
 // day-of-month chips for (family!='health' AND type='monthly')
 // health sections only for family='health'
 // layout only for family='analytics'
+// analytics option set only for family='analytics'
 // rsTypeGroup hidden when family='health' (no cadence needed)
 // Wired to rsFamily.onchange + rsType.onchange + called from resetReportScheduleForm and editReportSchedule.
 function _rsToggleTypeFields() {
@@ -444,6 +925,7 @@ function _rsToggleTypeFields() {
   const domEl     = document.getElementById('rsDayOfMonthGroup');
   const healthEl  = document.getElementById('rsHealthSectionsGroup');
   const layoutEl  = document.getElementById('rsLayoutGroup');
+  const analyticsOptsEl = document.getElementById('rsAnalyticsOptsGroup');
 
   const isHealthFamily = family === 'health';
 
@@ -461,6 +943,25 @@ function _rsToggleTypeFields() {
 
   // layout: only for analytics family
   if (layoutEl) layoutEl.style.display = family === 'analytics' ? '' : 'none';
+
+  // analytics option set: only for analytics family
+  if (analyticsOptsEl) analyticsOptsEl.style.display = family === 'analytics' ? '' : 'none';
+
+  // domains visibility: hide when analytics family + compact layout (compact shows events only).
+  // 2026-08-23 — domain checkboxes meaningless in compact, show hint instead.
+  const isAnalyticsFamily = family === 'analytics';
+  const layout = document.getElementById('rsLayout').value;
+  const domainsWrapEl = document.getElementById('rsDomainsWrap');
+  const domainsNoteEl = document.getElementById('rsDomainsCompactNote');
+  const hideDomainsInCompact = isAnalyticsFamily && layout === 'compact';
+  if (domainsWrapEl) domainsWrapEl.style.display = hideDomainsInCompact ? 'none' : '';
+  if (domainsNoteEl) domainsNoteEl.style.display = hideDomainsInCompact ? 'block' : 'none';
+
+  // รายงานสรุปมีเทมเพลตของตัวเอง — ซ่อนตัวเลือกที่ไม่มีผลกับมัน (ต้องมาหลังทุกบรรทัด
+  // ข้างบน ไม่งั้นโดนเปิดกลับ) · ตัวโน้ตของ layout ก็ต้องหายไปด้วยเพราะ layout ถูกซ่อน
+  const isSummaryType = isAnalyticsFamily && t === 'summary';
+  _rptToggleSummaryFields('schedule', isSummaryType);
+  if (isSummaryType && domainsNoteEl) domainsNoteEl.style.display = 'none';
 }
 
 // Chip grid for day-of-month picker (1..31 + "วันสุดท้าย"). Multi-select
@@ -510,6 +1011,88 @@ function _rsRenderRecipientsChecklist(selectedIds) {
     </label>`).join('');
 }
 
+// T5: Telegram chat roster — only chats already approved in the Telegram Config
+// page show up here (same source /api/telegram-config uses for its own list).
+// Admin/auditor-only endpoint — a non-OK response (not connected, no permission)
+// is treated the same as "not connected": disable the checklist, show the hint.
+let _rsTelegramConnected = false; // cfg.enabled && cfg.has_token — "connected", not just "fetch worked"
+async function loadReportScheduleTelegramChats() {
+  _rsTelegramLoaded = false;
+  _rsTelegramConnected = false;
+  try {
+    const r = await fetch(`${API}/api/telegram-config`);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const cfg = await r.json();
+    _rsTelegramChats = Array.isArray(cfg.chats) ? cfg.chats : [];
+    _rsTelegramConnected = !!(cfg.enabled && cfg.has_token);
+    _rsTelegramLoaded = true;
+  } catch { _rsTelegramChats = []; _rsTelegramLoaded = false; }
+  // แก้ race: กดแก้ตารางก่อนคำขอนี้ตอบกลับ → re-render ด้วย [] จะไปล้างติ๊กที่
+  // editReportSchedule เพิ่งตั้งไว้ · อ่านค่าที่บันทึกไว้ของตารางที่กำลังแก้อยู่แทน
+  // (rsId ว่าง = ฟอร์มใหม่ ไม่มีอะไรให้กู้คืนอยู่แล้ว)
+  const rsId = document.getElementById('rsId')?.value;
+  const cur = rsId ? _rsRowMap.get(Number(rsId)) : null;
+  _rsRenderTelegramChecklist(Array.isArray(cur?.telegram_chat_ids) ? cur.telegram_chat_ids : []);
+}
+function _rsRenderTelegramChecklist(selectedIds) {
+  const el = document.getElementById('rsTelegramChecklist');
+  const hint = document.getElementById('rsTelegramHint');
+  if (!el) return;
+  if (!_rsTelegramLoaded) {
+    el.innerHTML = '';
+    el.style.display = 'none';
+    if (hint) hint.style.display = '';
+    return;
+  }
+  el.style.display = '';
+  // เชื่อมต่อ (bot token + enabled) แต่ไม่มีแชทที่อนุมัติเลย ≠ "ยังไม่ได้เชื่อมต่อ" —
+  // ข้อความคนละอย่าง คนละทางแก้ (ไปอนุมัติแชท vs ไปตั้งค่าบอทก่อน)
+  if (!_rsTelegramConnected) {
+    if (hint) hint.style.display = '';
+    if (!_rsTelegramChats.length) { el.innerHTML = ''; return; }
+  } else if (hint) { hint.style.display = 'none'; }
+  if (_rsTelegramConnected && !_rsTelegramChats.length) {
+    el.innerHTML = `<span style="color:var(--text-secondary)">${escapeHtml(I18N.t('rs.noTelegramChats'))}</span>`;
+    return;
+  }
+  const sel = selectedIds.map(String);
+  const dis = _rsTelegramConnected ? '' : 'disabled';
+  el.innerHTML = _rsTelegramChats.map(c => `
+    <label style="display:flex;align-items:center;gap:6px;padding:3px 0;cursor:${_rsTelegramConnected ? 'pointer' : 'default'}">
+      <input type="checkbox" class="rsTelegramCheck" value="${escapeHtml(String(c.chat_id))}" ${sel.includes(String(c.chat_id)) ? 'checked' : ''} ${dis}>
+      <span>${escapeHtml(c.name || String(c.chat_id))}</span>
+    </label>`).join('');
+}
+
+// Site picker for the schedule form. site_id has been stored on report_schedules
+// (migration 070) and honoured by the worker since then, but the form never sent
+// it — so every schedule was NULL, i.e. "all sites", no matter which site pill
+// the operator had active when they saved it.
+function _rsRenderSiteSelect(selectedId) {
+  const grp = document.getElementById('rsSiteGroup');
+  const sel = document.getElementById('rsSite');
+  if (!grp || !sel) return;
+  // Single-site install has nothing to choose — hide the control rather than
+  // showing a dropdown with one option.
+  // Site Admin: ตารางรายงานต้องผูก Site ของตัวเองเสมอ (ไม่มี "ทุก Site" — เซิร์ฟเวอร์ปฏิเสธ) จึงแสดงเสมอแม้มี Site เดียว
+  const sa = currentUser?.role === 'site_admin';
+  if (!sa && (!Array.isArray(_rptSites) || _rptSites.length < 2)) { grp.style.display = 'none'; return; }
+  grp.style.display = '';
+  sel.innerHTML = (sa ? '' : `<option value="">${escapeHtml(I18N.t('rs.siteAll'))}</option>`) +
+    (_rptSites || []).map(s => `<option value="${escapeHtml(String(s.id))}">${escapeHtml(s.name)}</option>`).join('');
+  sel.value = selectedId ? String(selectedId) : (sa ? String((_rptSites || [])[0]?.id ?? '') : '');
+  _rsUpdateSiteHint();
+}
+
+function _rsUpdateSiteHint() {
+  const sel  = document.getElementById('rsSite');
+  const hint = document.getElementById('rsSiteHint');
+  if (!sel || !hint) return;
+  const site = _rptSites.find(s => String(s.id) === sel.value);
+  const n = site ? (site.camera_count ?? null) : null;
+  hint.style.display = (n === 0) ? '' : 'none';
+}
+
 async function loadReportSchedules() {
   const el = document.getElementById('rsList');
   try {
@@ -522,6 +1105,12 @@ async function loadReportSchedules() {
   }
 }
 
+function _rsSiteName(id) {
+  if (!id) return I18N.t('rs.siteAll');
+  const s = (_rptSites || []).find(x => String(x.id) === String(id));
+  return s ? s.name : `#${id}`;
+}
+
 function renderReportSchedules(list) {
   const el = document.getElementById('rsList');
   _rsRowMap.clear();
@@ -532,7 +1121,7 @@ function renderReportSchedules(list) {
   }
   const dowLabel = I18N.t('stats.dowShort').split(',');
   function _formatDayCell(s) {
-    if (s.report_type === 'daily') return `<span style="color:var(--text-secondary)">${escapeHtml(I18N.t('rs.everyDay'))}</span>`;
+    if (s.report_type === 'daily' || s.report_type === 'summary') return `<span style="color:var(--text-secondary)">${escapeHtml(I18N.t('rs.everyDay'))}</span>`;
     if (s.report_type === 'weekly') {
       const d = s.send_day_of_week;
       if (d === null || d === undefined) return `<span style="color:var(--warn)" title="${escapeHtml(I18N.t('rs.everyDayWarnTipW'))}">${escapeHtml(I18N.t('rs.everyDayWarn'))}</span>`;
@@ -550,7 +1139,7 @@ function renderReportSchedules(list) {
   el.innerHTML =
     `<thead><tr>
        <th style="text-align:left">${escapeHtml(I18N.t('rs.fldType'))}</th><th>${escapeHtml(I18N.t('evt.colTime'))}</th><th>${escapeHtml(I18N.t('rs.colSendDay'))}</th>
-       <th>${escapeHtml(I18N.t('rs.fldLayout'))}</th><th>${escapeHtml(I18N.t('rs.colStatus'))}</th>
+       <th>${escapeHtml(I18N.t('rs.fldLayout'))}</th><th>${escapeHtml(I18N.t('rs.colSite'))}</th><th>${escapeHtml(I18N.t('rs.colStatus'))}</th>
        <th>${escapeHtml(I18N.t('rs.colLastRun'))}</th><th></th>
      </tr></thead><tbody>` +
     list.map(s => {
@@ -566,6 +1155,7 @@ function renderReportSchedules(list) {
         <td style="text-align:center">${String(s.send_time).slice(0,5)}</td>
         <td style="text-align:center;font-size:11px">${_formatDayCell(s)}</td>
         <td style="text-align:center">${_RS_LAYOUT_LABEL[s.image_layout] || s.image_layout}</td>
+        <td style="text-align:center;font-size:11px">${escapeHtml(_rsSiteName(s.site_id))}</td>
         <td style="text-align:center">${s.enabled ? escapeHtml(I18N.t('rs.enabledOn')) : escapeHtml(I18N.t('rs.enabledOff'))}</td>
         <td style="text-align:center;font-size:11px">${lastRun}<br>${statusBadge}</td>
         <td style="text-align:right;white-space:nowrap">
@@ -595,9 +1185,65 @@ function editReportSchedule(id) {
   document.querySelectorAll('.hrSecCheck').forEach(c => {
     c.checked = savedSections ? savedSections.has(c.value) : true;
   });
+  // restore the analytics option set — legacy rows fall back to the old defaults
+  const savedAnalyticsOpts = _normalizeAnalyticsOptsForUi(s.section_config);
+  const domainsSet = savedAnalyticsOpts?.domains;
+  const kpisSet = savedAnalyticsOpts?.kpis;
+  const secsSet = savedAnalyticsOpts?.secs;
+  document.querySelectorAll('.rsDomCheck').forEach(c => {
+    c.checked = domainsSet ? domainsSet.has(c.value) : (c.value === 'events');
+  });
+  document.querySelectorAll('.rsKpiCheck').forEach(c => {
+    c.checked = kpisSet ? kpisSet.has(c.value) : true;
+  });
+  document.querySelectorAll('.rsSecCheck').forEach(c => {
+    c.checked = secsSet ? secsSet.has(c.value) : true;
+  });
+  document.getElementById('rsShowDelta').checked = savedAnalyticsOpts?.showDelta !== false;
+  document.getElementById('rsShowPct').checked = savedAnalyticsOpts?.showPct !== false;
+  // รายการหมวดต้องโหลดตาม SITE ของตารางนี้ แล้วค่อยติ๊กตามที่บันทึกไว้
+  _rsLoadCatPicker(s.site_id, savedAnalyticsOpts?.catsHide || null,
+                   savedAnalyticsOpts?.catsShownLegacy || null);
+  document.getElementById('rsCatSort').value = savedAnalyticsOpts?.catsort || 'count';
+  document.getElementById('rsTitle').value = savedAnalyticsOpts?.title || '';
+  // Restore time-of-day window (CR.2, 2026-09-03)
+  const savedTod = savedAnalyticsOpts?.tod;
+  document.getElementById('rsTodFrom').value = savedTod?.from || '';
+  document.getElementById('rsTodTo').value = savedTod?.to || '';
   _rsToggleTypeFields();
   const sel = String(s.recipients || '').split(',').map(x => x.trim()).filter(Boolean);
   _rsRenderRecipientsChecklist(sel);
+  _rsRenderTelegramChecklist(Array.isArray(s.telegram_chat_ids) ? s.telegram_chat_ids : []);
+  _rsRenderSiteSelect(s.site_id || '');
+}
+
+// รายการหมวดของฟอร์มตั้งเวลา — ต้องดึงตาม SITE ที่เลือก เพราะหมวดเป็นของราย Site
+// (ดู event_categories.site_id) · ช่วงเวลาใช้ 7 วันล่าสุดเพียงเพื่อ "ให้ได้รายชื่อหมวด"
+// ไม่ได้เอาตัวเลข จึงไม่ต้องตรงกับช่วงที่รายงานจริงจะใช้
+async function _rsLoadCatPicker(siteId, hidden, shownLegacy) {
+  const wrap = document.getElementById('rsCatPick');
+  if (!wrap) return;
+  wrap.innerHTML = `<div style="font-size:11px;color:var(--text-secondary)">${escapeHtml(I18N.t('rs.catLoading'))}</div>`;
+  const to = new Date(), from = new Date(Date.now() - 7 * 86400e3);
+  const siteQ = siteId ? `&site_id=${encodeURIComponent(siteId)}` : '';
+  let rows = [];
+  try {
+    const r = await fetch(`${API}/api/stats/categories?from=${from.toISOString()}&to=${to.toISOString()}${siteQ}`);
+    if (r.ok) rows = (await r.json()).categories || [];
+  } catch { /* ปล่อยว่างไว้ = ถือว่าไม่กรอง */ }
+  if (!rows.length) {
+    wrap.innerHTML = `<div style="font-size:11px;color:var(--text-secondary)">${escapeHtml(I18N.t('rs.catNone'))}</div>`;
+    return;
+  }
+  wrap.innerHTML = rows.map(c => {
+    // hidden = รูปแบบปัจจุบัน · shownLegacy = ตารางเก่าที่เก็บ "รายชื่อที่เลือก" ไว้
+    const on = hidden ? !hidden.has(c.id)
+             : shownLegacy ? shownLegacy.has(c.id)
+             : true;
+    return `<label class="rb-dom"><input type="checkbox" class="rsCatCheck" value="${c.id}"${on ? ' checked' : ''}>` +
+      `<span class="rb-dom-dot" style="background:${escapeHtml(c.color || 'var(--accent)')}"></span>` +
+      `<span>${escapeHtml(c.name || '')}</span></label>`;
+  }).join('');
 }
 
 async function saveReportSchedule() {
@@ -623,7 +1269,16 @@ async function saveReportSchedule() {
     // where the type was different.
     send_day_of_week:   (isHealth || type === 'weekly') ? document.getElementById('rsDayOfWeek').value : null,
     send_days_of_month: type === 'monthly' ? _rsGetDayOfMonthValue() : null,
+    site_id: document.getElementById('rsSite')?.value
+             ? parseInt(document.getElementById('rsSite').value, 10) : null,
   };
+
+  // T5: ส่ง telegram_chat_ids เฉพาะตอนโหลด checklist สำเร็จแล้วเท่านั้น — โหลดไม่สำเร็จ
+  // (ยังไม่เชื่อมต่อ Telegram/หมดสิทธิ์) แล้วยังส่งเป็น [] จะไปเขียนทับค่าที่บันทึกไว้
+  // เดิมให้ว่างเปล่าโดยที่ผู้ใช้ไม่ได้ตั้งใจ
+  if (_rsTelegramLoaded) {
+    body.telegram_chat_ids = [...document.querySelectorAll('.rsTelegramCheck:checked')].map(c => c.value);
+  }
 
   // R4: image_layout — only for analytics
   if (family === 'analytics') {
@@ -638,6 +1293,33 @@ async function saveReportSchedule() {
   // R4: section_config — only for face/lpr
   if (isFaceOrLpr) {
     body.section_config = {}; // Currently empty; could be extended later with face/lpr-specific options
+  }
+
+  // Analytics option set. renderReportImage has accepted domains/kpis/catsort
+  // since 2026-08-21 but a schedule had nowhere to keep them, so every
+  // scheduled run rendered the full report no matter what the operator picked.
+  // section_config (migration 068) already round-trips through the route, so
+  // this needed no schema change. tod (time-of-day) added 2026-09-03 (CR.2).
+  // secs (section toggle) added 2026-09-03 (CR.7).
+  if (family === 'analytics') {
+    const catBoxes = [...document.querySelectorAll('.rsCatCheck')];
+    const catHidden = catBoxes.filter(c => !c.checked).map(c => parseInt(c.value, 10));
+    // Validate time window
+    const todVal = _validateTod('rsTodFrom', 'rsTodTo');
+    if (todVal && todVal.error) { alert(I18N.t('rep.todInvalid')); return; }
+    body.section_config = {
+      domains: [...document.querySelectorAll('.rsDomCheck:checked')].map(c => c.value),
+      kpis:    [...document.querySelectorAll('.rsKpiCheck:checked')].map(c => c.value),
+      secs:    [...document.querySelectorAll('.rsSecCheck:checked')].map(c => c.value),
+      catsort: document.getElementById('rsCatSort')?.value || 'count',
+      title:   document.getElementById('rsTitle')?.value.trim() || null,
+      // เก็บ "หมวดที่ติ๊กออก" — หมวดที่สร้างใหม่ทีหลังจะเข้ารายงานเองโดยอัตโนมัติ
+      cats_hide: catHidden.length ? catHidden : null,
+      showDelta: document.getElementById('rsShowDelta')?.checked !== false,
+      showPct: document.getElementById('rsShowPct')?.checked !== false,
+      // tod (time-of-day window within each day, optional)
+      ...(todVal ? { tod: todVal } : {}),
+    };
   }
 
   if (!body.send_time) { alert(I18N.t('rs.needSendTime')); return; }
@@ -779,7 +1461,7 @@ function renderReportHistory(items, total) {
     document.getElementById('rhPager').innerHTML = '';
     return;
   }
-  const _RS_TYPE   = { daily: I18N.t('rs.typeDaily'), weekly: I18N.t('rs.typeWeekly'), monthly: I18N.t('rs.typeMonthly') };
+  const _RS_TYPE   = { daily: I18N.t('rs.typeDaily'), weekly: I18N.t('rs.typeWeekly'), monthly: I18N.t('rs.typeMonthly'), summary: I18N.t('rs.typeSummary') };
   const _RS_FAMILY = { face: I18N.t('rs.familyFace'), lpr: I18N.t('rs.familyLpr') };
   const _RS_LAYOUT = { compact: I18N.t('rs.layoutCompact'), full: I18N.t('rs.layoutFull') };
   el.innerHTML = items.map(row => {
@@ -831,6 +1513,148 @@ async function exportReportHistoryCsv() {
 }
 
 // ============================================================
+// Analytics & LPR Send to LINE — load recipients, update labels, send
+// ============================================================
+
+// ผู้รับของปุ่ม "ส่งทันที" — ตั้งใจไม่ติ๊กมาให้ล่วงหน้า ต่างจาก modal ตารางส่งที่
+// "ไม่เลือก = ส่งทุกคน" ได้เพราะทบทวนก่อนถึงเวลาจริง ปุ่มนี้ยิงแล้วเรียกคืนไม่ได้
+// (2026-08-23 ตารางที่ปล่อยผู้รับว่างยิงรายงานเข้า 7 กลุ่มจริงรวมกลุ่มตำรวจ)
+// listener ผูกที่ตัว container ไม่ใช่ที่ checkbox — รายการถูก render ทีหลังแบบ async
+// ผูกทีละใบจึงไม่ทัน ได้ 0 ตัวเสมอ
+async function _rptLoadRecipientsForTab(listEl, checkboxClass, btnId, hintId) {
+  if (!listEl) return;
+  if (!listEl.dataset.bound) {
+    listEl.dataset.bound = '1';
+    listEl.addEventListener('change', () => _rptUpdateSendBtnLabel(btnId, checkboxClass, hintId));
+  }
+  try {
+    const res = await fetch(`${API}/api/line-config`, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const cfg = await res.json();
+    const roster = Array.isArray(cfg.recipients) ? cfg.recipients : [];
+    const enabled = roster.filter(r => r.enabled);
+    listEl.innerHTML = enabled.map(r => {
+      const icon = r.type === 'group'
+        ? '<svg aria-hidden="true" width="12" height="12" style="vertical-align:-2px"><use href="#icon-users"/></svg>'
+        : r.type === 'room'
+        ? '<svg aria-hidden="true" width="12" height="12" style="vertical-align:-2px"><use href="#icon-map"/></svg>'
+        : '<svg aria-hidden="true" width="12" height="12" style="vertical-align:-2px"><use href="#icon-face"/></svg>';
+      const idShort = escapeHtml((r.id || '').slice(0, 8) + '…');
+      return `<label style="display:flex;align-items:center;gap:6px;padding:3px 0;cursor:pointer">
+        <input type="checkbox" class="${checkboxClass}" value="${escapeHtml(r.id)}">
+        <span style="flex:1">${icon} ${escapeHtml(r.name || r.id)} <span style="color:var(--text-secondary);font-size:10px">${idShort}</span></span>
+      </label>`;
+    }).join('');
+  } catch (e) {
+    listEl.innerHTML = `<div style="color:var(--status-bad);padding:6px">${escapeHtml(I18N.t('hr.recipLoadFailed'))}${escapeHtml(e.message)}</div>`;
+  }
+  _rptUpdateSendBtnLabel(btnId, checkboxClass, hintId);
+}
+
+function _rptUpdateSendBtnLabel(btnId, checkboxClass, hintId) {
+  const n = document.querySelectorAll(`.${checkboxClass}:checked`).length;
+  const btn = document.getElementById(btnId);
+  if (btn) {
+    btn.textContent = I18N.t('rpt.sendNowN').replace('{n}', n);
+    btn.disabled = n === 0;
+    btn.style.opacity = n === 0 ? 0.5 : 1;
+    btn.style.cursor = n === 0 ? 'not-allowed' : 'pointer';
+  }
+  const hint = document.getElementById(hintId);
+  if (hint) {
+    hint.style.display = n === 0 ? 'block' : 'none';
+  }
+}
+
+function _rptGetRecipientIds(checkboxClass) {
+  return [...document.querySelectorAll(`.${checkboxClass}:checked`)].map(c => c.value);
+}
+
+async function sendAnalyticsReportNow() {
+  const recipients = _rptGetRecipientIds('rptRecipCheck-rb');
+  if (recipients.length === 0) { alert(I18N.t('rpt.needRecipient')); return; }
+  if (!confirm(I18N.t('rpt.confirmSendN').replace('{n}', recipients.length))) return;
+
+  try {
+    const range = _computeReportRange();
+    if (!range) { alert(I18N.t('rep.pickFullRange')); return; }
+    const checked = new Set([...document.querySelectorAll('.rb-domains input:checked')].map(c => c.dataset.dom).filter(Boolean));
+    const title = (document.getElementById('rbTitle')?.value || document.getElementById('reportTitle')?.value) || I18N.t('rep.fallbackTitle');
+    const opts = _rptOpts();
+    const lang = I18N.getLang ? I18N.getLang() : 'th';
+
+    const res = await fetch(`${API}/api/reports/send-now`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        family: 'analytics',
+        from: range.from.toISOString(),
+        to: range.to.toISOString(),
+        title,
+        layout: 'full',
+        site_id: _rptActiveSiteId || null,
+        domains: [...checked].join(',') || null,
+        kpis: opts.kpis ? opts.kpis.join(',') : null,
+        catsort: opts.catsort,
+        recipients,
+        lang,
+      }),
+    });
+    const j = await res.json();
+    if (!res.ok) throw new Error(j.error || `HTTP ${res.status}`);
+    if (j.success) {
+      alert(I18N.t('rpt.sendOk').replace('{n}', j.sent_count).replace('{t}', j.total_recipients));
+    } else {
+      alert(I18N.t('rpt.sendFailed') + (j.error || 'unknown'));
+    }
+  } catch (e) { alert(I18N.t('rpt.sendFailed') + e.message); }
+}
+
+async function sendLprReportNow() {
+  const recipients = _rptGetRecipientIds('rptRecipCheck-lp');
+  if (recipients.length === 0) { alert(I18N.t('rpt.needRecipient')); return; }
+  if (!confirm(I18N.t('rpt.confirmSendN').replace('{n}', recipients.length))) return;
+
+  try {
+    const group = document.getElementById('rptLprGroup')?.value || 'all';
+    const lang = I18N.getLang ? I18N.getLang() : 'th';
+    const activeSecs = Object.keys(_rptLprSections).filter(s => _rptLprSections[s]);
+    const title = document.getElementById('lpTitle')?.value.trim() || I18N.t('rpt.lprTitle');
+    const qs = new URLSearchParams({ group, sections: activeSecs.join(','), lang });
+    _rptApplyRangeQs(qs, _rptLprPeriod, 'rptLprFrom', 'rptLprTo');
+    if (_rptActiveSiteId) qs.set('site_id', String(_rptActiveSiteId));
+
+    // Extract period/from/to from query params for the POST body
+    const period = qs.get('period');
+    const from = qs.get('from');
+    const to = qs.get('to');
+
+    const res = await fetch(`${API}/api/reports/send-now`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        family: 'lpr',
+        period,
+        group,
+        sections: activeSecs.join(','),
+        from,
+        to,
+        title,
+        recipients,
+        lang,
+      }),
+    });
+    const j = await res.json();
+    if (!res.ok) throw new Error(j.error || `HTTP ${res.status}`);
+    if (j.success) {
+      alert(I18N.t('rpt.sendOk').replace('{n}', j.sent_count).replace('{t}', j.total_recipients));
+    } else {
+      alert(I18N.t('rpt.sendFailed') + (j.error || 'unknown'));
+    }
+  } catch (e) { alert(I18N.t('rpt.sendFailed') + e.message); }
+}
+
+// ============================================================
 // Reports Redesign R2 — tab shell + Face/LPR live previews
 // ============================================================
 
@@ -856,6 +1680,11 @@ function initReportsRedesign() {
   }
   _rptBound = true;
 
+  // ชื่อหัวข้อรายงานที่ตั้งเอง — วาดป้าย + ปุ่มดินสอทั้งสองรายการตั้งแต่เปิดหน้า
+  // (ค่าโหลดมาแล้วตอน boot ใน dashboard.js พร้อม nav_hidden_pages)
+  _rptApplySecLabels();
+  _rptBindSecTitleEdit();
+
   // Tab switching
   document.getElementById('rptTabBar')?.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-rpt-tab]');
@@ -871,6 +1700,7 @@ function initReportsRedesign() {
     document.getElementById('rptTypeSeg')?.querySelectorAll('button').forEach(b => {
       b.classList.toggle('active', b.dataset.rt === _rptBuildType);
     });
+    _rptToggleSummaryFields('build', _rptBuildType === 'summary');
     _rptBuildAutoFillDates();
   });
 
@@ -975,8 +1805,31 @@ function initReportsRedesign() {
     const t = document.querySelector('#rptLprDoc .rpt-title-doc');
     if (t) t.textContent = e.target.value.trim() || _rptLabel('rpt.lprTitle', 'รายงานป้ายทะเบียน');
   });
-  document.getElementById('lpSendLine')?.addEventListener('click', () => {
-    alert(I18N.t('rpt.sendLineNotSupported') || 'ฟีเจอร์ส่ง LINE ยังไม่รองรับสำหรับรายงานนี้ กรุณาดาวน์โหลดและส่งด้วยตนเอง');
+  document.getElementById('lpSendLine')?.addEventListener('click', sendLprReportNow);
+
+  // Analytics send to LINE — wire button
+  document.getElementById('rbSendLine')?.addEventListener('click', sendAnalyticsReportNow);
+
+  // Report Schedule — Site picker
+  document.getElementById('rsCatAll')?.addEventListener('click', () => {
+    document.querySelectorAll('.rsCatCheck').forEach(c => { c.checked = true; });
+  });
+  document.getElementById('rsCatNone')?.addEventListener('click', () => {
+    document.querySelectorAll('.rsCatCheck').forEach(c => { c.checked = false; });
+  });
+  document.getElementById('rsSite')?.addEventListener('change', (e) => {
+    _rsUpdateSiteHint();
+    // หมวดเป็นของราย Site — เปลี่ยนไซต์แล้วรายการต้องตามไป ไม่งั้นจะเหลือ id
+    // ของไซต์เดิมค้างอยู่ ซึ่งพอถึงเวลาส่งจริงจะกรองไม่ตรงกับที่เห็นตอนตั้ง
+    _rsLoadCatPicker(e.target.value || '', null, null);
+  });
+
+  // rsFamily/rsType/rsLayout เคยผูกด้วย inline onchange= ซึ่ง CSP ของเรา
+  // (script-src 'self' ไม่มี unsafe-inline) บล็อกทิ้งเงียบ ๆ — ฟอร์มจึงไม่เคย
+  // สลับช่องตามประเภท/ความถี่ที่เลือกเลย พบ 2026-08-23 ตอนเพิ่มตัวเลือก analytics
+  // (บั๊กชนิดเดียวกับ LPR Gallery ที่ย้ายไป data-action ไปแล้ว)
+  ['rsFamily', 'rsType', 'rsLayout'].forEach((id) => {
+    document.getElementById(id)?.addEventListener('change', _rsToggleTypeFields);
   });
 
   // History tab
@@ -985,6 +1838,12 @@ function initReportsRedesign() {
 
   // Init scope bar
   _initRptScopeBar();
+
+  // ⚠️ ต้องผูก AirDatepicker ให้ช่องวันที่ของหน้านี้ก่อนเติมค่า — ตอนบูตหน้ายังไม่ถูก
+  //    ผูกจริง (วัดแล้ว rbFrom._adp = false) ค่าจึงตกไปใช้ fallback แล้วขึ้นเป็น
+  //    '2026-08-21T14:54' พร้อมเวลา ทั้งที่รายงานเป็นรายวัน · ฟังก์ชันนี้ข้ามช่องที่
+  //    ผูกแล้วอยู่แล้ว เรียกซ้ำจึงไม่มีผลข้างเคียง
+  if (typeof initDateTimePickers === 'function') initDateTimePickers();
 
   // Auto-fill build tab dates on init
   _rptBuildAutoFillDates();
@@ -1004,10 +1863,18 @@ function _rptBuildAutoFillDates() {
     setDtValue('rbFrom', mon);
     setDtValue('rbTo',   sun);
   } else if (_rptBuildType === 'monthly') {
-    const first = new Date(today.getFullYear(), today.getMonth(), 1);
-    const last  = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+    // Previous calendar month (consistent with schedule monthly behavior since 2026-09-03)
+    const prevMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    const first = prevMonth;
+    const last  = new Date(today.getFullYear(), today.getMonth(), 0);  // last day of prev month
     setDtValue('rbFrom', first);
     setDtValue('rbTo',   last);
+  } else if (_rptBuildType === 'summary') {
+    // Summary: anchor is yesterday (the day being summarized)
+    const yest = new Date(today);
+    yest.setDate(today.getDate() - 1);
+    setDtValue('rbFrom', yest);
+    setDtValue('rbTo',   yest);
   }
   _refreshReportRangeNote();
 }
@@ -1085,6 +1952,15 @@ async function _initRptScopeBar() {
       _applyRptDomainVisibility();
       if (_rptActiveTab === 'face') loadFaceReportPreview();
       else if (_rptActiveTab === 'lpr') loadLprReportPreview();
+      // Health only re-renders when a preview is already on screen. Generating
+      // one costs a Puppeteer/sharp pass, so switching site with an empty panel
+      // should not trigger it — but leaving a rendered image from the previous
+      // site sitting there is worse, because nothing on it says which site it
+      // is. Events is left alone on purpose: it waits for "โหลดข้อมูล" by design.
+      else if (_rptActiveTab === 'health'
+               && document.getElementById('hrPreviewDoc')?.querySelector('img')) {
+        previewHealthReport();
+      }
     });
     _applyRptDomainVisibility();
   } catch {}
@@ -1106,7 +1982,7 @@ async function loadRptHistory() {
       if (pager) pager.innerHTML = '';
       return;
     }
-    const _RS_TYPE = { daily: I18N.t('rs.typeDaily'), weekly: I18N.t('rs.typeWeekly'), monthly: I18N.t('rs.typeMonthly'), health: I18N.t('hr.typeHealth') };
+    const _RS_TYPE = { daily: I18N.t('rs.typeDaily'), weekly: I18N.t('rs.typeWeekly'), monthly: I18N.t('rs.typeMonthly'), summary: I18N.t('rs.typeSummary'), health: I18N.t('hr.typeHealth') };
     const _RS_LAY  = { compact: I18N.t('rs.layoutCompact'), full: I18N.t('rs.layoutFull') };
     tbody.innerHTML = items.map(row => {
       const ts = new Date(row.created_at).toLocaleString('th-TH', { hour12: false });
@@ -1151,8 +2027,15 @@ function _rptShowTab(tab) {
   document.querySelectorAll('#page-reports .rpt-pane').forEach(p => p.classList.remove('active'));
   const paneMap = { build: 'rptPaneBuild', health: 'rptPaneHealth', face: 'rptPaneFace', lpr: 'rptPaneLpr', auto: 'rptPaneAuto', history: 'rptPaneHistory' };
   document.getElementById(paneMap[_rptActiveTab] || 'rptPaneBuild')?.classList.add('active');
+  if (_rptActiveTab === 'build') {
+    _rptLoadRecipientsForTab(document.getElementById('rbRecipientsList'), 'rptRecipCheck-rb', 'rbSendLine', 'rbRecipHint');
+  }
   if (_rptActiveTab === 'face')    { if (_rptFacePeriod !== 'custom') _rptAutoFillRange('rptFaceFrom', 'rptFaceTo', _rptFacePeriod); loadFaceReportPreview(); loadHealthRecipients(); }
-  if (_rptActiveTab === 'lpr')     { if (_rptLprPeriod !== 'custom') _rptAutoFillRange('rptLprFrom', 'rptLprTo', _rptLprPeriod); loadLprReportPreview(); }
+  if (_rptActiveTab === 'lpr')     {
+    if (_rptLprPeriod !== 'custom') _rptAutoFillRange('rptLprFrom', 'rptLprTo', _rptLprPeriod);
+    _rptLoadRecipientsForTab(document.getElementById('lpRecipientsList'), 'rptRecipCheck-lp', 'lpSendLine', 'lpRecipHint');
+    loadLprReportPreview();
+  }
   if (_rptActiveTab === 'health')  { if (_hrRange !== 'custom') _hrAutoFill(_hrRange); loadHealthRecipients(); previewHealthReport(); }
   if (_rptActiveTab === 'auto')    _loadAutoSchedList();
   if (_rptActiveTab === 'history') loadRptHistory();
@@ -1171,7 +2054,7 @@ async function _loadAutoSchedList() {
       el.innerHTML = `<div class="rpt-empty">${escapeHtml(I18N.t('rs.noSchedules'))}</div>`;
       return;
     }
-    const _RS_TYPE = { daily: I18N.t('rs.typeDaily'), weekly: I18N.t('rs.typeWeekly'), monthly: I18N.t('rs.typeMonthly'), health: I18N.t('hr.typeHealth') };
+    const _RS_TYPE = { daily: I18N.t('rs.typeDaily'), weekly: I18N.t('rs.typeWeekly'), monthly: I18N.t('rs.typeMonthly'), summary: I18N.t('rs.typeSummary'), health: I18N.t('hr.typeHealth') };
     el.innerHTML = list.map(s => {
       const stateClass = s.enabled ? 'on' : 'off';
       const stateLabel = s.enabled ? I18N.t('rs.enabledOn') : I18N.t('rs.enabledOff');
@@ -1274,6 +2157,11 @@ const _rptBarLabelPlugin = {
 // Vehicle-type code → Thai label, matching the search page (`_lprVType` reads the
 // lpr_vehicle_types display config). Guarded — `_lprVType` lives in page-lpr.js.
 function _rptVtypeName(t) { return (typeof _lprVType === 'function' ? _lprVType(t) : t) || t; }
+// Same table the server renderer uses (province-names.js), so the HTML preview
+// and the exported PNG cannot disagree about what a province is called.
+function _rptProvName(n) {
+  return (typeof provinceNameEn === 'function') ? provinceNameEn(n, I18N.getLang()) : n;
+}
 
 function _rptChart(canvasId, type, labels, datasets, extra = {}) {
   const canvas = document.getElementById(canvasId);
@@ -1439,8 +2327,10 @@ function _rptFaceSuspectsSection(rows) {
     const capImg = r.snapshot
       ? `<img src="${API}/snapshots/${encodeURIComponent(r.snapshot)}" alt="" style="max-width:100%;max-height:80px;border-radius:5px;object-fit:cover;margin-bottom:4px">`
       : '';
-    const refImg = r.ref_snapshot
-      ? `<img src="${API}/snapshots/${encodeURIComponent(r.ref_snapshot)}" alt="" style="max-width:100%;max-height:80px;border-radius:5px;object-fit:cover;margin-bottom:4px">`
+    const _refUrl = r.ref_snapshot ? `${API}/snapshots/${encodeURIComponent(r.ref_snapshot)}`
+      : r.ref_photo ? `${API}/api/blacklist/photo/${r.ref_photo.split('/').map(encodeURIComponent).join('/')}` : null;
+    const refImg = _refUrl
+      ? `<img src="${_refUrl}" alt="" style="max-width:100%;max-height:80px;border-radius:5px;object-fit:cover;margin-bottom:4px">`
       : '';
     const dt = r.event_time ? new Date(r.event_time).toLocaleString('th-TH', { hour12: false }) : '-';
     return `<div class="cmp-card" style="--gc:var(--status-bad)">
@@ -1548,7 +2438,10 @@ function renderLprReportPreview(data) {
   if (data.direction?.labels) data.direction.labels = _rptRemapDayLabels(data.direction.labels);
   const sections = [];
   if (_rptLprSections.peak) sections.push(_rptPeakSection('rptLprPeakChart', data.peak, _rptLabel('rpt.peak', 'ช่วงหนาแน่น')));
-  if (_rptLprSections.province) sections.push(_rptBarTableSection('rptLprProvinceChart', _rptLabel('rpt.province', 'จังหวัด'), data.province || [], 'name'));
+  // Province arrives from the camera in Thai. The report follows the UI language
+  // like every other label, instead of leaving Thai names in an English report.
+  const _provRows = (data.province || []).map(r => ({ ...r, name: _rptProvName(r.name) }));
+  if (_rptLprSections.province) sections.push(_rptBarTableSection('rptLprProvinceChart', _rptLabel('rpt.province', 'จังหวัด'), _provRows, 'name'));
   if (_rptLprSections.vtype) sections.push(_rptBarTableSection('rptLprVtypeChart', _rptLabel('rpt.vehicleType', 'ประเภทรถ'), (data.vehicle_type || []).map(r => ({ ...r, type: _rptVtypeName(r.type) })), 'type'));
   if (_rptLprSections.direction) sections.push(_rptDirectionSection(data.direction));
   if (_rptLprSections.watch) sections.push(_rptLprWatchSection(data.watch_hits || []));
@@ -1597,7 +2490,10 @@ function _rptBuildLprCharts(data) {
   const bad = _rptToken('--status-bad');
   const ok = _rptToken('--status-ok');
   if (_rptLprSections.peak && data.peak) _rptChart('rptLprPeakChart', 'bar', data.peak.labels, [{ data: data.peak.values, backgroundColor: data.peak.values.map((_, i) => i === data.peak.index ? bad : acc), borderRadius: 3 }], { plugins: { legend: { display: false } } });
-  if (_rptLprSections.province) _rptChart('rptLprProvinceChart', 'bar', (data.province || []).map(r => r.name), [{ data: (data.province || []).map(r => r.n), backgroundColor: acc, borderRadius: 3 }], { indexAxis: 'y', noBarLabels: true, plugins: { legend: { display: false } } });
+  // Recomputed here, not shared with renderLprReportPreview: that runs in a
+  // different function and the chart must carry the same labels as its table.
+  const provRows = (data.province || []).map(r => ({ ...r, name: _rptProvName(r.name) }));
+  if (_rptLprSections.province) _rptChart('rptLprProvinceChart', 'bar', provRows.map(r => r.name), [{ data: provRows.map(r => r.n), backgroundColor: acc, borderRadius: 3 }], { indexAxis: 'y', noBarLabels: true, plugins: { legend: { display: false } } });
   if (_rptLprSections.vtype) _rptChart('rptLprVtypeChart', 'bar', (data.vehicle_type || []).map(r => _rptVtypeName(r.type)), [{ data: (data.vehicle_type || []).map(r => r.n), backgroundColor: acc, borderRadius: 3 }], { indexAxis: 'y', noBarLabels: true, plugins: { legend: { display: false } } });
   if (_rptLprSections.direction && data.direction) {
     _rptChart('rptLprDirChart', 'line', data.direction.labels, [

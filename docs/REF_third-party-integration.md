@@ -8,14 +8,36 @@
 # Third-Party Database Integration Guide
 
 > **Audience:** ฝ่าย ops ของเรา (Section 2–3, 8) + ทีม integration ของ 3rd party (Section 4–7, 9–10)
-> Last updated: 2026-06-08 · Schema baseline: migration 027
+> Last updated: **2026-08-07** · Schema baseline: migration 027 → **123**
 > Pre-req docs: [REF_database-schema.md](REF_database-schema.md) — schema reference เต็ม
+
+---
+
+## 0. มี 2 ทาง — อ่านให้ถูกทางก่อน
+
+> เพิ่ม 2026-08-07 · เอกสารนี้เขียนขึ้นตอนที่มีทางเดียว จึงต้องแยกให้ชัด
+
+| | **ก · HTTP API `/v1`** ⭐ ทางหลัก | **ข · ต่อ Postgres ตรง** ทางเดิม |
+|---|---|---|
+| partner ทำอะไร | เรียก REST + เซ็น AK/SK | เปิด connection มาที่ Postgres |
+| เห็น Postgres ไหม | **ไม่เลย** | เห็น |
+| ยืนยันตัวตน | ลายเซ็น HMAC ต่อ request | user/password ของ DB |
+| คุมสิทธิ์ | column GRANT (เหมือนกัน) + จำกัดไซต์ + จำกัดย้อนหลัง | column GRANT อย่างเดียว |
+| ต้องอยู่วง LAN/VPN ไหม | ไม่ | **ใช่** |
+| จำกัดจำนวนคำขอ · หมดอายุ · audit | ✅ มีครบ | ❌ ไม่มี |
+| เอกสารให้ partner | `GET /v1/openapi.json` generate เอง | เอกสารนี้ |
+| ตั้งค่ายังไง | `partner-admin.js` + หน้า `ตั้งค่า › เชื่อมต่อภายนอก` | §3 ของเอกสารนี้ |
+| สเปกเต็ม | [`SPEC_partner-api_2026-08-07.md`](SPEC_partner-api_2026-08-07.md) | เอกสารนี้ |
+
+**ทางที่ควรใช้คือ ก** — ทาง ข เก็บไว้สำหรับกรณีที่ partner อยู่ในวงเดียวกันจริง ๆ และต้องการ SQL ดิบ
+**§3 · §4 · §9 เขียนไว้สำหรับทาง ข** — ถ้าทำทาง ก ให้ข้ามไปอ่าน §2 (มีอะไรให้บ้าง) · §7 (PDPA) · §8 (checklist ฉบับใหม่)
 
 ---
 
 ## 1. Scope & Architecture
 
 **Use case ที่รองรับ:** 3rd party ดึง raw data จาก PostgreSQL ผ่าน LAN เพื่อสร้าง dashboard / analytics ของตัวเอง
+> ⚠️ ย่อหน้านี้และ §3–§4 อธิบาย**ทาง ข** เท่านั้น — ดู §0
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -49,6 +71,22 @@
 - VIEW exclude: passwords, RTSP URLs, LINE secrets, session tokens, PII, internal raw payloads
 - Access ผ่าน LAN เท่านั้น — ไม่ expose port 5432 ออก internet
 - Role `third_party_readonly` = NOLOGIN — ops grant ให้ login user เป็นรายๆ
+- ⚠️ **ตั้งแต่ 2026-10-21 (migration 268) แนวทางคือ "ให้ตามความจำเป็น":** partner ไม่เห็นว่าขออะไรได้ เราออกแบบชุดข้อมูลให้เอง ·
+  **ให้สิทธิ์รายคอลัมน์เท่านั้น** (`GRANT SELECT (col, ...) ON v_x TO role`) — `GRANT third_party_readonly` หรือ `GRANT SELECT ON view`
+  ครอบคลุมคอลัมน์ที่จะเพิ่มใน view ในอนาคตด้วย (ทดสอบจริง) ⇒ ฟิลด์ใหม่หลุดถึง partner โดยไม่มีใครติ๊ก ·
+  partner ผ่าน API: สร้างจากหน้า ตั้งค่า › เชื่อมต่อภายนอก (เริ่มที่ 0 คอลัมน์) แล้วติ๊กชุดข้อมูล
+  **REST (`/v1`) ตัดรายฟิลด์** (ระยะ 2 ขั้น 1): endpoint SELECT เฉพาะคอลัมน์ที่ role ถือสิทธิ์จริง — ฟิลด์ที่ไม่ได้สิทธิ์หายจากแถวและจาก `/v1/openapi.json` (ไม่ใช่ null) ·
+  ขาดคอลัมน์บังคับ (`requiredColumns` ใน `partnerSchema.js`: id / เวลา / camera_id · ค้นหาป้ายเพิ่ม plate_number) = 403 ทั้ง endpoint · สิทธิ์ที่แก้มีผลภายใน 10 วินาที (แคช)
+  **ทะเบียนข้อตกลง** (migration 269, แท็บ "ข้อตกลงข้อมูล"): บันทึกเป็นเวอร์ชัน — วัตถุประสงค์ · ฐานทางกฎหมาย (PDPA) · อ้างอิง DPA · ผู้อนุมัติ · ใช้ได้ถึง · ครบทบทวน (ค่าเริ่มต้น +90 วัน) พร้อมภาพสิทธิ์คอลัมน์ ณ ตอนบันทึก · หน้าจอเตือนเมื่อสิทธิ์ปัจจุบันไม่ตรงเวอร์ชันล่าสุด หรือถึงกำหนดทบทวน · partner ไม่เห็นตารางนี้
+  **ยามเฝ้า partner** (`src/helpers/partnerWatch.js`, ทุกวัน 08:30): LINE ถึงผู้รับ `perf_alert` เท่านั้น เมื่อ — ไม่มีข้อตกลงเกิน 7 วัน · ข้อตกลงหมดแต่ยัง active · ครบทบทวนภายใน 14 วัน/เลยกำหนด · credential หมดใน 14 วัน · คำขอ 24 ชม. > 5 เท่าค่ากลาง 7 วันและ > 500 · 403 ≥ 20 · 401 (key ที่รู้จัก) ≥ 20 · 429 ≥ 10 · IP ใหม่ (ไม่เคยเห็นใน 30 วัน) · เกณฑ์ปรับได้ที่ `line_config.perf_alert.partner_watch` · cooldown ข้อตกลง 7 วัน / การใช้งาน 24 ชม. · ผลล่าสุดอยู่ `system_settings.partner_watch` · ร้องอย่างเดียว ไม่ตัดสิทธิ์ใคร
+  **สถิติ (S1, migration 270)** — view สรุปที่ติ๊กได้ในหมวด "สถิติ": `v_vehicle_stats_hourly_public` → `GET /v1/stats/vehicles/hourly` (hour_start, camera_id, vehicles, by_type) · `v_lpr_stats_hourly_public` → `/v1/stats/lpr/hourly` (detections, no_plate) · `v_lpr_stats_daily_public` → `/v1/stats/lpr/daily` (day ตามเวลาไทย, region / vehicle_type / vehicle_brand / plate_color เป็นคอลัมน์แยก ให้สิทธิ์แยกได้) · **ตัวนับดิบเท่านั้น ไม่มีอัตรา** · ประเภทรถ/สีป้ายเป็นรหัสดิบจากกล้อง · ชั่วโมง/วันล่าสุดเปลี่ยนได้จนถึง reconcile 05:00 (ดู `updated_at`) · traffic เก็บ 120 วัน · cursor `i` = camera_id · ชื่อคอลัมน์ของ view = สัญญา `/v1` ห้ามเปลี่ยน
+  **Traffic Enforcement (S2, migration 271)** — หมวด "บังคับใช้กฎจราจร": `v_enforcement_hourly_public` → `GET /v1/enforcement/hourly` (no_helmet, no_helmet_with_plate, no_seatbelt, riders3 + `by_type` ตัวหารและความผิดแยกประเภทรถ ไม่ใส่ค่า 0) · `v_enforcement_cameras_public` → `/v1/enforcement/cameras` (reports_no_helmet / no_seatbelt / riders3 = เคยรายงานใน 120 วัน · false ≠ ไม่มีคนผิด) · **ตัวเลขบนหน้าจอเรา = `by_type.twoWheelVehicle.no_helmet_with_plate`** (ยอดรวมแถวรวม 3 ล้อด้วย) · รายวัน `v_enforcement_daily_public` → `/v1/enforcement/daily` (migration 275 ทับ `traffic_daily_stats` · วันไทย) · ไม่ส่งผู้ทำผิดซ้ำรายป้าย · ไม่ส่งอัตรา
+  **สีรถ (S3, migration 272)** — `vehicle_color` เป็นมิติรายวันของตัวเอง (คอลัมน์ใหม่ใน `v_lpr_stats_daily_public` ไม่ได้ GRANT ให้ใคร) · ตัวสรุป `refreshLprDims()` เขียนทุก 15 นาที · ย้อนหลังเติมด้วย `node scripts/backfill-lpr-rollups.js --dims-only --days <n>` (วัดวันละ ~2 วิ · มิติเดิมยอดไม่เปลี่ยน)
+  **ชุดเริ่มต้นสำหรับ partner** — `docs/partner-kit/` (README อังกฤษ + client Python/Node ไม่มี dependency · ทดสอบกับโค้ด partner-api จริง 2026-10-22) · ตัวอย่างอ่าน endpoint จาก `/v1/openapi.json` ของ partner เอง **ไม่ระบุชื่อ endpoint ตายตัว** ตามหลักให้ตามความจำเป็น — ส่งให้ partner ได้ทั้งโฟลเดอร์
+  **ทางเข้า DB ของ partner มีทางเดียว** — `partner-api.partnerQuery()` และ preview ใช้ `helpers/asPartnerRole.js` ตัวเดียว (รวมสำเนา 2026-10-22 · เทสต์ `test/partner-role-single-path.test.js`)
+  **ฟิลด์รายแถวเพิ่ม (ขั้น 2, migration 273)** — ทำรอไว้ (ไม่ GRANT ให้ใคร): `v_license_plates_public` + vehicle_type, vehicle_color, vehicle_brand, plate_type, plate_color, no_helmet, rider_count, no_seatbelt, lane · `v_appearances_public` + mask, hat, expression (จาก rj_*), bag_category, overall_color, hair_color · **age_group = COALESCE(age_group, rj_age_group)** (เดิมว่าง 100% · partner ที่ได้ age_group อยู่แล้วจะเริ่มเห็นค่า) · ค่าเป็นคำของกล้องเอง ต่างยี่ห้อต่างคำ · `no_helmet`/`no_seatbelt` = false ได้แม้กล้องตรวจไม่ได้ (เขียนในสัญญาแล้ว)
+  **`traffic_daily_stats` (migration 274)** — ผลรวม `traffic_hourly_stats` ต่อวันไทย เขียนโดย `refreshTrafficDaily()` ในรอบ 15 นาที + reconcile · prune 120+1 วัน · backfill `scripts/backfill-traffic-daily.js` · หน้า Traffic อ่านอนุกรมรายวัน 120 วันจากตารางนี้ (ผลเท่าเดิมทุกแถว · 1,308 → 48 ms / 209 → 28 ms) · วันแรกของอนุกรมเป็นวันไทยเต็มวัน (เดิมขาด 7 ชม.แรก · เจ้าของเลือก 2026-10-22)
+  **สถิติคน (migration 276 ตาราง · 277 view)** — `appearance_dim_daily` (วันไทยตาม `event_time` เหมือนหน้าจอสถิติคน × กล้อง × มิติ × ค่า) · `object_class` นับทุกประเภท (ตัวหาร) · เพศ / อายุ (COALESCE rj_age_group) / สีเสื้อ-กางเกง / ประเภทเสื้อ-กางเกง / แว่น / หมวก / หน้ากาก / สีหน้า / กระเป๋า นับเฉพาะ Person · ไม่นับค่าว่าง · **เก็บ 365 วัน** (ข้อมูลดิบ 40) · `refreshAppearanceDims()` รอบ 15 นาที (~0.4 วิ) + reconcile ทีละวันไทย · backfill `scripts/backfill-appearance-dims.js` · `v_person_stats_daily_public` → `GET /v1/stats/person/daily` (หมวด "สถิติ")
 
 ---
 
@@ -59,7 +97,7 @@
 | View | Source table | Excluded columns | Notes |
 |---|---|---|---|
 | `v_camera_groups_public` | `camera_groups` | — | ทุก column |
-| `v_cameras_public` | `cameras` | `http_user`, `http_password`, `rtsp_url` | ⚠️ 3 column นี้มี credentials กล้อง |
+| `v_cameras_public` | `cameras` | credentials (`http_user`/`http_password`/`rtsp_url`) **+ ตั้งแต่ migration 120:** `ip_address` · `http_port` · `mqtt_topic_prefix` · `serial_number` · `firmware` · `enable_*` · `clip_*_sec` | **เพิ่ม `site_id`** · เดิมกันแค่ credential แต่ยังปล่อย IP ภายในจริง (`10.11.100.17`) = แผนผังเครือข่าย ไม่ใช่ข้อมูล integration — ดู decision #228 |
 | `v_events_public` | `events` | `raw_json` | ตารางหลัก — **ใหญ่สุด** ต้อง filter `event_time` เสมอ |
 | `v_appearances_public` | `appearances` | — | person/vehicle attributes |
 | `v_license_plates_public` | `license_plates` | — | 🔴 **PDPA-gated** — ต้องมี DPA |
@@ -67,7 +105,7 @@
 | `v_alert_logs_public` | `alert_logs` | `message_text`, `error_message` | log แบบ summary, ไม่มี content |
 | `v_event_categories_public` | `event_categories` | — | category mapping |
 | `v_event_category_rules_public` | `event_category_rules` | — | rule → category |
-| `v_system_settings_public` | `system_settings` | rows ที่ key match `line_%`, `license_%`, `secret_%`, `%_token`, `%_password` | filter ที่ row level (future-proof) |
+| `v_system_settings_public` | `system_settings` | **ทุก key ยกเว้น 5 ตัวที่อนุญาต** (`brand_name`, `display_timezone`, `data_retention_days`, `lpr_retention_days`, `appearances_retention_days`) | allowlist (migration 268) — เดิมเป็น denylist แล้วหลุด `carto_api_key`, `perf_watch` ฯลฯ · เพิ่ม key ต้องแก้ view โดยตั้งใจ |
 | `v_report_history_public` | `report_history` | `file_path`, `recipients_sent`, `error_message` | log การส่ง report |
 
 ### Tables ที่ไม่ expose ผ่าน view ใดๆ
@@ -114,8 +152,9 @@ WHERE grantee = 'third_party_readonly';
 -- Naming convention: <partner_slug>_ro (เช่น acme_corp_ro, building_a_bi_ro)
 CREATE USER acme_corp_ro WITH PASSWORD '<RANDOM_32_CHAR_PASSWORD>';
 
--- Grant role (ให้สิทธิ์อ่าน views ทั้งหมด)
-GRANT third_party_readonly TO acme_corp_ro;
+-- ⚠️ ห้าม GRANT third_party_readonly (ได้ทั้ง view + คอลัมน์อนาคต) — ให้รายคอลัมน์ตามชุดข้อมูลที่อนุมัติ (migration 268)
+GRANT USAGE ON SCHEMA public TO acme_corp_ro;
+GRANT SELECT (id, camera_id, plate_number, detected_at) ON v_license_plates_public TO acme_corp_ro;   -- ตัวอย่าง
 
 -- Quota: ป้องกัน query หนัก + pool exhaust
 ALTER USER acme_corp_ro SET statement_timeout = '60s';
@@ -364,19 +403,55 @@ ORDER BY event_time DESC LIMIT 100;
 
 ## 8. Security Checklist (Ops)
 
-ก่อน rollout ให้ 3rd party คนแรก:
+> **แก้ครั้งใหญ่ 2026-08-07** — ของเดิมเขียนไว้ตอนที่แผนคือ **ให้ partner ต่อ Postgres ตรง**
+> (`pg_hba` · docker port binding · `hostssl` · login user ต่อราย) แต่ **เราไม่ได้ทำแบบนั้น**
+> สิ่งที่สร้างจริงคือ **HTTP API `/v1` + AK/SK signing** (decision #227–#233)
+> — partner ไม่เคยเห็น Postgres เลย · ข้อที่ล้าสมัยถูกตัดออก ไม่ใช่เก็บไว้ให้คนไล่ตามของที่ไม่มีอยู่
 
-- [ ] Migration 027 apply สำเร็จ (`\dv v_*_public` เห็นครบ 11 view)
-- [ ] Login user สร้างแล้ว, password generated by `openssl rand`, ไม่ใช่ค่าจำได้
-- [ ] `GRANT third_party_readonly TO <user>` ตรวจสอบแล้ว
-- [ ] `statement_timeout`, `idle_in_transaction_session_timeout`, `CONNECTION LIMIT` ตั้งแล้ว
-- [ ] pg_hba.conf จำกัด subnet ของ 3rd party เท่านั้น
-- [ ] Docker port binding เป็น LAN IP เฉพาะ (ไม่ใช่ `0.0.0.0`)
-- [ ] ถ้าไม่ใช่ direct LAN (เช่น remote site ผ่าน VPN) → เปิด SSL + `hostssl` ใน pg_hba
-- [ ] DPA signed ถ้า grant `v_license_plates_public`
-- [ ] ส่ง credential ผ่าน secure channel (1Password / encrypted email) ไม่ใช่ chat ทั่วไป
-- [ ] Document ใน internal log: who, when, why, expiry date (ถ้ามี)
-- [ ] (Optional) เปิด `pg_stat_statements` เพื่อ audit query
+### 8.1 ก่อนสร้าง partner รายแรก (ครั้งเดียว)
+
+- [x] role `third_party_readonly` มีอยู่ + grant ครบ 11 view — ✅ migration 118 (เคยหายไปจริง)
+- [x] `statement_timeout` ต่อ query ของ partner — ✅ 5 วินาที ใน `partnerQuery()` (decision #230)
+- [x] retention ของ `api_request_log` — ✅ `api_log_retention_days` = 90 (decision #231)
+- [x] `CAMERA_SECRET_KEY` ตั้งแล้ว — จำเป็น เพราะ `app_secret` เก็บแบบเข้ารหัส · **ไม่มี key = สร้าง partner ไม่ได้** (CLI ปฏิเสธ)
+- [ ] **ตัดสินโดเมนก่อนเปิด tunnel** — แยก `api.` หรือใช้ `dashboard.` เดิม · แก้ทีหลังแพงกว่า (§8.3 ของสเปก)
+
+### 8.2 ทุกครั้งที่สร้าง partner
+
+```bash
+node src/partner-admin.js create <slug> "<ชื่อที่แสดง>" [--sites hkt] [--days 30|60|90|120|180|365]
+```
+
+- [ ] **`--days`** — ไม่ใส่ = ไม่มีวันหมดอายุ · ควรผูกกับอายุสัญญาเสมอ (migration 123)
+- [ ] **`--sites`** — จำกัดไซต์ถ้า partner ไม่ควรเห็นทั้งฟลีต · ตรวจผลได้จากหน้าจอทันที
+- [ ] **`max_lookback_days`** — ย้อนหลังได้กี่วันตามสัญญา (`UPDATE api_consumers SET max_lookback_days=…`)
+- [ ] **`rate_per_min`** — default 60 (เผื่อ 118 เท่าของการใช้งานปกติ) · ตั้งสูงชั่วคราวถ้าต้อง backfill ครั้งแรก
+- [ ] **ส่ง App Secret ทาง channel ที่ส่งรหัสผ่านได้** — CLI แสดงครั้งเดียว อ่านคืนไม่ได้ ลืมแล้วต้อง `rotate`
+- [ ] **จำกัดคอลัมน์** ที่ `ตั้งค่า › เชื่อมต่อภายนอก` ถ้า partner ไม่ควรเห็นทุกฟิลด์
+- [ ] 🔴 **ถ้าจะให้ `v_license_plates_public`** — ดู §7 · ต้องมีการอนุญาตจากเจ้าของข้อมูล
+      · ยังไม่พร้อม → **ปิดไว้ก่อนได้ เปิดทีหลังคลิกเดียว** ไม่ต้องรอทุกอย่างพร้อมพร้อมกัน
+- [ ] บันทึกใน `notes`: ใคร ทำไม อ้างอิงสัญญาอะไร
+
+### 8.3 ตรวจหลังสร้าง
+
+- [ ] ให้ partner ยิง `GET /v1/healthz` — 200 พิสูจน์พร้อมกันว่า**เซ็นถูก**และ**role ใช้ได้จริง**
+- [ ] เปิดหน้า `เชื่อมต่อภายนอก` ดูว่าคอลัมน์ที่เห็นตรงกับที่ตั้งใจ
+- [ ] ส่ง `GET /v1/openapi.json` ให้ partner — generate จากสิทธิ์จริงของเขา ไม่ต้องเขียนเอกสารเอง
+
+### 8.4 ดูเป็นระยะ
+
+- [ ] **partner ที่ใกล้หมดอายุ** — การ์ดขึ้นเตือนเองเมื่อเหลือ ≤14 วัน · ต่ออายุ `extend <slug> --days N`
+- [ ] **`key ที่ไม่รู้จักพยายามเข้า`** บนหน้าจอ — ไม่ได้แปลว่าถูกโจมตีเสมอ (partner ที่กำลัง debug ก็ทำให้ขึ้น) แต่ไม่มีที่อื่นให้ดู
+- [ ] **partner ที่สร้างแล้วไม่เคยเรียก** — `เรียกล่าสุด: ยังไม่เคย` = สิทธิ์ที่แจกแล้วไม่มีใครใช้ ควรถอน
+- [ ] **`role หาย`** — คำขอของ partner รายนั้นล้มทุกครั้ง (สภาพเดียวกับที่ migration 118 แก้)
+
+### 8.5 ถอนสิทธิ์
+
+```bash
+node src/partner-admin.js revoke <slug>      # มีผลทันที คำขอถัดไปได้ 401
+```
+- [ ] `DROP ROLE <slug>_ro` ตอนสะดวก — **แถวใน `api_consumers` ห้ามลบ** เพราะ `api_request_log` อ้างถึง
+- [ ] ถ้าแค่ secret รั่ว → `rotate <slug>` พอ (key เดิมตายทันที · อายุสัญญาไม่ถูกรีเซ็ต)
 
 ---
 

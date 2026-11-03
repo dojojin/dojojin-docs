@@ -7,7 +7,14 @@
 'use strict';
 
 const routeError = require('../helpers/routeError');
+const env        = require('../config');   // อ่านคาบ refresh ของ rollup มาบอกอายุข้อมูล
+const catRollup  = require('../helpers/categoryRollup');
+const { createTtlCache } = require('../helpers/ttlCache');
+const { categoryGroup } = require('../helpers/objectClassGroup');
 const { siteWhere, resolveSiteScope } = require('../auth');
+const statsOccupancyRoutes = require('./stats-occupancy');
+const statsCoreRoutes      = require('./stats-core');
+const statsReportRoutes    = require('./stats-report');
 
 module.exports = function statsRoutes(app, pool, {
   getDisplayTz,
@@ -32,494 +39,106 @@ module.exports = function statsRoutes(app, pool, {
     return { from, to };
   }
 
-  function pickTruncUnit(fromMs, toMs) {
+  // Optional per-day time window: tod_from/tod_to as 'HH:MM' on 30-minute steps,
+  // both present or both absent, from < to (overnight windows not supported).
+  // Returns { from, to } or null; throws { status: 400 } Error on invalid input.
+  function parseTod(query) {
+    const todFrom = query.tod_from ? String(query.tod_from).trim() : null;
+    const todTo   = query.tod_to ? String(query.tod_to).trim() : null;
+
+    // Both present or both absent
+    if ((todFrom && !todTo) || (!todFrom && todTo)) {
+      const e = new Error('tod_from/tod_to ต้องมาเป็นคู่ — ส่งทั้งคู่หรือไม่ส่งเลย');
+      e.status = 400;
+      throw e;
+    }
+
+    if (!todFrom || !todTo) return null;
+
+    // Validate format: HH:MM on 30-minute steps
+    const timeRegex = /^([01]\d|2[0-3]):(00|30)$/;
+    if (!timeRegex.test(todFrom) || !timeRegex.test(todTo)) {
+      const e = new Error('tod_from/tod_to ต้องเป็น HH:MM ขั้นละ 30 นาที และ from < to');
+      e.status = 400;
+      throw e;
+    }
+
+    // Compare: from < to (string comparison works for zero-padded HH:MM)
+    if (todFrom >= todTo) {
+      const e = new Error('tod_from/tod_to ต้องเป็น HH:MM ขั้นละ 30 นาที และ from < to');
+      e.status = 400;
+      throw e;
+    }
+
+    return { from: todFrom, to: todTo };
+  }
+
+  // Build SQL time-of-day filter clause.
+  // colExpr = SQL expression for the timestamptz column (e.g. 'e.event_time' or 'b.bucket')
+  // Produces: AND (colExpr AT TIME ZONE $tzIdx)::time >= $todFromIdx::time AND (colExpr AT TIME ZONE $tzIdx)::time < $todToIdx::time
+  // Returns { sql, args } where args = [tz, tod.from, tod.to]
+  // startIdx = 1-based parameter index for tz (so $1 becomes startIdx=1, and tod params follow)
+  function todClause(colExpr, tod, tz, startIdx) {
+    if (!tod) return { sql: '', args: [] };
+    const tzIdx = startIdx;
+    const todFromIdx = startIdx + 1;
+    const todToIdx = startIdx + 2;
+    const sql = ` AND (${colExpr} AT TIME ZONE $${tzIdx})::time >= $${todFromIdx}::time AND (${colExpr} AT TIME ZONE $${tzIdx})::time < $${todToIdx}::time`;
+    return { sql, args: [tz, tod.from, tod.to] };
+  }
+
+  // minute2_5 (150s) = โหมด expand ของช่วง "ชั่วโมงนี้" ในหน้าสถิติใหม่ —
+  // ถังเล็กกว่าตารางสรุป (30 นาที) จึงบังคับอ่าน event ดิบเสมอเหมือน minute5
+  const TRUNC_OVERRIDES = new Set(['minute2_5', 'minute5', 'minute30', 'hour', 'day', 'week']);
+
+  function pickTruncUnit(fromMs, toMs, override) {
+    if (TRUNC_OVERRIDES.has(override)) return override;
     const spanH = (toMs - fromMs) / 3600e3;
+    if (spanH <= 2)   return 'minute5';
     if (spanH <= 48)  return 'hour';
     if (spanH <= 24 * 60) return 'day';   // up to 60 days
     return 'week';
   }
 
-  // 30s TTL cache for today-counts (frontend polls every 60s)
-  let _todayCountsCache = null, _todayCountsCacheAt = 0;
-  const TODAY_COUNTS_TTL_MS = 30_000;
+  // 30s TTL cache for today-counts (frontend polls every 60s) — ช่องเดียว เฉพาะ
+  // ผู้ใช้ที่ไม่ถูก scope · ผู้ใช้ที่ถูก scope ข้ามแคชทั้งก้อนเหมือนเดิม
+  const _todayCountsCache = createTtlCache({ name: 'stats:today-counts', ttlMs: 30_000, max: 1 });
 
-  // ── Occupancy routes ──────────────────────────────────────────
+  // ── กลุ่ม route ที่แยกออกไปเป็นไฟล์ย่อย — เรียกตรงตำแหน่งที่ route กลุ่มนั้น
+  //    เคยลงทะเบียนตอนไฟล์นี้ถือครบทั้ง 27 ตัว (ลำดับคือพฤติกรรม) ──
+  const subDeps = {
+    parseRange, parseTod, todClause,
+    getDisplayTz, METRIC_EVENT_TYPE_PATTERN, analyticsEventClause,
+    occupancy, occupancySmoothMs,
+    _todayCountsCache,
+  };
 
-  // GET /api/stats/occupancy — snapshot of current "People in Area" per
-  // camera/rule. Smoothed `current` is what the UI should display; `raw` is
-  // the latest unsmoothed sample for diagnostics.
-  app.get('/api/stats/occupancy', async (req, res) => {
-    try {
-      const allowedSites = resolveSiteScope(req);
-      let allowedCams = null;
-      if (allowedSites !== null) {
-        if (allowedSites.length === 0) return res.json({ cameras: [], smoothing_window_ms: occupancySmoothMs });
-        const r = await pool.query('SELECT id FROM cameras WHERE site_id = ANY($1)', [allowedSites]);
-        allowedCams = new Set(r.rows.map(row => row.id));
-      }
-      const cams = [];
-      const now = Date.now();
-      for (const [cameraId, perCam] of occupancy.entries()) {
-        if (allowedCams && !allowedCams.has(cameraId)) continue;
-        for (const [ruleName, entry] of perCam.entries()) {
-          cams.push({
-            camera_id: cameraId,
-            rule_name: ruleName,
-            current: entry.smoothed,
-            raw: entry.raw,
-            samples: entry.samples.length,
-            last_update: entry.lastUpdate ? new Date(entry.lastUpdate).toISOString() : null,
-            stale_sec: entry.lastUpdate ? Math.floor((now - entry.lastUpdate) / 1000) : null,
-          });
-        }
-      }
-      res.json({ cameras: cams, smoothing_window_ms: occupancySmoothMs });
-    } catch (err) { routeError(res, err, 'GET /api/stats/occupancy'); }
-  });
+  statsOccupancyRoutes(app, pool, subDeps);
 
-  // GET /api/stats/occupancy/sources?from=ISO&to=ISO
-  // Distinct (camera_id, rule_name) pairs that have CountAggregation/Counter
-  // samples in the range — used by the Density charts' camera+rule dropdown.
-  // Was previously sourced from the in-memory occupancy tracker, but that
-  // Map is emptied on every api-server restart and only repopulates when new
-  // events arrive, so the dropdown looked empty even when DB had thousands of
-  // historical samples. DB is the source of truth here.
-  app.get('/api/stats/occupancy/sources', async (req, res) => {
-    try {
-      const { from, to } = parseRange(req.query);
-      if (to.getTime() <= from.getTime()) return res.status(400).json({ error: 'to must be after from' });
-      const swOCCS = siteWhere(resolveSiteScope(req), 'camera_id', 3);
-      const { rows } = await pool.query(`
-        SELECT camera_id,
-               (raw_json->'Source'->>'Rule') AS rule_name,
-               COUNT(*)::int                 AS samples,
-               MAX(event_time)::text         AS last_seen
-          FROM events
-         WHERE event_type = 'CountAggregation/Counter'
-           AND event_time >= $1::timestamptz
-           AND event_time <  $2::timestamptz
-           AND (raw_json->'Source'->>'Rule') IS NOT NULL
-           ${swOCCS.sql}
-         GROUP BY camera_id, (raw_json->'Source'->>'Rule')
-         ORDER BY samples DESC`, [from.toISOString(), to.toISOString(), ...swOCCS.args]);
-      res.json({ sources: rows });
-    } catch (err) { routeError(res, err, 'GET /api/stats/occupancy/sources'); }
-  });
-
-  // GET /api/stats/occupancy/timeline?from=ISO&to=ISO[&camera_id=X][&rule_name=Y]
-  // Historical density: aggregates CountAggregation/Counter samples into time
-  // buckets (auto-picked from range length) and returns avg + max per bucket.
-  // Driven by the raw events already stored — no schema change.
-  //   - avg = "typical density during that period" (smoothed)
-  //   - max = "peak density during that period" (worst-case)
-  //   - samples = how many Bosch fires landed in the bucket (data quality)
-  // Buckets are aligned to the display_timezone so a Thai user sees their
-  // own calendar hours, matching the existing Activity Heatmap card.
-  app.get('/api/stats/occupancy/timeline', async (req, res) => {
-    try {
-      const { from, to } = parseRange(req.query);
-      if (to.getTime() <= from.getTime()) return res.status(400).json({ error: 'to must be after from' });
-
-      const rangeMs = to.getTime() - from.getTime();
-      let bucketSec;
-      if      (rangeMs <=   4 * 3600 * 1000) bucketSec = 60;     // ≤4h  → 1m
-      else if (rangeMs <=  24 * 3600 * 1000) bucketSec = 300;    // ≤24h → 5m
-      else if (rangeMs <=   7 * 86400 * 1000) bucketSec = 3600;  // ≤7d  → 1h
-      else                                    bucketSec = 86400; // >7d  → 1d
-
-      const cameraId = req.query.camera_id || null;
-      const ruleName = req.query.rule_name || null;
-
-      const params = [from.toISOString(), to.toISOString(), `${bucketSec} seconds`];
-      let where = `event_type = 'CountAggregation/Counter'
-                   AND event_time >= $1::timestamptz
-                   AND event_time <  $2::timestamptz`;
-      if (cameraId) { params.push(cameraId); where += ` AND camera_id = $${params.length}`; }
-      if (ruleName) { params.push(ruleName); where += ` AND raw_json->'Source'->>'Rule' = $${params.length}`; }
-      const swOCCTL = siteWhere(resolveSiteScope(req), 'camera_id', params.length + 1);
-      if (swOCCTL.sql) { where += ` ${swOCCTL.sql}`; params.push(...swOCCTL.args); }
-
-      // date_bin (PG14+) buckets timestamps to fixed-width intervals. Anchored
-      // at the unix epoch in UTC so buckets align with wall-clock minutes/hours.
-      const sql = `
-        SELECT date_bin($3::interval, event_time, TIMESTAMPTZ '1970-01-01 00:00:00+00') AS bucket,
-               AVG((raw_json->'Data'->>'Count')::int)::numeric(10,2) AS avg_count,
-               MAX((raw_json->'Data'->>'Count')::int)                AS max_count,
-               COUNT(*)::int                                          AS samples
-          FROM events
-         WHERE ${where}
-         GROUP BY 1
-         ORDER BY 1`;
-      const { rows } = await pool.query(sql, params);
-
-      res.json({
-        from: from.toISOString(),
-        to:   to.toISOString(),
-        bucket_sec: bucketSec,
-        camera_id: cameraId,
-        rule_name: ruleName,
-        buckets: rows.map(r => ({
-          ts: new Date(r.bucket).toISOString(),
-          avg: parseFloat(r.avg_count) || 0,
-          max: r.max_count,
-          samples: r.samples,
-        })),
-      });
-    } catch (err) { routeError(res, err, 'GET /api/stats/occupancy/timeline'); }
-  });
-
-  // GET /api/stats/occupancy/heatmap?from=ISO&to=ISO[&camera_id=X][&rule_name=Y]
-  // Phase 2 of density viz: 7×24 grid of avg + peak occupancy by
-  // (day-of-week × hour), aligned to display_timezone. Uses the same source
-  // rows as /api/stats/occupancy/timeline (CountAggregation/Counter) but
-  // groups by dow+hour so you can spot weekly patterns ("Mondays at 10am
-  // are always busy"). dow uses ISO ordering (0=Mon..6=Sun).
-  app.get('/api/stats/occupancy/heatmap', async (req, res) => {
-    try {
-      const { from, to } = parseRange(req.query);
-      if (to.getTime() <= from.getTime()) return res.status(400).json({ error: 'to must be after from' });
-      const cameraId = req.query.camera_id || null;
-      const ruleName = req.query.rule_name || null;
-      const tz       = await getDisplayTz();
-
-      const params = [from.toISOString(), to.toISOString(), tz];
-      let where = `event_type = 'CountAggregation/Counter'
-                   AND event_time >= $1::timestamptz
-                   AND event_time <  $2::timestamptz`;
-      if (cameraId) { params.push(cameraId); where += ` AND camera_id = $${params.length}`; }
-      if (ruleName) { params.push(ruleName); where += ` AND raw_json->'Source'->>'Rule' = $${params.length}`; }
-      const swOCCHM = siteWhere(resolveSiteScope(req), 'camera_id', params.length + 1);
-      if (swOCCHM.sql) { where += ` ${swOCCHM.sql}`; params.push(...swOCCHM.args); }
-
-      const { rows } = await pool.query(`
-        SELECT (EXTRACT(isodow FROM event_time AT TIME ZONE $3)::int - 1) AS dow,
-                EXTRACT(hour   FROM event_time AT TIME ZONE $3)::int      AS hour,
-                AVG((raw_json->'Data'->>'Count')::int)::numeric(10,2)     AS avg_count,
-                MAX((raw_json->'Data'->>'Count')::int)                    AS max_count,
-                COUNT(*)::int                                              AS samples
-          FROM events
-         WHERE ${where}
-         GROUP BY dow, hour
-         ORDER BY dow, hour`, params);
-
-      res.json({
-        from: from.toISOString(),
-        to:   to.toISOString(),
-        tz,
-        camera_id: cameraId,
-        rule_name: ruleName,
-        cells: rows.map(r => ({
-          dow:  r.dow,
-          hour: r.hour,
-          avg:  parseFloat(r.avg_count) || 0,
-          max:  r.max_count,
-          samples: r.samples,
-        })),
-      });
-    } catch (err) { routeError(res, err, 'GET /api/stats/occupancy/heatmap'); }
-  });
-
-  // ── Core statistics routes ────────────────────────────────────
-
-  // Time series: TOTAL EVENTS + ALERTS (2 lines)
-  // Alerts = events with rule_name set (intentional alerts)
-  app.get('/api/stats/timeline', async (req, res) => {
-    const { from, to, cameras, granularity = 'hour' } = req.query;
-    try {
-      const truncUnit = granularity === 'hour' ? 'hour' : granularity === 'day' ? 'day' : 'week';
-      let sql = `SELECT
-                   DATE_TRUNC('${truncUnit}', event_time) AS bucket,
-                   COUNT(*)::int AS total,
-                   COUNT(*) FILTER (WHERE rule_name IS NOT NULL AND rule_name != '')::int AS alerts
-                 FROM events WHERE 1=1`;
-      const params = [];
-      let n = 0;
-      if (from) { sql += ` AND event_time >= $${++n}`; params.push(from); }
-      if (to)   { sql += ` AND event_time <= $${++n}`; params.push(to); }
-      if (cameras) {
-        sql += ` AND camera_id = ANY($${++n})`;
-        params.push(cameras.split(','));
-      }
-      const swTL = siteWhere(req.user?.allowedSites ?? null, 'camera_id', n + 1);
-      if (swTL.sql) { sql += ` ${swTL.sql}`; params.push(...swTL.args); n += swTL.args.length; }
-      sql += ` GROUP BY bucket ORDER BY bucket ASC`;
-      const { rows } = await pool.query(sql, params);
-      res.json(rows);
-    } catch (err) { routeError(res, err, 'GET /api/stats/timeline'); }
-  });
-
-  // Per-camera "today" counts — used by Camera Status dashboard.
-  // "Today" = midnight in display_timezone (Asia/Bangkok by default) → now.
-  // Replaces the buggy client-side filter from allEvents (capped at 300 = severe undercount).
-  // 30s TTL cache: frontend polls every 60s; data doesn't need sub-minute freshness (Phase 3 opt, O6)
-  app.get('/api/stats/today-counts', async (req, res) => {
-    try {
-      const now = Date.now();
-      const isScoped = req.user?.isSiteScoped;
-      if (!isScoped && _todayCountsCache && now - _todayCountsCacheAt < TODAY_COUNTS_TTL_MS) {
-        return res.json(_todayCountsCache);
-      }
-      const tz = await getDisplayTz();
-      const swTC = siteWhere(req.user?.allowedSites ?? null, 'camera_id', 2);
-      const r = await pool.query(`
-        SELECT camera_id,
-               COUNT(*)::int AS total,
-               COUNT(*) FILTER (WHERE object_class = 'Person' AND event_type NOT LIKE 'FaceDetector/%')::int AS persons,
-               COUNT(*) FILTER (WHERE object_class IN ('Car','Truck','Vehicle','Bicycle') OR event_type = 'anprAlarm')::int AS vehicles,
-               COUNT(*) FILTER (WHERE event_type LIKE 'FaceCapture%')::int AS faces,
-               -- Dahua NVR face channels: FaceDetector/Comparison is the recognition
-               -- result (twin of FaceDetector/Recognized — count only Comparison so a
-               -- face isn't double-counted). listType set → blacklist (known/watch),
-               -- null → miss (ไม่รู้จัก).
-               COUNT(*) FILTER (WHERE event_type IN ('FaceRecognition','FaceDetector/Comparison') AND raw_json->>'listType' IS NOT NULL)::int AS face_matches,
-               COUNT(*) FILTER (WHERE event_type IN ('FaceRecognition','FaceDetector/Comparison') AND raw_json->>'listType' IS NULL)::int AS face_miss,
-               MAX(event_time) AS last_event
-          FROM events
-         WHERE event_time >= date_trunc('day', NOW() AT TIME ZONE $1) AT TIME ZONE $1
-           AND event_type NOT LIKE '${METRIC_EVENT_TYPE_PATTERN}'
-           ${swTC.sql}
-         GROUP BY camera_id`, [tz, ...swTC.args]);
-
-      const cameras = {};
-      let totalAll = 0;
-      for (const row of r.rows) {
-        cameras[row.camera_id] = {
-          total: row.total,
-          persons: row.persons,
-          vehicles: row.vehicles,
-          faces: row.faces,
-          face_matches: row.face_matches,
-          face_miss: row.face_miss,
-          last_event: row.last_event ? new Date(row.last_event).toISOString() : null,
-        };
-        totalAll += row.total;
-      }
-      if (!isScoped) { _todayCountsCache = { total: totalAll, cameras, tz }; _todayCountsCacheAt = now; }
-      res.json({ total: totalAll, cameras, tz });
-    } catch (err) { routeError(res, err, 'GET /api/stats/today-counts'); }
-  });
-
-  // KPI Cards
-  app.get('/api/stats/kpi', async (req, res) => {
-    const { from, to, cameras } = req.query;
-    try {
-      let sql = `
-        SELECT
-          COUNT(*)::int AS total_events,
-          COUNT(*) FILTER (WHERE rule_name IS NOT NULL AND rule_name != '')::int AS alerts,
-          COUNT(*) FILTER (WHERE object_class = 'Person')::int AS persons,
-          COUNT(*) FILTER (WHERE object_class IN ('Car','Truck','Vehicle','Bicycle'))::int AS vehicles,
-          COUNT(*) FILTER (WHERE event_type LIKE '%Crossed%' OR event_type LIKE '%Recognition%')::int AS traffic_violations
-        FROM events WHERE 1=1`;
-      const params = [];
-      let n = 0;
-      if (from) { sql += ` AND event_time >= $${++n}`; params.push(from); }
-      if (to)   { sql += ` AND event_time <= $${++n}`; params.push(to); }
-      if (cameras) {
-        sql += ` AND camera_id = ANY($${++n})`;
-        params.push(cameras.split(','));
-      }
-      const swKPI = siteWhere(req.user?.allowedSites ?? null, 'camera_id', n + 1);
-      if (swKPI.sql) { sql += ` ${swKPI.sql}`; params.push(...swKPI.args); n += swKPI.args.length; }
-      const { rows } = await pool.query(sql, params);
-      res.json(rows[0] || {});
-    } catch (err) { routeError(res, err, 'GET /api/stats/kpi'); }
-  });
-
-  // Event Breakdown by rule_name
-  app.get('/api/stats/breakdown', async (req, res) => {
-    const { from, to, cameras } = req.query;
-    try {
-      let sql = `
-        SELECT
-          COALESCE(NULLIF(rule_name, ''), event_type) AS name,
-          event_type,
-          COUNT(*)::int AS count
-        FROM events
-        WHERE 1=1`;
-      const params = [];
-      let n = 0;
-      if (from) { sql += ` AND event_time >= $${++n}`; params.push(from); }
-      if (to)   { sql += ` AND event_time <= $${++n}`; params.push(to); }
-      if (cameras) {
-        sql += ` AND camera_id = ANY($${++n})`;
-        params.push(cameras.split(','));
-      }
-      const swBD = siteWhere(req.user?.allowedSites ?? null, 'camera_id', n + 1);
-      if (swBD.sql) { sql += ` ${swBD.sql}`; params.push(...swBD.args); n += swBD.args.length; }
-      sql += ` GROUP BY name, event_type ORDER BY count DESC LIMIT 20`;
-      const { rows } = await pool.query(sql, params);
-      res.json(rows);
-    } catch (err) { routeError(res, err, 'GET /api/stats/breakdown'); }
-  });
-
-  // Original endpoints (kept for compatibility)
-  app.get('/api/stats/timeseries-rules', async (req, res) => {
-    const { from, to, cameras, rules, granularity = 'day' } = req.query;
-    try {
-      const truncUnit = granularity === 'hour' ? 'hour' : 'day';
-      let sql = `SELECT
-                   DATE_TRUNC('${truncUnit}', event_time) AS bucket,
-                   COALESCE(NULLIF(rule_name, ''), event_type) AS rule_name,
-                   COUNT(*)::int AS count
-                 FROM events WHERE rule_name IS NOT NULL`;
-      const params = [];
-      let n = 0;
-      if (from) { sql += ` AND event_time >= $${++n}`; params.push(from); }
-      if (to)   { sql += ` AND event_time <= $${++n}`; params.push(to); }
-      if (cameras) { sql += ` AND camera_id = ANY($${++n})`; params.push(cameras.split(',')); }
-      if (rules) { sql += ` AND rule_name = ANY($${++n})`; params.push(rules.split(',')); }
-      const swTSR = siteWhere(req.user?.allowedSites ?? null, 'camera_id', n + 1);
-      if (swTSR.sql) { sql += ` ${swTSR.sql}`; params.push(...swTSR.args); n += swTSR.args.length; }
-      sql += ` GROUP BY bucket, rule_name ORDER BY bucket ASC`;
-      const { rows } = await pool.query(sql, params);
-      res.json(rows);
-    } catch (err) { routeError(res, err, 'GET /api/stats/timeseries-rules'); }
-  });
-
-  // Map activity intensity — event density per camera, excludes metric events
-  // so the map heatmap reflects real incidents, not counter samples.
-  app.get('/api/heatmap', async (req, res) => {
-    const { hours = 24 } = req.query;
-    try {
-      const hoursVal = Math.max(1, parseInt(hours, 10) || 24);
-      const swMapHM = siteWhere(req.user?.allowedSites ?? null, 'camera_id', 2);
-      const { rows } = await pool.query(`
-        SELECT camera_id, COUNT(*)::int AS count
-        FROM events
-        WHERE event_time > NOW() - ($1 * INTERVAL '1 hour')
-          AND event_type NOT LIKE '${METRIC_EVENT_TYPE_PATTERN}'
-          ${swMapHM.sql}
-        GROUP BY camera_id
-      `, [hoursVal, ...swMapHM.args]);
-      res.json(rows);
-    } catch (err) { routeError(res, err, 'GET /api/heatmap'); }
-  });
-
-  // ── Data Enrichment routes ────────────────────────────────────
-
-  // GET /api/stats/dwell?from=ISO&to=ISO[&camera_id=..][&episodes=true][&limit=50]
-  // Zone dwell time — จับคู่ FieldDetector/ObjectsInside event_state true→false
-  // ต่อ (camera, rule) ด้วย window function: "คนอยู่หน้าตู้เย็นนานเท่าไหร่"
-  // (Data Enrichment Ph.1, 2026-06-10). หมายเหตุ: Dahua ส่งแต่ enter (true)
-  // จึงยังไม่เกิดคู่ — รองรับอัตโนมัติเมื่อ Ph.2 เพิ่ม leave ฝั่ง Dahua.
-  // คู่ที่ห่างเกิน 24 ชม. ถือว่า state หลุด (กล้อง reboot ฯลฯ) — ตัดทิ้ง
-  app.get('/api/stats/dwell', async (req, res) => {
-    try {
-      const { from, to } = parseRange(req.query);
-      const args = [from.toISOString(), to.toISOString()];
-      let camFilter = '';
-      if (req.query.cameras) { args.push(req.query.cameras.split(',')); camFilter = ` AND camera_id = ANY($${args.length})`; }
-      else if (req.query.camera_id) { args.push(req.query.camera_id); camFilter = ` AND camera_id = $${args.length}`; }
-      const swDW = siteWhere(resolveSiteScope(req), 'camera_id', args.length + 1);
-      if (swDW.sql) { camFilter += ` ${swDW.sql}`; args.push(...swDW.args); }
-      const baseCte = `
-        WITH z AS (
-          SELECT camera_id, rule_name, event_time, event_state,
-                 LEAD(event_time)  OVER w AS next_time,
-                 LEAD(event_state) OVER w AS next_state
-          FROM events
-          WHERE event_type = 'FieldDetector/ObjectsInside'
-            AND event_state IN ('true','false')
-            AND event_time >= $1 AND event_time <= $2${camFilter}
-          WINDOW w AS (PARTITION BY camera_id, rule_name ORDER BY event_time)
-        ), ep AS (
-          SELECT camera_id, rule_name, event_time AS start_time, next_time AS end_time,
-                 EXTRACT(EPOCH FROM (next_time - event_time)) AS dwell_sec
-          FROM z
-          WHERE event_state = 'true' AND next_state = 'false'
-            AND next_time - event_time <= INTERVAL '24 hours'
-        )`;
-      if (req.query.episodes === 'true') {
-        const lim = Math.min(parseInt(req.query.limit) || 50, 500);
-        args.push(lim);
-        const { rows } = await pool.query(
-          `${baseCte}
-           SELECT camera_id, rule_name, start_time, end_time, ROUND(dwell_sec)::int AS dwell_sec
-           FROM ep ORDER BY start_time DESC LIMIT $${args.length}`, args);
-        return res.json(rows);
-      }
-      const { rows } = await pool.query(
-        `${baseCte}
-         SELECT camera_id, rule_name,
-                COUNT(*)::int            AS episodes,
-                ROUND(AVG(dwell_sec))::int AS avg_sec,
-                MAX(dwell_sec)::int      AS max_sec,
-                MIN(dwell_sec)::int      AS min_sec,
-                ROUND(SUM(dwell_sec))::int AS total_sec
-         FROM ep GROUP BY camera_id, rule_name
-         ORDER BY camera_id, rule_name`, args);
-      res.json(rows);
-    } catch (err) { routeError(res, err, 'GET /api/stats/dwell'); }
-  });
-
-  // GET /api/stats/people-counting?from=ISO&to=ISO[&cameras=a,b]
-  // Traffic เข้า-ออกจาก Hikvision People Counting (PC.1, 2026-06-12) —
-  // source = CountAggregation/PeopleCounting rows (กล้องสรุปทุก 15 นาที,
-  // event_time = จุดจบ window). bucket อัตโนมัติตามช่วง: 15m / 1h / 1d
-  app.get('/api/stats/people-counting', async (req, res) => {
-    try {
-      const { from, to } = parseRange(req.query);
-      const rangeMs = to.getTime() - from.getTime();
-      let bucketSec;
-      if      (rangeMs <= 1.5 * 86400 * 1000) bucketSec = 900;    // ≤1.5d → 15m (native)
-      else if (rangeMs <=   8 * 86400 * 1000) bucketSec = 3600;   // ≤8d  → 1h
-      else                                    bucketSec = 86400;  // >8d  → 1d
-      const params = [from.toISOString(), to.toISOString()];
-      let where = `event_type = 'CountAggregation/PeopleCounting'
-                   AND event_time >= $1::timestamptz
-                   AND event_time <= $2::timestamptz`;
-      if (req.query.cameras) {
-        const ids = String(req.query.cameras).split(',').map(s => s.trim()).filter(Boolean);
-        if (ids.length) { params.push(ids); where += ` AND camera_id = ANY($${params.length})`; }
-      }
-      const swPC = siteWhere(resolveSiteScope(req), 'camera_id', params.length + 1);
-      if (swPC.sql) { where += ` ${swPC.sql}`; params.push(...swPC.args); }
-      const bucketParam = [...params, `${bucketSec} seconds`];
-      const { rows } = await pool.query(`
-        SELECT date_bin($${bucketParam.length}::interval, event_time,
-                        TIMESTAMPTZ '1970-01-01 00:00:00+00')     AS bucket,
-               SUM((raw_json->>'enter')::int) AS enter,
-               SUM((raw_json->>'exit')::int)  AS exit
-          FROM events
-         WHERE ${where}
-         GROUP BY 1 ORDER BY 1`, bucketParam);
-      const { rows: perCam } = await pool.query(`
-        SELECT camera_id,
-               SUM((raw_json->>'enter')::int) AS enter,
-               SUM((raw_json->>'exit')::int)  AS exit
-          FROM events
-         WHERE ${where}
-         GROUP BY 1 ORDER BY 2 DESC`, params);
-      res.json({
-        bucket_sec: bucketSec,
-        buckets: rows.map(r => ({
-          ts: new Date(r.bucket).toISOString(),
-          enter: parseInt(r.enter, 10) || 0,
-          exit:  parseInt(r.exit, 10)  || 0,
-        })),
-        total_enter: rows.reduce((s, r) => s + (parseInt(r.enter, 10) || 0), 0),
-        total_exit:  rows.reduce((s, r) => s + (parseInt(r.exit, 10)  || 0), 0),
-        per_camera: perCam.map(r => ({
-          camera_id: r.camera_id,
-          enter: parseInt(r.enter, 10) || 0,
-          exit:  parseInt(r.exit, 10)  || 0,
-        })),
-      });
-    } catch (err) { routeError(res, err, 'GET /api/stats/people-counting'); }
-  });
+  statsCoreRoutes(app, pool, subDeps);
 
   // ── Category-aware stats routes ───────────────────────────────
 
-  // GET /api/stats/categories?from=ISO&to=ISO[&cameras=...]
+  // GET /api/stats/categories?from=ISO&to=ISO[&cameras=...][&tod_from=HH:MM&tod_to=HH:MM]
   // Returns per-category event count + previous-period count + change_pct
   // "previous" = same-length window immediately before [from, to) (rolling)
   app.get('/api/stats/categories', async (req, res) => {
     try {
-      const { from, to } = parseRange(req.query);
+      const rawRange = parseRange(req.query);
+      if (rawRange.to.getTime() - rawRange.from.getTime() <= 0) {
+        return res.status(400).json({ error: 'to must be after from' });
+      }
+      const tod = parseTod(req.query);
+      const tz = await getDisplayTz();
+      // ช่วงยาว → อ่านตารางสรุป (ต้อง snap ให้ตรงขอบถัง 30 นาทีก่อน)
+      // ช่วงสั้น → อ่าน event ดิบเหมือนเดิม · ดู helpers/categoryRollup.js
+      const useRollup = catRollup.canUseRollup(rawRange.from.getTime(), rawRange.to.getTime());
+      const from = useRollup ? catRollup.snapFrom(rawRange.from) : rawRange.from;
+      const to   = useRollup ? catRollup.snapTo(rawRange.to)     : rawRange.to;
       const span = to.getTime() - from.getTime();
-      if (span <= 0) return res.status(400).json({ error: 'to must be after from' });
-      const prevFrom = new Date(from.getTime() - span);
+      const prevFrom = useRollup
+        ? catRollup.snapFrom(new Date(from.getTime() - span))
+        : new Date(from.getTime() - span);
       const cameras  = req.query.cameras ? String(req.query.cameras).split(',').filter(Boolean) : null;
       const allowed = req.user?.allowedSites ?? null;
       const siteParam = req.query.site_id ? parseInt(req.query.site_id, 10) : null;
@@ -527,13 +146,17 @@ module.exports = function statsRoutes(app, pool, {
         return res.status(403).json({ error: 'forbidden' });
       const activeSites = siteParam ? [siteParam] : allowed;
 
+      // ชื่อคอลัมน์เวลา/กล้อง ต่างกันระหว่าง 2 แหล่ง — ที่เหลือใช้ SQL ร่วมกันได้หมด
+      const srcAlias = useRollup ? 'b' : 'e';
+      const timeCol  = useRollup ? 'b.bucket' : 'e.event_time';
+
       const params = [from.toISOString(), to.toISOString(), prevFrom.toISOString()];
       let camFilter = '';
       if (cameras && cameras.length) {
         params.push(cameras);
-        camFilter = ` AND e.camera_id = ANY($${params.length}::text[])`;
+        camFilter = ` AND ${srcAlias}.camera_id = ANY($${params.length}::text[])`;
       }
-      const swCAT = siteWhere(activeSites, 'e.camera_id', params.length + 1);
+      const swCAT = siteWhere(activeSites, `${srcAlias}.camera_id`, params.length + 1);
       if (swCAT.sql) { camFilter += ` ${swCAT.sql}`; params.push(...swCAT.args); }
       let catFilter = '', cardFilter = '';
       if (activeSites !== null) {
@@ -541,16 +164,35 @@ module.exports = function statsRoutes(app, pool, {
         catFilter  = ` AND c.site_id = ANY($${params.length})`;
         cardFilter = `WHERE c.site_id = ANY($${params.length})`;
       }
+      const todClause_Cur = todClause(timeCol, tod, tz, params.length + 1);
+      if (todClause_Cur.sql) { camFilter += todClause_Cur.sql; params.push(...todClause_Cur.args); }
 
-      // Single-pass: join events→categories→rules once, GROUP BY category (FILTER
-      // splits current vs previous window) instead of one correlated subquery pair
-      // per category. LEFT JOIN back to event_categories is the safety net so a
-      // category with zero matching events still returns count=0, not a dropped row.
-      const sql = `
-        WITH matched AS (
-          SELECT r.category_id,
-                 COUNT(DISTINCT e.id) FILTER (WHERE e.event_time >= $1::timestamptz AND e.event_time < $2::timestamptz)::int AS count,
-                 COUNT(DISTINCT e.id) FILTER (WHERE e.event_time >= $3::timestamptz AND e.event_time < $1::timestamptz)::int AS prev_count
+      // Single-pass: GROUP BY category once (FILTER splits current vs previous
+      // window) instead of one correlated subquery pair per category. LEFT JOIN
+      // back to event_categories is the safety net so a category with zero
+      // matching events still returns count=0, not a dropped row.
+      //
+      // ช่วงยาวอ่านจาก event_dim_bucket (migration 163) — เดิม join event ทุกแถว
+      // กับตารางกฎ ทำให้ "รายเดือน" ค้างเกิน 5 นาที (15 ล้านแถว × 20 กฎ)
+      // สองสาขานี้ต้องได้เลขเท่ากันเสมอบนช่วงที่ snap แล้ว — มีเทสต์เทียบไว้
+      // ชั้นแรกแยกถึงระดับ "หมวด × กล้อง" — หัวข้อ "รายละเอียดต่อกล้อง" ในรายงานต้องการ
+      // จำนวนต่อกล้อง ไม่ใช่แค่รายชื่อกล้อง (เจ้าของสั่ง 2026-08-21)
+      // ⚠️ SUM ของ COUNT(DISTINCT e.id) ต่อกล้อง = COUNT(DISTINCT e.id) ต่อหมวด เสมอ
+      //    เพราะ event หนึ่งใบอยู่กล้องเดียว · ยืนยันกับข้อมูลจริงแล้ว 407,368 = 407,368
+      //    ถ้าวันหนึ่ง event ผูกได้หลายกล้อง ตัวเลขนี้จะเริ่มบวมทันที ต้องกลับมาดูตรงนี้
+      const matchedCamCte = useRollup ? `
+          SELECT c.id AS category_id, b.camera_id,
+                 COALESCE(SUM(b.n) FILTER (WHERE b.bucket >= $1::timestamptz AND b.bucket < $2::timestamptz), 0)::int AS n_cur,
+                 COALESCE(SUM(b.n) FILTER (WHERE b.bucket >= $3::timestamptz AND b.bucket < $1::timestamptz), 0)::int AS n_prev
+            FROM event_dim_bucket b
+            JOIN event_categories c ON TRUE ${catFilter}
+           WHERE b.bucket >= $3::timestamptz AND b.bucket < $2::timestamptz
+             ${camFilter}
+             AND ${catRollup.categoryMatchExists('c')}
+           GROUP BY c.id, b.camera_id` : `
+          SELECT r.category_id, e.camera_id,
+                 COUNT(DISTINCT e.id) FILTER (WHERE e.event_time >= $1::timestamptz AND e.event_time < $2::timestamptz)::int AS n_cur,
+                 COUNT(DISTINCT e.id) FILTER (WHERE e.event_time >= $3::timestamptz AND e.event_time < $1::timestamptz)::int AS n_prev
             FROM events e
             JOIN event_categories c ON TRUE ${catFilter}
             JOIN event_category_rules r ON r.category_id = c.id
@@ -562,12 +204,29 @@ module.exports = function statsRoutes(app, pool, {
                  AND (r.match_state  IS NULL OR r.match_state  = e.event_state OR e.event_type = 'anprAlarm')
            WHERE e.event_time >= $3::timestamptz AND e.event_time < $2::timestamptz
              ${camFilter}
-           GROUP BY r.category_id
+           GROUP BY r.category_id, e.camera_id`;
+      const sql = `
+        WITH matched_cam AS (${matchedCamCte}
+        ), matched AS (
+          -- ยุบเป็นระดับหมวด แล้วพก "กล้อง + จำนวน" ติดไปด้วย (เรียงมากไปน้อย)
+          -- กล้องที่ยิงเข้าหมวดนี้จริงเฉพาะช่วงปัจจุบัน ไม่นับช่วงก่อนหน้า
+          SELECT category_id,
+                 SUM(n_cur)::int  AS count,
+                 SUM(n_prev)::int AS prev_count,
+                 COALESCE(json_agg(json_build_object('camera_id', camera_id, 'count', n_cur)
+                          ORDER BY n_cur DESC, camera_id) FILTER (WHERE n_cur > 0), '[]') AS cameras_seen
+            FROM matched_cam GROUP BY category_id
         )
         SELECT c.id, c.name, c.icon, c.color, c.kind, c.is_locked, c.sort_order,
+          c.stat_group,   -- migration 183: override การจัดกลุ่มบนหน้าสถิติใหม่
           (SELECT COUNT(*)::int FROM event_category_rules r WHERE r.category_id = c.id) AS rule_count,
+          -- กฎของหมวดนี้ ใช้เดาว่าหมวดนี้เป็นกลุ่มคนหรือกลุ่มรถ (ดู objectClassGroup.js)
+          (SELECT COALESCE(json_agg(json_build_object(
+                    'object_class', r.object_class, 'vehicle_type', r.vehicle_type)), '[]')
+             FROM event_category_rules r WHERE r.category_id = c.id) AS _rules,
           COALESCE(m.count, 0) AS count,
-          COALESCE(m.prev_count, 0) AS prev_count
+          COALESCE(m.prev_count, 0) AS prev_count,
+          COALESCE(m.cameras_seen, '[]') AS cameras_seen
          FROM event_categories c
          LEFT JOIN matched m ON m.category_id = c.id
         ${cardFilter}
@@ -578,12 +237,16 @@ module.exports = function statsRoutes(app, pool, {
         const cur = r.count, prev = r.prev_count;
         r.change_pct = prev > 0 ? Math.round(((cur - prev) / prev) * 1000) / 10
                      : (cur > 0 ? null : 0);   // null => "no baseline"
+        // 'Person' | 'Vehicle' | null — การ์ดสรุปในรายงานบวกยอดตามช่องนี้ จะได้
+        // เท่ากับกราฟเสมอ (บวกจากตัวเลขชุดเดียวกัน ไม่ได้ไปนับ event ใหม่)
+        r.object_group = categoryGroup(r.kind, r._rules);
+        delete r._rules;
       });
 
       res.json({ from: from.toISOString(), to: to.toISOString(),
                  prev_from: prevFrom.toISOString(), prev_to: from.toISOString(),
                  categories: rows });
-    } catch (err) { routeError(res, err, 'GET /api/stats/categories'); }
+    } catch (err) { routeError(res, err, 'GET /api/stats/categories', req); }
   });
 
   // GET /api/stats/timeline-v2?from=ISO&to=ISO[&category_id=X][&cameras=...]
@@ -645,7 +308,7 @@ module.exports = function statsRoutes(app, pool, {
 
       const { rows } = await pool.query(sql, params);
       res.json({ from: from.toISOString(), to: to.toISOString(), trunc, tz, buckets: rows });
-    } catch (err) { routeError(res, err, 'GET /api/stats/timeline-v2'); }
+    } catch (err) { routeError(res, err, 'GET /api/stats/timeline-v2', req); }
   });
 
   // GET /api/stats/per-camera-counts?kind=people|vehicle&from=ISO&to=ISO[&cameras=...]
@@ -661,19 +324,31 @@ module.exports = function statsRoutes(app, pool, {
                  : null;
       if (!kind) return res.status(400).json({ error: 'kind must be people | vehicle' });
 
-      const { from, to } = parseRange(req.query);
+      const rawRangePCC = parseRange(req.query);
+      const useRollup = catRollup.canUseRollup(rawRangePCC.from.getTime(), rawRangePCC.to.getTime());
+      const from = useRollup ? catRollup.snapFrom(rawRangePCC.from) : rawRangePCC.from;
+      const to   = useRollup ? catRollup.snapTo(rawRangePCC.to)     : rawRangePCC.to;
       const cameras = req.query.cameras ? String(req.query.cameras).split(',').filter(Boolean) : null;
 
+      const srcAliasPCC = useRollup ? 'b' : 'e';
       const params = [from.toISOString(), to.toISOString(), kind];
       let camFilter = '';
       if (cameras && cameras.length) {
         params.push(cameras);
-        camFilter = ` AND e.camera_id = ANY($${params.length}::text[])`;
+        camFilter = ` AND ${srcAliasPCC}.camera_id = ANY($${params.length}::text[])`;
       }
-      const swPCC = siteWhere(resolveSiteScope(req), 'e.camera_id', params.length + 1);
+      const swPCC = siteWhere(resolveSiteScope(req), `${srcAliasPCC}.camera_id`, params.length + 1);
       if (swPCC.sql) { camFilter += ` ${swPCC.sql}`; params.push(...swPCC.args); }
 
-      const sql = `
+      // ช่วงยาวอ่านจากตารางสรุป (migration 163) — เดิมช่วง 1 เดือนวัดได้ 20–31 วินาที
+      const sql = useRollup ? `
+        SELECT b.camera_id, SUM(b.n)::int AS count
+          FROM event_dim_bucket b
+         WHERE b.bucket >= $1::timestamptz AND b.bucket < $2::timestamptz
+           ${camFilter}
+           AND ${catRollup.kindMatchExists('$3')}
+         GROUP BY b.camera_id
+         ORDER BY count DESC, b.camera_id` : `
         SELECT e.camera_id, COUNT(DISTINCT e.id)::int AS count
           FROM events e
           JOIN event_category_rules r ON
@@ -689,7 +364,74 @@ module.exports = function statsRoutes(app, pool, {
          ORDER BY count DESC, e.camera_id`;
       const { rows } = await pool.query(sql, params);
       res.json({ kind, from: from.toISOString(), to: to.toISOString(), per_camera: rows });
-    } catch (err) { routeError(res, err, 'GET /api/stats/per-camera-counts'); }
+    } catch (err) { routeError(res, err, 'GET /api/stats/per-camera-counts', req); }
+  });
+
+  // GET /api/stats/object-counts?from=ISO&to=ISO[&cameras=...][&object_classes=a,b]
+  //
+  // นับ event แยกตาม "ชนิดวัตถุ" ที่กล้องบอกมา (Motorcycle / Car / Truck / Person …)
+  //
+  // ทำไมต้องมีเส้นนี้ (2026-09-09): ก่อนหน้านี้คำสั่งใน LINE นับผ่าน `/api/events` แล้ว
+  // อ่านยอดจาก header ซึ่ง **มีเพดานนับที่ 10,000** (EVENTS_COUNT_CAP) ⇒ คำถามกว้าง ๆ
+  // อย่าง "รถจักรยานยนต์ทั้งไซต์เมื่อวาน" ได้คำตอบว่า "10,000+" ซึ่งใช้ตัดสินใจอะไรไม่ได้
+  // วัดจริงบนภูเก็ต 12 ชม.: ตารางสรุป 49 ms · นับจาก events ดิบ 650 ms · ค่าต่างกัน
+  // 2 แถวจาก 59,744 (0.003% — ขอบถังที่ refresher ยังตามไม่ทัน)
+  //
+  // ⚠️ ยอดนี้รวมทุกกล้องที่ระบุชนิดวัตถุได้ **รวมกล้องอ่านป้ายด้วย** (anprAlarm พก
+  // object_class มาเหมือนกัน — วัดจริงที่ RMUTR-V 1 ชม.: LineDetector 595 + anprAlarm 214)
+  // รถคันเดียวที่ผ่านทั้งเส้นนับและกล้องอ่านป้ายจึงถูกนับสองครั้ง ⇒ ผู้เรียกต้องเขียนกำกับ
+  app.get('/api/stats/object-counts', async (req, res) => {
+    try {
+      const raw = parseRange(req.query);
+      if (raw.to.getTime() - raw.from.getTime() <= 0) {
+        return res.status(400).json({ error: 'to must be after from' });
+      }
+      // เกณฑ์เดียวกับ /api/stats/categories — ช่วงสั้นหรือไม่ลงขอบถังอ่าน event ดิบ
+      const useRollup = catRollup.canUseRollup(raw.from.getTime(), raw.to.getTime());
+      const from = useRollup ? catRollup.snapFrom(raw.from) : raw.from;
+      const to   = useRollup ? catRollup.snapTo(raw.to)     : raw.to;
+      const alias = useRollup ? 'b' : 'e';
+      const timeCol = useRollup ? 'b.bucket' : 'e.event_time';
+
+      const params = [from.toISOString(), to.toISOString()];
+      let filt = '';
+      const cameras = req.query.cameras
+        ? String(req.query.cameras).split(',').map((x) => x.trim()).filter(Boolean) : null;
+      if (cameras && cameras.length) {
+        params.push(cameras);
+        filt += ` AND ${alias}.camera_id = ANY($${params.length}::text[])`;
+      }
+      const classes = req.query.object_classes
+        ? String(req.query.object_classes).split(',').map((x) => x.trim()).filter(Boolean) : null;
+      if (classes && classes.length) {
+        params.push(classes);
+        filt += ` AND ${alias}.object_class = ANY($${params.length}::text[])`;
+      }
+      const sw = siteWhere(resolveSiteScope(req), `${alias}.camera_id`, params.length + 1);
+      if (sw.sql) { filt += ` ${sw.sql}`; params.push(...sw.args); }
+
+      // dim เก็บ object_class เป็น NOT NULL DEFAULT '' จึงเช็ค <> '' ส่วน events เป็น NULL ได้
+      const sql = useRollup ? `
+        SELECT b.object_class, SUM(b.n)::int AS count
+          FROM event_dim_bucket b
+         WHERE b.bucket >= $1::timestamptz AND b.bucket < $2::timestamptz
+           AND b.object_class <> '' ${filt}
+         GROUP BY 1 ORDER BY 2 DESC` : `
+        SELECT e.object_class, COUNT(*)::int AS count
+          FROM events e
+         WHERE e.event_time >= $1::timestamptz AND e.event_time < $2::timestamptz
+           AND e.object_class IS NOT NULL AND e.object_class <> '' ${filt}
+         GROUP BY 1 ORDER BY 2 DESC`;
+      const { rows } = await pool.query(sql, params);
+      res.json({
+        from: from.toISOString(), to: to.toISOString(),
+        source: useRollup ? 'rollup' : 'raw',
+        // ตารางสรุปตามหลังของจริงได้ถึงหนึ่งรอบ refresher — ผู้เรียกต้องบอกผู้ใช้ได้
+        stale_minutes: useRollup ? Math.round(env.int('CAT_ROLLUP_REFRESH_MS') / 60000) : 0,
+        classes: rows,
+        total: rows.reduce((a, r) => a + r.count, 0),
+      });
+    } catch (err) { routeError(res, err, 'GET /api/stats/object-counts', req); }
   });
 
   // GET /api/stats/heatmap?from=ISO&to=ISO[&category_id=X][&cameras=...]
@@ -700,9 +442,14 @@ module.exports = function statsRoutes(app, pool, {
     try {
       const { from, to } = parseRange(req.query);
       if (to.getTime() - from.getTime() <= 0) return res.status(400).json({ error: 'to must be after from' });
+      const tod = parseTod(req.query);
       const catId   = req.query.category_id ? parseInt(req.query.category_id, 10) : null;
       const cameras = req.query.cameras ? String(req.query.cameras).split(',').filter(Boolean) : null;
       const domainSet = req.query.domains ? new Set(String(req.query.domains).split(',')) : null;
+      // หมวดที่ผู้ใช้ติ๊กออกในหน้ารายงาน — ไม่ส่งมา = ไม่กรอง (คนละตัวกับ category_id
+      // ที่หน้าสถิติใช้เจาะดูหมวดเดียว ทั้งสองอยู่ร่วมกันได้)
+      const hideHeat = req.query.cats_hide
+        ? String(req.query.cats_hide).split(',').map(x => parseInt(x, 10)).filter(Number.isFinite) : null;
       const tz      = await getDisplayTz();
 
       const params = [from.toISOString(), to.toISOString(), tz];
@@ -715,6 +462,16 @@ module.exports = function statsRoutes(app, pool, {
       if (swHM.sql) { where += ` ${swHM.sql}`; params.push(...swHM.args); }
       if (domainSet && !domainSet.has('lpr'))  where += ` AND e.event_type <> 'anprAlarm'`;
       if (domainSet && !domainSet.has('face')) where += ` AND e.event_type NOT IN ('FaceCapture','FaceRecognition')`;
+      if (hideHeat && hideHeat.length) {
+        params.push(hideHeat);
+        where += ` AND ${catRollup.hideCategoriesClause(`$${params.length}::int[]`, 'e')}`;
+      }
+      const todClause_HM = todClause('e.event_time', tod, tz, params.length + 1);
+      if (todClause_HM.sql) { where += todClause_HM.sql; params.push(...todClause_HM.args); }
+      // ช่วง ≥2 ชม. อ่านถังเต็มจาก event_dim_bucket + เศษหัว/ท้ายดิบ (helpers/categoryRollup.eventSource) — ถัง 30 นาที
+      // อยู่ในชั่วโมงเดียวเสมอ dow/hour จึงตรง · เดือน: ชนเพดาน 120 วิ (ตรวจคิวรีทุกหน้า 2026-10-25) · ช่วงสั้นนับดิบตามเดิม
+      const ruHM = catRollup.canUseRollup(from.getTime(), to.getTime());
+      const srcHM = ruHM ? await catRollup.eventSource(pool, params, from, to) : 'events e';
 
       let sql;
       if (catId) {
@@ -722,15 +479,16 @@ module.exports = function statsRoutes(app, pool, {
         sql = `
           SELECT (EXTRACT(isodow FROM e.event_time AT TIME ZONE $3)::int - 1) AS dow,
                   EXTRACT(hour   FROM e.event_time AT TIME ZONE $3)::int      AS hour,
-                  COUNT(DISTINCT e.id)::int AS count
-            FROM events e
-            JOIN event_category_rules r ON r.category_id = $${params.length}
+                  ${ruHM ? 'SUM(e.n)' : 'COUNT(DISTINCT e.id)'}::int AS count
+            FROM ${srcHM}
+           WHERE ${where}
+             -- EXISTS = นับ event ละครั้งแม้เข้าหลายกฎของหมวดเดียวกัน (เท่ากับ COUNT(DISTINCT e.id) ของ JOIN เดิม)
+             AND EXISTS (SELECT 1 FROM event_category_rules r WHERE r.category_id = $${params.length}
                     AND (r.camera_id    IS NULL OR r.camera_id    = e.camera_id)
                     AND (r.rule_name    IS NULL OR r.rule_name    = e.rule_name)
                     AND (r.event_type   IS NULL OR r.event_type   = e.event_type)
                     AND (r.object_class IS NULL OR r.object_class = e.object_class)
-                    AND (r.match_state  IS NULL OR r.match_state  = e.event_state OR e.event_type = 'anprAlarm')
-           WHERE ${where}
+                    AND (r.match_state  IS NULL OR r.match_state  = e.event_state OR e.event_type = 'anprAlarm'))
            GROUP BY dow, hour
            ORDER BY dow, hour`;
       } else {
@@ -740,8 +498,8 @@ module.exports = function statsRoutes(app, pool, {
         sql = `
           SELECT (EXTRACT(isodow FROM e.event_time AT TIME ZONE $3)::int - 1) AS dow,
                   EXTRACT(hour   FROM e.event_time AT TIME ZONE $3)::int      AS hour,
-                  COUNT(*)::int AS count
-            FROM events e
+                  ${ruHM ? 'SUM(e.n)' : 'COUNT(*)'}::int AS count
+            FROM ${srcHM}
            WHERE ${where}
              AND e.event_type NOT LIKE '${METRIC_EVENT_TYPE_PATTERN}'
              AND NOT ${analyticsEventClause('e.event_type')}
@@ -751,7 +509,154 @@ module.exports = function statsRoutes(app, pool, {
 
       const { rows } = await pool.query(sql, params);
       res.json({ from: from.toISOString(), to: to.toISOString(), tz, cells: rows });
-    } catch (err) { routeError(res, err, 'GET /api/stats/heatmap'); }
+    } catch (err) { routeError(res, err, 'GET /api/stats/heatmap', req); }
+  });
+
+  // GET /api/stats/vehicle-cards?from=ISO&to=ISO[&site_id][&cameras]
+  // การ์ดยานพาหนะ "อัตโนมัติ" ของหน้าสถิติใหม่ — นับจาก traffic_hourly_stats
+  // (n_total ต่อ vehicle_type ต่อกล้องรายชั่วโมง ซึ่ง normalize สอง vendor แล้ว:
+  // Dahua ส่ง vehicle_type ตรง · Hik object_class ถูกแปลงตอนเข้า license_plates)
+  // ⇒ ไซต์ใหม่เพิ่มกล้อง LPR แล้วการ์ดโผล่เอง ไม่ต้องสร้าง event_categories
+  // (ตกลงกับเจ้าของ 2026-08-28 — แทนชุดหมวดยานพาหนะ per-site ที่ลบออกไป)
+  // series: รายชั่วโมงเมื่อช่วง ≤48 ชม. ไม่งั้นรายวัน · client เรียกสองครั้ง
+  // (ช่วงเลือก + ช่วงเทียบ) แบบเดียวกับ categories
+  app.get('/api/stats/vehicle-cards', async (req, res) => {
+    try {
+      const { from, to } = parseRange(req.query);
+      if (to.getTime() - from.getTime() <= 0) return res.status(400).json({ error: 'to must be after from' });
+      const tz = await getDisplayTz();
+      // step (วินาที) จากหน้าจอ: แกนละเอียดกว่าชั่วโมง (ชั่วโมงนี้ = 5/2.5 นาที) อ่าน
+      // ตารางสรุปไม่ได้ — traffic_hourly_stats ละเอียดสุดรายชั่วโมง ยอดทั้งชั่วโมงจะกอง
+      // ที่ถังแรกของแกน (เห็นจริง 2026-08-30: เส้นวาดได้แค่หมวด RMUTR-V การ์ดโชว์
+      // 2,663 แต่เส้นสูงสุด 2) ⇒ ช่วงสั้น (≤6 ชม.) นับสดจาก license_plates ซึ่งเป็น
+      // ต้นทางเดียวกับที่ traffic-stats-refresher ใช้สรุป — นิยามตรงกันโดยสร้าง
+      const stepSec = parseInt(req.query.step || '0', 10) || 0;
+      const spanH = (to.getTime() - from.getTime()) / 3600e3;
+      // เพดาน 26 ชม. ครอบ "วันนี้/เมื่อวาน + ปุ่มขยายเป็น 30 นาที" (24 ชม.) ซึ่งเป็น
+      // ช่วงที่ละเอียดที่สุดที่หน้าจอขอได้ · เดิมตั้งไว้ 6 ชม. ทำให้กดขยายแล้วเส้น
+      // ยานพาหนะหายไป 99.5% เงียบ ๆ (วัดจริง 2026-08-30: 259,725 → 1,303 เหลือแต่
+      // หมวดของ RMUTR-V) เพราะ frontend ไม่ map series รายชั่วโมงลงแกน 30 นาที
+      // ต้นทุนวัดแล้ว: 730,171 แถว/24 ชม. → 368 ms (idx detected_at) และยอดจาก raw
+      // เท่ากับตารางสรุปเป๊ะ 0.00% ทุกประเภท จึงไม่มีอาการ "การ์ดกระโดด" ตอนสลับโหมด
+      const useRaw = stepSec > 0 && stepSec < 3600 && spanH <= 26;
+      const binSec = Math.max(150, Math.min(1800, stepSec));
+      const truncVC = useRaw ? `second${binSec}` : (spanH <= 48 ? 'hour' : 'day');
+      const timeCol = useRaw ? 'p.detected_at' : 't.bucket_hour';
+      const camCol = useRaw ? 'p.camera_id' : 't.camera_id';
+      const params = [from.toISOString(), to.toISOString(), tz];
+      let where = `${timeCol} >= $1::timestamptz AND ${timeCol} < $2::timestamptz`;
+      if (useRaw) where += ` AND p.camera_id IS NOT NULL`;
+      const cameras = req.query.cameras ? String(req.query.cameras).split(',').filter(Boolean) : null;
+      if (cameras && cameras.length) {
+        params.push(cameras);
+        where += ` AND ${camCol} = ANY($${params.length}::text[])`;
+      }
+      const swVC = siteWhere(resolveSiteScope(req), camCol, params.length + 1);
+      if (swVC.sql) { where += ` ${swVC.sql}`; params.push(...swVC.args); }
+      // date_bin ยึด origin ที่ขอบช่วง ($1) — ถังตรงกับแกนของหน้าจอพอดี ไม่ต้องสน tz
+      const seriesSql = useRaw ? `
+          SELECT coalesce(p.vehicle_type, 'unknown') AS vehicle_type,
+                 date_bin('${binSec} seconds', p.detected_at, $1::timestamptz) AS bkt,
+                 COUNT(*)::int AS n
+            FROM license_plates p
+           WHERE ${where}
+             AND $3::text IS NOT NULL  -- no-op: ทุก branch ต้อง consume $3 (tz)
+           GROUP BY 1, 2 ORDER BY 1, 2` : `
+          SELECT t.vehicle_type,
+                 (DATE_TRUNC('${truncVC}', t.bucket_hour AT TIME ZONE $3) AT TIME ZONE $3) AS bkt,
+                 SUM(t.n_total)::int AS n
+            FROM traffic_hourly_stats t
+           WHERE ${where}
+           GROUP BY 1, 2 ORDER BY 1, 2`;
+      // ยอดการ์ดช่วงสั้นก็นับจาก raw ตัวเดียวกัน — ให้เส้นกับการ์ดมาจากแหล่งเดียว
+      // เป๊ะ (ตารางสรุปตามหลัง refresher ได้เป็นนาที)
+      // cameras_seen เป็น [{camera_id,count}] เหมือน /api/stats/categories (ไม่ใช่แค่
+      // ARRAY_AGG รายชื่อ) — หน้าสถิติใหม่ (_esSiteMatrix, "แยกตามไซต์") ต้องมี count
+      // ต่อกล้องไปคำนวณยอดต่อไซต์ ของเดิมส่งแค่ ARRAY_AGG(DISTINCT camera_id) ไม่มี
+      // count ติดมาเลย ⇒ ทุกไซต์ในตารางเป็น 0 ตลอด ตารางเลยหน้าตาเหมือนไม่แยกอะไร
+      // (เจ้าของทัก 2026-09-04) · CTE ชั้นในนับต่อกล้องก่อน ค่อยรวมเป็น total เดิม
+      const totalsSql = useRaw ? `
+          WITH percam AS (
+            SELECT coalesce(p.vehicle_type, 'unknown') AS vehicle_type, p.camera_id, COUNT(*)::int AS n
+              FROM license_plates p
+             WHERE ${where}
+               AND $3::text IS NOT NULL  -- no-op: ทุก branch ต้อง consume $3 (tz)
+             GROUP BY 1, 2
+          )
+          SELECT vehicle_type, SUM(n)::int AS total,
+                 COALESCE(json_agg(json_build_object('camera_id', camera_id, 'count', n)
+                          ORDER BY n DESC, camera_id) FILTER (WHERE n > 0), '[]') AS cameras_seen
+            FROM percam GROUP BY vehicle_type` : `
+          WITH percam AS (
+            SELECT t.vehicle_type, t.camera_id, SUM(t.n_total)::bigint::int AS n
+              FROM traffic_hourly_stats t
+             WHERE ${where}
+               AND $3::text IS NOT NULL  -- no-op: ทุก branch ต้อง consume $3 (tz) ไม่งั้น bind ไม่ตรง
+             GROUP BY 1, 2
+          )
+          SELECT vehicle_type, SUM(n)::int AS total,
+                 COALESCE(json_agg(json_build_object('camera_id', camera_id, 'count', n)
+                          ORDER BY n DESC, camera_id) FILTER (WHERE n > 0), '[]') AS cameras_seen
+            FROM percam GROUP BY vehicle_type`;
+      const [series, totals] = await Promise.all([
+        pool.query(seriesSql, params), pool.query(totalsSql, params),
+      ]);
+      res.json({ from: from.toISOString(), to: to.toISOString(), trunc: truncVC, tz,
+        cards: totals.rows.map((r) => ({
+          vehicle_type: r.vehicle_type, total: r.total, cameras_seen: r.cameras_seen,
+          series: series.rows.filter((s) => s.vehicle_type === r.vehicle_type)
+            .map((s) => ({ t: s.bkt, n: s.n })),
+        })) });
+    } catch (err) { routeError(res, err, 'GET /api/stats/vehicle-cards', req); }
+  });
+
+  // GET /api/stats/pattern-heatmap?days=28[&category_ids=1,2,3][&cameras=..][&site_id=..]
+  // dow×hour สำหรับส่วน BI ของหน้าสถิติใหม่ — /api/stats/heatmap เดิม scan events
+  // ดิบ (28 วันวัดจริง >60s) ตัวนี้อ่าน event_dim_bucket (rollup 30 นาที,
+  // migration 163) ~0.3s · semantics เท่ากัน: ไม่ระบุหมวด = ตัด metric/analytics
+  // ออก · ระบุหมวดได้หลาย id (การ์ดหน้าใหม่ merge หลายหมวดเป็นใบเดียว) —
+  // แถว rollup เป็น dim เดียว event เข้าได้แถวเดียว EXISTS จึงนับครั้งเดียวเสมอ
+  // หมายเหตุ: เทียบ vehicle_type ด้วย (heatmap เดิมไม่เทียบ — หมวด LPR ที่ตั้ง rule
+  // ด้วย vehicle_type ล้วนจะได้ 0 จาก endpoint เดิม)
+  app.get('/api/stats/pattern-heatmap', async (req, res) => {
+    try {
+      const days = Math.min(90, Math.max(7, parseInt(req.query.days || '28', 10)));
+      const catIds = req.query.category_ids
+        ? String(req.query.category_ids).split(',').map((x) => parseInt(x, 10)).filter(Number.isFinite)
+        : null;
+      const cameras = req.query.cameras ? String(req.query.cameras).split(',').filter(Boolean) : null;
+      const tz = await getDisplayTz();
+      const params = [String(days), tz];
+      let where = `b.bucket >= now() - ($1 || ' days')::interval`;
+      if (cameras && cameras.length) {
+        params.push(cameras);
+        where += ` AND b.camera_id = ANY($${params.length}::text[])`;
+      }
+      const swPH = siteWhere(resolveSiteScope(req), 'b.camera_id', params.length + 1);
+      if (swPH.sql) { where += ` ${swPH.sql}`; params.push(...swPH.args); }
+      let catClause = `AND b.event_type NOT LIKE '${METRIC_EVENT_TYPE_PATTERN}'
+             AND NOT ${analyticsEventClause('b.event_type')}`;
+      if (catIds && catIds.length) {
+        params.push(catIds);
+        catClause = `AND EXISTS (
+          SELECT 1 FROM event_category_rules r
+           WHERE r.category_id = ANY($${params.length}::int[])
+             AND (r.camera_id    IS NULL OR r.camera_id    = b.camera_id)
+             AND (r.rule_name    IS NULL OR r.rule_name    = b.rule_name)
+             AND (r.event_type   IS NULL OR r.event_type   = b.event_type)
+             AND (r.object_class IS NULL OR r.object_class = b.object_class)
+             AND (r.vehicle_type IS NULL OR r.vehicle_type = b.vehicle_type)
+             AND (r.match_state  IS NULL OR r.match_state  = b.event_state OR b.event_type = 'anprAlarm'))`;
+      }
+      const { rows } = await pool.query(`
+        SELECT (EXTRACT(isodow FROM b.bucket AT TIME ZONE $2)::int - 1) AS dow,
+               EXTRACT(hour FROM b.bucket AT TIME ZONE $2)::int         AS hour,
+               SUM(b.n)::bigint::int                                    AS count
+          FROM event_dim_bucket b
+         WHERE ${where} ${catClause}
+         GROUP BY 1, 2 ORDER BY 1, 2`, params);
+      res.json({ days, tz, cells: rows });
+    } catch (err) { routeError(res, err, 'GET /api/stats/pattern-heatmap', req); }
   });
 
   // GET /api/stats/quiet-cameras?since_hours=24
@@ -777,31 +682,33 @@ module.exports = function statsRoutes(app, pool, {
                c.name AS camera_name,
                c.last_seen_at AS last_seen,
                EXTRACT(EPOCH FROM (NOW() - c.last_seen_at))::int AS last_seen_ago_sec,
-               COALESCE(e.cnt, 0)::int AS event_count
+               0 AS event_count
           FROM cameras c
-          LEFT JOIN (
-            SELECT camera_id, COUNT(*) AS cnt
-              FROM events
-             WHERE event_time >= NOW() - ($1::int * INTERVAL '1 hour')
-               AND event_type NOT LIKE '%Aggregation%'
-               AND NOT ${analyticsEventClause('event_type')}
-             GROUP BY camera_id
-          ) e ON e.camera_id = c.id
          WHERE c.enabled = TRUE
            AND c.id = ANY($2::text[])
            ${siteSql}
-           AND COALESCE(e.cnt, 0) = 0
+           -- NOT EXISTS หยุดที่ event แรกของแต่ละกล้อง แทนการนับ event ทั้ง 24 ชม. ทุกกล้องแล้วค่อยหาตัวที่เป็น 0
+           -- วัด 2026-10-02: 24 ชม. 5,728 ms → 3.6 ms · ผลตรงกันสองทาง (EXCEPT = 0) · คืนเฉพาะกล้องที่ 0 อยู่แล้ว
+           -- event_count จึงเป็น 0 เสมอเหมือนเดิม (audit · O7)
+           AND NOT EXISTS (
+             SELECT 1 FROM events e
+              WHERE e.camera_id = c.id
+                AND e.event_time >= NOW() - ($1::int * INTERVAL '1 hour')
+                AND e.event_type NOT LIKE '%Aggregation%'
+                AND NOT ${analyticsEventClause('e.event_type')})
          ORDER BY c.id`,
         qcArgs);
       res.json({ since_hours: sinceHours, cameras: rows });
-    } catch (err) { routeError(res, err, 'GET /api/stats/quiet-cameras'); }
+    } catch (err) { routeError(res, err, 'GET /api/stats/quiet-cameras', req); }
   });
 
-  // GET /api/stats/top-rules?from=ISO&to=ISO[&limit=10][&cameras=...]
+  // GET /api/stats/top-rules?from=ISO&to=ISO[&limit=10][&cameras=...][&tod_from=HH:MM&tod_to=HH:MM]
   // rule_name leaderboard for the active window — helps tune false positives.
   app.get('/api/stats/top-rules', async (req, res) => {
     try {
       const { from, to } = parseRange(req.query);
+      const tod = parseTod(req.query);
+      const tz = await getDisplayTz();
       const limit = Math.min(50, Math.max(1, parseInt(req.query.limit || '10', 10)));
       const cameras = req.query.cameras ? String(req.query.cameras).split(',').filter(Boolean) : null;
 
@@ -817,6 +724,8 @@ module.exports = function statsRoutes(app, pool, {
       }
       const swTR = siteWhere(resolveSiteScope(req), 'camera_id', params.length + 1);
       if (swTR.sql) { where += ` ${swTR.sql}`; params.push(...swTR.args); }
+      const todClause_TR = todClause('event_time', tod, tz, params.length + 1);
+      if (todClause_TR.sql) { where += todClause_TR.sql; params.push(...todClause_TR.args); }
       params.push(limit);
       const sql = `
         SELECT rule_name, COUNT(*)::int AS count,
@@ -827,7 +736,7 @@ module.exports = function statsRoutes(app, pool, {
          LIMIT $${params.length}`;
       const { rows } = await pool.query(sql, params);
       res.json({ from: from.toISOString(), to: to.toISOString(), top: rows });
-    } catch (err) { routeError(res, err, 'GET /api/stats/top-rules'); }
+    } catch (err) { routeError(res, err, 'GET /api/stats/top-rules', req); }
   });
 
   // GET /api/stats/timeline-by-category?from=ISO&to=ISO[&cameras=...]
@@ -836,10 +745,18 @@ module.exports = function statsRoutes(app, pool, {
   // is its own coloured line instead of a single "Total Events" line.
   app.get('/api/stats/timeline-by-category', async (req, res) => {
     try {
-      const { from, to } = parseRange(req.query);
-      const span = to.getTime() - from.getTime();
-      if (span <= 0) return res.status(400).json({ error: 'to must be after from' });
-      const trunc   = pickTruncUnit(from.getTime(), to.getTime());
+      const rawRangeTBC = parseRange(req.query);
+      if (rawRangeTBC.to.getTime() - rawRangeTBC.from.getTime() <= 0) {
+        return res.status(400).json({ error: 'to must be after from' });
+      }
+      const tod = parseTod(req.query);
+      const trunc = pickTruncUnit(rawRangeTBC.from.getTime(), rawRangeTBC.to.getTime(), req.query.trunc);
+      // ถัง 5 นาทีเล็กกว่าถังของตารางสรุป (30 นาที) จึงต้องอ่าน event ดิบเสมอ
+      // ที่เหลือ (30 นาที / ชม. / วัน / สัปดาห์) หารลงตัวกับ 30 นาที รวมยอดจากตารางสรุปได้
+      const useRollup = trunc !== 'minute5' && trunc !== 'minute2_5'
+        && catRollup.canUseRollup(rawRangeTBC.from.getTime(), rawRangeTBC.to.getTime());
+      const from = useRollup ? catRollup.snapFrom(rawRangeTBC.from) : rawRangeTBC.from;
+      const to   = useRollup ? catRollup.snapTo(rawRangeTBC.to)     : rawRangeTBC.to;
       const cameras = req.query.cameras ? String(req.query.cameras).split(',').filter(Boolean) : null;
       const tz      = await getDisplayTz();
       const allowedTBC = req.user?.allowedSites ?? null;
@@ -848,13 +765,14 @@ module.exports = function statsRoutes(app, pool, {
         return res.status(403).json({ error: 'forbidden' });
       const activeSitesTBC = siteParamTBC ? [siteParamTBC] : allowedTBC;
 
+      const srcAliasTBC = useRollup ? 'b' : 'e';
       const params = [from.toISOString(), to.toISOString(), tz];
       let camFilter = '';
       if (cameras && cameras.length) {
         params.push(cameras);
-        camFilter = ` AND e.camera_id = ANY($${params.length}::text[])`;
+        camFilter = ` AND ${srcAliasTBC}.camera_id = ANY($${params.length}::text[])`;
       }
-      const swTBC = siteWhere(activeSitesTBC, 'e.camera_id', params.length + 1);
+      const swTBC = siteWhere(activeSitesTBC, `${srcAliasTBC}.camera_id`, params.length + 1);
       if (swTBC.sql) { camFilter += ` ${swTBC.sql}`; params.push(...swTBC.args); }
 
       // Scope the rule join to categories reachable from this request's sites —
@@ -863,10 +781,46 @@ module.exports = function statsRoutes(app, pool, {
       let catSiteFilter = '';
       if (activeSitesTBC !== null) { params.push(activeSitesTBC); catSiteFilter = `AND c.site_id = ANY($${params.length})`; }
 
-      const bucketExpr = `(DATE_TRUNC('${trunc}', e.event_time AT TIME ZONE $3) AT TIME ZONE $3)`;
+      // $3 (tz) must appear in the SQL text on every branch — node-pg's Bind
+      // message must match the placeholder count Parse saw, or "supplies N
+      // parameters, but prepared statement requires M". 5-min bins don't need
+      // tz-of-day alignment, so the round-trip AT TIME ZONE here is a no-op
+      // (proven: `ts AT TIME ZONE z AT TIME ZONE z = ts` for any timestamptz,
+      // no DST fold since Thailand has none) — it exists only to consume $3.
+      const timeColTBC = useRollup ? 'b.bucket' : 'e.event_time';
+      const todClause_TBC = todClause(timeColTBC, tod, tz, params.length + 1);
+      if (todClause_TBC.sql) { camFilter += todClause_TBC.sql; params.push(...todClause_TBC.args); }
+      const bucketExpr = trunc === 'minute2_5'
+        ? `date_bin('150 seconds', ${timeColTBC} AT TIME ZONE $3 AT TIME ZONE $3, TIMESTAMPTZ '2000-01-01')`
+        : trunc === 'minute5'
+        ? `date_bin('5 minutes', ${timeColTBC} AT TIME ZONE $3 AT TIME ZONE $3, TIMESTAMPTZ '2000-01-01')`
+        : trunc === 'minute30'
+        ? `date_bin('30 minutes', ${timeColTBC} AT TIME ZONE $3 AT TIME ZONE $3, TIMESTAMPTZ '2000-01-01')`
+        : `(DATE_TRUNC('${trunc}', ${timeColTBC} AT TIME ZONE $3) AT TIME ZONE $3)`;
 
-      const sql = `
-        SELECT ${bucketExpr} AS bucket,
+      // ช่วงยาวรวมยอดจาก event_dim_bucket แทนการ join event ทุกแถวกับตารางกฎ
+      // (ดู migration 163) — ถังของตารางสรุปคือ 30 นาที จึงยุบขึ้นเป็น ชม./วัน/สัปดาห์
+      // ได้ด้วย SUM ตรง ๆ · EXISTS ไม่ใช่ JOIN เพราะ event เดียวอาจเข้าหลายกฎในหมวด
+      // เดียวกัน ต้องนับครั้งเดียว (ของเดิมใช้ COUNT(DISTINCT e.id) กัน)
+      // ⚠️ alias ต้อง **ไม่ชื่อ `bucket`** — event_dim_bucket มีคอลัมน์ชื่อนี้อยู่จริง
+      // และเมื่อชื่อกำกวม Postgres ตีความ GROUP BY เป็น **input column ก่อน output
+      // alias** (พฤติกรรมตามสเปก) ผลคือ GROUP BY จับ b.bucket ซึ่งเป็นถัง 30 นาทีดิบ
+      // แทนที่จะเป็นชั่วโมง/วันที่ truncate แล้ว → หนึ่งชั่วโมงคืนสองแถว หนึ่งวันคืน 48 แถว
+      // Chart.js ได้ค่า y หลายค่าที่ x เดียวกัน เส้นจึงย้อนกลับไปมา และตัวเลขที่พล็อต
+      // เป็นเพียงเศษเสี้ยวของยอดจริง — ไม่มี error ใด ๆ ให้เห็น (พบ 2026-08-25)
+      // สาขา non-rollup ข้างล่างอ่านจาก events ซึ่งไม่มีคอลัมน์ชื่อนี้ จึงไม่เคยพัง
+      const sql = useRollup ? `
+        SELECT ${bucketExpr} AS bkt,
+               c.id AS category_id,
+               SUM(b.n)::int AS count
+          FROM event_dim_bucket b
+          JOIN event_categories c ON TRUE ${catSiteFilter}
+         WHERE b.bucket >= $1::timestamptz AND b.bucket < $2::timestamptz
+           ${camFilter}
+           AND ${catRollup.categoryMatchExists('c')}
+         GROUP BY bkt, c.id
+         ORDER BY bkt ASC, c.id` : `
+        SELECT ${bucketExpr} AS bkt,
                c.id  AS category_id,
                COUNT(DISTINCT e.id)::int AS count
           FROM events e
@@ -880,8 +834,8 @@ module.exports = function statsRoutes(app, pool, {
            AND (r.match_state  IS NULL OR r.match_state  = e.event_state OR e.event_type = 'anprAlarm')
          WHERE e.event_time >= $1::timestamptz AND e.event_time < $2::timestamptz
            ${camFilter}
-         GROUP BY bucket, c.id
-         ORDER BY bucket ASC, c.id`;
+         GROUP BY bkt, c.id
+         ORDER BY bkt ASC, c.id`;
 
       const [pointsResult, catsResult] = await Promise.all([
         pool.query(sql, params),
@@ -898,7 +852,9 @@ module.exports = function statsRoutes(app, pool, {
       pointsResult.rows.forEach(r => {
         const k = r.category_id;
         if (!byCat[k]) byCat[k] = [];
-        byCat[k].push({ bucket: r.bucket, count: r.count });
+        // ชื่อคอลัมน์ที่คืนมาคือ bkt (ดูเหตุผลที่ SQL) แต่รูปที่ส่งออกยังเป็น
+        // points[].bucket เหมือนเดิม หน้าจอทุกตัวจึงไม่ต้องแก้ตาม
+        byCat[k].push({ bucket: r.bkt, count: r.count });
       });
 
       const series = catsResult.rows.map(c => ({
@@ -907,237 +863,9 @@ module.exports = function statsRoutes(app, pool, {
       }));
 
       res.json({ from: from.toISOString(), to: to.toISOString(), trunc, tz, series });
-    } catch (err) { routeError(res, err, 'GET /api/stats/timeline-by-category'); }
+    } catch (err) { routeError(res, err, 'GET /api/stats/timeline-by-category', req); }
   });
 
-  // GET /api/stats/breakdown-v2?from=ISO&to=ISO[&cameras=...]
-  // Top rule_names within each category (for the breakdown table)
-  // GET /api/stats/event-coverage?from=ISO&to=ISO[&cameras=...]
-  // Returns per-event_type counts + category assignment for Coverage Matrix / Uncategorized card.
-  // bucket classification: incident | metric | analytics | face (fixed 4-bucket, mirrors analyticsEventClause)
-  // "unmatched" = events where the full NULL-OR-match LATERAL found no category (c.id IS NULL per-event)
-  app.get('/api/stats/event-coverage', async (req, res) => {
-    try {
-      const { from, to } = parseRange(req.query);
-      const cameras = req.query.cameras ? String(req.query.cameras).split(',').filter(Boolean) : null;
-
-      const params = [from.toISOString(), to.toISOString()];
-      let camFilter = '';
-      if (cameras && cameras.length) {
-        params.push(cameras);
-        camFilter = ` AND e.camera_id = ANY($${params.length}::text[])`;
-      }
-      const swEV = siteWhere(resolveSiteScope(req), 'e.camera_id', params.length + 1);
-      if (swEV.sql) { camFilter += ` ${swEV.sql}`; params.push(...swEV.args); }
-
-      const sql = `
-        SELECT
-          e.event_type,
-          COUNT(*)::int                                              AS count,
-          SUM(CASE WHEN c.id IS NULL THEN 1 ELSE 0 END)::int        AS unmatched_count,
-          CASE
-            WHEN e.event_type LIKE '${METRIC_EVENT_TYPE_PATTERN}' THEN 'metric'
-            WHEN ${analyticsEventClause('e.event_type')}           THEN 'analytics'
-            WHEN e.event_type LIKE 'FaceCapture%'                  THEN 'face'
-            ELSE 'incident'
-          END AS bucket,
-          MIN(c.id)   AS category_id,
-          MIN(c.name) AS category_name,
-          MIN(c.kind) AS category_kind
-         FROM events e
-         LEFT JOIN LATERAL (
-           SELECT c2.id, c2.name, c2.kind
-             FROM event_category_rules r2
-             JOIN event_categories c2 ON c2.id = r2.category_id
-            WHERE (r2.camera_id    IS NULL OR r2.camera_id    = e.camera_id)
-              AND (r2.rule_name    IS NULL OR r2.rule_name    = e.rule_name)
-              AND (r2.event_type   IS NULL OR r2.event_type   = e.event_type)
-              AND (r2.object_class IS NULL OR r2.object_class = e.object_class)
-              AND (r2.match_state  IS NULL OR r2.match_state  = e.event_state)
-            LIMIT 1
-         ) c ON true
-        WHERE e.event_time >= $1::timestamptz AND e.event_time < $2::timestamptz
-          ${camFilter}
-        GROUP BY e.event_type
-        ORDER BY count DESC`;
-
-      const { rows } = await pool.query(sql, params);
-
-      const total        = rows.reduce((s, r) => s + r.count, 0);
-      const uncatCount   = rows.reduce((s, r) => s + r.unmatched_count, 0);
-      const coveredCount = total - uncatCount;
-
-      // mark each row: fully_uncategorized = every event of this type had no match
-      rows.forEach(r => { r.uncategorized = (r.unmatched_count === r.count); });
-
-      res.json({
-        from: from.toISOString(),
-        to:   to.toISOString(),
-        total,
-        covered_count:       coveredCount,
-        uncategorized_count: uncatCount,
-        coverage_pct: total > 0 ? Math.round((coveredCount / total) * 1000) / 10 : 100,
-        event_types: rows,
-      });
-    } catch (err) { routeError(res, err, 'GET /api/stats/event-coverage'); }
-  });
-
-  app.get('/api/stats/breakdown-v2', async (req, res) => {
-    try {
-      const { from, to } = parseRange(req.query);
-      const cameras = req.query.cameras ? String(req.query.cameras).split(',').filter(Boolean) : null;
-
-      const params = [from.toISOString(), to.toISOString()];
-      let camFilter = '';
-      if (cameras && cameras.length) {
-        params.push(cameras);
-        camFilter = ` AND e.camera_id = ANY($${params.length}::text[])`;
-      }
-      const swBDV2 = siteWhere(resolveSiteScope(req), 'e.camera_id', params.length + 1);
-      if (swBDV2.sql) { camFilter += ` ${swBDV2.sql}`; params.push(...swBDV2.args); }
-
-      // Exclude metric (CountAggregation/*) and camera-automation analytics
-      // events — neither is an "incident", so they don't belong in the
-      // report's event breakdown.
-      const sql = `
-        SELECT COALESCE(NULLIF(e.rule_name, ''), e.event_type) AS name,
-               e.event_type,
-               e.camera_id,
-               COUNT(*)::int AS count
-          FROM events e
-         WHERE e.event_time >= $1::timestamptz AND e.event_time < $2::timestamptz
-           AND e.event_type NOT LIKE '${METRIC_EVENT_TYPE_PATTERN}'
-           AND NOT ${analyticsEventClause('e.event_type')}
-           ${camFilter}
-         GROUP BY name, e.event_type, e.camera_id
-         ORDER BY count DESC
-         LIMIT 30`;
-      const { rows } = await pool.query(sql, params);
-      res.json(rows);
-    } catch (err) { routeError(res, err, 'GET /api/stats/breakdown-v2'); }
-  });
-
-  // GET /api/stats/evidence?from=ISO&to=ISO[&cameras=...]
-  // Snapshot + clip coverage for events in the window.
-  app.get('/api/stats/evidence', async (req, res) => {
-    try {
-      const { from, to } = parseRange(req.query);
-      const cameras = req.query.cameras ? String(req.query.cameras).split(',').filter(Boolean) : null;
-      const params = [from.toISOString(), to.toISOString()];
-      let camFilter = '';
-      if (cameras && cameras.length) {
-        params.push(cameras);
-        camFilter = ` AND camera_id = ANY($${params.length}::text[])`;
-      }
-      const swEVI = siteWhere(resolveSiteScope(req), 'camera_id', params.length + 1);
-      if (swEVI.sql) { camFilter += ` ${swEVI.sql}`; params.push(...swEVI.args); }
-      const { rows: [r] } = await pool.query(`
-        SELECT
-          COUNT(*)::int                                                          AS total,
-          COUNT(*) FILTER (WHERE has_snapshot)::int                             AS snapshot_count,
-          COUNT(*) FILTER (WHERE clip_file IS NOT NULL AND clip_status='done')::int AS clip_count,
-          COUNT(*) FILTER (WHERE has_snapshot
-                              OR (clip_file IS NOT NULL AND clip_status='done'))::int AS any_count
-        FROM events
-        WHERE event_time >= $1::timestamptz AND event_time < $2::timestamptz
-          ${camFilter}`, params);
-      const pct = (n) => r.total > 0 ? Math.round(n / r.total * 1000) / 10 : 0;
-      res.json({
-        from: from.toISOString(), to: to.toISOString(),
-        total:          r.total,
-        snapshot_count: r.snapshot_count,
-        clip_count:     r.clip_count,
-        any_count:      r.any_count,
-        snapshot_pct:   pct(r.snapshot_count),
-        clip_pct:       pct(r.clip_count),
-        any_pct:        pct(r.any_count),
-      });
-    } catch (err) { routeError(res, err, 'GET /api/stats/evidence'); }
-  });
-
-  // GET /api/stats/forensic-summary?from=ISO&to=ISO[&cameras=...]
-  // Compact counts for Appearance, FaceCapture, FaceRecognition, and LPR in the window.
-  app.get('/api/stats/forensic-summary', async (req, res) => {
-    try {
-      const { from, to } = parseRange(req.query);
-      const cameras = req.query.cameras ? String(req.query.cameras).split(',').filter(Boolean) : null;
-      const params = [from.toISOString(), to.toISOString()];
-      let evCamFilter = '', apCamFilter = '', lpCamFilter = '';
-      if (cameras && cameras.length) {
-        params.push(cameras);
-        const anyClause = ` AND camera_id = ANY($${params.length}::text[])`;
-        evCamFilter = anyClause;
-        apCamFilter = anyClause;
-        lpCamFilter = anyClause;
-      }
-      const swFS = siteWhere(resolveSiteScope(req), 'camera_id', params.length + 1);
-      if (swFS.sql) { const sc = ` ${swFS.sql}`; evCamFilter += sc; apCamFilter += sc; lpCamFilter += sc; params.push(...swFS.args); }
-      const [evR, apR, lpR] = await Promise.all([
-        pool.query(`SELECT
-            COUNT(*) FILTER (WHERE event_type LIKE 'FaceCapture%')::int    AS faces,
-            COUNT(*) FILTER (WHERE event_type = 'FaceRecognition')::int    AS face_matches
-          FROM events
-          WHERE event_time >= $1::timestamptz AND event_time < $2::timestamptz
-            ${evCamFilter}`, params),
-        pool.query(`SELECT COUNT(*)::int AS appearances
-          FROM appearances
-          WHERE detected_at >= $1::timestamptz AND detected_at < $2::timestamptz
-            ${apCamFilter}`, params),
-        pool.query(`SELECT COUNT(*)::int AS lpr
-          FROM license_plates
-          WHERE detected_at >= $1::timestamptz AND detected_at < $2::timestamptz
-            ${lpCamFilter}`, params),
-      ]);
-      res.json({
-        from: from.toISOString(), to: to.toISOString(),
-        appearances:   apR.rows[0].appearances,
-        faces:         evR.rows[0].faces,
-        face_matches:  evR.rows[0].face_matches,
-        lpr:           lpR.rows[0].lpr,
-      });
-    } catch (err) { routeError(res, err, 'GET /api/stats/forensic-summary'); }
-  });
-
-  // GET /api/stats/alert-effectiveness?from=ISO&to=ISO[&cameras=...]
-  // Alert delivery stats from alert_logs: status breakdown + per-rule summary.
-  app.get('/api/stats/alert-effectiveness', async (req, res) => {
-    try {
-      const { from, to } = parseRange(req.query);
-      const cameras = req.query.cameras ? String(req.query.cameras).split(',').filter(Boolean) : null;
-      const params = [from.toISOString(), to.toISOString()];
-      // ponytail: alert_logs is operational metadata (delivery records), not event data — unscoped by design
-      let camFilter = '';
-      if (cameras && cameras.length) {
-        params.push(cameras);
-        camFilter = ` AND camera_id = ANY($${params.length}::text[])`;
-      }
-      const base = `FROM alert_logs WHERE sent_at >= $1::timestamptz AND sent_at < $2::timestamptz${camFilter}`;
-      const [statusRes, ruleRes, failRes] = await Promise.all([
-        pool.query(`SELECT status, COUNT(*)::int AS n ${base} GROUP BY status ORDER BY n DESC`, params),
-        pool.query(`SELECT rule_name,
-                     COUNT(*)::int AS total,
-                     COUNT(*) FILTER (WHERE status='success')::int AS success,
-                     COUNT(*) FILTER (WHERE status='failed')::int AS failed,
-                     COUNT(*) FILTER (WHERE status='cooldown_skip')::int AS skipped,
-                     ROUND(AVG(duration_ms))::int AS avg_ms
-                   ${base} AND rule_name IS NOT NULL
-                   GROUP BY rule_name ORDER BY total DESC LIMIT 20`, params),
-        pool.query(`SELECT error_message, COUNT(*)::int AS n
-                   ${base} AND status='failed' AND error_message IS NOT NULL
-                   GROUP BY error_message ORDER BY n DESC LIMIT 10`, params),
-      ]);
-      const byStatus = Object.fromEntries(statusRes.rows.map(r => [r.status, r.n]));
-      const total    = statusRes.rows.reduce((s, r) => s + r.n, 0);
-      const success  = byStatus.success || 0;
-      res.json({
-        from: from.toISOString(), to: to.toISOString(),
-        total,
-        by_status:      byStatus,
-        delivery_rate:  total > 0 ? Math.round(success / total * 1000) / 10 : null,
-        by_rule:        ruleRes.rows,
-        fail_reasons:   failRes.rows,
-      });
-    } catch (err) { routeError(res, err, 'GET /api/stats/alert-effectiveness'); }
-  });
+  statsReportRoutes(app, pool, subDeps);
 
 };

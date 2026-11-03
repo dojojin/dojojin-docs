@@ -31,8 +31,13 @@ async function populateMediaFilters() {
 
   const catSel = document.getElementById('mediaFilterCategory');
   if (catSel) {
-    catSel.innerHTML = `<option value="">${I18N.t('common.all')}</option>` +
-      (cats || []).map(c => `<option value="${c.id}">${escapeHtml((c.icon || '') + ' ' + c.name).trim()}</option>`).join('');
+    // MultiPicker: ไม่มี option "ทั้งหมด" — ไม่เลือกอะไรเลย = ทั้งหมด (เหมือนหน้า LPR/Face)
+    // เก็บสิ่งที่เคยเลือกไว้ข้ามการ populate ถ้าหมวดนั้นยังมีอยู่
+    const keep = new Set((typeof MultiPicker !== 'undefined' ? MultiPicker.values('mediaFilterCategory') : []).map(String));
+    catSel.innerHTML = (cats || []).map(c =>
+      `<option value="${c.id}"${keep.has(String(c.id)) ? ' selected' : ''}>` +
+      `${escapeHtml((c.icon || '') + ' ' + c.name).trim()}</option>`).join('');
+    if (typeof MultiPicker !== 'undefined') MultiPicker.refresh('mediaFilterCategory');
   }
 }
 
@@ -40,7 +45,10 @@ function resetMediaFilters() {
   document.getElementById('mediaFilterCam').value = '';
   document.getElementById('mediaFilterType').value = '';
   const catSel = document.getElementById('mediaFilterCategory');
-  if (catSel) catSel.value = '';
+  if (catSel) {
+    [...catSel.options].forEach(o => { o.selected = false; });
+    if (typeof MultiPicker !== 'undefined') MultiPicker.refresh('mediaFilterCategory');
+  }
   clearDtValue('mediaFilterFrom');
   clearDtValue('mediaFilterTo');
   loadMedia(1);
@@ -54,8 +62,10 @@ async function loadMedia(page = 1) {
   _mediaPage = page;
   const cam = document.getElementById('mediaFilterCam').value;
   const rule = document.getElementById('mediaFilterType').value;
-  const catSel = document.getElementById('mediaFilterCategory');
-  const categoryId = catSel ? catSel.value : '';
+  // ⚠️ อ่านจาก MultiPicker.values() ไม่ใช่ catSel.value — select ที่ถูก upgrade แล้ว
+  // เป็น multiple ค่า .value จะคืนแค่ตัวแรกที่เลือก ซึ่งเงียบและผิดโดยไม่มีอะไรฟ้อง
+  const categoryIds = (typeof MultiPicker !== 'undefined')
+    ? MultiPicker.values('mediaFilterCategory') : [];
   const from = getDtValue('mediaFilterFrom');
   const to   = getDtValue('mediaFilterTo');
   const toIso = s => s ? new Date(s).toISOString() : '';
@@ -72,7 +82,7 @@ async function loadMedia(page = 1) {
     if (ids) params.set('cameras', ids.length ? ids.join(',') : '__none__');
   }
   if (rule) params.set('rule_name', rule);
-  if (categoryId) params.set('category_id', categoryId);
+  if (categoryIds.length) params.set('category_ids', categoryIds.join(','));
   if (from) params.set('from', toIso(from));
   if (to)   params.set('to',   toIso(to));
 
@@ -83,8 +93,11 @@ async function loadMedia(page = 1) {
   try {
     const res = await fetch(`${API}/api/events?${params.toString()}`, { cache: 'no-store' });
     _mediaTotal = parseInt(res.headers.get('X-Total-Count') || '0', 10);
+    // ผลกว้างเกินเพดาน เซิร์ฟเวอร์หยุดนับ — ค่าเป็นพื้น ไม่ใช่ยอดจริง จึงต่อ "+"
+    const capped = res.headers.get('X-Total-Capped') === '1';
     mediaList = await res.json();
-    document.getElementById('mediaCount').textContent = _mediaTotal.toLocaleString();
+    document.getElementById('mediaCount').textContent =
+      _mediaTotal.toLocaleString() + (capped ? '+' : '');
     renderMedia();
     renderPagination('mediaPagination', _mediaPage, _mediaTotal, PAGE_SIZE,
       (p) => loadMedia(p), 'clip');

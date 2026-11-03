@@ -1,7 +1,7 @@
 # AGENTS.md — Vigil Platform
 
 > **Codex / AI agent operating guide**
-> Last updated: 2026-06-08
+> Last updated: 2026-06-16
 >
 > This file is a **Codex-specific overlay**. Do **not** edit `CLAUDE.md` for Codex behavior because this repository is shared with Claude Code.
 

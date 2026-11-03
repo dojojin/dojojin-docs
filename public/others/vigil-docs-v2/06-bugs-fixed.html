@@ -60,7 +60,7 @@
 <div class="card">
   <h3>Caching และข้อมูลเก่า</h3>
   <ul>
-    <li><strong>#50/#67 — Cloudflare cache stale JS:</strong> ผู้ใช้ได้รับ dashboard.js เก่านาน 24 ชั่วโมงหลังจาก deploy เหตุ: อายุ cache ของ Cloudflare นานเกินไปและไม่มี cache-bust header แก้ไข: เพิ่ม Content-Hash ในชื่อไฟล์ + ตั้ง Cache-Control: public, max-age=3600</li>
+    <li><strong>#50/#67 — Cloudflare cache stale JS:</strong> ผู้ใช้ได้รับ dashboard.js เก่านาน 24 ชั่วโมงหลังจาก deploy เหตุ: อายุ cache ของ Cloudflare นานเกินไปและไม่มี cache-bust header แก้ไข: api-server ประทับ <code>?v=&lt;mtime&gt;</code> ให้ไฟล์ <code>.js</code> / <code>.css</code> ทุกตัวที่ <code>index.html</code> เรียก (ชื่อไฟล์ไม่เปลี่ยน — เปลี่ยนแค่ URL) ไฟล์ที่มี <code>?v=</code> จึงประกาศ <code>Cache-Control: private, max-age=31536000, immutable</code> ได้ ส่วน <code>index.html</code> เองเป็น <code>no-cache</code> เพราะเป็นตัวเดียวที่ต้องถือค่า <code>?v=</code> ปัจจุบันเสมอ กลไกจึงเป็นสองชั้น: <strong>เบราว์เซอร์</strong>เก็บไฟล์ไว้ได้ยาวหนึ่งปีเพราะ <code>immutable</code> ส่วนที่กัน <strong>Cloudflare</strong> เสิร์ฟของเก่าคือ URL ที่เปลี่ยนทุกครั้งที่ไฟล์เปลี่ยน ไม่ใช่ตัว directive (คำว่า <code>private</code> สั่งไม่ให้ shared cache เก็บไฟล์นี้อยู่แล้ว)</li>
     <li><strong>#51 — Redis TTL ไม่ถูกนำมาใช้:</strong> Session ไม่เคยหมดอายุ เหตุ: EXPIRE command ไม่ได้ตั้งค่าเมื่อสร้างคีย์ แก้ไข: pipeline SET + EXPIRE ร่วมกัน</li>
   </ul>
 </div>
@@ -101,6 +101,7 @@
 <th>v1.3.0</th>
 <th>v1.4.0</th>
 <th>v1.5.1</th>
+<th>v1.5.4</th>
 <th>เป้าหมาย</th>
 </tr>
 </thead>
@@ -111,6 +112,7 @@
 <td>98%</td>
 <td>99.2%</td>
 <td>99.7%</td>
+<td>—</td>
 <td>99.9%</td>
 </tr>
 <tr>
@@ -119,6 +121,7 @@
 <td>2s</td>
 <td>1s</td>
 <td>500ms</td>
+<td>—</td>
 <td>100ms</td>
 </tr>
 <tr>
@@ -127,6 +130,7 @@
 <td>1.2s</td>
 <td>800ms</td>
 <td>400ms</td>
+<td>—</td>
 <td>200ms</td>
 </tr>
 <tr>
@@ -135,6 +139,7 @@
 <td>5</td>
 <td>7</td>
 <td>4</td>
+<td>—</td>
 <td>&lt;2/release</td>
 </tr>
 <tr>
@@ -143,10 +148,58 @@
 <td>0</td>
 <td>0</td>
 <td>0</td>
+<td>—</td>
 <td>0</td>
+</tr>
+<tr>
+<td><strong>หน้า Health (เวลาโหลด)</strong></td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>42 วิ → 1.5 วิ</td>
+<td>&lt;2 วิ</td>
+</tr>
+<tr>
+<td><strong>หน้า Events (เวลาโหลด)</strong></td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>4.4 วิ → 0.3 วิ</td>
+<td>&lt;1 วิ</td>
+</tr>
+<tr>
+<td><strong>LPR "ไม่ทราบทะเบียน" ช่วง 7 วัน</strong></td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>38 วิ → 1.7 วิ</td>
+<td>&lt;3 วิ</td>
+</tr>
+<tr>
+<td><strong>จำนวน script ที่โหลดครั้งแรก</strong></td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>47 → 9 คำขอ</td>
+<td>&lt;10 คำขอ</td>
+</tr>
+<tr>
+<td><strong>ปริมาณ WebSocket ต่อแท็บ (10 วินาที)</strong></td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>219 → 32 KB</td>
+<td>&lt;50 KB</td>
 </tr>
 </tbody>
 </table>
+
+<p>หมายเหตุ: ค่าคอลัมน์ v1.5.4 เป็นคู่ "ก่อน → หลัง" ที่วัดบนเครื่อง production จริง (ตาราง events ~40 ล้านแถว) โดยค่าก่อนหน้าคือสถานะของ v1.5.3 ไม่ใช่ค่าที่วัดไว้ตั้งแต่เวอร์ชันในคอลัมน์ซ้ายมือ</p>
 
 <div class="ibox">
   <h4>บทเรียน: กลยุทธ์การ Reproduce Heisenbug</h4>

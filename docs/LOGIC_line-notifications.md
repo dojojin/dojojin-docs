@@ -1,10 +1,11 @@
 # LOGIC_line-notifications — LINE Notifications & Recipient Onboarding
 
-> Canonical source for LINE notification behavior: alert delivery, imgbb
-> image hosting, recipients, self-service onboarding, camera offline alerts,
-> scheduled report delivery, and webhook security boundaries.
+> Canonical source for LINE notification behavior: alert delivery, image
+> hosting (signed URL first, imgbb fallback), recipients, self-service
+> onboarding, camera offline alerts, scheduled report delivery, and webhook
+> security boundaries.
 > Parent index: DECISIONS.md
-> Last updated: 2026-06-08 · v1.5.0
+> Last updated: 2026-09-06 · v1.5.4
 
 ---
 
@@ -57,8 +58,12 @@ Recipient format in `line_config.recipients`:
 
 ## Event Alert Flow
 
-**#12 — imgbb for image hosting**
-LINE cannot push local files directly; image-based alerts/reports must use a public HTTPS image URL. This system uses imgbb as the image host.
+**#12 — Image hosting: a signed URL from our own domain first, imgbb only as fallback**
+*(the decision originally read "imgbb for image hosting"; that stopped being true on 2026-08-24)*
+LINE cannot push local files directly — an image-based alert or report needs a public HTTPS URL.
+The system mints one on **our own domain** (`usableSignedUrl`) and only falls back to imgbb if
+that link fails, an `imgbb_api_key` exists, and `imgbb_fallback_enabled` is not `'false'`.
+TTL and the exact order are in [Image Hosting](#image-hosting) below.
 
 **#13 — In-memory cooldown cache / rule state**
 Cooldown uses `alert_rules.last_triggered_at` and the in-memory rule cache. Cache refresh is frequent enough for admin rule edits without making every event query all config tables from scratch.
@@ -73,7 +78,7 @@ Each alert rule can target a subset of `line_config.recipients`; empty `recipien
 5. Quiet hours are checked before cooldown.
 6. Cooldown is checked using `last_triggered_at` and `cooldown_seconds`.
 7. Recipients resolve from `line_config.recipients`; rule-level `recipient_ids` narrows the target list.
-8. `line-sender.js` formats the message, optionally uploads the snapshot to imgbb, and pushes one LINE message object per recipient.
+8. `line-sender.js` formats the message, resolves a public image URL if one is needed (signed URL from our own domain first, imgbb only as fallback), and pushes one LINE message object per recipient.
 9. The result is logged to `alert_logs`.
 
 Alert log statuses:
@@ -116,14 +121,55 @@ LINE quota is counted by message objects in the `messages[]` array. Alert and re
 
 ## Image Hosting
 
-LINE Messaging API cannot directly upload arbitrary local image files as part of a push. The system uploads images to imgbb first, then sends the public URL in a LINE Flex/image message.
+LINE Messaging API cannot directly upload arbitrary local image files as part of a push — it needs
+a public HTTPS URL.
 
-Current implementation:
+**A signed URL from our own domain is tried first; imgbb is only the fallback.** *(changed
+2026-08-24; the "everything goes to imgbb" description below it was true until then.)*
 
-- Snapshot file path: `snapshots/<filename>` → base64 → imgbb → Flex alert.
-- Report PNG buffer: Puppeteer screenshot buffer → imgbb → Flex report.
-- imgbb expiration in code is `172800` seconds (48 hours).
-- If imgbb upload fails, event alerts fall back to text-only; report sends fail because the image is the delivery vehicle.
+1. `usableSignedUrl(<path>, ttlSec)` mints a link on our own domain and checks it is reachable.
+   Success → `imageSource = 'signed'`.
+2. Only if that fails does the code try imgbb — and only when an `imgbb_api_key` exists **and**
+   the fallback is enabled. Success → `imageSource = 'imgbb'`.
+3. Neither → `imageSource = 'none'`: event alerts degrade to text-only; scheduled report sends
+   fail, because for a report the image *is* the delivery vehicle.
+
+`imageSource` is returned by the sender and stored on `report_history` (migration 172), so "where
+did this picture come from" is answerable after the fact.
+
+### TTL — where the number comes from
+
+| Sender | TTL source |
+|---|---|
+| Event alerts (`src/alert-engine.js:75-76`) | `system_settings.signed_image_expire_hours × 3600`, else `172800` |
+| LPR alerts (`src/helpers/lprLineAlert.js:72-75`) | `lpr_line_image_expire_hours` **first**, falling back to `signed_image_expire_hours`, else `172800` |
+| Scheduled reports (`src/report-worker.js:444`) | ⚠️ hardcoded `172800` — see below |
+
+- Both keys are clamped to **1..720 hours** — at read time *and* at write time
+  (`src/routes/settings.js:137-139`). A value outside that range is ignored, not clamped silently
+  into range.
+- LPR images intentionally outlive ordinary event images: a case that needs the vehicle photo
+  tends to follow days later, unlike a door event reviewed within the shift.
+- Settings are cached 60 s in `lprLineAlert.js`, and until the next `alert-engine` cache refresh
+  in `alert-engine.js` — a change is not instant.
+
+### PDPA switch
+
+`imgbb_fallback_enabled = 'false'` turns the imgbb leg off entirely (`allowImgbb`). The card is
+then sent **without an image** rather than pushing the frame to a third-party host. Note the
+polarity: anything other than the literal string `'false'` means enabled, so a missing row is
+"enabled".
+
+> ⚠️ **Known inconsistency (2026-09-06, not fixed here):** `src/report-worker.js:444` passes
+> `signedTtlSec: 172800` as a literal — the scheduled-report path is the one sender that does
+> **not** honour `signed_image_expire_hours`. The comment there acknowledges it. Changing an
+> operator-visible TTL is a behaviour change, so it is recorded rather than patched;
+> `src/report-worker.js:201` carries the same literal.
+>
+> Precedent for why this matters: `lpr_line_image_expire_hours` was set to 240 h but the reader
+> only looked at `signed_image_expire_hours`, so the LPR settings page confidently displayed a
+> number that had no effect on the links actually sent. The label was right; the behaviour was
+> what had to move (fixed 2026-08-25).
 
 > STUBBORN_FACT: Scheduled reports go to LINE as IMAGE only. LINE has no file/document push type suitable for PDF delivery. See Decision #91.
 
@@ -150,13 +196,13 @@ This path sends plain text via `pushLineMessage()`; it does not use imgbb.
 ## Report Delivery
 
 **#91 — Scheduled reports go to LINE as IMAGE only — no PDF on LINE**
-LINE Messaging API has no file/document message type suitable for direct PDF delivery. The supported workflow is scheduler/manual action -> Puppeteer PNG render -> imgbb upload -> LINE Flex push.
+LINE Messaging API has no file/document message type suitable for direct PDF delivery. The supported workflow is scheduler/manual action -> Puppeteer PNG render (in `report-worker`) -> **signed URL on our own domain, imgbb only as fallback** -> LINE Flex push.
 
 Scheduled reports reuse the same LINE recipient roster:
 
 - `report_schedules.recipients` is a CSV of LINE recipient IDs.
 - Empty CSV means all enabled recipients in `line_config.recipients`.
-- Daily/weekly/monthly analytics reports render PNG via Puppeteer.
+- Daily/weekly/monthly/summary analytics reports render PNG via Puppeteer inside `src/report-worker.js`.
 - Health reports render via `renderHealthReportImage()`.
 - Every attempt is recorded in `report_history`.
 - Manual Health Report send uses `POST /api/health/report/send-now` and logs with `schedule_id=NULL`.
@@ -234,7 +280,10 @@ Phase status:
 ## Related Files
 
 - `src/alert-engine.js` — rule matching, cooldown, quiet hours, alert logging
-- `src/line-sender.js` — LINE push/reply APIs, imgbb upload, Flex message builders
+- `src/line-sender.js` — LINE push/reply APIs, signed-URL first / imgbb fallback, Flex message builders
+- `src/report-worker.js` — the PM2 process that owns the scheduled-report loop and its LINE send (the one sender with a hardcoded TTL — `:201` / `:444`)
+- `src/helpers/lprLineAlert.js` — LPR channel: its own TTL precedence + 60 s settings cache
+- `db/db_migration_147_alert_image_source.sql` — `signed_image_expire_hours` + `imgbb_fallback_enabled`
 - `src/api-server.js` — LINE config routes, pending recipient routes, webhook, report scheduler, offline checker
 - `src/mqtt-subscriber.js` — Bosch alert hook
 - `src/ingesters/hikvision-isapi.js` — Hikvision alert hook

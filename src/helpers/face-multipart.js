@@ -16,7 +16,16 @@
 // ============================================================
 'use strict';
 
-// Split a multipart body into { alarmJson, bodyJson, images:{name:Buffer} }.
+// Split a multipart body into { alarmJson, bodyJson, images:{name:Buffer}, partsInfo }.
+//
+// partsInfo is a structural manifest (name/contentType/bytes per part, no
+// bodies) of every part seen in this single walk — added 2026-08-05 so a
+// caller can log what actually arrived on the SUCCESS path too, not just when
+// parsing fails. The XML-vs-JSON question that blocked Phase 3/4 of the CIB
+// face migration was only visible before via _describeUnparsed, which never
+// fires when alarmJson parses fine — so a working payload's actual part types
+// were invisible. This costs nothing extra: the walk already inspects every
+// part's headers to route it, partsInfo just keeps what it already computed.
 function parseFaceAlarmMultipart(body, boundary) {
   const bound  = Buffer.from('--' + (boundary || 'boundary'));
   const hdrEnd = Buffer.from('\r\n\r\n');
@@ -24,6 +33,7 @@ function parseFaceAlarmMultipart(body, boundary) {
   let alarmJson = null;
   let bodyJson  = null;
   const images = {};
+  const partsInfo = [];
 
   while (true) {
     const bs = body.indexOf(bound, off);
@@ -37,11 +47,30 @@ function parseFaceAlarmMultipart(body, boundary) {
     const nm        = (hdrs.match(/name="([^"]+)"/i) || [])[1] || '';
     const cl        = parseInt((hdrs.match(/Content-Length:\s*(\d+)/i) || [])[1] || '0', 10);
     const bodyStart = he + 4;
+    partsInfo.push({ name: nm || '(unnamed)', contentType: ct || '(none)', bytes: cl });
 
     if (/application\/json/i.test(ct) && nm !== 'mixedTargetDetection') {
       let jsonEnd = cl > 0 ? bodyStart + cl : body.indexOf(Buffer.from('\r\n--'), bodyStart);
       if (jsonEnd < 0) jsonEnd = body.length;
-      try { alarmJson = JSON.parse(body.slice(bodyStart, jsonEnd).toString('utf8')); } catch {}
+      try {
+        const parsed = JSON.parse(body.slice(bodyStart, jsonEnd).toString('utf8'));
+        // A Hikvision alarm server slot isn't face-recognition-only — it
+        // carries whatever alarm types the camera has enabled, and every one
+        // of them arrives as an equally-valid `application/json` part. Before
+        // this check, "any JSON part not literally named mixedTargetDetection"
+        // was accepted as the face alarmResult, so e.g. regionTargetNumberCounting
+        // (a people-counting alarm, no face data at all) was parsed and handed
+        // to faceAlarmToRecord/ingestFaceAlarmEvent, which extract
+        // CaptureResult[0]... down a chain that doesn't exist on that shape —
+        // every field comes back null and an empty "FaceRecognition, no match"
+        // row still gets written. Confirmed live 2026-08-05, Phase 3 of the CIB
+        // face migration (docs/PLAN_hkt-face-cib-forward_2026-08-04.md):
+        // 2,602/2,602 FaceRecognition rows from the pilot camera had this exact
+        // all-null shape. A genuine face alarmResult always carries
+        // CaptureResult (see faceAlarmToRecord below) — anything else isn't one,
+        // whatever the multipart part happens to be named.
+        if (Array.isArray(parsed?.CaptureResult)) alarmJson = parsed;
+      } catch {}
     } else if (/application\/json/i.test(ct) && nm === 'mixedTargetDetection') {
       let jsonEnd = cl > 0 ? bodyStart + cl : body.indexOf(Buffer.from('\r\n--'), bodyStart);
       if (jsonEnd < 0) jsonEnd = body.length;
@@ -53,7 +82,7 @@ function parseFaceAlarmMultipart(body, boundary) {
     off = bodyStart + (cl > 0 ? cl : 0);
   }
 
-  return { alarmJson, bodyJson, images };
+  return { alarmJson, bodyJson, images, partsInfo };
 }
 
 // Pure transform: alarmJson → the events.raw_json shape + a short summary.

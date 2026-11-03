@@ -39,6 +39,25 @@ module.exports = function lprRoutes(app, pool, { SNAPSHOT_DIR, loadCameraConfig 
   const forwarder = createForwarder({
     spoolDir: path.join(SNAPSHOT_DIR, '..', 'spool', `lpr-forward-${procTag}`),
     label: 'lpr',
+    // 6h, not the 1h default. A camera that buffered plates to its microSD while
+    // the edge was down replays them ~4x normal rate on reconnect, and the spool
+    // drains at ~5/s — the 19-minute hkt outage on 2026-07-30 needed 46 of the
+    // 60 available minutes to clear. A 30-40 minute outage would have blown the
+    // deadline and dropped plates the partner never got any other way. Disk is
+    // not the constraint: ~1MB per plate, 432GB free, so even a full 6h outage
+    // is ~68GB.
+    maxAgeMs: 6 * 3600 * 1000,
+    // 4 → 6 (2026-08-05). Measured at hkt's 17:00 peak: plates arrive at
+    // 444/min against a 4-slot ceiling of 423/min — the gap is small but
+    // constant, so the spool never empties even though it isn't growing
+    // unbounded either (self-feeding: 3 of 4 slots go to drain, 1 to live
+    // traffic, so a backlog starves the very slot that would clear it).
+    // 6 raises the ceiling to ~630/min (~82 Mbps) against a measured 74 Mbps
+    // uplink with 55 already in use by ANPR — leaves headroom for face/tunnel
+    // traffic. Not 8: that would be ~110 Mbps, over the real pipe. Move one
+    // step at a time — this file's comment above already records what ~7,000
+    // simultaneous connections did to this same endpoint.
+    maxConcurrent: 6,
   });
 
   // Global forward default from system_settings (per-camera override wins at
@@ -60,10 +79,12 @@ module.exports = function lprRoutes(app, pool, { SNAPSHOT_DIR, loadCameraConfig 
   }
 
   // LIVE-HIGH-001: reject unknown tokens before express.raw() buffers the body.
+  // log เป็นสรุปทุก 10 นาทีพร้อมต้นทาง (helpers/unknownTokenLog · audit 2026-10-02 · D15)
+  const _unknownLpr = require('../helpers/unknownTokenLog').createUnknownTokenLog('lpr-push');
   function lprTokenGate(req, res, next) {
     const cam = camByLprToken(req.params.token);
     if (!cam) {
-      console.warn('[lpr-push] unknown token — dropped (pre-body)');
+      _unknownLpr.record(req);
       res.status(200).end('OK');
       req.resume(); // drain socket without buffering into memory
       return;

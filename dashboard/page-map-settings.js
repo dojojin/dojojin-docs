@@ -71,8 +71,58 @@ async function reloadMapboxTokenFromConfig() {
         applyMapTileSource();
       }
     }
+    // Reset CARTO key cache and rebuild URLs if changed
+    // ⚠️ ต้องอ่าน seedKey ก่อนเรียก cartoKey() — cartoKey() เขียนทับ localStorage
+    //    ถ้าอ่านทีหลังจะได้ค่าเดียวกันเสมอ แล้ว URL จะไม่ถูก rebuild หลังกดบันทึก
+    const seedKey = localStorage.getItem('cartoKey') || '';
+    _cartoKeyPromise = null;
+    const newKey = await cartoKey();
+    if (newKey !== seedKey) {
+      mapLayers._tileUrls.online.carto.streets = cartoUrl('streets', newKey);
+      mapLayers._tileUrls.online.carto.light   = cartoUrl('light', newKey);
+      if (mapLayers._currentProvider === 'carto' && mapLayers._currentSource === 'online') {
+        applyMapTileSource();
+      }
+    }
     await updateOfflineButtonState();
   } catch {}
+}
+
+function toggleCartoKeyVis() {
+  const inp = document.getElementById('fldCartoKey');
+  if (!inp) return;
+  inp.type = inp.type === 'password' ? 'text' : 'password';
+  const btn = inp.nextElementSibling;
+  if (btn) btn.setAttribute('data-i18n', inp.type === 'password' ? 'set.showToken' : 'set.hideToken');
+  I18N.apply();
+}
+
+async function saveCartoKey() {
+  const inp = document.getElementById('fldCartoKey');
+  const msg = document.getElementById('cartoKeyMsg');
+  if (!inp || !msg) return;
+  const val = inp.value.trim();
+  msg.textContent = '';
+  try {
+    const r = await fetch(`${API}/api/settings/map`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cartoApiKey: val }),
+    });
+    const j = await r.json();
+    if (!r.ok) {
+      msg.style.color = 'var(--status-bad)';
+      msg.textContent = j.error === 'invalid_carto_key_format'
+        ? I18N.t('set.cartoKeyInvalid') : (j.error || 'Error');
+      return;
+    }
+    msg.style.color = 'var(--status-ok)';
+    msg.textContent = I18N.t('set.cartoKeySaved');
+    await reloadMapboxTokenFromConfig();
+  } catch (e) {
+    msg.style.color = 'var(--status-bad)';
+    msg.textContent = String(e);
+  }
 }
 
 async function updateOfflineButtonState() {
@@ -111,12 +161,14 @@ function loadMapMgrPanel() {
 
 function initMapMgrPreview() {
   if (mapMgrPreviewMap) return;
-  setTimeout(() => {
+  setTimeout(async () => {
+    const key = await cartoKey();
+    const tileUrl = cartoUrl('light', key);
     mapMgrPreviewMap = new ol.Map({
       target: 'mapMgrPreview',
       layers: [new ol.layer.Tile({
         source: new ol.source.OSM({
-          url: 'https://{a-c}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png'
+          url: tileUrl
         })
       })],
       view: new ol.View({ center: ol.proj.fromLonLat([100.5018, 13.7563]), zoom: 9 })

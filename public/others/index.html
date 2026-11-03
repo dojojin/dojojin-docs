@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="th" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vigil Demo Index</title>
+<!-- Served at: /others/  (auth-gated เหมือนทุกหน้าใน /others/)
+     สารบัญรวม demo + ต้นแบบ + เอกสาร · data-theme="light" ตายตัว
+     CSP: script-src 'self' · style-src-elem 'self' — ห้าม inline <script>/<style>
+     🔴 ทุกโฟลเดอร์ใน demo/ ต้องมีลิงก์ในหน้านี้ — test/others-index.test.js ตรวจให้ -->
+<link rel="stylesheet" href="/vendor/fonts/fonts.css">
+<link rel="stylesheet" href="/index.css">
+<link rel="stylesheet" href="./others-index.css?v=1">
+</head>
+<body>
+<main class="oi-wrap">
+
+  <header class="oi-head">
+    <p class="oi-eyebrow">Vigil Platform</p>
+    <h1>รวมหน้า Demo</h1>
+    <p class="oi-sub">Live demo 11 หน้า · ต้นแบบออกแบบ 11 · เอกสาร 7</p>
+  </header>
+
+  <section aria-labelledby="oi-live">
+    <h2 id="oi-live">Live Demo <span class="oi-tag oi-tag-live">ใช้โชว์ลูกค้าได้</span></h2>
+    <div class="oi-grid">
+      <a class="oi-card" href="/others/demo/truck-ban/">
+        <span class="oi-card-t">รถบรรทุกวิ่งในช่วงห้าม</span>
+        <span class="oi-card-d">Truck ban · ภูเก็ต 06–09 / 16–19 น. ยกเว้นวันหยุดราชการ</span>
+        <span class="oi-card-m">/others/demo/truck-ban/ · 26/10/2026</span>
+      </a>
+      <a class="oi-card" href="/others/demo/accumulative/">
+        <span class="oi-card-t">แดชบอร์ดกวดขันวินัยจราจร</span>
+        <span class="oi-card-d">Traffic enforcement · ผู้กระทำผิดซ้ำ จุดเกิดเหตุ รายงาน</span>
+        <span class="oi-card-m">/others/demo/accumulative/ · 11/08/2026</span>
+      </a>
+      <a class="oi-card" href="/others/demo/top-helmet-report/">
+        <span class="oi-card-t">อันดับไม่สวมหมวกนิรภัย</span>
+        <span class="oi-card-d">Helmet ranking · อันดับป้ายทะเบียนที่ไม่สวมหมวกซ้ำ</span>
+        <span class="oi-card-m">/others/demo/top-helmet-report/ · 16/08/2026</span>
+      </a>
+      <a class="oi-card" href="/others/demo/vehiclecount/">
+        <span class="oi-card-t">ปริมาณยานพาหนะเข้า–ออก</span>
+        <span class="oi-card-d">Vehicle count · RMUTR-V แยก 8 ประเภท ราย 5 นาที</span>
+        <span class="oi-card-m">/others/demo/vehiclecount/ · 14/10/2026</span>
+      </a>
+      <a class="oi-card" href="/others/demo/emission-rate/">
+        <span class="oi-card-t">Emission Rate</span>
+        <span class="oi-card-d">ประมาณการ CO₂ จากรถที่ผ่าน RMUTR-V</span>
+        <span class="oi-card-m">/others/demo/emission-rate/ · 30/08/2026</span>
+      </a>
+      <a class="oi-card" href="/others/demo/livetrashbin/">
+        <span class="oi-card-t">สถิติการทิ้งขยะ</span>
+        <span class="oi-card-d">Trash bin · จุดคัดแยกขยะ กลางวัน/กลางคืน</span>
+        <span class="oi-card-m">/others/demo/livetrashbin/ · 29/09/2026</span>
+      </a>
+      <a class="oi-card" href="/others/demo/HCP-integration/">
+        <span class="oi-card-t">เชื่อมต่อ HikCentral Professional</span>
+        <span class="oi-card-d">HCP integration gateway</span>
+        <span class="oi-card-m">/others/demo/HCP-integration/ · 08/08/2026</span>
+      </a>
+      <a class="oi-card" href="/others/demo/HCP-integration/scope.html">
+        <span class="oi-card-t">HCP Integration: ขอบเขตงาน</span>
+        <span class="oi-card-d">HCP scope · สิ่งที่เชื่อมต่อได้และไม่ได้</span>
+        <span class="oi-card-m">/others/demo/HCP-integration/scope.html · 08/08/2026</span>
+      </a>
+      <a class="oi-card" href="/others/demo/OpenAPI/">
+        <span class="oi-card-t">3rd Party Integration</span>
+        <span class="oi-card-d">OpenAPI · ส่งข้อมูลออกให้ระบบภายนอก</span>
+        <span class="oi-card-m">/others/demo/OpenAPI/ · 06/08/2026</span>
+      </a>
+      <a class="oi-card" href="/others/demo/blacklist-manual/">
+        <span class="oi-card-t">เพิ่มรายการเฝ้าระวังด้วยมือ</span>
+        <span class="oi-card-d">Manual watch list · ใบหน้า / ป้ายทะเบียน</span>
+        <span class="oi-card-m">/others/demo/blacklist-manual/ · 06/08/2026</span>
+      </a>
+      <a class="oi-card" href="/others/demo/blacklist/settings/">
+        <span class="oi-card-t">Blacklist: ตั้งค่านำเข้าข้อมูล</span>
+        <span class="oi-card-d">Blacklist import settings</span>
+        <span class="oi-card-m">/others/demo/blacklist/settings/ · 26/07/2026</span>
+      </a>
+    </div>
+  </section>
+
+  <section aria-labelledby="oi-draft">
+    <h2 id="oi-draft">ต้นแบบออกแบบ <span class="oi-tag">ภายใน</span></h2>
+    <ul class="oi-list">
+      <li><a href="/others/demo/">LPR Redesign</a><span>/others/demo/ · 21/06/2026</span></li>
+      <li><a href="/others/demo/camerasettings.html">Camera Settings Redesign v2</a><span>/others/demo/camerasettings.html · 20/06/2026</span></li>
+      <li><a href="/others/demo/site/">Camera Status: Multi-Site</a><span>/others/demo/site/ · 22/06/2026</span></li>
+      <li><a href="/others/demo/face/">Face Redesign</a><span>/others/demo/face/ · 22/06/2026</span></li>
+      <li><a href="/others/demo/body/">Person Data Redesign</a><span>/others/demo/body/ · 22/06/2026</span></li>
+      <li><a href="/others/demo/multipicker/">MultiPicker</a><span>/others/demo/multipicker/ · 23/06/2026</span></li>
+      <li><a href="/others/demo/report/">Reports Redesign</a><span>/others/demo/report/ · 26/06/2026</span></li>
+      <li><a href="/others/demo/blacklist/face/">Blacklist Database: ใบหน้า</a><span>/others/demo/blacklist/face/ · 26/07/2026</span></li>
+      <li><a href="/others/demo/blacklist/lpr/">Blacklist Database: ทะเบียนรถ</a><span>/others/demo/blacklist/lpr/ · 26/07/2026</span></li>
+      <li><a href="/others/demo/dashboard/categories.html">Manage Event Categories</a><span>/others/demo/dashboard/categories.html · 28/08/2026</span></li>
+      <li><a href="/others/demo/dashboard/">Event Statistics</a><span>/others/demo/dashboard/ · 30/08/2026</span></li>
+    </ul>
+  </section>
+
+  <section aria-labelledby="oi-docs">
+    <h2 id="oi-docs">เอกสารและสถาปัตยกรรม <span class="oi-tag">ภายใน</span></h2>
+    <ul class="oi-list">
+      <li><a href="/others/demo/truck-ban/plan.html">แผนงานห้ามรถบรรทุก + ปฏิทินวันหยุด ธปท.</a><span>/others/demo/truck-ban/plan.html · 26/10/2026</span></li>
+      <li><a href="/others/vigil-docs-v2/">Vigil Docs v2 (15 หน้า)</a><span>/others/vigil-docs-v2/ · 07/09/2026</span></li>
+      <li><a href="/others/vendor-comparison.html">Camera Vendor Comparison</a><span>/others/vendor-comparison.html · 22/07/2026</span></li>
+      <li><a href="/others/demo/diagram.html">ANPR Topology &amp; Edge Plan</a><span>/others/demo/diagram.html · 25/06/2026</span></li>
+      <li><a href="/others/demo/multi-site/">Multi-Site Edge Architecture</a><span>/others/demo/multi-site/ · 22/06/2026</span></li>
+      <li><a href="/others/codex/commercial_system_review_2026-06-07.html">Codex: Commercial System Review</a><span>/others/codex/ · 07/06/2026</span></li>
+      <li><a href="/others/codex/product_review.html">Codex: Product Review</a><span>/others/codex/ · 03/06/2026</span></li>
+    </ul>
+  </section>
+
+</main>
+</body>
+</html>

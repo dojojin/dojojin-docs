@@ -226,13 +226,14 @@
   <!-- Dahua Flow -->
   <div class="flow-section">
     <h3 style="color: var(--dahua);">Dahua — CGI Event Manager Flow</h3>
+    <p style="font-size:.78rem;color:var(--dim);margin:-.25rem 0 .6rem">NVR หลาย channel รวมเป็น <strong>1 connection ต่อ NVR</strong> (ไม่ใช่ 1 ต่อ channel) — Dahua ส่ง event ทุก channel มาในบรรทัดเดียวกันพร้อม field <code>index=N</code> บอก channel ต้นทาง ระบบ route event/snapshot กลับไปหา config ของ channel นั้นให้เอง (2026-07-15, decision #217)</p>
     <div class="flow-row">
       <div class="flow-box col-dahua">
-        <span class="label">Dahua Camera</span>
-        <span class="sub">IPC / NVR (VCA)</span>
+        <span class="label">Dahua NVR</span>
+        <span class="sub">หลาย channel (IPC ย่อย)<br>รวม stream เดียว</span>
       </div>
       <div class="flow-arrow-wrap">
-        <span class="arrow-label">HTTP Digest GET<br>(long-lived stream)</span>
+        <span class="arrow-label">HTTP Digest GET<br>(long-lived stream, 1 คู่ต่อ NVR)</span>
         <span class="arrow-char">←</span>
       </div>
       <div class="flow-box col-dahua">
@@ -240,12 +241,12 @@
         <span class="sub">eventManager.cgi<br>+ snapManager.cgi</span>
       </div>
       <div class="flow-arrow-wrap">
-        <span class="arrow-label">push text lines<br>+ JPEG (snap)</span>
+        <span class="arrow-label">push text lines<br>+ index=N + JPEG (snap)</span>
         <span class="arrow-char">←</span>
       </div>
       <div class="flow-box col-dahua">
-        <span class="label">Camera</span>
-        <span class="sub">Code=CrossLine...<br>action=Start</span>
+        <span class="label">Event line</span>
+        <span class="sub">Code=CrossLine...<br>action=Start;index=N</span>
       </div>
       <div class="flow-arrow-wrap">
         <span class="arrow-label">RTSP stream<br>media-recorder</span>
@@ -260,7 +261,7 @@
       <div style="flex:1"></div>
       <div class="flow-box col-dahua" style="min-width:170px">
         <span class="label">dahua-cgi.js</span>
-        <span class="sub">INSERT + snapshot scoring<br>+ clip resolver + alertEngine</span>
+        <span class="sub">route ตาม index=N → INSERT + snapshot scoring<br>+ clip resolver + alertEngine</span>
       </div>
       <div class="flow-arrow-wrap">
         <span class="arrow-label">pg_notify<br>new_event</span>
@@ -279,6 +280,7 @@
         <span class="sub">Live feed · Map<br>Stats · Alerts</span>
       </div>
     </div>
+    <p style="font-size:.78rem;color:var(--dim);margin-top:.5rem">Event ประเภท <code>FaceComparision</code> บน NVR: ใช้ face crop + scene ที่ NVR เก็บไว้แล้ว (<code>ObjPath</code>/<code>OriPath</code>) ผ่าน RPC2 session แทนสั่งกล้อง capture frame สด — เร็วกว่าและไม่มีปัญหา success ceiling ตกภายใต้ AI load สูง (decision #218)</p>
   </div>
 </div>
 
@@ -489,6 +491,13 @@
           <div class="snap-desc">
             <div class="title">Clip Resolver (post-hoc upgrade)</div>
             <div class="detail">หลัง media-recorder บันทึก clip เสร็จ → <code>pg_notify clip_done</code> → dahua-cgi.js รับ → re-score จาก full clip → replace snapshot ถ้าดีกว่า · ช่วย low_confidence / missing snap</div>
+          </div>
+        </div>
+        <div class="snap-step primary" style="border-color:var(--dahua)">
+          <span class="snap-num">★</span>
+          <div class="snap-desc">
+            <div class="title">RPC2 NVR-Stored Face Crop (เฉพาะ <code>FaceComparision</code> บน NVR, 2026-07-16)</div>
+            <div class="detail">NVR เก็บ face crop (<code>ObjPath</code>) + scene เต็ม (<code>OriPath</code>) ไว้แล้วทุก event นี้ — ดึงผ่าน RPC2 session (login + <code>WebClientSessionID</code> cookie) แทนสั่ง capture frame สด · เร็วกว่า/ไม่มีปัญหา success ceiling ตกภายใต้ AI load สูงเหมือนช่องทาง 1-3 · <code>captureFrame()</code> เหลือเป็น fallback</div>
           </div>
         </div>
       </div>
@@ -1132,7 +1141,7 @@
 
       <!-- Camera -->
       <rect x="10" y="50" width="140" height="110" rx="8" fill="#6622001a" stroke="#ff6600" stroke-width="1.5"/>
-      <text x="80" y="76" text-anchor="middle" fill="#ff6600" font-size="12" font-weight="700">Dahua Camera</text>
+      <text x="80" y="76" text-anchor="middle" fill="#ff6600" font-size="12" font-weight="700">Dahua Camera/NVR</text>
       <text x="80" y="92" text-anchor="middle" fill="#94a3b8" font-size="10">VCA / IVS enabled</text>
       <text x="80" y="106" text-anchor="middle" fill="#94a3b8" font-size="10">Smart Plan → IVS Rule</text>
       <text x="80" y="120" text-anchor="middle" fill="#94a3b8" font-size="10">Web GUI / DSS</text>
@@ -1250,13 +1259,17 @@
       <div class="legend-item"><div class="legend-line dashed" style="color:var(--dahua);height:2px;background:var(--dahua)"></div> snapManager + CGI snapshot (per event)</div>
       <div class="legend-item"><div class="legend-line" style="background:var(--green);height:2px"></div> pg_notify / alert pipeline</div>
     </div>
+    <p style="font-size:.75rem;color:var(--dim);margin-top:.5rem">
+      <strong>Multi-channel NVR (2026-07-15):</strong> diagram แสดง 1 กล้อง/channel เพื่อความง่าย — จริงๆ แล้ว NVR ที่มีหลาย channel รวมเป็น <strong>eventManager + snapManager stream เดียวต่อ NVR ทั้งเครื่อง</strong> ไม่ใช่ต่อ channel event แต่ละบรรทัดมี field <code>index=N</code> บอก channel ต้นทาง, snapshot subscription = union ของ <code>capture_categories</code> ทุก channel แล้ว post-filter ตาม channel จริง.
+      Event <code>FaceComparision</code> บน NVR ยังมี path เสริม: ดึง face crop + scene ที่ NVR เก็บไว้แล้วผ่าน RPC2 session (เร็วกว่า/เสถียรกว่า live capture ภายใต้ AI load สูง) แทนที่จะสั่งกล้อง capture frame สดเสมอ.
+    </p>
   </div>
 
 </div>
 
 <!-- ── Footer ──────────────────────────────────────────────── -->
 <div class="page-footer">
-  Vigil Platform · Internal Technical Reference · Generated 2026-05-29 · Updated 2026-06-06<br>
+  Vigil Platform · Internal Technical Reference · Generated 2026-05-29 · Updated 2026-07-22<br>
   สำหรับใช้ภายในทีมเท่านั้น · ข้อมูลอ้างอิงจาก source code จริง (mqtt-subscriber.js · hikvision-isapi.js · dahua-cgi.js)
 </div>
 

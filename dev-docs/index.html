@@ -18,11 +18,15 @@
 <p>แผนที่โค้ดสำหรับผู้พัฒนา ใช้เมื่อต้องแก้งานโดยไม่มี AI ช่วย หน้านี้ไม่ duplicate เนื้อหาจากเอกสารอื่น — ชี้ทางว่าต้องเปิดไฟล์ไหนเท่านั้น</p>
 
 <div class="krow">
-  <div class="kpi"><div class="kn">26</div><div class="kl">src/ modules</div></div>
-  <div class="kpi"><div class="kn">27</div><div class="kl">route files</div></div>
-  <div class="kpi"><div class="kn">95</div><div class="kl">migrations</div></div>
-  <div class="kpi"><div class="kn">22</div><div class="kl">page files</div></div>
+  <div class="kpi"><div class="kn">33</div><div class="kl">src/ modules</div></div>
+  <div class="kpi"><div class="kn">35</div><div class="kl">route files</div></div>
+  <div class="kpi"><div class="kn">142</div><div class="kl">migrations</div></div>
+  <div class="kpi"><div class="kn">29</div><div class="kl">page files</div></div>
 </div>
+<p><em>นับใหม่ 2026-08-11 จาก source จริง: <code>ls src/*.js</code> (top-level, ไม่รวม routes/helpers/ingesters/edge subdirs) ·
+<code>ls src/routes/*.js</code> · <code>ls db/db_migration_*.sql</code> (142 ไฟล์ตัวเลข +
+15 ไฟล์ legacy-named ที่ไม่มีเลข = 147 ไฟล์ .sql migration รวม แต่ตัว KPI นี้นับเฉพาะที่มีเลข
+ให้ตรงกับ convention การอ้างอิงเลข migration ที่ใช้ทั้งเอกสาร) · <code>ls dashboard/page-*.js</code></em></p>
 
 <h2>ถ้าต้องการแก้ X → เปิดไฟล์ Y</h2>
 
@@ -179,6 +183,10 @@
     <p><code>normalizeTimeOfDay.js</code> — quiet hours normalization</p>
     <p><code>face-multipart.js</code> — Hikvision FAS multipart parser (<code>parseFaceAlarmMultipart</code> + <code>faceAlarmToRecord</code>); shared ระหว่าง hikvision-isapi ingester + face-push receiver</p>
     <p><code>emqxPublish.js</code> — one-shot EMQX HTTP API publish (login+publish); ใช้โดย command channel ทุกตัว (<code>_config/detect-model</code>, <code>_config/delete-media</code>, <code>_config/scan-nvr</code>) — publish ผ่าน admin API จึงไม่ผ่าน MQTT client ACL</p>
+    <p><code>dashboardBundle.js</code> — รวม script ของ dashboard เป็น <code>/dashboard.bundle.js</code> ตอน boot (ลำดับตาม <code>dashboard/index.html</code>); kill switch <code>DASHBOARD_BUNDLE=0</code></p>
+    <p><code>renderViaWorker.js</code> — ส่ง render ของปุ่มดาวน์โหลดไปที่ <code>POST 127.0.0.1:3001/render</code> ของ report-worker; fallback เรนเดอร์ในโปรเซสถ้า worker ไม่ตอบ</p>
+    <p><code>scrubRawJson.js</code> — ปิดบัง IP/MAC ของกล้องใน <code>raw_json.rawXml</code> สำหรับ non-admin (SEC-018); มีคู่ SQL <code>scrubRawJsonSql()</code> ที่ต้องให้ผลตรงกัน</p>
+    <p><code>noreadCheck.js</code> — ยามรายสัปดาห์ เทียบนิยาม "ไม่ทราบทะเบียน" สองแบบ ผลออกที่ <code>/api/health/details</code> → <code>lpr.noread_check</code></p>
   </div>
   <div class="card">
     <h3>Edge Runtime (src/edge/) — VIGIL-ARCH-003</h3>
@@ -203,7 +211,7 @@
   </div>
   <div class="card">
     <h3>Reports</h3>
-    <p><code>src/report-worker.js</code> — scheduler loop; HTTP endpoint <code>127.0.0.1:3001/run/:id</code></p>
+    <p><code>src/report-worker.js</code> — scheduler loop; HTTP endpoints <code>127.0.0.1:3001/run/:id</code> และ <code>POST /render</code> (ปุ่มดาวน์โหลด PDF/PNG ด้วยมือ ก็เรนเดอร์ที่นี่ — Chromium อยู่ในโปรเซสนี้เท่านั้น)</p>
     <p><code>src/report-renderer.js</code> — Puppeteer PDF/PNG; SVG+sharp Health Report</p>
     <p><code>dashboard/report-template.js</code> — analytics report HTML builder</p>
   </div>

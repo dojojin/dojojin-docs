@@ -1,0 +1,129 @@
+-- ============================================================
+-- ⚠️ ARCHIVED (2026-09-06) — เก็บไว้อ่านย้อนหลังเท่านั้น **ห้ามเสนอซ้ำ**
+--
+-- แผนนี้ถูกแทนที่ด้วยของที่ ship จริงแล้ว:
+--   · e42ff68 (2026-08-05) — capped count: ครอบ count เดิม (JOIN events ยังอยู่)
+--       ด้วย LIMIT APP_COUNT_CAP (env, default 10000) → ตอบ "10,000+" แทนยอดจริง
+--       **commit message ระบุชัดว่าแนวทาง "ถอด JOIN" ในข้อ 1 ทดลองแล้วตกไป**
+--       (>150 วินาที · detected_at กับ event_time ไม่ตรงกัน 6.6% ของแถว จึงตัด
+--        ช่วงเวลาด้วย detected_at ไม่ได้) — ข้อ 1 ของไฟล์นี้จึง **ไม่ใช่** ทางแก้
+--   · 1b025eb (2026-07-20) — temp table `_app_stats_filtered` ของ /stats
+--       (มาก่อนแผนนี้; e42ff68 กลับมาแก้รอบสองให้ดึงเฉพาะ 4 คีย์ raw_json->>
+--        แทนทั้งก้อน ซึ่งตรงกับข้อ 2 ของไฟล์นี้)
+--
+-- ข้อ 3 (/api/health/details) — สมมติฐาน "รากเดียวกับข้อ 1" **ผิด** · เหตุจริงคือ
+--   LIKE scan บน events แก้ไปเมื่อ 2026-09-05 (5c9c31f) ด้วยการย้ายไปอ่าน
+--   event_dim_bucket + เปลี่ยนยอดรวมเป็นค่าประมาณ (decision #263) · GOTCHAS #187–#188
+--
+-- ของที่ยังจริงในไฟล์นี้คือ **ตัวเลขที่วัดไว้** ไม่ใช่ข้อเสนอ
+-- ============================================================
+-- Vigil Platform — migration 129: appearances query optimization
+-- @author Prakasit Rochanavipart (Dojo-mAn)
+-- @copyright (c) 2025-2026 Prakasit Rochanavipart. All Rights Reserved.
+-- @license Proprietary
+-- ============================================================
+-- DIAGNOSTIC MIGRATION: Query optimization for appearance endpoints
+--
+-- Problem:
+--   /api/appearances/search and /api/appearances/stats regressed from 0.5-2s
+--   to 18-14s respectively as appearance volume increased from 15,897/day (Jul 26)
+--   to 139,246/day (Aug 3). Root cause: unnecessary JOIN to events table in
+--   COUNT queries and temp table materialization.
+--
+-- Evidence (measured 2026-08-08):
+--   appearances table: 1,320,746 rows (468 MB)
+--   events table:      13,157,135 rows across 25 time-partitions
+--
+--   Current query (with JOIN):
+--     SELECT COUNT(*) FROM appearances a
+--     JOIN events e ON e.id = a.event_id
+--     Execution time: 1808 ms (1.8s) with parallel workers
+--     Buffer hits: 1,807,022
+--     Buffer reads: 60,702
+--     Plan: Parallel Hash Join scanning all 13M events rows, then building hash
+--
+--   Optimized query (without JOIN):
+--     SELECT COUNT(*) FROM appearances a
+--     Execution time: 42.6 ms (42× faster)
+--     Buffer hits: 4,375
+--     Plan: Parallel Index Only Scan on idx_appearances_class
+--
+-- Why the JOIN is unnecessary:
+--   1. No FK constraint exists on appearances(event_id) → events(id)
+--      but application logic maintains this invariant (0 orphans found).
+--   2. Neither the /search nor /stats endpoints filter on event columns
+--      unless explicitly requested (mask, hat, expression, ageGroup) — and
+--      those filters reference raw_json on the events table directly, not
+--      a JOIN result.
+--   3. The COUNT is purely a cardinality check. The subsequent page query
+--      JOINs to get those columns — separate query, separate planning.
+--   4. Dahua twin suppression (NOT (event_type = 'FaceDetector/Recognized' ...))
+--      is a display-time filter applied in code after the page results are
+--      fetched, not a WHERE clause on the count.
+--
+-- Query rewrites required (in src/routes/appearances.js):
+--
+-- 1. /api/appearances/search (line 433-453):
+--    BEFORE (slow):
+--      SELECT COUNT(*)::int AS n FROM (
+--        SELECT 1
+--          FROM appearances a JOIN events e ON e.id = a.event_id
+--          ${clause}
+--        LIMIT ${APP_COUNT_CAP + 1}) x
+--
+--    AFTER (optimized):
+--      SELECT COUNT(*)::int AS n FROM (
+--        SELECT 1
+--          FROM appearances a
+--          ${clause}
+--        LIMIT ${APP_COUNT_CAP + 1}) x
+--    Note: ${clause} WHERE conditions that reference e.* must be removed or
+--    handled separately. Current filters in _buildAppearanceFilter are:
+--      - mask, hat, expression, ageGroup (raw_json->>'key')
+--      - Dahua twin check (NOT EXISTS subquery)
+--    These should be applied to the page query, not the count.
+--
+-- 2. /api/appearances/stats (line 262-275):
+--    The CREATE TEMP TABLE _app_stats_filtered materializes the join, but
+--    only needs the columns for aggregation. Review whether a simpler query
+--    like:
+--      CREATE TEMP TABLE _app_stats_filtered ... AS
+--      SELECT a.gender, a.top_category, ...
+--             -- extract needed raw_json values
+--      FROM appearances a
+--      WHERE TRUE  -- ${clause} with event-level filters handled post-materialize
+--    is viable. If ${clause} has event filters (mask, hat, expression, ageGroup),
+--    those can be materialized separately or applied in the aggregation queries
+--    themselves using a LEFT JOIN to events only for those specific columns.
+--
+-- 3. /api/health/details:
+--    Measure this endpoint after fixing (1) and (2). It likely constructs
+--    appearance or event stats and may have the same JOIN issue.
+--
+-- 4. Check /api/faces and /api/events for similar patterns.
+--    Both were mentioned in the perf plan as candidates (faces: 3.3s → ?,
+--    events: 1.6s → stable).
+--
+-- Testing guidance:
+--   Before & After comparison must be done at 18:00 UTC (peak hour with lowest
+--   variance). Use scripts/perf-baseline.sh for consistency. Verify:
+--     - /api/appearances/search < 3s
+--     - /api/appearances/stats < 1s
+--     - /api/health/details < 1s
+--   Measure on a warm cache (second run) to filter out I/O variability.
+--
+--   Unit test must verify that orphaned appearances (if any exist) are handled
+--   gracefully — i.e., the code doesn't assume every appearance.event_id
+--   points to a live event row.
+--
+-- Idempotence:
+--   This migration contains no SQL changes — it is a diagnostic record only.
+--   Run it on any volume (fresh or live) with no impact.
+-- ============================================================
+
+-- This migration is a diagnostic/planning document only.
+-- No schema or index changes are made here.
+-- The optimization requires code changes in src/routes/appearances.js
+
+-- Confirmation that this migration ran successfully:
+SELECT 'Migration 129: appearances query optimization documented. See comments above for required code changes.' AS migration_status;

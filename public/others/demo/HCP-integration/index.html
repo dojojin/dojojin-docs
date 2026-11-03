@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="th" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>เชื่อมต่อ HikCentral Professional — Live Demo</title>
+
+<!-- MOCKUP DEMO — โครงหน้า ไม่ต่อหลังบ้านจริง
+     ข้อมูลความสามารถทั้งหมดมาจาก HikCentral Professional OpenAPI V3.0.1
+     Developer Guide (docs/vendor/hikvision/HCP_OpenAPI.pdf, 771 หน้า) ซึ่งเป็น
+     แหล่งหลัก — ป้ายสถานะข้าง ๆ คือผลทดสอบกับ HCP ของ Site ภูเก็ต (HKT)
+     ที่ 10.0.10.9:8443 เมื่อ 2026-08-08 ใช้เป็น "ตัวอย่างไซต์หนึ่ง" เท่านั้น
+     ไซต์อื่นที่มี license/โมดูลต่างกันจะได้ป้ายต่างไป โดยไม่ต้องแก้โครงหน้านี้
+     Served at: /others/demo/HCP-integration/
+     data-theme="light" ตายตัว ไม่โหลด /theme-init.js — หน้า demo ใช้ light เสมอ -->
+<link rel="stylesheet" href="/vendor/fonts/fonts.css">
+<link rel="stylesheet" href="/index.css">
+<link rel="stylesheet" href="./hcp-demo.css?v=hcp1">
+</head>
+<body>
+<div class="demo-wrap">
+
+  <div class="demo-banner">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+    <span><b>MOCKUP — สวิตช์ยังไม่บันทึกอะไร</b> ·
+    รายการความสามารถทั้งหมด <b>มาจากคู่มือ HCP OpenAPI V3.0.1 (771 หน้า)</b> ไม่ใช่จากการเดา ·
+    ป้ายสถานะสีข้าง ๆ คือผลทดสอบกับ <b>HCP ของภูเก็ต (HKT)</b> เมื่อ 2026-08-08 —
+    <b>ไซต์อื่นที่ license ต่างกันจะได้ป้ายต่างไป โดยหน้านี้ไม่ต้องเขียนใหม่</b></span>
+  </div>
+
+  <div class="page-head">
+    <h1 class="hcp-title">เชื่อมต่อ HikCentral Professional</h1>
+    <p class="hcp-sub">เลือกว่าจะรับอะไรจาก HCP บ้าง — ทีละความสามารถ ไม่ใช่เปิดทั้งก้อน ·
+      สิ่งที่ปิดไว้จะไม่ถูกเรียกเลย ไม่ใช่เรียกแล้วทิ้ง</p>
+  </div>
+
+  <!-- ── การเชื่อมต่อ ─────────────────────────────────── -->
+  <div class="card hcp-card">
+    <h2 class="hcp-h2">การเชื่อมต่อ</h2>
+    <div class="hcp-conn" id="hcpConn"><!-- js --></div>
+    <p class="hcp-note" id="hcpConnNote"><!-- js --></p>
+  </div>
+
+  <!-- ── สรุป ─────────────────────────────────────────── -->
+  <div class="hcp-kpis" id="hcpKpis"><!-- js --></div>
+
+  <!-- ── ตัวกรอง ──────────────────────────────────────── -->
+  <div class="card hcp-card hcp-toolbar">
+    <div class="hcp-filters" id="hcpFilters"><!-- js --></div>
+    <div class="hcp-tools">
+      <label class="hcp-check"><input type="checkbox" id="hcpOnlyUsable" data-action="filter"><span>แสดงเฉพาะที่ใช้ได้จริงบนไซต์นี้</span></label>
+      <button class="btn btn-secondary" data-action="none">ปิดทั้งหมด</button>
+      <button class="btn btn-secondary" data-action="recommend">เลือกชุดที่แนะนำ</button>
+    </div>
+  </div>
+
+  <!-- ── รายการความสามารถ ─────────────────────────────── -->
+  <div id="hcpThemes"><!-- js --></div>
+
+  <!-- ── สิ่งที่จะเกิดขึ้นเมื่อบันทึก ──────────────────── -->
+  <div class="card hcp-card">
+    <h2 class="hcp-h2">เมื่อบันทึก จะเกิดอะไรขึ้น</h2>
+    <div id="hcpPlan"><!-- js --></div>
+    <div class="hcp-actions">
+      <button class="btn btn-secondary" disabled>ยกเลิก</button>
+      <button class="btn" disabled>บันทึกการตั้งค่า</button>
+      <span class="hcp-inert">ปุ่มปิดไว้ — หน้านี้เป็น mockup</span>
+    </div>
+  </div>
+
+  <footer class="hcp-foot">
+    Vision Meta Hub · หน้าเสนอแนวคิด (mockup) ·
+    ที่มาของรายการ: <code>docs/vendor/hikvision/HCP_OpenAPI.pdf</code> §5.1–5.16 ·
+    ผลทดสอบไซต์ HKT 2026-08-08
+  </footer>
+</div>
+
+<script src="./hcp-data.js?v=hcp1"></script>
+<script src="./hcp-demo.js?v=hcp1"></script>
+</body>
+</html>

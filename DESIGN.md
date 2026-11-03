@@ -321,4 +321,4 @@ html[data-theme="light"] {
 
 ---
 
-<sub>End of DESIGN.md · Vigil Platform · Created 2026-05-27 · Updated 2026-06-08 · role GUIDE_</sub>
+<sub>End of DESIGN.md · Vigil Platform · Created 2026-05-27 · Updated 2026-06-23 · role GUIDE_</sub>

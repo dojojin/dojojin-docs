@@ -77,6 +77,20 @@ async function runMigrations(pool, opts = {}) {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      // 🔴 migration ต้องไม่โดนนาฬิกาจับตาย — เพดานที่ล้อมอยู่รอบตัวมันทุกชั้น
+      // เล็กกว่างานที่มันต้องทำ: pool ของ api-server (ผู้เรียกจริงตอน boot)
+      // ตั้ง statement_timeout ไว้ 120s และ role ตั้งไว้ 15 นาที (migration 181)
+      // ⇒ migration ที่แตะตารางใหญ่ (events หลักล้านแถว) จะถูกฆ่ากลางคัน แล้ว
+      // startup abort ทั้งระบบตามดีไซน์ (STUBBORN_FACT #81) ทั้งที่ตัว SQL ไม่ได้ผิด
+      // ปลดเฉพาะใน transaction นี้ — จบ transaction ก็กลับไปใช้ค่าของ pool เดิม
+      // (LOCAL = ผูกกับ transaction ไม่รั่วไปหา query อื่นที่ยืม connection ต่อ)
+      await client.query('SET LOCAL statement_timeout = 0');
+      await client.query('SET LOCAL idle_in_transaction_session_timeout = 0');
+      // ...แต่ปลดเพดานเฉย ๆ ก็แลกปัญหาเดิมกับปัญหาใหม่ที่แย่กว่า: migration ที่
+      // ติด lock จะรอ "ตลอดไป" และ api-server ค้างตอน boot แบบไม่มี error ให้ดู
+      // (ของเดิมอย่างน้อยตายที่ 120s พร้อมข้อความ) · lock_timeout แยกสองเรื่องนี้
+      // ออกจากกัน — จำกัดเฉพาะ "เวลารอ lock" ไม่จำกัดเวลาทำงานจริงบนตารางใหญ่
+      await client.query("SET LOCAL lock_timeout = '30s'");
       await client.query(sql);
       await client.query(
         `INSERT INTO schema_migrations (filename, duration_ms, checksum)
@@ -107,14 +121,11 @@ async function runMigrations(pool, opts = {}) {
 
 // Standalone CLI: `node migrate.js` for ad-hoc runs (CI, manual ops).
 if (require.main === module) {
-  require('dotenv').config();
+  require('dotenv').config({ quiet: true });
+  const env = require('./config');
   const { Pool } = require('pg');
   const pool = new Pool({
-    host: process.env.DB_HOST,
-    port: process.env.DB_PORT,
-    database: process.env.DB_NAME,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
+    ...env.db(),
     max: 2,
     application_name: 'migrate',
   });

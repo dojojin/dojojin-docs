@@ -21,6 +21,10 @@ src/.env.local
 cameras-config.json
 cameras-config.json.bak*
 cameras-config.backup-*.json
+# ⚠️ ชื่อไฟล์สำรองที่ใช้จริงไม่ตรงกับสองบรรทัดบน — cameras-config.bak-<เหตุผล>-<เวลา>
+#    ไม่ลงท้าย .bak และไม่ลงท้าย .json จึงหลุดทั้ง *.bak และ *.backup ด้านล่างด้วย
+#    ไฟล์นี้มีรหัสผ่านกล้อง 144 ตัว (enc:v1:) — git add -A ครั้งเดียวคือหลุดขึ้น remote
+cameras-config.bak*
 camera-groups.json
 alert-rules.json
 line-config.json
@@ -35,6 +39,10 @@ spool/
 *.jpg
 *.jpeg
 *.png
+# branding/ เป็นที่ที่ไฟล์อัปโหลดจาก UI ตกลงมา (ตั้งค่า › ระบบ › Branding) จึงเป็น
+# "ข้อมูลของลูกค้ารายนี้" ไม่ใช่โค้ด — ถ้า track ไว้ ทุกครั้งที่เจ้าของอัปโหลดโลโก้
+# working tree ของ central จะสกปรกทันที แล้ว `git pull --ff-only` รอบถัดไปจะล้ม
+# ไฟล์ไม่หาย: scripts/backup.sh รวมโฟลเดอร์ branding อยู่ในชุดสำรอง config อยู่แล้ว
 *.gif
 # Allow logos/icons in dashboard
 !dashboard/assets/*.png
@@ -56,7 +64,27 @@ media/
 
 # Phase 7.3 — generated report PDFs (auto-created at boot; contents are
 # per-deployment artefacts, may contain event data)
-reports/
+#
+# Anchored to the repo root. Unanchored it also matched docs/reports/, which
+# happened to be the behaviour we want there too — but by accident, and an
+# accident is not a rule anyone can rely on. docs/reports/ is now listed in its
+# own right below.
+/reports/
+
+# Written reports for partners and internal review (docs/reports/).
+#
+# Local only, by the owner's decision (2026-08-05). These carry things a repo
+# should not: a partner's server addresses and ports, internal subnets, and
+# per-site delivery statistics that identify how a government integration is
+# performing. The repo is shared with other machines and future engineers; the
+# reports are for the people in the room.
+#
+# Keep writing them here — a report that lands somewhere ad-hoc is a report
+# nobody finds again. Just do not commit them.
+docs/reports/
+
+# P5 File Service — admin-uploadable documents/images (customer sharing)
+/files/
 
 # ============================================================
 # License keys & issued licenses — NEVER commit these
@@ -89,9 +117,23 @@ mosquitto-log/
 # pg_dump output (sensitive — events + user hashes). The backups/
 # folder itself is checked in via backups/.gitkeep so the dir
 # exists on first run; only the dump + log artefacts are excluded.
-backups/*.dump
-backups/*.log
-backups/*.tar.gz
+# ตัวอย่าง performance รายวันจาก cron (scripts/perf-daily-sample.sh) — เป็นข้อมูล ไม่ใช่โค้ด
+perf-samples/
+
+# 🔴 กลับด้านเป็น "ห้ามทุกอย่าง ยกเว้นที่อนุญาต" (2026-08-14)
+#
+# เดิมไล่ห้ามทีละนามสกุล (.dump .log .tar.gz .csv) ซึ่งเป็น deny-list — พลาดทุกครั้ง
+# ที่มีไฟล์รูปแบบใหม่เข้ามา และมันพลาดไปแล้วจริง ๆ 2 กลุ่ม:
+#   backups/env-backup-20260812_145550          ← สำเนา .env ครบทุก secret
+#   backups/emqx-authz-20260811_000011/*.json   ← authz + ผู้ใช้ของ broker
+#     + .../cluster.hocon
+# ทั้งคู่ไม่มีนามสกุลที่อยู่ในรายการ จึงรอ `git add -A` ครั้งเดียวเท่านั้น
+#
+# โฟลเดอร์นี้เป็นที่ทิ้งของสำรองทุกชนิด (ตอนนี้ 64 GB) รูปแบบไฟล์ในอนาคตเดาไม่ได้
+# allow-list จึงเป็นทางเดียวที่ปลอดภัย · `.gitkeep` ถูก track อยู่แล้วเพื่อให้โฟลเดอร์
+# มีอยู่ตอน clone ใหม่ จึงต้อง re-include กลับมา
+backups/*
+!backups/.gitkeep
 
 # ============================================================
 # OS files
@@ -168,3 +210,20 @@ public/others/vss.html
 # Bridge store-and-forward queue (runtime data)
 data/bridge-queue/
 data/bridge-queue.replay/
+# ข้อความที่ด่านขนาดกันไว้ (src/edge/publisher.js) — ของ runtime ล้วน
+data/oversized/
+# ไฟล์ที่ถูกกักเพราะส่งไม่ได้ถาวร — ย้ายมาด้วยมือตอน incident
+data/bridge-queue-poison/
+# cameras whose account keeps answering 401 — per-edge runtime state, not config
+data/auth-held.json
+
+# Blacklist roster photos (PII — never commit; migration 093)
+blacklist-photos/
+
+# สำเนา .env ทุกชนิด (backup ตอนสลับ transport ฯลฯ) — มี secret ครบ ห้ามหลุด
+src/.env.bak*
+src/.env.*.bak
+**/.env.bak*
+
+# แมปกล้อง HCP ที่ generate ให้ edge — เป็นข้อมูล ไม่ใช่โค้ด และต่างกันรายไซต์
+src/hcp-camera-map.json

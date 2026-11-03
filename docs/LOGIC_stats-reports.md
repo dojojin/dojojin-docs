@@ -71,8 +71,12 @@ Category badges are not just display counters. They are the focus control for "�
 **#28 — Reports built on Stats v2 endpoints (DRY)**
 No parallel data path. What Stats shows = what PDF contains. Retroactive when mappings change.
 
-**#29 — 4 report types: Daily / Weekly / Monthly / Custom**
-Share the same renderer. Weekly/monthly = rolling last-N-days (not calendar periods — see #94).
+**#29 — report types** *(updated 2026-09-06)*
+`REPORT_TYPES = ['daily', 'weekly', 'monthly', 'summary', 'health']` (`src/routes/reports.js:20`) —
+**5 analytics types plus health**. `summary` was added 2026-09-03 (migration 197, `40d0f8e`);
+`health` uses a different renderer — **PNG** via SVG + `sharp`, **PDF** still via Puppeteer for A4 pagination (see #148). The four analytics types
+share one renderer. `daily`/`weekly` are rolling windows; `monthly` is a **calendar** month —
+see #94.
 
 **#30 → superseded by #93**
 Original html2canvas + jsPDF replaced by Puppeteer in mid-2026.
@@ -98,8 +102,26 @@ Used by both `renderReportPreviewV2` (interactive Reports page) and `report-prin
 **#93 — Puppeteer renders BOTH PDF and "full" image from `/report-print.html`**
 `report-renderer.js` opens print page with `X-Internal-Token` header, waits for `window.__reportReady`, then either `page.pdf()` or `page.screenshot()`. Old `renderReportHtml` A4 server template was deleted.
 
-**#94 — Weekly/monthly report ranges are ROLLING last-N-days, not calendar periods**
-`weekly` = `[today-7d, today)`, `monthly` = `[today-30d, today)`. Calendar periods broke on fresh deployments where most-recent-completed-week predated the events.
+*Updated 2026-09-06 — **where** it renders:* Chromium now lives in `src/report-worker.js`, a
+separate PM2 process, so a Chrome crash restarts the worker instead of api-server. Operator
+downloads reach it over loopback (`POST /render`, `src/helpers/renderViaWorker.js`) with an
+in-process fallback and a `REPORT_RENDER_VIA_WORKER=0` kill switch. The browser is **closed after
+`REPORT_BROWSER_IDLE_MS` idle** (default 5 min) rather than held open all day; the next render
+pays the cold relaunch. Health-report PNG **and PDF** plus the 3 traffic PDF routes still render
+in-process — see `docs/REF_api-reference.md` → *Internal endpoints*.
+
+**#94 — `monthly` = the PREVIOUS CALENDAR MONTH** *(changed 2026-09-03 — decision #269, owner request, `213c931`)*
+`computeScheduledRange()` (`src/report-renderer.js:51-80`): `monthly` = `[1st of previous month,
+1st of current month)`, so the report sent on 1 September covers all of August, matching what the
+manual UI produces. `daily` = `[today-1d, today)` and `weekly` = `[today-7d, today)` are unchanged
+rolling windows.
+
+> *History — why it used to be rolling:* both weekly and monthly were originally
+> `[today-Nd, today)`. Calendar periods broke on young deployments — mid-May with data starting
+> May 8 meant the most-recent-completed week predated the events and the report came out nearly
+> empty. That reasoning still holds for **weekly**, which is why only monthly moved: a whole
+> calendar month is long enough that the young-deployment case stops mattering, and "last month"
+> is what a person means by a monthly report.
 
 **#98 — Weekly/monthly schedules need day gate**
 `send_day_of_week` (smallint 0=Mon..6=Sun) + `send_days_of_month` (CSV `1,15` or `L` for last-day-of-month). Migration 015. Without this, weekly reports fired 7× daily and burned LINE quota.
@@ -113,6 +135,15 @@ Used by both `renderReportPreviewV2` (interactive Reports page) and `report-prin
 
 **#95 — Puppeteer browser pool: one Chromium per process, fresh page per render**
 `_getBrowser()` — module-level promise, lazily launched. `_withPage(fn)` — newPage → fn → close. Cold: ~1,419ms. Warm: ~150ms (~9× faster). `browser.on('disconnected')` nulls the promise so next call relaunches transparently.
+
+*Updated 2026-09-06:* "one per process" now means **one in `report-worker`**, not one in
+api-server. Two things follow from the same `_withPage` serialisation that makes the pool safe:
+- the browser is dropped after `REPORT_BROWSER_IDLE_MS` idle (default `300000`,
+  `report-renderer.js:224`) — a pool held open all day costs RSS for a job that runs a handful of
+  times, so the cold ~1.4 s is paid on the next render instead
+- **a manual download queues behind a scheduled report.** A busy worker does not fail fast into
+  the in-process fallback; the caller waits out the full 120 s timeout first
+  (`src/helpers/renderViaWorker.js`)
 
 > STUBBORN_FACT: Puppeteer `networkidle0` does not wait for post-innerHTML image decoding. Await all `<img>` elements before signalling `__reportReady`. GOTCHAS #22.
 
@@ -177,8 +208,31 @@ If `last_error` contains single quotes, the HTML attribute breaks silently. Fix:
 
 ---
 
+## Report customisation 2026-09-03 → 09-04
+
+One burst of report work, in ship order. Read this before "adding" any of it again.
+
+| Commit | What changed |
+|---|---|
+| `59e66b7` | Optional **per-day time window** on the report stats endpoints (server side of the UI below) |
+| `213c931` | Schedule time window + **`monthly` becomes the previous calendar month** — decision #269, see #94 |
+| `40d0f8e` | New **`summary` report type** (migration 197), donut % labels, time-window UI |
+| `a09e3bd` | Merge IN/OUT in the share donut; pair the category table with its own donut |
+| `ab70ad8` | **Choose which sections appear** in the report |
+| `00acb35` | Last-7-days and month-to-date bar charts |
+| `91efd2a` | Show each category's share in the category table |
+| `2f86ad6` | Split the daily bars **by category** |
+| `080d4ce` | Hide analytics-only fields on the `summary` report; real month label |
+
+All of it goes through `dashboard/report-template.js` — decision #92 still holds, there is no
+parallel server-side template.
+
+---
+
 ## Related files
-- `src/report-renderer.js` — Puppeteer orchestrator
+- `src/report-renderer.js` — Puppeteer orchestrator + `computeScheduledRange()`
+- `src/report-worker.js` — the PM2 process that owns Chromium and the scheduler loop
+- `src/helpers/renderViaWorker.js` — api-server → worker `POST /render`, with in-process fallback
 - `docs/LOGIC_line-notifications.md` — LINE delivery, imgbb, recipient, and quiet-hours behavior
 - `dashboard/report-template.js` — ONLY place that builds analytics report HTML
 - `dashboard/report-print.html` — Puppeteer print target

@@ -14,14 +14,18 @@
 const fs   = require('fs');
 const path = require('path');
 
+// ชื่อโฟลเดอร์กล้อง — แยกออกมาให้งาน retention แปลง camera id → ชื่อโฟลเดอร์ได้ตรงกับตอนเขียน
+// (ห้ามเรียก snapPath เพื่อเอาชื่อ — มัน mkdir)
+function safeCamDir(camId) { return String(camId).replace(/[^A-Za-z0-9._-]/g, '_'); }
+
 function snapPath(snapshotDir, category, camId, tsMs) {
   const d       = new Date(tsMs);
   const date    = d.toISOString().slice(0, 10);
   const slot    = String(Math.floor(d.getUTCHours() / 4) * 4).padStart(2, '0') + '00';
-  const safeCam = String(camId).replace(/[^A-Za-z0-9._-]/g, '_');
+  const safeCam = safeCamDir(camId);
   const dir     = path.join(snapshotDir, category, date, safeCam, slot);
   fs.mkdirSync(dir, { recursive: true });
   return { dir, relBase: `${category}/${date}/${safeCam}/${slot}` };
 }
 
-module.exports = { snapPath };
+module.exports = { snapPath, safeCamDir };

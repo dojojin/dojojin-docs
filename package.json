@@ -7,7 +7,13 @@
     "doc": "docs"
   },
   "scripts": {
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "check:api": "node scripts/check-api-reference.js",
+    "check:env": "node scripts/check-env.js",
+    "check:i18n": "node scripts/check-i18n.js",
+    "check:events": "node scripts/check-events-queries.js",
+    "hooks:install": "git config core.hooksPath scripts/hooks && chmod +x scripts/hooks/pre-commit scripts/hooks/commit-msg",
+    "check:stale": "node scripts/check-stale-workers.js"
   },
   "keywords": [],
   "author": "",

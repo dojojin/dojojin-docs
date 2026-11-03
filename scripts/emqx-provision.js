@@ -23,8 +23,14 @@ const fs = require('fs');
 
 require(path.join(__dirname, '..', 'src', 'node_modules', 'dotenv')).config({ path: path.join(__dirname, '..', '.env') });
 
+// EMQX-only bootstrap script (SEC-001 Phase 2) — kept as-is under BROKER_KIND=
+// mosquitto's brokerAdmin interface has no equivalent of "create the
+// authenticator mechanism itself"; that's a one-time cluster setup concern
+// (mosquitto's equivalent is loading the dynsec plugin + running its own
+// bootstrap, done once outside this script — see M2 plan). User provisioning
+// below now goes through brokerAdmin so it stays correct if BROKER_KIND flips.
+const brokerAdmin = require(path.join(__dirname, '..', 'src', 'helpers', 'brokerAdmin'));
 const EMQX_API = 'http://localhost:18083/api/v5';
-const AUTHN_ID  = 'password_based%3Abuilt_in_database';
 const CONFIG_FILE = path.join(__dirname, '..', 'cameras-config.json');
 
 // ── helpers ────────────────────────────────────────────────
@@ -73,18 +79,10 @@ async function ensureAuthenticator(token) {
   console.log('  ✓ Authenticator created (password_based:built_in_database)');
 }
 
-async function upsertUser(token, userId, password) {
-  // Try create first; if 409 (exists) → update password via PUT
-  const create = await apiReq('POST', `/authentication/${AUTHN_ID}/users`,
-    { user_id: userId, password, is_superuser: false }, token);
-  if (create.status === 409) {
-    const upd = await apiReq('PUT', `/authentication/${AUTHN_ID}/users/${encodeURIComponent(userId)}`,
-      { password, is_superuser: false }, token);
-    if (!upd.ok) throw new Error(`Update user ${userId} failed: ${JSON.stringify(upd.json)}`);
-    return 'updated';
-  }
-  if (!create.ok) throw new Error(`Create user ${userId} failed: ${JSON.stringify(create.json)}`);
-  return 'created';
+// Provision one MQTT user through brokerAdmin (EMQX or Mosquitto, per
+// BROKER_KIND) instead of this script's own duplicated REST calls.
+async function upsertUser(_token, userId, password, role) {
+  return brokerAdmin.upsertUser(userId, password, { role });
 }
 
 function camMqttUser(cameraId) {
@@ -113,7 +111,7 @@ async function main() {
   const subPass = process.env.MQTT_SUBSCRIBER_PASSWORD;
   if (!subUser || !subPass) throw new Error('MQTT_SUBSCRIBER_USER / MQTT_SUBSCRIBER_PASSWORD not set in .env');
   process.stdout.write(`Creating subscriber user "${subUser}"... `);
-  const subAction = await upsertUser(token, subUser, subPass);
+  const subAction = await upsertUser(token, subUser, subPass, 'svc');
   console.log(subAction);
 
   // 4. Camera users
@@ -131,7 +129,7 @@ async function main() {
     // Reuse existing password if already provisioned, else generate new
     const mqttPass = cam.mqtt_password || genPassword();
     process.stdout.write(`  ${cam.camera_id} → "${mqttUser}"... `);
-    const action = await upsertUser(token, mqttUser, mqttPass);
+    const action = await upsertUser(token, mqttUser, mqttPass, 'camera');
     console.log(action);
     cam.mqtt_username = mqttUser;
     cam.mqtt_password = mqttPass;

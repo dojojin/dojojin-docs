@@ -1,0 +1,459 @@
+<title>Vigil Edge (hkt) — Firewall Policy Request (เพิ่มเติม #3)</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; }
+  img, svg { max-width: 100%; }
+</style><style>
+  /* Same committed light theme as the original request doc — kept identical
+     on purpose so the two documents read as one series. */
+  :root,
+  :root[data-theme="dark"],
+  :root[data-theme="light"] {
+    --ground:        #F6F7F9;
+    --surface:       #FFFFFF;
+    --sunken:        #EFF2F6;
+    --ink:           #161B25;
+    --ink-2:         #4A5468;
+    --ink-3:         #798496;
+    --rule:          #DDE2EA;
+    --rule-strong:   #C3CBD8;
+    --navy:          #1E3F63;
+    --navy-soft:     #E9EEF5;
+    --red:           #A81F26;
+    --red-soft:      #FBECED;
+    --green:         #146A45;
+    --green-soft:    #E7F3EC;
+    --amber:         #8A5A00;
+    --amber-soft:    #FBF2E0;
+
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Noto Sans Thai",
+            "Leelawadee UI", Roboto, sans-serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+
+    color-scheme: light;
+  }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.65;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  .wrap {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 40px 24px 80px;
+    display: flex;
+    flex-direction: column;
+    gap: 40px;
+  }
+
+  .head { display: flex; flex-direction: column; gap: 18px; }
+
+  .eyebrow {
+    font-size: .72rem;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--navy);
+  }
+
+  h1 {
+    margin: 0;
+    font-size: clamp(1.6rem, 4.2vw, 2.15rem);
+    line-height: 1.2;
+    letter-spacing: -.02em;
+    font-weight: 700;
+    text-wrap: balance;
+  }
+
+  .lede { margin: 0; max-width: 62ch; color: var(--ink-2); }
+
+  .ref {
+    display: flex; align-items: baseline; gap: 8px;
+    background: var(--navy-soft); border: 1px solid #C7D6E6;
+    border-radius: 6px; padding: 10px 14px; font-size: .88rem; color: var(--navy);
+    max-width: fit-content;
+  }
+  .ref code { font-family: var(--mono); font-size: .85rem; }
+
+  .meta {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .meta div { background: var(--surface); padding: 12px 14px; }
+  .meta dt {
+    font-size: .68rem; font-weight: 700; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--ink-3); margin: 0 0 3px;
+  }
+  .meta dd {
+    margin: 0; font-family: var(--mono); font-size: .85rem;
+    font-variant-numeric: tabular-nums; color: var(--ink);
+  }
+
+  section { display: flex; flex-direction: column; gap: 16px; }
+
+  h2 {
+    margin: 0;
+    font-size: 1.12rem;
+    font-weight: 700;
+    letter-spacing: -.01em;
+    padding-bottom: 10px;
+    border-bottom: 2px solid var(--ink);
+  }
+
+  h2 .count { color: var(--ink-3); font-weight: 500; margin-left: .5em; font-size: .85rem; }
+
+  p { margin: 0; max-width: 70ch; }
+  .muted { color: var(--ink-2); font-size: .92rem; }
+
+  .asks { display: flex; flex-direction: column; gap: 12px; }
+
+  .ask {
+    display: grid;
+    grid-template-columns: 34px 1fr;
+    gap: 16px;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--navy);
+    border-radius: 6px;
+    padding: 16px 18px;
+  }
+  .ask .num {
+    width: 26px; height: 26px; border-radius: 50%;
+    background: var(--navy); color: #fff;
+    display: grid; place-items: center;
+    font-family: var(--mono); font-size: .82rem; font-weight: 600;
+  }
+  .ask h3 { margin: 0 0 6px; font-size: 1rem; font-weight: 650; line-height: 1.4; }
+  .ask .evidence {
+    margin-top: 10px; padding: 9px 12px;
+    background: var(--sunken); border-radius: 5px;
+    font-family: var(--mono); font-size: .8rem; line-height: 1.55;
+    color: var(--ink-2); overflow-x: auto;
+  }
+  .ask .evidence b { color: var(--red); font-weight: 600; }
+  .ask .evidence .ok { color: var(--green); font-weight: 600; }
+
+  .scope {
+    background: var(--amber-soft);
+    border: 1px solid #E8D5A8;
+    border-radius: 6px;
+    padding: 13px 16px;
+    font-size: .92rem;
+    color: #6B4600;
+  }
+  .scope b { color: var(--amber); }
+
+  .scroll { overflow-x: auto; border: 1px solid var(--rule); border-radius: 8px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; min-width: 660px; font-size: .87rem; }
+  thead th {
+    text-align: left; padding: 11px 14px;
+    background: var(--sunken);
+    font-size: .68rem; font-weight: 700; letter-spacing: .07em;
+    text-transform: uppercase; color: var(--ink-2);
+    border-bottom: 1px solid var(--rule-strong);
+    white-space: nowrap;
+  }
+  tbody td { padding: 12px 14px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  tbody tr:last-child td { border-bottom: 0; }
+  td.n { font-family: var(--mono); font-weight: 700; color: var(--navy); width: 1%; }
+  td .addr {
+    font-family: var(--mono); font-size: .82rem;
+    font-variant-numeric: tabular-nums; line-height: 1.5;
+    display: block; color: var(--ink);
+  }
+  td .sub { display: block; color: var(--ink-3); font-size: .78rem; margin-top: 2px; }
+
+  .pill {
+    display: inline-block; white-space: nowrap;
+    padding: 2px 9px; border-radius: 3px;
+    font-size: .72rem; font-weight: 700; letter-spacing: .04em;
+    text-transform: uppercase;
+  }
+  .pill.block { background: var(--red-soft);   color: var(--red);   border: 1px solid #EBC4C6; }
+  .pill.pass  { background: var(--green-soft); color: var(--green); border: 1px solid #BFDECB; }
+  .pill.lan   { background: var(--navy-soft);  color: var(--navy);  border: 1px solid #C7D6E6; }
+
+  figure { margin: 0; display: flex; flex-direction: column; gap: 10px; }
+  .diagram {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    padding: 20px 16px;
+    overflow-x: auto;
+  }
+  .diagram svg { display: block; width: 100%; min-width: 620px; height: auto; }
+  figcaption { font-size: .85rem; color: var(--ink-3); }
+
+  .notes { display: flex; flex-direction: column; gap: 10px; }
+  .note {
+    display: grid; grid-template-columns: auto 1fr; gap: 12px;
+    background: var(--surface); border: 1px solid var(--rule);
+    border-radius: 6px; padding: 14px 16px; font-size: .92rem;
+  }
+  .note .k {
+    font-family: var(--mono); font-size: .74rem; font-weight: 700;
+    letter-spacing: .06em; text-transform: uppercase;
+    color: var(--ink-3); padding-top: 2px; white-space: nowrap;
+  }
+  .note code {
+    font-family: var(--mono); font-size: .84rem;
+    background: var(--sunken); padding: 1px 5px; border-radius: 3px;
+  }
+
+  footer {
+    border-top: 1px solid var(--rule);
+    padding-top: 18px;
+    font-size: .82rem;
+    color: var(--ink-3);
+  }
+
+  @media (max-width: 560px) {
+    .wrap { padding: 28px 16px 60px; gap: 32px; }
+    .ask { grid-template-columns: 1fr; gap: 10px; }
+  }
+
+  @media print {
+    body { background: #fff; font-size: 13px; }
+    .wrap { max-width: none; padding: 0; gap: 26px; }
+
+    .scroll, .diagram { overflow: visible; }
+    table { min-width: 0; font-size: 11.5px; }
+    .diagram svg { min-width: 0; }
+
+    thead th, tbody td { padding: 8px 9px; }
+    td .addr { font-size: 10.5px; }
+    td .sub  { font-size: 9.5px; }
+
+    th:nth-child(1), td:nth-child(1) { width:  4%; }
+    th:nth-child(2), td:nth-child(2) { width: 15%; }
+    th:nth-child(3), td:nth-child(3) { width: 24%; }
+    th:nth-child(4), td:nth-child(4) { width: 16%; }
+    th:nth-child(5), td:nth-child(5) { width: 26%; }
+    th:nth-child(6), td:nth-child(6) { width: 15%; }
+
+    section, figure, .ask, .note, .meta, tr { break-inside: avoid; }
+    h2 { break-after: avoid; }
+  }
+</style><style>
+  /* เพิ่มในเอกสารนี้ — .ask เป็น grid และลูกของ grid มี min-width:auto จึงหดต่ำกว่า
+     ความกว้างเนื้อหาไม่ได้ ทำให้หมายเลข IP ยาว ๆ ดันหน้าให้เลื่อนแนวนอนบนมือถือ
+     (ฉบับ #1/#2 มีอาการนี้อยู่เหมือนกัน) */
+  .ask > div { min-width: 0; }
+  .note > span { min-width: 0; overflow-wrap: anywhere; }
+  code { font-family: var(--mono); font-size: .86em; background: var(--sunken);
+         padding: 1px 5px; border-radius: 3px; overflow-wrap: anywhere; }
+  pre { overflow-x: auto; background: var(--sunken); padding: 12px 14px;
+        border-radius: 5px; font-family: var(--mono); font-size: .8rem;
+        line-height: 1.6; margin: 10px 0 0; }
+  td .sub { display: block; }
+  th .sub { display: block; font-weight: 400; }
+  @media (max-width: 560px) {
+    .note { grid-template-columns: 1fr; gap: 6px; }
+    .note .k { white-space: normal; }
+  }
+</style>
+<div class="wrap">
+
+  <div class="head">
+    <div class="eyebrow">Firewall Policy Request · Site hkt (Phuket) · เพิ่มเติม #3</div>
+    <h1>Vigil Edge — ขอเพิ่ม Policy สำหรับส่งข้อมูล<br>ใบหน้า ต่อไปยัง CIB</h1>
+    <p class="lede">
+      เป็นข้อขอแบบเดียวกับ <span class="ref">เพิ่มเติม #2</span> ที่อนุมัติไปเมื่อ 2026-07-29
+      (ตอนนั้นขอปลายทาง <code>202.124.201.106:10001</code> สำหรับข้อมูลป้ายทะเบียน และใช้งานได้จริงตั้งแต่นั้นมา)
+      — คราวนี้เป็นปลายทางอีกตัวหนึ่งของ CIB สำหรับข้อมูลใบหน้า
+      ซึ่งตอนขอครั้งก่อนยังไม่ได้ใช้ จึงไม่ได้ขอไปพร้อมกัน
+    </p>
+    <dl class="meta">
+      <div><dt>Edge host</dt><dd>10.0.10.50</dd></div>
+      <div><dt>Gateway</dt><dd>10.0.10.254</dd></div>
+      <div><dt>Firewall</dt><dd>FG120GTK25038058</dd></div>
+      <div><dt>ตรวจสอบเมื่อ</dt><dd>2026-08-07</dd></div>
+      <div><dt>สิ่งที่ขอปรับ</dt><dd>1 ข้อ</dd></div>
+    </dl>
+  </div>
+
+  <div class="asks">
+    <div class="ask">
+      <div class="num">1</div>
+      <div>
+        <h3>อนุญาต source <code>10.0.10.50</code> ออกไปยัง <code>202.124.201.105</code> port <code>10001</code> (TCP)</h3>
+        <p>
+          Edge server รับข้อมูลใบหน้าจากกล้องในเครือข่ายนี้ แล้วต้องส่งต่อไปยัง CIB
+          — เป็นปลายทางที่กล้องส่งข้อมูลอยู่แล้วทุกวัน แต่ Edge server เป็นคนละ source IP
+          จากกล้อง จึงยังไม่เคยถูกเพิ่มใน policy
+        </p>
+        <p>
+          หมายเลข IP ต่างจากที่ขอครั้งก่อนแค่หลักสุดท้าย — <code>.106</code> คือเครื่องรับป้ายทะเบียน
+          ส่วน <code>.105</code> คือเครื่องรับใบหน้า เป็นคนละเครื่องบริการของ CIB
+        </p>
+
+        <div class="evidence">
+          <h3>หลักฐาน — ยิง HTTP POST ว่าง (ไม่มีข้อมูลใบหน้า) จาก 2 เครื่อง ไป 2 ปลายทาง</h3>
+          <div class="scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>ต้นทาง</th>
+                <th>IP ขาออก</th>
+                <th>202.124.201.106<span class="sub">ป้ายทะเบียน · ขออนุมัติแล้ว #2</span></th>
+                <th>202.124.201.105<span class="sub">ใบหน้า · ขอครั้งนี้</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Central<span class="sub">นอกเครือข่ายนี้</span></td>
+                <td><span class="addr">27.130.2.228</span></td>
+                <td><span class="ok">HTTP 200</span></td>
+                <td><span class="ok">HTTP 200</span></td>
+              </tr>
+              <tr>
+                <td>Edge เครื่องนี้<span class="sub">ที่ขอ policy ให้</span></td>
+                <td><span class="addr">1.10.144.84</span></td>
+                <td><span class="ok">HTTP 200</span></td>
+                <td><span class="n">HTTP 403</span></td>
+              </tr>
+            </tbody>
+          </table>
+          </div>
+          <p class="muted">
+            path / method / header เหมือนกันทุกอย่าง ต่างกันแค่ต้นทางและปลายทาง
+            — ปลายทาง (CIB) ไม่ได้ปฏิเสธ เพราะเครื่อง Central ยิงได้ 200 ทั้งสองตัว
+            และ Edge เครื่องนี้ก็ยิงไป <code>.106</code> ได้ 200 อยู่แล้ว
+            ติดเฉพาะช่องเดียวคือ Edge ไป <code>.105</code>
+          </p>
+        </div>
+
+        <div class="evidence">
+          <h3>สิ่งที่ตอบกลับมาจริง — เป็นหน้าบล็อกของ FortiGate ไม่ใช่คำตอบจาก CIB</h3>
+<pre>HTTP/1.1 403 Forbidden
+Content-Type: text/html; charset="utf-8"
+
+    Web Filter Violation
+    FortiGuard Intrusion Prevention - Access Blocked
+    Web Page Blocked
+
+    You have tried to access a web page that is in
+    violation of your Internet usage policy.
+
+    Category   : Unrated
+    Support ID : 307744530864763071633</pre>
+          <p class="muted">
+            หมวด Unrated เพราะปลายทางเป็นหมายเลข IP ไม่มีชื่อโดเมนให้จัดหมวด
+            — กรณีเดียวกับที่เจอตอนขอ <code>.106</code> เมื่อ 2026-07-29
+          </p>
+        </div>
+
+        <p class="scope">
+          <b>ขอบเขต:</b> ขอเฉพาะ source <code>10.0.10.50</code> ไปยัง <code>202.124.201.105</code>
+          port <code>10001</code> (TCP) เท่านั้น — ไม่กระทบ policy เดิมของกล้องหรืออุปกรณ์อื่น
+          และไม่ต้องเปิดทั้ง subnet
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div class="diagram">
+    <h2>Flow ที่เพิ่มจากเอกสารเดิม <span class="count">flow 6</span></h2>
+    <div class="scroll">
+    <table>
+      <thead>
+        <tr><th>#</th><th>Source</th><th>Destination</th><th>Service port</th><th>Purpose</th><th>Status</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>5</td>
+          <td><span class="addr">10.0.10.50</span></td>
+          <td><span class="addr">202.124.201.106</span></td>
+          <td><span class="addr">TCP 10001</span></td>
+          <td>ส่งข้อมูลป้ายทะเบียนต่อให้ CIB</td>
+          <td><span class="ok">อนุมัติแล้ว · ใช้งานอยู่</span></td>
+        </tr>
+        <tr>
+          <td>6</td>
+          <td><span class="addr">10.0.10.50</span></td>
+          <td><span class="addr">202.124.201.105</span></td>
+          <td><span class="addr">TCP 10001</span></td>
+          <td>ส่งข้อมูลใบหน้าต่อให้ CIB</td>
+          <td><span class="n">ขอเพิ่มครั้งนี้</span></td>
+        </tr>
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+  <h2>หมายเหตุประกอบการตรวจสอบ</h2>
+  <div class="notes">
+
+    <div class="note">
+      <span class="k">ทำไมกล้องส่งได้ Edge ส่งไม่ได้</span>
+      <span>
+        กล้องกับ Edge อยู่คนละวง — กล้องกระจายอยู่ใน 11 subnet
+        (<code>10.1.100.x</code> ถึง <code>10.11.100.x</code>) ส่วน Edge อยู่ <code>10.0.10.0/24</code>
+        จึงเข้า policy คนละข้อกัน · policy ของกล้องถูกตั้งไว้ตั้งแต่ติดตั้งกล้อง
+        แต่ Edge เป็นเครื่องที่เพิ่มเข้ามาทีหลัง
+      </span>
+    </div>
+
+    <div class="note">
+      <span class="k">เป็นการเพิ่มปลายทาง ไม่ใช่เปิด policy ใหม่</span>
+      <span>
+        Edge เครื่องนี้ยิงไป <code>.106</code> ได้ 200 (จากที่ขอในเอกสาร #2) แต่ไป <code>.105</code>
+        ได้ 403 — แสดงว่า policy ของ Edge มีการกรองเว็บอยู่ และเปิดข้อยกเว้นให้เฉพาะปลายทางที่เคยขอ
+        · ครั้งนี้จึงเป็นการเพิ่มปลายทางเข้าไปในข้อยกเว้นเดิม
+      </span>
+    </div>
+
+    <div class="note">
+      <span class="k">ทำไมต้องให้ Edge ส่งแทนกล้อง</span>
+      <span>
+        กล้องแต่ละตัวส่งข้อมูลออกไปได้ในจำนวนปลายทางจำกัด และเราต้องใช้ช่องนั้นเพื่อรับข้อมูล
+        มาประมวลผลในระบบด้วย · Edge จึงรับจากกล้องแล้วส่งต่อไบต์เดิมทั้งก้อนโดยไม่แก้ไข
+        ให้ CIB — CIB ได้ข้อมูลเหมือนที่กล้องส่งเองทุกประการ
+      </span>
+    </div>
+
+    <div class="note">
+      <span class="k">ไม่กระทบของเดิม</span>
+      <span>
+        กล้องยังส่งตรงไป CIB ตามปกติทุกประการระหว่างที่รอ policy นี้
+        — คำขอนี้ไม่ได้แตะหรือย้ายเส้นทางเดิมของกล้องเลย
+      </span>
+    </div>
+
+    <div class="note">
+      <span class="k">ปริมาณข้อมูล</span>
+      <span>
+        ประมาณ 3 คำขอต่อวินาที ขนาดเฉลี่ยราว 75 KB ต่อครั้ง (~0.3 MB/s)
+        · น้อยกว่าเส้นทางป้ายทะเบียนที่อนุมัติไปแล้วในเอกสารก่อนหน้า
+      </span>
+    </div>
+
+    <div class="note">
+      <span class="k">ทดสอบซ้ำได้</span>
+      <span>
+        คำสั่งที่ใช้ทดสอบไม่ส่งข้อมูลจริงเข้าระบบ CIB เพราะ body ว่าง:<br>
+        <code>curl -s -o /dev/null -w '%{http_code}' -X POST --data-binary '' http://202.124.201.105:10001/v2/&lt;uuid&gt;</code>
+      </span>
+    </div>
+
+  </div>
+
+  <p class="muted" style="margin-top:8px">
+    เอกสารชุดเดียวกัน — <span class="ref">hkt-firewall-request_2026-07-29</span> (flow 1–4) ·
+    <span class="ref">hkt-firewall-request-2_2026-07-29</span> (flow 5 · ป้ายทะเบียน อนุมัติแล้ว) ·
+    เอกสารนี้ (flow 6 · ใบหน้า)
+  </p>
+
+</div>

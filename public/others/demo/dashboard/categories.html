@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Demo — Manage Event Categories (จัดกลุ่ม + rules)</title>
+<!-- ============================================================
+  Vigil Platform — DEMO: Manage Event Categories ฉบับเต็ม (คู่กับ stats demo)
+  @author Prakasit Rochanavipart (Dojo-mAn)
+  @copyright (c) 2025-2026 Prakasit Rochanavipart. All Rights Reserved.
+  @license Proprietary
+  ------------------------------------------------------------
+  ทำครบเท่าหน้า Manage Event Categories เดิม (เจ้าของสั่ง 2026-08-28) แต่:
+  - ไม่มี emoji เป็น icon (decision #144) — ใช้จุดสีของหมวดแทน · แก้หมวดจะ
+    ไม่ส่ง field icon → ค่าเดิมใน DB ไม่ถูกแตะ
+  - สร้าง/แก้/ลบหมวด + mapping rules = ของจริง (API ชุดเดียวกับหน้า Manage เดิม)
+  - เฉพาะ "กลุ่มในหน้าสถิติ" เป็น demo — เก็บ localStorage ให้ stats demo อ่าน
+============================================================ -->
+<link rel="stylesheet" href="stats-demo.css?v=16">
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Manage Event Categories <span class="tag">DEMO</span></h1>
+      <div class="sub">หมวด + mapping rules มีผลจริง · เฉพาะ "กลุ่มในหน้าสถิติ" เป็นค่า demo ในเบราว์เซอร์นี้
+        · <a href="index.html">← กลับหน้า Statistics demo</a></div>
+    </div>
+    <div class="controls">
+      <span class="cat-count" id="ovCount"></span>
+      <button class="tool-btn" id="clearOv">ล้าง override ทั้งหมด</button>
+    </div>
+  </header>
+
+  <div id="authNote" class="auth-note" hidden>
+    ดึงข้อมูลไม่ได้ (ยังไม่ได้ login?) — เปิด <a href="/">dashboard</a> ให้ login ค้างไว้ก่อน แล้วรีเฟรชหน้านี้
+  </div>
+
+  <div class="filterbar">
+    <div class="frow">
+      <span class="flabel">ไซต์</span>
+      <div class="pills" id="sitePills"></div>
+      <button class="cd-add" id="addCatBtn" disabled title="เลือกไซต์ก่อนจึงสร้างหมวดได้">+ เพิ่มหมวด</button>
+    </div>
+  </div>
+
+  <section class="card" id="discCard">
+    <div class="card-head">
+      <div>
+        <div class="card-title">Rule ที่ตรวจพบแต่ยังไม่ถูก map <b id="discCount"></b></div>
+        <div class="card-sub">จาก event จริง 7 วันล่าสุด (เพดาน 2,000 เหตุการณ์ล่าสุดต่อกล้อง) —
+          rule บนกล้องที่ยังไม่มีหมวดรับ = สถิติเงียบโดยไม่มีใครรู้ · กด "สร้างหมวด" ได้เลย</div>
+      </div>
+      <button class="tool-btn" data-action="reloadDisc">โหลดใหม่</button>
+    </div>
+    <div id="discList" class="cat-list">กำลังสแกน… (ราว 5 วินาที)</div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <div>
+        <div class="card-title">หมวดทั้งหมด <b id="catTotal"></b></div>
+        <div class="card-sub">กลุ่มอัตโนมัติเดา 3 ชั้น: ชนิดตัวนับ (kind) → object class ใน rules → ชื่อหมวด ·
+          <b>"ไม่รวมกับหมวดพื้นฐาน"</b> = แยกนับ ไม่ปนยอด 4 กลุ่มหลัก (เคสกล้อง recheck)</div>
+      </div>
+    </div>
+    <div id="catList" class="cat-list">กำลังโหลด…</div>
+    <div class="cat-foot">หมวดชื่อเดียวกันข้ามไซต์ (และคู่ (IN)/(OUT)) รวมเป็นการ์ดเดียวในหน้า Statistics —
+      override ตัวใดตัวหนึ่งมีผลทั้งการ์ด โดย "แยกนับ" ชนะเสมอ</div>
+  </section>
+
+  <footer class="foot">demo — โครงหน้านี้คือแบบร่างแทนหน้า Manage Event Categories เดิม ·
+    การจัดกลุ่มจะกลายเป็นคอลัมน์ <code>group</code> ตอน execute</footer>
+</div>
+
+<!-- modal: เพิ่ม/แก้หมวด -->
+<div class="cd-modal" id="editModal" hidden>
+  <div class="cd-box">
+    <div class="cd-head"><b id="emTitle">เพิ่มหมวด</b><button class="cd-x" data-action="closeEdit">×</button></div>
+    <div class="cd-body">
+      <input type="hidden" id="emId">
+      <label class="cd-lbl">ชื่อหมวด</label>
+      <input type="text" id="emName" class="cd-inp" placeholder="เช่น รถเลี้ยวเข้าโรงอาหาร">
+      <div class="cd-locknote" id="emLockNote" hidden>หมวดระบบ — เปลี่ยนชื่อไม่ได้ (แก้สี/ลำดับได้)</div>
+      <div class="cd-row2">
+        <span><label class="cd-lbl">สี</label><input type="color" id="emColor" value="#5b8def"></span>
+        <span><label class="cd-lbl">ลำดับ (sort)</label><input type="number" id="emSort" class="cd-inp" value="0" style="width:90px"></span>
+      </div>
+      <div class="cd-sitenote" id="emSiteNote"></div>
+    </div>
+    <div class="cd-foot">
+      <button class="tool-btn" data-action="closeEdit">ยกเลิก</button>
+      <button class="cd-add" data-action="saveCat">บันทึก</button>
+    </div>
+  </div>
+</div>
+
+<!-- modal: mapping rules -->
+<div class="cd-modal" id="rulesModal" hidden>
+  <div class="cd-box cd-wide">
+    <div class="cd-head"><b id="rmTitle">Mapping Rules</b><button class="cd-x" data-action="closeRules">×</button></div>
+    <div class="cd-body">
+      <input type="hidden" id="rmCatId">
+      <div class="cd-hint">rule กำหนดว่า event แบบไหนเข้าหมวดนี้ — ช่องว่าง = wildcard (ค่าอะไรก็ได้)</div>
+      <div class="cd-form">
+        <span><label class="cd-lbl">Camera (เลือกได้หลายตัว · ไม่เลือก = ทุกกล้อง)</label>
+          <select id="rmCams" class="cd-inp" multiple size="5"></select></span>
+        <span>
+          <label class="cd-lbl">Rule Name</label>
+          <input type="text" id="rmRule" class="cd-inp" list="dlRules" placeholder="(ว่าง = any)">
+          <datalist id="dlRules"></datalist>
+          <label class="cd-lbl">Event Type</label>
+          <input type="text" id="rmEvType" class="cd-inp" list="dlEvTypes" placeholder="(ว่าง = any)">
+          <datalist id="dlEvTypes"></datalist>
+        </span>
+        <span>
+          <label class="cd-lbl">Object Class</label>
+          <select id="rmObjClass" class="cd-inp"><option value="">* (any)</option></select>
+          <label class="cd-lbl">Vehicle type (LPR)</label>
+          <select id="rmVType" class="cd-inp"><option value="">* (any)</option></select>
+        </span>
+        <span>
+          <label class="cd-lbl">State</label>
+          <select id="rmState" class="cd-inp">
+            <option value="true">true (เข้าเขต/เริ่ม)</option><option value="false">false</option><option value="">* (any)</option>
+          </select>
+          <label class="cd-lbl">Priority</label>
+          <input type="number" id="rmPri" class="cd-inp" value="0" style="width:80px">
+        </span>
+        <span class="cd-formbtn">
+          <button class="cd-add" data-action="addRule" id="addRuleBtn">+ เพิ่ม rule</button>
+          <button class="tool-btn" data-action="cancelEdit" id="cancelEditBtn" hidden>ยกเลิกแก้ไข</button>
+        </span>
+      </div>
+      <div class="cd-rulehead">
+        <button class="tool-btn" data-action="delAllRules" id="delAllBtn" disabled>ลบทั้งหมด</button>
+      </div>
+      <div id="rulesList" class="cd-rules">…</div>
+    </div>
+  </div>
+</div>
+
+<script src="categories-demo.js?v=16"></script>
+</body>
+</html>

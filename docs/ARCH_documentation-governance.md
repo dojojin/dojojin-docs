@@ -5,7 +5,7 @@
 > to load it.
 >
 > Living Docs system adapted from: https://github.com/Diew/living-docs
-> Last updated: 2026-06-15 · v1.8.0
+> Last updated: 2026-09-06 · v1.11.0 — registered `CODEX/`, the 5 `PLAN_*` files, `SPEC_partner-api`, `PHASE_6.0_SPIKE`, `INTEGRATION_old`, both EULAs · added `PLAN_`/`SPEC_` prefixes · refreshed counts (344 routes · DECISIONS #1–#269 · GOTCHAS #1–#191) and the size table from `wc -l`
 
 ---
 
@@ -18,21 +18,25 @@ Every file that an agent should know about. If a file is NOT here, it does not e
 | `CLAUDE.md` | Entry point (`agent.md` equivalent) | Session rules, model assignment, working agreement, doc map | Detailed implementation, full decision rationale, SQL snippets | Every session — read first |
 | `AGENTS.md` | Codex overlay | Codex-specific operating rules, validation checklists | Rules already in CLAUDE.md | Codex sessions only |
 | `ARCHITECTURE.md` | `ARCH_` — System map | Runtime topology, component boundaries, data flow, schema groups, source-of-truth boundaries, architecture invariants, link map | Secrets, owner/customer data, command cookbook, SQL snippets, commercial pricing, feature rationale, troubleshooting | Architecture questions, onboarding, component-boundary questions |
-| `DECISIONS.md` | `LOGIC_` — **Index only** | Decision index #1–#147 with one-line summary + link to LOGIC/canonical file | Full decision rationale (→ LOGIC files / DESIGN.md / CLAUDE.md), SQL snippets, operator recipes | Quick lookup of decision number; then follow link |
+| `DECISIONS.md` | `LOGIC_` — **Index only** | Decision index #1–#269 with one-line summary + link to LOGIC/canonical file | Full decision rationale (→ LOGIC files / DESIGN.md / CLAUDE.md), SQL snippets, operator recipes | Quick lookup of decision number; then follow link |
 | `DESIGN.md` | `GUIDE_` — UI design system | Design tokens (tri-layer), type scale, spacing, elevation, icon/SVG system, Chart/Map/Report theming, component patterns, no-emoji rule; rationale for #142–#145 | Feature behavior (→ LOGIC files), operator SQL, secrets, exact runtime values that belong in code | Any UI/CSS/layout/new-page work, report PNG styling, icon work |
 | `docs/LOGIC_auth-security.md` | `LOGIC_` | Auth, sessions, RBAC, security audit (#6–#11, #56–#61, #120, #127, #129, #130, #140) | LINE behavior details (→ LOGIC_line-notifications.md), operator SQL, troubleshooting steps | Security/auth work, user management, CORS/WS issues |
+| `docs/LOGIC_line-commands.md` | `LOGIC_` | คำสั่งผ่าน LINE — สถาปัตยกรรม, ตาราง 5 ตัว, ทะเบียนแหล่งข้อมูล/การกระทำ, กฎการจับคำสั่ง, ขอบเขตตามบัญชีที่ผูก, สูตรผู้ดูแล, ปูมเหตุการณ์ (#281–#284, GOTCHAS #196–#198) | การส่งแจ้งเตือน (→ LOGIC_line-notifications.md), สิทธิ์ผู้ใช้ (→ LOGIC_auth-security.md) | งานคำสั่ง LINE, เพิ่ม/แก้คำสั่ง, ผู้มีสิทธิ์สั่ง, บอทตอบผิด/ไม่ตอบ |
 | `docs/LOGIC_line-notifications.md` | `LOGIC_` | LINE alerts, imgbb delivery, recipients, webhook onboarding, camera offline LINE alerts, scheduled report delivery boundaries (#12–#14, #90–#91) | Report rendering internals, camera ingestion internals, operator SQL | LINE/alerts work, recipient onboarding, LINE webhook, imgbb/quota changes |
+| `docs/REF_notification-channel-limits.md` | `REF_` — provider limits & pricing (registered 2026-09-25) | ราคา/เพดาน/วิธีนับของ LINE Messaging API และ Telegram Bot API (อ้างเอกสารผู้ให้บริการ + วันที่ตรวจ) · วิธีวัดปริมาณของเรา (quota, Insight, SQL) · snapshot ตัวเลขรายเดือน · คำถามที่ยังเปิด | พฤติกรรมการส่งของระบบเรา (→ LOGIC_line-notifications.md), แผน/ดีไซน์ Telegram (→ `docs/reports/2026-09-24_telegram-plan.md`), token หรือ group ID จริง | เลือกช่องทางแจ้งเตือน, โควตา LINE ใกล้เต็ม/`monthly limit`, ประเมินค่าใช้จ่าย LINE OA, ย้ายแจ้งเตือนไป Telegram, ตอบคำถามลูกค้าเรื่องเพดาน |
 | `docs/LOGIC_stats-reports.md` | `LOGIC_` | Stats v2, Reports, Puppeteer, scheduled delivery config, Health Report (#15–#32, #85, #92–#94, #98–#99, #131–#133, #136–#139, #148) | LINE delivery details (→ LOGIC_line-notifications.md), camera-specific logic, operator SQL | Stats page, Reports page, Puppeteer rendering |
 | `docs/LOGIC_camera-ingesters.md` | `LOGIC_` | Bosch MQTT, Hikvision ISAPI, Dahua CGI, ONVIF, clip capture, camera lifecycle (#40–#41, #62–#71, #77–#79, #86, #89, #96, #109–#116, #121, #123, #125) | LINE behavior details (→ LOGIC_line-notifications.md), Face Capture specifics (→ LOGIC_face-capture.md), license logic | Camera ingester work, multi-vendor, clip capture, snapshot display |
 | `docs/LOGIC_dahua-ingester.md` | `LOGIC_` | Dahua CGI ingester ครบวงจร — transport, event map, snapshot waterfall 5 ระดับ, pure modules (dahua-protocol/dahua-snapshot-selector), test coverage 48 tests, incident log 9 เหตุการณ์, constants reference | Bosch/Hikvision logic (→ LOGIC_camera-ingesters.md), LINE delivery (→ LOGIC_line-notifications.md) | Dahua snapshot, scan fallback, CGI quirks, segment guard, digest fail |
 | `docs/LOGIC_hikvision-ingester.md` | `LOGIC_` | Hikvision ISAPI ingester ครบวงจร — transport, multipart parser, event map, Face Capture pipeline, body appearance normalization, People Counting, dwell detection, incident log 12 เหตุการณ์ | Bosch/Dahua logic (→ LOGIC_camera-ingesters.md), Face Capture architecture (→ LOGIC_face-capture.md) | Hikvision body appearance, face capture, color dot, FAS, people counting |
+| `docs/LOGIC_bosch-ingester.md` | `LOGIC_` | Bosch ONVIF Profile M / MQTT ingest path ครบวงจร — transport, topic structure + site-prefix strip, JSON payload shape, category RuleEngine/IVA/VideoSource/Device/RecordingConfig, base64 snapshot chain, AddEventBroker auto-config, incident log | Hikvision/Dahua logic (→ their own LOGIC files), Bosch Appearance plan (→ `BOSCH_IVA_Appearance.MD`), RCP+ device control (→ `docs/vendor/bosch/`) | Bosch event ingest work, MQTT topic/category questions, IVA vs RuleEngine, event broker config |
+| `docs/vendor/` (`hikvision/`, `dahua/`, `bosch/` subfolders, one per brand — 2026-08-05) | `REF_` — Vendor protocol/API specs (official, unmodified) | Hikvision: ISAPI PDFs, Access Control Event Types, ErrorCode/Field_Dictionary xlsx, Region Code, **HCP_OpenAPI.pdf** (HikCentral Professional OpenAPI V3.0.1). Dahua: HTTP API 3.37 PDF (+ `dahua-http-api-v337-map.md` section map), DSS Pro API PDF. Bosch: RCP Plus Reference (RCP+ v3, device control protocol — NOT the MQTT/ONVIF event schema our ingester actually parses), solution presentation | Our own ingester rationale/logic (→ `LOGIC_*-ingester.md` files) — this folder is the vendor's word, not ours; never edit these files | Verifying an exact field/endpoint/error-code against the vendor's own spec; onboarding a new vendor API (e.g. HCP pull) |
 | `DahuaProblem.MD` | `INCIDENT_` / live problem log | Dahua snapshot timing findings, live test results, clip resolver recovery plan, manufacturer API notes | General camera architecture, non-Dahua ingester rules | Dahua snapshot timing, Dahua CGI recovery, `DAHUA_CAM01`, `BMA-EAST_DAHUA_CAM01` |
 | `docs/LOGIC_face-capture.md` | `LOGIC_` | Face Capture multipart parsing, gallery page, PDPA boundary (#117–#119) | Generic camera ingester logic | Face Capture work, gallery page, Dahua face boundary |
 | `docs/LOGIC_map-features.md` | `LOGIC_` | Map page architecture (OpenLayers), improvement backlog, Option B multi-group overlay (#155), Live Pulse Toast-on-map T2 (#156), map bug history | Camera ingester logic (→ LOGIC_camera-ingesters.md), design tokens (→ DESIGN.md) | Map page work, OpenLayers, camera grouping overlay, Live Pulse |
 | `docs/LOGIC_license.md` | `LOGIC_` | Ed25519 JWT license, trial/grace, machine fingerprint, EULA (#100–#108) | Auth/session logic (→ LOGIC_auth-security.md) | License system work, keygen, EULA |
 | `docs/LOGIC_infra-ops.md` | `LOGIC_` | Migrations, backup/restore, service lifecycle, branding, deployment, settings workspace (#33–#38, #47–#52, #80–#84, #122, #124, #126) | Feature behavior, operator SQL | Migration work, backup/restore, deployment, settings UI |
-| `GOTCHAS.md` | `INCIDENT_` | Known failures #1–#43 — what broke, root cause, fix, lesson | Design rationale (→ LOGIC files), operator recipes (→ REF files) | Debugging; before touching any system touched by a prior incident |
-| `docs/REF_troubleshooting.md` | `REF_` | Troubleshooting §8.1–§8.22, camera lifecycle add/remove/replace | SQL snippets (→ REF_operator-sql.md), design rationale (→ LOGIC files) | Debugging, camera management ops |
+| `GOTCHAS.md` | `INCIDENT_` | Known failures #1–#191 — what broke, root cause, fix, lesson | Design rationale (→ LOGIC files), operator recipes (→ REF files) | Debugging; before touching any system touched by a prior incident |
+| `docs/REF_troubleshooting.md` | `REF_` | Troubleshooting §8.1–§8.23 (incl. §"หน้าเว็บ/endpoint ช้า"), camera lifecycle add/remove/replace | SQL snippets (→ REF_operator-sql.md), design rationale (→ LOGIC files) | Debugging, camera management ops |
 | `docs/REF_operator-sql.md` | `REF_` | Daily-ops SQL snippets, system settings reference, service control commands, npm scripts | Troubleshooting steps (→ REF_troubleshooting.md) | SQL queries, service start/stop, settings lookup |
 | `SKILL.md` | `REF_` — Core operator playbook | Mental model (§1), Bosch event shape (§2), mapping recipes (§3), branding (§5), health check (§6), reports overview (§7), i18n (§12), Ph.1–Ph.3 overviews (§13–§15), auditor role (§16), license notes (§17) | Detailed troubleshooting (→ REF_troubleshooting.md), SQL snippets (→ REF_operator-sql.md) | First-time operator orientation, mapping recipes, branding setup |
 | `SKILL-TH.md` | `REF_` — Operator playbook (Thai) | Same content as SKILL.md — Thai prose with English technical terms preserved + `>` remark explanations for each concept (PM2, MQTT, RTSP, JWT, Docker, etc.) | Any content not in SKILL.md — add to SKILL.md first, then mirror here | Thai-speaking operator orientation; Thai-language reference for all operator tasks |
@@ -42,8 +46,16 @@ Every file that an agent should know about. If a file is NOT here, it does not e
 | `docs/cost/Cost_Calculator.xlsx` | Artifact | Spreadsheet calculator backing commercial TCO assumptions | Live prose, architecture rules, canonical TCO summary | Recalculating commercial estimates; update `HARDWARE_SIZING_GUIDE.md` summary after changes |
 | `service_start.md` | `REF_` — Daily ops | Start/stop/restart commands, Docker health checks, backup/restore commands | Code architecture, design decisions | Daily service management, incident recovery |
 | `docs/REF_database-schema.md` | `REF_` — DB reference | Full schema (all tables/columns/indexes), PostgreSQL user & role overview, security/impact analysis, example queries | Migration rationale (→ LOGIC_infra-ops.md), operator SQL recipes (→ REF_operator-sql.md), 3rd-party setup steps (→ REF_third-party-integration.md) | DBA onboarding, schema lookup, security review of DB access |
+| `docs/REF_database-schema_EN.md` | `REF_` — DB reference (English mirror, registered + re-synced 2026-08-11) | English translation of the Thai file above, current through migration 142 as of the 2026-08-11 sync — **not auto-kept-in-sync, re-check against the Thai original before handing to a partner if it's been a while** | Anything not in the Thai original | External partner requests an English schema doc |
+| `docs/REF_baseline-metrics-2026-06-20.md` | `REF_` — dated capacity snapshot (registered 2026-08-11) | One-time capacity/storage/search-facet-value snapshot captured just before the 2026-06-20 production data wipe (single-site MacBook baseline, ~9 cameras) | Current live capacity numbers — this is historical, not a live reference | Planning capacity/storage estimates that need a documented "before scale-up" starting point |
+| `docs/REF_security-checklist.md` | `REF_` — security review checklist (registered 2026-08-11 — was referenced by CLAUDE.md item 17 and the vigil-docs-v2 trigger table for years without ever being in this registry) | SEC-xxx finding index/checklist for auth, file-upload, cookie, credential, docker-port work | Full incident writeups (→ GOTCHAS.md) | Touching auth/file-upload/cookie/credential/docker-port code — load before writing, per CLAUDE.md item 17 |
+| `docs/hkt-cib-hub-integration-design_2026-07-29.html` (+ companion `.pdf`) | `ARCH_`-adjacent — design deliverable (registered 2026-08-11) | 7-phase design for relaying redacted ANPR data from hkt to the CIB hub instead of direct camera access | Current implementation status (→ memory `project_cib_hub_design.md`, DECISIONS.md for anything that shipped) | Understanding the original CIB relay design intent before checking what actually shipped |
 | `docs/REF_third-party-integration.md` | `REF_` — 3rd-party integration | View catalog (`v_*_public`), ops setup (CREATE USER + GRANT role + pg_hba + docker bind + SSL + audit), 3rd-party connection guide, query do/don't, PDPA & DPA, change policy, decommissioning | Full base-table column list (→ REF_database-schema.md) | Onboarding a new 3rd-party partner, migration 027 rollout, PDPA review of partner access, schema change comms |
-| `docs/REF_api-reference.md` | `REF_` — REST API reference | All REST API endpoints (126 routes across 22 groups) — auth levels, request params, response shapes, WebSocket protocol, service management rules | Feature behavior (→ LOGIC files), SQL snippets (→ REF_operator-sql.md), DB schema detail (→ REF_database-schema.md) | API endpoint work, mobile app development (vigil-mobile), third-party REST integration |
+| `docs/REF_third-party-integration_EN.md` | `REF_` — 3rd-party integration (English mirror, re-synced 2026-08-11) | English translation of the Thai file above — now dual-path (§0 comparison table), matching the Thai original's August restructure to HTTP API as primary | Anything not in the Thai original — add there first, then mirror | External partner needs English; translate-and-sync whenever the Thai original changes |
+| `docs/SPEC_partner-api_2026-08-07.md` | `LOGIC_`-adjacent — pre-implementation design spec (historical, registered 2026-08-11) | Original design spec for the outbound Partner API (Phase TP, B1–B3) written before implementation — auth-model rationale, schema draft evolution, why AK/SK not password-style hashing | Current operational steps (→ `REF_partner-api-tunnel.md`, `REF_partner-onboarding.md`), current design decisions (→ DECISIONS.md #227–#236, which finalize/supersede parts of this draft) | Understanding *why* Partner API was designed this way — historical context only, not current state |
+| `docs/REF_partner-api-tunnel.md` | `REF_` — Partner API external exposure (registered 2026-08-11) | Cloudflare Tunnel public-hostname setup for `meta.dojojin.tech`, manual steps required, post-setup verification curl commands, rollback | Onboarding steps (→ `REF_partner-onboarding.md`), DB grant model (→ `REF_third-party-integration.md`) | Exposing/re-exposing the Partner API externally, verifying `meta.dojojin.tech` |
+| `docs/REF_partner-onboarding.md` | `REF_` — Partner API onboarding (registered 2026-08-11) | Step-by-step operator flow to onboard a new Partner API (HTTP, `/v1`) consumer — 5 questions, CLI + dashboard paths, verification steps | DB-level GRANT/view catalog for the old direct-Postgres path (→ `REF_third-party-integration.md` §3), tunnel exposure (→ `REF_partner-api-tunnel.md`) | Onboarding a new Partner API (HTTP) consumer |
+| `docs/REF_api-reference.md` | `REF_` — REST API reference | ทุก route ใน process ของ api-server (**344 routes** ณ v1.5.4 — ไม่รวม `src/lpr-receiver.js` ซึ่งเป็นคนละ service · **ตัวเลขนี้เปลี่ยนบ่อย: รัน `npm run check:api` ก่อนอ้างเสมอ**) · สายของ middleware 3 ชั้น (session → viewGuard → requireAdminForWrites) · auth levels, request params, response shapes, WebSocket protocol, service management rules · **ภาคผนวก A = สารบัญครบทุก route สร้างจากโค้ดจริง ตรวจด้วย `npm run check:api`** | Feature behavior (→ LOGIC files), SQL snippets (→ REF_operator-sql.md), DB schema detail (→ REF_database-schema.md) | API endpoint work, mobile app development (vigil-mobile), third-party REST integration |
 | `docs/REF_face-recognition.md` | `REF_` — Face Recognition plan | Architecture options (A/B/C), recommended approach (InsightFace server-side), DB schema (`known_persons`, `face_recognition_results`, pgvector), Python service code, hardware sizing, Mac dev setup, CPU→GPU migration path, PDPA considerations, implementation phases FR.1–FR.4 | Camera ingester internals (→ LOGIC_camera-ingesters.md), Face Capture parsing (→ LOGIC_face-capture.md) | Planning / starting any Face Recognition work |
 | `docs/LOGIC_nlq-search.md` | `LOGIC_` — NLQ feature spec | Natural Language Query to structured JSON filter; Unified Forensic Search page concept; Phase 0–2 plan; Claude Haiku API adapter code; Ollama + Typhoon2 local adapter code; known gaps (multi-camera appearances, LPR endpoint missing); cost comparison | Camera ingester logic (→ LOGIC_camera-ingesters.md), DB schema (→ REF_database-schema.md) | Any work on NLQ / Forensic Search / AI query parsing |
 | `docs/REF_vms-playback.md` | `REF_` — VMS playback integration plan | On-demand RTSP proxy architecture; Qognify SGS REST API v7.2 adapter code; provider interface contract (vendor-neutral); camera mapping via cameras-config.json; JPEG frame fallback + HLS proxy paths; Phase 0–5 implementation plan; critical traps (XML body, auth encoding, RTSP TTL, self-signed certs) | Camera ingester logic (→ LOGIC_camera-ingesters.md), DB schema (→ REF_database-schema.md) | Any work on VMS playback / Qognify SGS / on-demand video retrieval |
@@ -55,8 +67,30 @@ Every file that an agent should know about. If a file is NOT here, it does not e
 | `public/others/vigil-docs-v2/` (16 HTML + nav.js + styles.css) | `PUBLIC_DOCS` — customer/operator-facing | Operator-readable explanations: purpose, capabilities, components, security findings, bugs, architecture decisions, mobile app, LINE, maps, scale-up, Appearances, REST API overview. Nav shared via `nav.js` (single source). | Internal GOTCHAS numbers, SQL snippets, raw implementation detail, secrets | Updating customer-facing docs; content audit after feature change (see "vigil-docs-v2 update trigger" in Maintenance Rules) |
 | `dev-docs/` (6 HTML + nav.js + styles.css) | `GUIDE_` — Developer portal (owner-only) | Navigation index linking to all .md docs; how-to-by-hand recipes: add REST route, add migration, add i18n string, add dashboard page (updated for S5 split — page-*.js pattern), safe service restart (LNP trap). No content duplicated from .md files — links out only. | Customer/operator content (→ vigil-docs-v2), full feature rationale (→ LOGIC files), SQL snippets (→ REF_operator-sql.md) | Developer needs to work without AI assistance; onboarding self-reference for codebase navigation |
 | `docs/ARCH_documentation-governance.md` | Registry (this file) | File registry, task→load mapping, STUBBORN_FACT index, naming convention, maintenance rules | Any feature logic, operator recipes, design decisions | Doc management tasks; adding new files; scope unclear |
+| `CODEX/` (15 `.md`) | `INCIDENT_` / audit archive — **read-only history** | External-audit output written by Codex: 6 security/optimization audit rounds (2nd–6th tier, live pentest) + per-module suggestion files (api refactor, dahua-cgi, hikvision ingester, statistics, debt, modular performance). Cited by finding ID from `REF_security-checklist.md` and `GOTCHAS.md` | Current state of anything — **an audit is a snapshot of its date, not a description of today's code.** Fixes live in the checklist / GOTCHAS / DECISIONS | Following a `SEC-*` / `SEC5-*` / `LIVE-*` finding ID back to its full write-up; never as a source of truth about present behaviour |
+| `docs/EULA-th.md` · `docs/EULA-en.md` | Legal — bilingual pair | End-user licence agreement shipped with the product. **The two must be changed together** — a clause that exists in one language only is worse than no clause | Technical detail of licence *enforcement* (→ `docs/LOGIC_license.md`) | Legal/commercial questions; changing licence terms |
+| `docs/SPEC_partner-api_2026-08-07.md` | `SPEC_` — frozen interface contract | The `/v1/*` Partner API surface as promised to partners: endpoints, auth, scoping, rate limits | Ops setup for a new partner (→ `REF_third-party-integration.md`), route index (→ `REF_api-reference.md`) | Changing anything a partner can call — **the spec is the promise; change it deliberately, not as a side effect** |
+| `docs/PLAN_2026-08-04_master.md` | `PLAN_` — dated work plan | Phase 0–7 master ordering for the 2026-08-04 push (CIB scope, appearances perf, CIB capacity, face pilot, XML parser, slot-1 cutover, rollout, cleanup) · Phases annotated with what actually shipped | Current status of anything (→ open items now in `ROADMAP.md`) | Historical "why was it ordered this way"; **not** a to-do list any more |
+| `docs/PLAN_perf-and-disk_2026-08-04.md` | `PLAN_` — dated work plan | Appearances perf regression + hdy disk decision, with measured evidence · items 1–5 annotated with actual commits and deviations | Current work (item 5's remainder → `ROADMAP.md`) | Reading the measurements; understanding why a proposal was *not* taken |
+| `docs/PLAN_perf-appearances_2026-08-08.md` | `PLAN_` — **ARCHIVED** | Migration-129 diagnostic write-up on `/api/appearances/*`. **Superseded — do not re-propose**: the "drop the JOIN" fix was tested and rejected; `e42ff68` capped the count instead | Everything actionable — the numbers are still true, the proposals are not | Reading the 2026-08-08 measurements only |
+| `docs/PLAN_hik-sd-status_2026-08-04.md` | `PLAN_` — dated work plan | Probing Hikvision microSD status across models (403 = different device class, not a permission problem) | — | SD-status work on Hik devices |
+| `docs/PLAN_hkt-face-cib-forward_2026-08-04.md` | `PLAN_` — dated work plan | HKT face-forward-to-CIB design + phase breakdown | Live relay state (→ assistant memory `project_cib_relay_state`) | HKT ↔ CIB face forwarding work |
+| `docs/PHASE_6.0_SPIKE.md` | `PLAN_` — spike write-up | Phase 6.0 exploratory spike findings | — | Historical context for Phase 6 decisions |
+| `docs/INTEGRATION_old.md` | Superseded — **historical only** | The pre-`REF_third-party-integration.md` integration notes. Kept because older partner correspondence refers to it | Anything current — **`docs/REF_third-party-integration.md` is canonical** | Reading an old partner thread that cites it |
 
 ---
+
+### `docs/reports/` — รายงานที่เขียนให้คนอ่าน (ไม่อยู่ใน git)
+
+รายงาน PDF/เอกสารที่ทำส่งคู่ค้าหรือทบทวนภายใน เก็บที่ **`docs/reports/`** และ
+**อยู่ใน `.gitignore`** — มี IP/พอร์ตของระบบคู่ค้า, subnet ภายใน และสถิติรายไซต์
+ที่ไม่ควรกระจายไปกับ repo (เจ้าของสั่งไว้ 2026-08-05)
+
+- แบรนด์ในรายงานดึงจาก `system_settings` (`brand_name`/`brand_tagline`/
+  `brand_primary_color`/`brand_logo_path`) + `branding/` — **ห้าม hardcode ชื่อ**
+  ชื่อทางการค้าคือ **Vision Meta Hub** ส่วน "Vigil Platform" เป็นโค้ดเนมภายใน
+- `.gitignore` แยก 2 กฎ: `/reports/` (PDF ที่ระบบสร้างเอง ที่ root) กับ
+  `docs/reports/` (ที่คนเขียน) — อย่ารวมเป็นกฎเดียว
 
 ## Task → Load Mapping
 
@@ -68,7 +102,10 @@ Every file that an agent should know about. If a file is NOT here, it does not e
 | DB schema changes / migration | + `ARCHITECTURE.md` + `docs/LOGIC_infra-ops.md` |
 | Feature: Stats / Reports / Puppeteer | + `docs/LOGIC_stats-reports.md` + relevant GOTCHAS |
 | Feature: LINE / alerts / recipient onboarding | + `docs/LOGIC_line-notifications.md` + `docs/REF_troubleshooting.md` if debugging |
+| LINE quota / `monthly limit` / Telegram vs LINE / provider pricing | + `docs/REF_notification-channel-limits.md` (+ `docs/LOGIC_line-notifications.md` for how we send) |
 | Feature: Camera / Multi-vendor / Clip | + `docs/LOGIC_camera-ingesters.md` + relevant GOTCHAS |
+| Feature: Bosch event ingest / MQTT topics / IVA vs RuleEngine | + `docs/LOGIC_bosch-ingester.md` |
+| Vendor protocol/API spec lookup (exact field/endpoint/error-code verification against the vendor's own doc) | + `docs/vendor/<brand>/` (`hikvision/` incl. HCP OpenAPI, `dahua/`, `bosch/`) |
 | Feature: Map page / OpenLayers / camera grouping / Live Pulse | + `docs/LOGIC_map-features.md` + GOTCHAS #53 |
 | Feature: Dahua snapshot timing / recovery | + `DahuaProblem.MD` + `docs/LOGIC_camera-ingesters.md` + GOTCHAS #39 |
 | Feature: Face Capture / Gallery | + `docs/LOGIC_face-capture.md` + `docs/LOGIC_camera-ingesters.md` |
@@ -80,6 +117,7 @@ Every file that an agent should know about. If a file is NOT here, it does not e
 | UI / design / responsive / i18n | + `DESIGN.md` + DECISIONS.md #128, #142–#145 + GOTCHAS #29–#31, #35, #42 |
 | Design system / tokens / icons / theming | + `DESIGN.md` (canonical) |
 | Debugging / incident | + `GOTCHAS.md` + `docs/REF_troubleshooting.md` |
+| **Performance — "a page/endpoint is slow"** | + `service_start.md` (the `[slow-req]` / slow-SQL recipe) + `docs/REF_troubleshooting.md` §"หน้าเว็บ/endpoint ช้า" + GOTCHAS #187–#191 + `docs/LOGIC_infra-ops.md` (report rendering, boot staggering, kill switches) · schema side: `docs/REF_database-schema.md` §3.3 (partitioning) and §3.19/§3.20 (the rollups hot paths read instead of `events`) |
 | SQL / service ops | + `docs/REF_operator-sql.md` |
 | Settings / branding / deployment | + `docs/LOGIC_infra-ops.md` |
 | Hardware sizing / pre-sales | + `HARDWARE_SIZING_GUIDE.md`; use `docs/cost/Cost_Calculator.xlsx` only for recalculation |
@@ -111,8 +149,11 @@ One file owns each rule. No rule should appear in full in more than one file. Li
 | UI design system — tokens, icons, component patterns, no-emoji | `DESIGN.md` |
 | Auth, security, RBAC decisions | `docs/LOGIC_auth-security.md` |
 | LINE alerts, recipients, imgbb, webhook onboarding | `docs/LOGIC_line-notifications.md` |
+| Provider limits & pricing — LINE quota/plan, Telegram rate/size limits, how to measure our usage | `docs/REF_notification-channel-limits.md` |
 | Stats, reports, Puppeteer decisions | `docs/LOGIC_stats-reports.md` |
 | Camera ingester, clip capture, lifecycle decisions | `docs/LOGIC_camera-ingesters.md` |
+| Bosch MQTT/ONVIF Profile M ingest decisions | `docs/LOGIC_bosch-ingester.md` |
+| Vendor's own protocol/API spec (unmodified reference, per-brand folder) | `docs/vendor/` |
 | Map page — OpenLayers, grouping overlay, Live Pulse, map bug history | `docs/LOGIC_map-features.md` |
 | NLQ feature spec, Forensic Search page, AI query adapters | `docs/LOGIC_nlq-search.md` |
 | VMS playback integration — Qognify SGS adapter, on-demand proxy, phases | `docs/REF_vms-playback.md` |
@@ -132,6 +173,9 @@ One file owns each rule. No rule should appear in full in more than one file. Li
 | TCO spreadsheet calculations | `docs/cost/Cost_Calculator.xlsx` |
 | Developer portal — codebase navigation index + hand-edit recipes (owner-only) | `dev-docs/` |
 | Per-site edge deploy execution checklist | `docs/REF_edge-site-checklist.md` |
+| External audit findings (`SEC-*` / `SEC5-*` / `LIVE-*`) — full write-up | `CODEX/` (history) · **current status** → `docs/REF_security-checklist.md` |
+| Environment variables — name, default, effect | `service_start.md` (env table) + `.env.example` |
+| Route count / full route index | generated — `npm run check:api` → `docs/REF_api-reference.md` Appendix A |
 | Doc registry | `docs/ARCH_documentation-governance.md` |
 
 ---
@@ -242,6 +286,8 @@ Critical decisions that must never be reversed without explicit owner approval.
 | `REF_` | Facts — lookup tables, constants, SQL | `REF_operator-sql.md` |
 | `INCIDENT_` | History — post-mortems | (future: `INCIDENT_mqtt-broker-swap.md`) |
 | `REFACTOR_TODO` | Work plans — task lists | (future: split from ROADMAP.md) |
+| `PLAN_` | Dated work plan — a snapshot of intent on one day, **not** a live to-do list. Annotate with what shipped; move anything still open to `ROADMAP.md` | `PLAN_perf-and-disk_2026-08-04.md` |
+| `SPEC_` | Frozen interface contract — what we promised someone outside this repo. Changing it is a decision, never a side effect | `SPEC_partner-api_2026-08-07.md` |
 
 **Fixed names (must not rename):**
 
@@ -255,29 +301,42 @@ Critical decisions that must never be reversed without explicit owner approval.
 
 ## File Size Status
 
-| File | Lines (approx.) | Status | Action |
+| File | Lines (`wc -l`, 2026-09-06) | Status | Action |
 |---|---|---|---|
-| `DECISIONS.md` | ~150 (index only) | ✅ Healthy | Was 1,400 → split into LOGIC files |
-| `SKILL.md` | ~400 (core only) | ✅ Healthy | Troubleshooting + SQL extracted to REF files |
-| `SKILL-TH.md` | ~400 | ✅ Healthy | New 2026-06-07; Thai-language mirror of SKILL.md — update both whenever SKILL.md changes |
-| `ARCHITECTURE.md` | ~220 | ✅ Healthy | System map only; command/detail moved to LOGIC/REF docs |
-| `DESIGN.md` | ~240 | ✅ Healthy | New 2026-05-27; UI design system canonical (GUIDE_) |
-| `docs/LOGIC_line-notifications.md` | ~250 | ✅ Healthy | Canonical LINE subsystem doc |
-| `docs/LOGIC_camera-ingesters.md` | ~250 | ✅ Healthy | — |
-| `docs/LOGIC_stats-reports.md` | ~220 | ✅ Healthy | — |
-| `docs/LOGIC_auth-security.md` | ~180 | ✅ Healthy | — |
-| `docs/LOGIC_infra-ops.md` | ~200 | ✅ Healthy | — |
-| `docs/LOGIC_license.md` | ~150 | ✅ Healthy | — |
-| `docs/LOGIC_face-capture.md` | ~130 | ✅ Healthy | — |
-| `DahuaProblem.MD` | ~470 | ⚠️ Watch | Live incident log; split if it becomes stable long-term reference |
-| `docs/REF_troubleshooting.md` | ~280 | ✅ Healthy | — |
-| `docs/REF_operator-sql.md` | ~250 | ✅ Healthy | — |
-| `docs/REF_database-schema.md` | ~350 | ✅ Healthy | New 2026-05-27; full schema + impact analysis (3rd-party setup moved to REF_third-party-integration.md) |
-| `docs/REF_third-party-integration.md` | ~450 | ✅ Healthy | New 2026-05-27; companion to migration 027 |
-| `docs/REF_api-reference.md` | ~1510 | ✅ Healthy | New 2026-06-07; comprehensive 22-section REST API reference; intentionally structured — split only if a section becomes a standalone concern |
-| `GOTCHAS.md` | ~400 | ⚠️ Watch | Each entry self-contained — OK for now |
-| `CHANGELOG.md` | ~500 | ✅ Acceptable | Append-only log, not a rule source |
-| `HARDWARE_SIZING_GUIDE.md` | ~850 | ⚠️ Watch | Single canonical pre-sales doc; split only if one section becomes active implementation work |
+| `DECISIONS.md` | 395 (index only) | ✅ Healthy | Was 1,400 → split into LOGIC files |
+| `SKILL.md` | 604 | ⚠️ Watch | Troubleshooting + SQL already extracted; grew again |
+| `SKILL-TH.md` | 668 | ⚠️ Watch | Thai mirror of SKILL.md — update both whenever SKILL.md changes |
+| `ARCHITECTURE.md` | 286 | ✅ Healthy | System map only |
+| `DESIGN.md` | 324 | ✅ Healthy | UI design system canonical (GUIDE_) |
+| `ROADMAP.md` | 1354 | ⚠️ Watch | Absorbing open items from retired PLAN files; split by horizon if it keeps growing |
+| `docs/LOGIC_line-notifications.md` | 293 | ✅ Healthy | Canonical LINE subsystem doc |
+| `docs/LOGIC_camera-ingesters.md` | 220 | ✅ Healthy | Per-vendor detail lives in the three vendor LOGIC files |
+| `docs/LOGIC_hikvision-ingester.md` | 1040 | ⚠️ Watch | Single vendor, but genuinely one concern |
+| `docs/LOGIC_bosch-ingester.md` | 571 | ⚠️ Watch | — |
+| `docs/LOGIC_dahua-ingester.md` | 453 | ✅ Acceptable | — |
+| `docs/LOGIC_map-features.md` | 953 | ⚠️ Watch | Backlog + bug history inflate it; split history out if it blocks a task |
+| `docs/LOGIC_stats-reports.md` | 245 | ✅ Healthy | — |
+| `docs/LOGIC_auth-security.md` | 172 | ✅ Healthy | — |
+| `docs/LOGIC_infra-ops.md` | 203 | ✅ Healthy | — |
+| `docs/LOGIC_nlq-search.md` | 364 | ✅ Acceptable | — |
+| `docs/LOGIC_license.md` | 119 | ✅ Healthy | — |
+| `docs/LOGIC_face-capture.md` | 89 | ✅ Healthy | — |
+| `DahuaProblem.MD` | 532 | ⚠️ Watch | Live incident log; split if it becomes stable long-term reference |
+| `docs/REF_troubleshooting.md` | 338 | ✅ Acceptable | — |
+| `docs/REF_operator-sql.md` | 367 | ✅ Acceptable | — |
+| `docs/REF_database-schema.md` | 931 | ⚠️ Watch | Full schema; the migration history table is most of the growth |
+| `docs/REF_database-schema_EN.md` | 1458 | ⚠️ Watch | English mirror — **must be updated in the same pass as the Thai one** |
+| `docs/REF_third-party-integration.md` | 583 | ✅ Acceptable | Companion to migration 027 |
+| `docs/REF_third-party-integration_EN.md` | 629 | ✅ Acceptable | English mirror |
+| `docs/REF_api-reference.md` | 2651 | ⚠️ Watch | Sections 1–25 + a generated Appendix A. **Appendix A is ~800 lines of it and is machine-written — do not count it against the split rule** |
+| `docs/REF_edge-install.md` | 1065 | ⚠️ Watch | Single canonical install guide |
+| `docs/REF_face-recognition.md` | 727 | ⚠️ Watch | Still PLANNED — will shrink or split once built |
+| `docs/REF_security-checklist.md` | 154 | ✅ Healthy | — |
+| `docs/SPEC_partner-api_2026-08-07.md` | 1037 | ✅ Acceptable | Frozen contract — length is the point |
+| `docs/PLAN_hkt-face-cib-forward_2026-08-04.md` | 816 | ⚠️ Watch | Dated plan; prune to what shipped |
+| `GOTCHAS.md` | 1766 | 🔴 Split candidate | Each entry is self-contained, but #1–#191 no longer fits a working-set load. Split by subsystem when a task next has to load it whole |
+| `CHANGELOG.md` | 1217 | ✅ Acceptable | Append-only log, not a rule source |
+| `HARDWARE_SIZING_GUIDE.md` | 1060 | ⚠️ Watch | Single canonical pre-sales doc |
 
 **Size rule:** when a file exceeds 300 lines with multiple distinct concern types, split. Trigger = a task touches only one section but must load the whole file.
 
@@ -325,14 +384,15 @@ Critical decisions that must never be reversed without explicit owner approval.
 
 | vigil-docs-v2 page | Authoritative source(s) | Update when |
 |---|---|---|
-| `04-components.html` | `ARCHITECTURE.md`, `HARDWARE_SIZING_GUIDE.md` | New vendor, new service, RBAC role added |
+| `04-components.html` | `ARCHITECTURE.md`, `HARDWARE_SIZING_GUIDE.md` — **also owns inbound integrations** (registered 2026-08-11): DSS Pro / GuruSquare / HCP via `src/routes/blacklist-sources.js`, `src/routes/hcp.js`, `docs/superpowers/specs/2026-07-24-blacklist-central-database-design.md` | New vendor, new service, RBAC role added, new inbound blacklist source type, HCP scope changes beyond hkt |
 | `05-security.html` | `docs/REF_security-checklist.md` | New SEC-xxx finding or fix |
 | `06-bugs-fixed.html` | `GOTCHAS.md`, `CHANGELOG.md` | Major bug class resolved |
 | `07-competitive.html` | `DECISIONS.md` | Major stack decision reversed or added |
 | `10-maps-api.html` | `docs/LOGIC_map-features.md` | Map library change, new tile provider |
 | `12-scale-up.html` | `HARDWARE_SIZING_GUIDE.md` | G-tier camera ranges or server spec change |
 | `14-appearances.html` | `db/init.sql` (appearances table), `src/api-server.js` `/api/appearances/*` | appearances schema or API change |
-| `15-api-overview.html` | `docs/REF_api-reference.md` · `src/routes/` · `src/api-server.js` | New API group added, auth flow changes, WebSocket protocol changes |
+| `15-api-overview.html` | `docs/REF_api-reference.md` · `src/routes/` · `src/api-server.js` — **also owns the outbound Partner API section** (registered 2026-08-11): `docs/REF_partner-api-tunnel.md`, `docs/REF_partner-onboarding.md`, `src/routes/partner-api.js` | New API group added, auth flow changes, WebSocket protocol changes, Partner API (`/v1`) endpoint added/removed |
+| `15-api-overview.html` route counts / semantics | `docs/REF_api-reference.md`, **and `SKILL.md` + `SKILL-TH.md` for what an operator is told the numbers mean** | Any change to the operator-facing semantics of `≈` on Health totals (decision #263), `"10,000+"` on the Events count (decision #264), or the 24-hour default window of the LPR no-read tab. **`SKILL.md`/`SKILL-TH.md` own those explanations** — the customer page must not invent its own wording, and the two SKILL files must change together |
 | `nav.js` (all 16 pages) | This file listing | Any page added, renamed, or removed |
 
 **To add a page:** edit `nav.js` NAV_ITEMS array only — all 15 pages pick it up automatically.
@@ -344,6 +404,8 @@ Critical decisions that must never be reversed without explicit owner approval.
 | dev-docs page | Update when |
 |---|---|
 | `index.html` (file map) | New src/ module added, file renamed/deleted, new major script added |
+| `api-routes.html` | **Registered 2026-08-11 — was missing from this table despite existing on disk for a long time.** New route added/removed in any `src/routes/*.js` file, including `partner-api.js` (`/v1`), `blacklist-sources.js`, `hcp.js` |
+| `file-navigator.html` | **Registered 2026-08-11 — same gap.** New/removed file in `src/`, `src/routes/`, `src/helpers/`, `dashboard/page-*.js` |
 | `add-route.html` | Factory pattern changes, new auth middleware added, `routeError` helper changes |
 | `add-migration.html` | Migration runner behavior changes, next-number convention changes |
 | `add-i18n.html` | I18N.t API changes, new attribute patterns added |
@@ -351,6 +413,40 @@ Critical decisions that must never be reversed without explicit owner approval.
 | `restart-services.html` | New PM2 workers added, LNP workaround changes (GOTCHAS #84) |
 
 **Note:** `dev-docs/` is not routed by api-server — open via `file://dev-docs/index.html` from repo root. No deployment needed.
+
+### Route counts
+
+**Never type a route count from memory or from another doc.** Run `npm run check:api` and use what
+it prints. Run it also whenever routes are added or removed — it reports three separate numbers
+(routes in the process, the number written at the foot of `REF_api-reference.md`, and Appendix A
+coverage) and any of the three can drift on its own.
+
+Appendix A of `docs/REF_api-reference.md` is **generated** — the block between the
+`BEGIN route-index` / `END route-index` markers is replaced wholesale with the output of
+`npm run check:api -- --list`. Never hand-edit inside those markers.
+**Enforced since 2026-09-07:** the versioned pre-commit hook (`scripts/hooks/pre-commit`, installed once
+per clone with `npm run hooks:install`) runs the checker whenever a commit stages `src/routes/*.js`,
+`src/api-server.js`, `src/stats-summary-route.js` or `docs/REF_api-reference.md`, and rejects the commit
+on drift — the 51-route gap of 2026-08-12 → 09-06 existed only because nothing ran the check.
+
+This doc, `REF_api-reference.md` and `public/others/vigil-docs-v2/15-api-overview.html` all quote
+the count; a change means all three.
+
+### Environment variables
+
+`service_start.md` (its env table) and `.env.example` **own** the list of environment variables:
+name, default, what it does, and what happens if you change it. Other docs may mention a variable
+in passing, but must not restate its default — a second copy of a default is a second thing to go
+stale, and the wrong one is impossible to spot. A new env knob is not shipped until it is in both.
+
+### Assistant memory files
+
+Editing a file under
+`~/.claude/projects/-home-vigil-central-vigil-platform/memory/` means also updating its one-line
+entry in that directory's `MEMORY.md` index — and moving it between sections
+(เปิดอยู่ / กฎการทำงาน / อ้างอิง / บทเรียน / ปิดแล้ว) if its status changed. The index is what the
+next session reads first; a memory file whose index line still says "🔴 blocked" after the blocker
+cleared is worse than no memory at all.
 
 ### Doc update trigger
 Update docs **on explicit human request**, not automatically after every task:

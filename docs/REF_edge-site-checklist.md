@@ -24,8 +24,23 @@
 | Public hostname (LPR/face push) | `<SITE>.dojojin.tech` → `http://localhost:3003` | `vss.dojojin.tech` | |
 | SSH hostname (optional mgmt) | `ssh<SITE>.dojojin.tech` (Type SSH + Access app) | `sshvss.dojojin.tech` | |
 | Camera count by vendor | from central cameras list | bosch4 / hik2 / dahua2 | |
+| `FACE_PUSH_ALLOW` | IPs of face cameras pushing **LAN-direct** to `:3010` (comma-sep) | `192.168.10.235` | |
 
 > ⚠️ `CAMERA_SECRET_KEY` is identical across ALL nodes — **never generate a new one per site** (GOTCHAS #98).
+>
+> ⚠️ **There are two face-push paths and they authenticate differently — know which one this site uses:**
+>
+> | Path | Port | Auth | Needs `FACE_PUSH_ALLOW`? |
+> |---|---|---|---|
+> | LAN-direct → `hikvision` ingester's face alarm server | `3010` | **source IP allowlist** | **yes** |
+> | Tunnel → `lpr-receiver` `POST /face-push/:token` | `3003` | per-camera `face_push_token` | no (Cloudflare masks the source IP, so the token identifies the camera) |
+>
+> For the LAN-direct path, `FACE_PUSH_ALLOW` is **per-site and mandatory**. Its built-in default is
+> `192.168.10.235` — the face camera at the first site ever deployed — so any site on another subnet
+> answers **403 to every push** and does it **silently**: the camera pushes, the server drops, and it
+> looks like the camera was configured wrong (GOTCHAS #133). Note the camera does **not** have to sit
+> on the edge box's own subnet; only reachability matters (at `hkt` the box is `10.0.10.50` and the
+> face camera is `10.1.100.59`, 1 ms away — LAN-direct is fine, the IP just has to be listed).
 
 ---
 
@@ -83,6 +98,8 @@
   EDGE_SITE_ID=<SITE>
   EDGE_SITE_CODE=<SITE>
   BRIDGE_BROKER_URL=wss://dashboard.dojojin.tech/mqtt
+  # (ทางเลือก แนะนำ) BRIDGE_BROKER_URLS=mqtt://100.89.1.29:1883,mqtt://127.0.0.1:18830,wss://dashboard.dojojin.tech/mqtt
+  #   ต้องเพิ่มชื่อ ssh host ของไซต์ใน MQTT_TUNNEL_HOSTS (ecosystem.config.js บน central) + ติด tag:edge ใน tailnet ก่อน · ดู GOTCHAS #229
   BRIDGE_USERNAME=edge-<SITE>
   BRIDGE_PASSWORD=<from provision-site.js>
   MQTT_BROKER_URL=mqtt://127.0.0.1:1883
@@ -91,8 +108,12 @@
   LPR_RECEIVER_PORT=3003
   FACE_PUSH_BIND=0.0.0.0
   FACE_PUSH_PORT=3010
+  FACE_PUSH_ALLOW=<this site's Hik face camera IPs, comma-separated>
   TUNNEL_TOKEN=<cloudflared tunnel token <tunnel>>
   # SESSION_SECRET / INTERNAL_API_SECRET / MQTT_SUBSCRIBER_PASSWORD = generate per box
+  # SNAPSHOT_DIR — omit unless snapshots live off <repo>/snapshots. If you set it,
+  # it must be set for EVERY process (they share helpers/snapshotDir.js, so one
+  # .env covers them all) — see GOTCHAS #131 for why this used to drift.
   ```
 - [ ] Seed `cameras-config.json` = `{ "cameras": [] }` (central pushes the real list once bridge connects).
 
@@ -119,6 +140,10 @@
 - [ ] edge-bridge: `pm2 logs edge-bridge --nostream | grep heartbeat` → `remote=up local=up`.
 - [ ] **Central Health page** (dashboard.dojojin.tech → Health Check): an `Edge — <SITE>` card should appear within ~60s of edge-bridge coming up, same layout as every other site's card (disk, bridge status, PM2 process list). This is the single best confirmation that the whole chain — edge-bridge → central MQTT → DB → `/api/health/details` → dashboard — is wired correctly end-to-end; no code change is needed per site, it's fully generic on `site_id`. If the card doesn't appear after a minute, re-check `BRIDGE_USERNAME`/`BRIDGE_PASSWORD` and the EMQX ACL from step 1.
 - [ ] Ingesters connected: hik/dahua logs show `Alert/event Stream connected`. `ping` each camera IP.
+- [ ] **Face push — verify the path this site actually uses.** Which cameras do face at all: `node -e "console.log(require('./cameras-config.json').cameras.filter(c=>c.face_push_token).map(c=>c.camera_id+' '+c.ip_address))"`. Then:
+  - LAN-direct (`:3010`): `pm2 logs hikvision --nostream | grep 'Face alarm server'` prints the live allowlist. If it shows `192.168.10.235` on any other site, `FACE_PUSH_ALLOW` was never set. Prove it end-to-end — `curl -so /dev/null -w '%{http_code}' -X POST -F x=1 http://<edge-ip>:3010/` must NOT be `403` from an allowed IP.
+  - Tunnel (`:3003`): `curl -so /dev/null -w '%{http_code}' -X POST -F x=1 http://127.0.0.1:3003/face-push/<token>` → `200`. No allowlist involved.
+  - A quiet log is not proof of health here: with zero pushes arriving, both a working and a broken allowlist look identical (GOTCHAS #133).
 - [ ] Bosch: each Bosch camera's MQTT broker host = **edge LAN IP : 1883** (camera-side config).
 - [ ] **End-to-end event delivery** — verify with a REAL detection (walk past / vehicle), then watch:
   ```bash
@@ -137,3 +162,6 @@
 | #98 | `CAMERA_SECRET_KEY` must match central exactly — silent decrypt failure otherwise |
 | #99 | `CONFIG_TOPIC` relay loop — filtered in `edge-bridge.js` |
 | #100 | `dahua` crash-loops with 0 dahua cameras (no keep-alive) — start it only after cameras synced |
+| #131 | `SNAPSHOT_DIR` used to be redefined in 10 modules, 8 ignoring the env var — now one `helpers/snapshotDir.js` |
+| #132 | Corporate firewall (FortiGate) MITMs TLS → edge-bridge dies on cert verify while cloudflared stays up (QUIC/UDP). Check `openssl s_client` issuer FIRST |
+| #133 | `FACE_PUSH_ALLOW` defaults to the first site's camera IP → face pushes silently dropped at every other site |

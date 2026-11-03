@@ -1,0 +1,23 @@
+-- ============================================================
+-- Migration 098 — last edge service-control result
+-- @author Prakasit Rochanavipart (Dojo-mAn)
+-- @copyright (c) 2025-2026 Prakasit Rochanavipart. All Rights Reserved.
+-- @license Proprietary
+-- ============================================================
+-- Restart/stop on an edge is a round trip over MQTT: api-server publishes the
+-- command, the edge agent runs pm2 and replies, and mqtt-subscriber is the
+-- process holding that subscription — a different process from the one the
+-- browser is talking to. Rather than build a cross-process correlation channel
+-- for a button, the reply is parked here and served with the rest of the edge's
+-- status, which the page is already polling.
+--
+-- The alternative was to say nothing and let the operator infer success from
+-- pm2 uptime resetting in the next heartbeat: up to 60s of silence, and no way
+-- at all to surface a refusal ("stop refused: would cut the command channel"),
+-- which is precisely the answer someone needs to see immediately.
+--
+-- Last result only, deliberately. This is a "did my click work" indicator, not
+-- an audit trail — the audit trail is audit_log, written on the central side
+-- where the operator's identity is actually known.
+ALTER TABLE edge_status
+  ADD COLUMN IF NOT EXISTS last_svc_result JSONB;

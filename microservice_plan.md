@@ -1,6 +1,6 @@
 # Master Plan — Modular Refactor + Security Hardening
 
-> สถานะ: **Phase 0 + 1 + 3 (workers) ✅ DONE · Phase 2/4 Deferred** · อัปเดต: 2026-06-07
+> สถานะ: **Phase 0 + 1 + 3 (workers) ✅ DONE · Phase 2 = ทำไปเรื่อย ๆ ตามโอกาส เกือบครบแล้ว (`src/routes/` มี 39 module) · Phase 4 Deferred** · อัปเดต: 2026-09-06
 > ที่มา: codebase analysis + advisor review + CODEX_AUDIT_2ndTier.md + verify จาก code จริง 2026-06-04
 > SEC-2T-001 decision: **ลบ** `index.html`, `partners.html`, `reference-projects.html`, `vss_v1.html` (ไม่ได้ใช้แล้ว) — CDN risk หายไปด้วย; `boxbox-*.html` auth-gated แล้ว (Option C)
 
@@ -110,10 +110,12 @@ src/
 
 - [x] ✅ สร้าง `src/alert-worker.js` — LISTEN `alert_event` + `alert_rules_changed` (2026-06-06)
 - [x] ✅ สร้าง `src/report-worker.js` — HTTP endpoint `127.0.0.1:3001/run/:id` (2026-06-06)
+- [x] ✅ เพิ่ม `POST /render` บน listener เดิม (2026-09-06, `bddbcd9`) — `X-Internal-Token` + allowlist 6 ฟังก์ชัน + body 2 MB · ปุ่มดาวน์โหลดฝั่ง api-server ยิงผ่าน `src/helpers/renderViaWorker.js` (timeout 120 s, fallback render ในโปรเซส) · kill switch `REPORT_RENDER_VIA_WORKER=0`
 - [x] ✅ เพิ่ม 2 entries ใน `ecosystem.config.js` (7 workers verified 2026-06-06)
 - [x] ✅ ลบ `require('./alert-engine')` ออกจาก api-server (done)
 - [x] ✅ verify PM2 restart ทั้ง 7 process — launchd verified after reboot 2026-06-06
-- [ ] `require('./report-renderer')` ยังอยู่ใน api-server (lines 4081/5854/5883/5915) — deferred
+- [x] ✅ `require('./report-renderer')` **หายจาก `src/api-server.js` แล้ว** (2026-09-06, `bddbcd9`) — 4 จุดเดิมย้ายไปอยู่ใน `src/routes/` และการ render จริงย้ายไป report-worker ผ่าน `renderViaWorker`
+  - ⚠️ **ยังไม่ใช่ "ออกจากโปรเซส api-server ทั้งหมด"** — `src/routes/reports.js`, `src/routes/health.js` และ `src/routes/traffic.js:25` (module top-level) ยัง require ไว้ในโปรเซสเดียวกัน · แต่เส้นทางที่**เปิด Chromium** ไปอยู่ที่ worker หมดแล้ว ส่วนที่เหลือใน api-server คือ Health PNG (SVG + `sharp` ไม่ใช้ Chromium) และ helper ที่ไม่ render
 - ~~ออกแบบ job queue schema (`report_jobs` table)~~ → approach เปลี่ยน: HTTP trigger แทน
 - ~~DB migration checklist สำหรับ job queue~~ → ไม่มี job queue table (ไม่ต้องทำ)
 

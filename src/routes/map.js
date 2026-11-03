@@ -10,6 +10,7 @@
 const fs   = require('fs');
 const path = require('path');
 const http = require('http');
+const env  = require('../config');
 
 const MAP_CACHE_DIR  = path.join(__dirname, '../..', 'map-cache');
 const MAP_AREAS_FILE = path.join(__dirname, '../..', 'map-areas.json');
@@ -26,7 +27,7 @@ const MAP_AREAS_FILE = path.join(__dirname, '../..', 'map-areas.json');
 //       /tiles/* is in PUBLIC_PREFIXES — no auth required
 // ============================================================
 
-module.exports = function mapRoutes(app, pool, { getMapboxToken, routeError }) {
+module.exports = function mapRoutes(app, pool, { getMapboxToken, getCartoKey, routeError }) {
 
   // Ensure cache dir exists at startup
   if (!fs.existsSync(MAP_CACHE_DIR)) fs.mkdirSync(MAP_CACHE_DIR, { recursive: true });
@@ -169,7 +170,8 @@ module.exports = function mapRoutes(app, pool, { getMapboxToken, routeError }) {
     const { bbox, zoomMin, zoomMax, styles, providers = ['carto'] } = area;
 
     // Build tile server matrix: [provider][style] = array of base URLs
-    const MAPBOX_TOKEN = process.env.MAPBOX_TOKEN || '';
+    const MAPBOX_TOKEN = env.str('MAPBOX_TOKEN');
+    const CARTO_KEY = await getCartoKey();
     const tileServers = {
       carto: {
         streets: ['a','b','c'].map(s => `https://${s}.basemaps.cartocdn.com/rastertiles/voyager`),
@@ -187,7 +189,9 @@ module.exports = function mapRoutes(app, pool, { getMapboxToken, routeError }) {
         return `https://api.mapbox.com/styles/v1/${styleId}/tiles/${z}/${x}/${y}@2x?access_token=${MAPBOX_TOKEN}`;
       }
       const servers = tileServers.carto[style];
-      return `${servers[serverIdx % servers.length]}/${z}/${x}/${y}.png`;
+      let url = `${servers[serverIdx % servers.length]}/${z}/${x}/${y}.png`;
+      if (CARTO_KEY) url += `?key=${encodeURIComponent(CARTO_KEY)}`;
+      return url;
     };
 
     const validProviders = providers.filter(p => tileServers[p]);
@@ -270,7 +274,7 @@ module.exports = function mapRoutes(app, pool, { getMapboxToken, routeError }) {
       const boundsErr = validateMapBounds(bbox, zoomMin, zoomMax);
       if (boundsErr) return res.status(400).json({ error: boundsErr });
 
-      const MAPBOX_TOKEN = process.env.MAPBOX_TOKEN || '';
+      const MAPBOX_TOKEN = env.str('MAPBOX_TOKEN');
       const validProviders = providers.filter(p => p === 'carto' || (p === 'mapbox' && MAPBOX_TOKEN));
 
       const calc = calculateTiles(bbox, zoomMin, zoomMax);
@@ -290,7 +294,7 @@ module.exports = function mapRoutes(app, pool, { getMapboxToken, routeError }) {
   });
 
   // API: Start download (background)
-  app.post('/api/map/download', (req, res) => {
+  app.post('/api/map/download', async (req, res) => {
     if (mapDownloadState.active) {
       return res.status(409).json({ error: 'Download already in progress' });
     }
@@ -298,8 +302,18 @@ module.exports = function mapRoutes(app, pool, { getMapboxToken, routeError }) {
     const boundsErr = validateMapBounds(bbox, zoomMin, zoomMax);
     if (boundsErr) return res.status(400).json({ error: boundsErr });
 
+    // ⚠️ พฤติกรรมใหม่ 2026-08-31: ปฏิเสธงานที่มี carto แต่ยังไม่ตั้ง API key
+    // ถ้าปล่อยผ่าน CARTO จะตอบ tile ที่มีลายน้ำ "API KEY REQUIRED" (HTTP 200 ปกติ
+    // ไม่ใช่ error) แล้วไฟล์นั้นถูกเขียนลง MAP_CACHE_DIR ถาวร · /tiles/* เสิร์ฟด้วย
+    // Cache-Control: immutable, max-age=31536000 → ลายน้ำติดค้างจนกว่าจะลบไฟล์เอง
+    // ด่านนี้อยู่ที่ route ไม่ใช่ใน background job เพราะ UI อ่านแค่ progress/current
+    // ไม่เคยแสดง mapDownloadState.errors — กันใน job = ผู้ใช้กดแล้วเงียบ ไม่รู้สาเหตุ
+    if ((providers || []).includes('carto') && !(await getCartoKey())) {
+      return res.status(400).json({ error: 'CARTO API key not set — Settings › Map › CARTO API Key' });
+    }
+
     // Cap total tile count BEFORE background job to prevent disk-fill on oversized bbox
-    const MAPBOX_TOKEN_CHECK = process.env.MAPBOX_TOKEN || '';
+    const MAPBOX_TOKEN_CHECK = env.str('MAPBOX_TOKEN');
     const validProvidersForCount = (providers || []).filter(p => p === 'carto' || (p === 'mapbox' && MAPBOX_TOKEN_CHECK));
     const calc = calculateTiles(bbox, zoomMin, zoomMax);
     const totalTiles = calc.total * (styles?.length || 1) * (validProvidersForCount.length || 1);

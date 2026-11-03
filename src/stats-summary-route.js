@@ -22,7 +22,17 @@ const path = require('path');
 const fs = require('fs');
 
 const { OFFLINE_THRESHOLD_SEC, METRIC_EVENT_FILTER, MQTT_HEALTHY_AGE_SEC } = require('./constants');
-const { siteWhere } = require('./auth');
+const { siteWhere, scopedCameraIds } = require('./auth');
+const { createTtlCache } = require('./helpers/ttlCache');
+const { archivedCameraIds } = require('./helpers/siteStatus');
+// aliased: the local `snapshotDir` below is the caller's override, this is the fallback
+const { snapshotDir: defaultSnapshotDir } = require('./helpers/snapshotDir');
+// ⚠️ รายชื่อ class เคยเขียนสดใน SQL ข้างล่าง แล้วตกคำว่า 'Pickup' ไป ทำให้
+//    n_traffic ของ "ชั่วโมงปัจจุบัน" นับรถขาด ~7% และไม่ตรงกับชั่วโมงก่อนหน้า
+//    ที่อ่านจาก event_kpi_hourly — ตอนนี้ทั้งสองทางดึงจากไฟล์เดียวกัน
+const { VEHICLE_CLASSES, PERSON_CLASSES, sqlList } = require('./helpers/objectClassGroup');
+const VEHICLE_SQL = sqlList(VEHICLE_CLASSES);
+const PERSON_SQL  = sqlList(PERSON_CLASSES);
 
 function pctChange(today, yesterday) {
   const a = Number(today) || 0;
@@ -60,8 +70,28 @@ async function diskStats(dir) {
   }
 }
 
+
+// ── ตัวจับเวลารายส่วน (เพิ่ม 2026-08-12) ────────────────────────────────
+// endpoint นี้ใช้ ~13 วินาทีทุกครั้งที่ cache 30 วิหมดอายุ (วัดจริง 3 รอบติดกัน:
+// 12,925 / 12,746 / 12,685 ms) และเพราะ Node เป็น single process กับ pool เดียว
+// มันลากให้หน้าอื่นช้าตามไปด้วย — หน้า Health ที่ปกติ 600ms กลายเป็น 11,190ms
+// เมื่อยิงชนกัน · ยืมวิธีเดียวกับ /api/health/details ที่มี diagnostics_ms อยู่แล้ว
+// เพื่อชี้เป้าว่า "ส่วนไหน" แทนที่จะรู้แค่ว่า "ทั้งก้อนช้า"
+function _mkDiag() {
+  const d = {};
+  const t = async (name, fn) => {
+    const t0 = Date.now();
+    try { return await fn(); }
+    finally {
+      d[name] = Date.now() - t0;
+      if (d[name] > 1000) console.warn(`[exec-summary] "${name}" ใช้ ${d[name]}ms`);
+    }
+  };
+  return { d, t };
+}
+
 module.exports = function registerExecutiveSummaryRoute(app, pool, opts = {}) {
-  const snapshotDir = opts.snapshotDir || path.join(__dirname, '..', 'snapshots');
+  const snapshotDir = opts.snapshotDir || defaultSnapshotDir();
   const mediaDir    = opts.mediaDir    || path.join(__dirname, '..', 'media');
   const startedAt   = opts.startedAt   || Date.now();
   const version     = opts.version     || 'v1.0.0';
@@ -80,22 +110,17 @@ module.exports = function registerExecutiveSummaryRoute(app, pool, opts = {}) {
     ? opts.disabledAnalyticsClause
     : () => '';
 
-  // 30s TTL cache — exec-summary runs ~15 parallel DB queries + dirStats + diskStats;
+  // 30s TTL cache — exec-summary runs ~13 parallel DB queries + dirStats + diskStats
+  // (was ~15: the 4 events-table KPI scans were consolidated into 1, 2026-07-23);
   // frontend polls every 60s. Keyed by site scope (not a single global slot) —
   // a site-scoped viewer must never be served another scope's cached payload.
-  const _execCache = new Map(); // scopeKey -> { payload, at }
-  const EXEC_TTL_MS = 30_000;
+  const _execCache = createTtlCache({ name: 'stats:executive-summary', ttlMs: 30_000 });
 
   app.get('/api/stats/executive-summary', async (req, res) => {
     try {
-      const now = Date.now();
       // MS-5-style RBAC: null = admin/auditor (all sites), array = viewer's sites.
       const allowedSites = req.user?.allowedSites ?? null;
-      const scopeKey = allowedSites === null ? 'all' : ([...allowedSites].sort((a, b) => a - b).join(',') || 'none');
-      const cached = _execCache.get(scopeKey);
-      if (cached && now - cached.at < EXEC_TTL_MS) {
-        return res.json(cached.payload);
-      }
+      const payload = await _execCache.wrap('exec', async () => {
 
       // Canonical allowed-camera-id set, resolved from the cameras table (not
       // cameras-config.json's free-text `site` name field, which is fragile).
@@ -105,8 +130,7 @@ module.exports = function registerExecutiveSummaryRoute(app, pool, opts = {}) {
         if (allowedSites.length === 0) {
           allowedCameraIds = new Set();
         } else {
-          const camRows = await pool.query('SELECT id FROM cameras WHERE site_id = ANY($1)', [allowedSites]);
-          allowedCameraIds = new Set(camRows.rows.map(r => r.id));
+          allowedCameraIds = await scopedCameraIds(allowedSites, pool);   // รวมแกนกล้อง (GOTCHAS #166)
         }
       }
 
@@ -153,23 +177,25 @@ module.exports = function registerExecutiveSummaryRoute(app, pool, opts = {}) {
       // Not applied to traffic/people KPIs — those filter by object_class,
       // which Trigger events don't carry, so they're already excluded.
       const analyticsExclude = disabledAnalyticsClause('event_type');
-      const analyticsExcludeE = disabledAnalyticsClause('e.event_type');
+      // ขอบของตารางสรุป event_kpi_hourly: ถังที่ปิดไปเกิน 1 ชม. ถือว่านิ่ง (refresher ทุก 5 นาที)
+      // · หัวของช่วง 24 ชม. เป็นเศษชั่วโมง จึงเริ่มอ่านถังเต็มจากชั่วโมงถัดไป
+      const KPI_LIVE_EDGE = `(date_trunc('hour', NOW()) - INTERVAL '1 hour')`;
+      const KPI_24H_LO    = `(date_trunc('hour', NOW() - INTERVAL '24 hours') + INTERVAL '1 hour')`;
 
       // Site-scope fragments, precomputed per query shape so every KPI/
       // breakdown/feed query below is scoped the same way the rest of the
       // codebase scopes events (siteWhere) — this route previously had none.
       const swTz      = siteWhere(allowedSites, 'camera_id', 2);   // queries already bound to $1=tz
-      const swTzAlias = siteWhere(allowedSites, 'e.camera_id', 2); // same, but FROM events e
       const swBare1   = siteWhere(allowedSites, 'camera_id', 1);   // queries with no existing params
       const swCamTable = allowedSites === null ? { sql: '', args: [] }
         : allowedSites.length === 0 ? { sql: 'AND FALSE', args: [] }
         : { sql: 'AND site_id = ANY($1)', args: [allowedSites] };  // FROM cameras directly (has site_id, not camera_id)
 
+      const { d: _diag, t: _t } = _mkDiag();
+      const _tStart = Date.now();
       const [
-        eventsCounts,
-        alertsCounts,
-        trafficCounts,
-        peopleCounts,
+        kpiCounts,
+        platesCounts,
         eventsByHour,
         breakdown,
         topCameras,
@@ -183,83 +209,100 @@ module.exports = function registerExecutiveSummaryRoute(app, pool, opts = {}) {
         mediaStats
       ] = await Promise.all([
 
-        // ---------- KPI: total events today vs yesterday ----------
-        pool.query(`
+        // ---------- KPI: events/alerts/traffic/people/faces, today vs yesterday ----------
+        // Was 4 separate queries (events, alerts, traffic, people), each doing
+        // its own `WHERE event_time >= yesterday` scan over the same rows —
+        // measured 300-500ms EACH on prod (2.26M-row partitioned table,
+        // Index Only Scan still paying heap-fetch cost from autovacuum lag on
+        // the active partition), and since Promise.all fires them all at once
+        // they compete for the same Postgres parallel-worker budget instead of
+        // actually running independently. One scan, five FILTER pairs, cuts
+        // this to a single pass. `faces` reuses the same event_type values as
+        // /api/faces/stats' capture-total KPI (routes/faces.js CAPTURE_TYPES_SQL)
+        // so "จำนวนใบหน้าทั้งหมด" here matches what the Face page itself counts.
+        // ⚡ อ่านจากยอดสรุปรายชั่วโมง (`event_kpi_hourly`, migration 144) แทนการสแกน
+        // events ~1.6 ล้านแถวทุกครั้งที่ cache หมด (วัดจริง 3.3-6.1 วินาที และลากหน้าอื่นช้าตาม)
+        //
+        // **ชั่วโมงปัจจุบันอ่านสดจาก events เสมอ** เพราะ refresher เดินทุก 5 นาที —
+        // ถ้าอ่านจากตารางสรุปทั้งหมด ตัวเลข "วันนี้" จะค้างให้ผู้ใช้เห็นว่าไม่ขยับ
+        // การนับ 1 ชั่วโมงสดวัดได้ 55ms ถูกกว่าสแกนสองวันมาก
+        //
+        // เงื่อนไข analytics ที่ผู้ดูแลปิดไว้ยังกรองตอนอ่าน (ตารางแยกตาม event_type ไว้ให้)
+        // จึงสลับสวิตช์แล้วตัวเลขเปลี่ยนตามทันทีเหมือนเดิม
+        _t('kpiCounts', () => pool.query(`
+          WITH hourly AS (
+            SELECT bucket_hour, n_total, n_alerts, n_traffic, n_people, n_faces
+              FROM event_kpi_hourly
+             WHERE bucket_hour >= ${yesterday}
+               AND bucket_hour <  date_trunc('hour', NOW())
+               ${analyticsExclude}
+               ${swTz.sql}
+          ), live AS (
+            SELECT date_trunc('hour', NOW()) AS bucket_hour,
+                   count(*)                                                  AS n_total,
+                   count(*) FILTER (WHERE rule_name IS NOT NULL AND rule_name <> '') AS n_alerts,
+                   count(*) FILTER (WHERE object_class IN (${VEHICLE_SQL})) AS n_traffic,
+                   count(*) FILTER (WHERE object_class IN (${PERSON_SQL}))  AS n_people,
+                   count(*) FILTER (WHERE event_type IN ('FaceCapture','FaceDetector/Recognized')) AS n_faces
+              FROM events
+             WHERE event_time >= date_trunc('hour', NOW())
+               AND ${METRIC_EVENT_FILTER}
+               ${analyticsExclude}
+               ${swTz.sql}
+          ), all_rows AS (
+            SELECT * FROM hourly UNION ALL SELECT * FROM live
+          )
           SELECT
-            COUNT(*) FILTER (WHERE event_time >= ${today})::int AS today,
-            COUNT(*) FILTER (
-              WHERE event_time >= ${yesterday} AND event_time < ${today}
-            )::int AS yesterday
-          FROM events
-          WHERE event_time >= ${yesterday}
-            AND ${METRIC_EVENT_FILTER}
-            ${analyticsExclude}
-            ${swTz.sql}
-        `, [tz, ...swTz.args]),
+            COALESCE(SUM(n_total)   FILTER (WHERE bucket_hour >= ${today}), 0)::int AS events_today,
+            COALESCE(SUM(n_total)   FILTER (WHERE bucket_hour <  ${today}), 0)::int AS events_yesterday,
+            COALESCE(SUM(n_alerts)  FILTER (WHERE bucket_hour >= ${today}), 0)::int AS alerts_today,
+            COALESCE(SUM(n_alerts)  FILTER (WHERE bucket_hour <  ${today}), 0)::int AS alerts_yesterday,
+            COALESCE(SUM(n_traffic) FILTER (WHERE bucket_hour >= ${today}), 0)::int AS traffic_today,
+            COALESCE(SUM(n_traffic) FILTER (WHERE bucket_hour <  ${today}), 0)::int AS traffic_yesterday,
+            COALESCE(SUM(n_people)  FILTER (WHERE bucket_hour >= ${today}), 0)::int AS people_today,
+            COALESCE(SUM(n_people)  FILTER (WHERE bucket_hour <  ${today}), 0)::int AS people_yesterday,
+            COALESCE(SUM(n_faces)   FILTER (WHERE bucket_hour >= ${today}), 0)::int AS faces_today,
+            COALESCE(SUM(n_faces)   FILTER (WHERE bucket_hour <  ${today}), 0)::int AS faces_yesterday
+          FROM all_rows
+        `, [tz, ...swTz.args])),
 
-        // ---------- KPI: alerts (events with rule_name) ----------
-        pool.query(`
+        // ---------- KPI: license plates read, today vs yesterday ----------
+        // Separate table (license_plates), can't share the events-table scan
+        // above. Needs its own index — migration 092 added
+        // idx_plates_detected_at (was a full seq scan over 1.9M rows, 727ms;
+        // ~200ms with the index). Not site-scoped (license_plates has no
+        // camera-site join wired here yet — same accepted scope as the rest
+        // of this route's pre-multi-site KPIs).
+        _t('platesCounts', () => pool.query(`
           SELECT
-            COUNT(*) FILTER (WHERE event_time >= ${today})::int AS today,
-            COUNT(*) FILTER (
-              WHERE event_time >= ${yesterday} AND event_time < ${today}
-            )::int AS yesterday
-          FROM events
-          WHERE event_time >= ${yesterday}
-            AND rule_name IS NOT NULL AND rule_name <> ''
-            AND ${METRIC_EVENT_FILTER}
-            ${swTz.sql}
-        `, [tz, ...swTz.args]),
-
-        // ---------- KPI: traffic (vehicles) ----------
-        // Expanded object_class hierarchy — Bosch cameras emit either the
-        // generic 'Vehicle' or a specific subclass (Car/Truck/Bus/...), so
-        // matching only 4 values undercounts. Mirrors CLASS_HIERARCHY in
-        // api-server.js. NOTE: events with NO object_class (e.g. some
-        // FieldDetector detectors) still can't be counted here — that's a
-        // camera-config limitation, not a query bug.
-        pool.query(`
-          SELECT
-            COUNT(*) FILTER (WHERE event_time >= ${today})::int AS today,
-            COUNT(*) FILTER (
-              WHERE event_time >= ${yesterday} AND event_time < ${today}
-            )::int AS yesterday
-          FROM events
-          WHERE event_time >= ${yesterday}
-            AND object_class IN ('Vehicle','Car','Truck','Bus','Motorcycle','Motorbike','Van','Bicycle','Bike')
-            AND ${METRIC_EVENT_FILTER}
-            ${swTz.sql}
-        `, [tz, ...swTz.args]),
-
-        // ---------- KPI: people ----------
-        // Expanded object_class hierarchy (Person/Face/HumanFace/HumanBody/
-        // Pedestrian) — same reasoning as the traffic KPI above.
-        pool.query(`
-          SELECT
-            COUNT(*) FILTER (WHERE event_time >= ${today})::int AS today,
-            COUNT(*) FILTER (
-              WHERE event_time >= ${yesterday} AND event_time < ${today}
-            )::int AS yesterday
-          FROM events
-          WHERE event_time >= ${yesterday}
-            AND object_class IN ('Person','Face','HumanFace','HumanBody','Pedestrian')
-            AND ${METRIC_EVENT_FILTER}
-            ${swTz.sql}
-        `, [tz, ...swTz.args]),
+            COUNT(*) FILTER (WHERE detected_at >= ${today})::int AS today,
+            COUNT(*) FILTER (WHERE detected_at >= ${yesterday} AND detected_at < ${today})::int AS yesterday
+          FROM license_plates
+          WHERE detected_at >= ${yesterday}
+        `, [tz])),
 
         // ---------- 24h events per hour ----------
-        pool.query(`
-          SELECT
-            DATE_TRUNC('hour', event_time) AS hour,
-            COUNT(*)::int AS count
-          FROM events
-          WHERE event_time >= NOW() - INTERVAL '24 hours'
-            AND ${METRIC_EVENT_FILTER}
-            ${analyticsExclude}
-            ${swBare1.sql}
+        // ⚡ ชั่วโมงเต็มอ่านจาก event_kpi_hourly · สดเฉพาะหัว (เศษชั่วโมงแรกของ 24 ชม.) และ
+        // หาง (ชั่วโมงก่อนหน้า + ปัจจุบัน — refresher เดินทุก 5 นาที ถังจึงนิ่งหลังปิด 1 ชม.)
+        // ผลเท่ากับอ่าน events ดิบทุกแถว: เทียบใน snapshot เดียวกัน admin + site 2026-10-06 (O2)
+        _t('eventsByHour', () => pool.query(`
+          SELECT hour, SUM(n)::int AS count FROM (
+            SELECT bucket_hour AS hour, n_total AS n FROM event_kpi_hourly
+             WHERE bucket_hour >= ${KPI_24H_LO} AND bucket_hour < ${KPI_LIVE_EDGE}
+               ${analyticsExclude}
+               ${swBare1.sql}
+            UNION ALL
+            SELECT DATE_TRUNC('hour', event_time), count(*) FROM events
+             WHERE ((event_time >= NOW() - INTERVAL '24 hours' AND event_time < ${KPI_24H_LO})
+                    OR event_time >= ${KPI_LIVE_EDGE})
+               AND ${METRIC_EVENT_FILTER}
+               ${analyticsExclude}
+               ${swBare1.sql}
+             GROUP BY 1
+          ) x
           GROUP BY hour
           ORDER BY hour
-        `, swBare1.args),
+        `, swBare1.args)),
 
         // ---------- Event breakdown (today) — by rule_name ----------
         // Was grouped by object_class, but Bosch FieldDetector/LineDetector
@@ -271,7 +314,7 @@ module.exports = function registerExecutiveSummaryRoute(app, pool, opts = {}) {
         // by default) are excluded so they don't pollute Top Rules; the
         // remaining analytics' event_state='false' halves are also hidden
         // so pairs don't double-count.
-        pool.query(`
+        _t('breakdown', () => pool.query(`
           SELECT
             COALESCE(NULLIF(rule_name, ''), event_type) AS label,
             CASE WHEN rule_name IS NOT NULL AND rule_name <> '' THEN 'rule' ELSE 'type' END AS kind,
@@ -287,40 +330,48 @@ module.exports = function registerExecutiveSummaryRoute(app, pool, opts = {}) {
           GROUP BY 1, 2
           ORDER BY count DESC
           LIMIT 8
-        `, [tz, ...swTz.args]),
+        `, [tz, ...swTz.args])),
 
         // ---------- Per-camera event counts (today) — total + alerts ----------
         // No JOIN to the cameras table: the camera LIST + names come from
         // cameras-config.json (joined in JS below). Returns total + alert
         // count per camera; the frontend filters to config cameras, maps
         // names, sorts, and takes the top 5.
-        pool.query(`
-          SELECT
-            e.camera_id,
-            COUNT(*)::int AS total,
-            COUNT(*) FILTER (WHERE e.rule_name IS NOT NULL AND e.rule_name <> '')::int AS alerts
-          FROM events e
-          WHERE e.event_time >= ${today}
-            AND e.event_type NOT LIKE '%Aggregation%'
-            ${analyticsExcludeE}
-            ${swTzAlias.sql}
-          GROUP BY e.camera_id
-        `, [tz, ...swTzAlias.args]),
+        // ⚡ แบบเดียวกับ eventsByHour — วันนี้ = ชั่วโมงเต็มจากตารางสรุป + ขอบสด (O2)
+        _t('topCameras', () => pool.query(`
+          SELECT camera_id, SUM(t)::int AS total, SUM(a)::int AS alerts FROM (
+            SELECT camera_id, n_total AS t, n_alerts AS a FROM event_kpi_hourly
+             WHERE bucket_hour >= ${today} AND bucket_hour < ${KPI_LIVE_EDGE}
+               ${analyticsExclude}
+               ${swTz.sql}
+            UNION ALL
+            SELECT camera_id, count(*),
+                   count(*) FILTER (WHERE rule_name IS NOT NULL AND rule_name <> '')
+              FROM events
+             WHERE event_time >= GREATEST(${today}, ${KPI_LIVE_EDGE})
+               AND ${METRIC_EVENT_FILTER}
+               ${analyticsExclude}
+               ${swTz.sql}
+             GROUP BY camera_id
+          ) x
+          GROUP BY camera_id
+        `, [tz, ...swTz.args])),
 
         // ---------- Recent 8 events for live feed ----------
         // Snapshot filename is a top-level column now; raw_json fallback keeps
         // compatibility with rows from older ingester versions or failed migrations.
-        pool.query(`
+        _t('recentEvents', () => pool.query(`
           SELECT
             id, event_time, camera_id, event_type, rule_name, object_class,
             COALESCE(snapshot_filename, raw_json->>'_snapshot') AS snapshot_filename
           FROM events
           WHERE ${METRIC_EVENT_FILTER}
+            AND event_time <= now() + interval '5 minutes'   -- กันเวลาอนาคต (GOTCHAS #217)
             ${analyticsExclude}
             ${swBare1.sql}
           ORDER BY event_time DESC
           LIMIT 8
-        `, swBare1.args),
+        `, swBare1.args)),
 
         // ---------- Camera runtime state (heartbeat + recording) ----------
         // DB-side per-camera state ONLY. The camera LIST + lat/lon comes from
@@ -329,22 +380,31 @@ module.exports = function registerExecutiveSummaryRoute(app, pool, opts = {}) {
         // that are no longer in the operator's config, so COUNT(*) here would
         // overcount. We just need last_seen_at / recording_data_until keyed by
         // id, then join in JS against the config list.
-        pool.query(`
+        _t('cameraRuntime', () => pool.query(`
           SELECT id, last_seen_at, recording_data_until, sd_last_check_at
           FROM cameras
           WHERE TRUE ${swCamTable.sql}
-        `, swCamTable.args),
+        `, swCamTable.args)),
 
         // ---------- 24h event count per camera ----------
-        pool.query(`
-          SELECT camera_id, COUNT(*)::int AS cnt
-          FROM events
-          WHERE event_time >= NOW() - INTERVAL '24 hours'
-            AND ${METRIC_EVENT_FILTER}
-            ${analyticsExclude}
-            ${swBare1.sql}
+        // ⚡ ตัวที่ช้าสุดของหน้านี้ (pgss เฉลี่ย 39 วิ) — แบบเดียวกับ eventsByHour (O2)
+        _t('cameraEventCounts', () => pool.query(`
+          SELECT camera_id, SUM(n)::int AS cnt FROM (
+            SELECT camera_id, n_total AS n FROM event_kpi_hourly
+             WHERE bucket_hour >= ${KPI_24H_LO} AND bucket_hour < ${KPI_LIVE_EDGE}
+               ${analyticsExclude}
+               ${swBare1.sql}
+            UNION ALL
+            SELECT camera_id, count(*) FROM events
+             WHERE ((event_time >= NOW() - INTERVAL '24 hours' AND event_time < ${KPI_24H_LO})
+                    OR event_time >= ${KPI_LIVE_EDGE})
+               AND ${METRIC_EVENT_FILTER}
+               ${analyticsExclude}
+               ${swBare1.sql}
+             GROUP BY camera_id
+          ) x
           GROUP BY camera_id
-        `, swBare1.args),
+        `, swBare1.args)),
 
         // ---------- MQTT pipeline health (camera heartbeat age) ----------
         // Was based on the last EVENT time, which falsely showed
@@ -352,30 +412,44 @@ module.exports = function registerExecutiveSummaryRoute(app, pool, opts = {}) {
         // send heartbeats independent of detections, so MAX(last_seen_at)
         // reflects whether the MQTT pipeline is actually flowing. Scoped so a
         // site-scoped viewer's "connected" status reflects their own cameras.
-        pool.query(`
+        _t('mqttHealth', () => pool.query(`
           SELECT EXTRACT(EPOCH FROM (NOW() - MAX(last_seen_at)))::int AS age_sec
           FROM cameras
           WHERE TRUE ${swCamTable.sql}
-        `, swCamTable.args),
+        `, swCamTable.args)),
 
         // ---------- Clip stats (done + pending) ----------
-        pool.query(`
+        // ⚡ 12,852ms → 17ms (วัดจริง 2026-08-12)
+        // เดิมเป็น COUNT(*) FILTER สองตัวบน `FROM events` ทั้งตาราง ซึ่ง **ต้องอ่านทุกแถว**
+        // เพื่อประเมิน FILTER — 15.3 ล้านแถวใน 25 partition เพื่อตอบว่า 0 กับ 0
+        // (ระบบนี้ยังไม่มีคลิปสักไฟล์) และมันคือ 12.85 วินาทีจาก 12.86 วินาทีของทั้ง endpoint
+        //
+        // index ที่ต้องใช้ **มีอยู่แล้วทั้งคู่** (idx_events_clip_status, idx_events_has_clip
+        // ซึ่งเป็น partial index `WHERE clip_status IS NOT NULL` / `WHERE clip_file IS NOT NULL`)
+        // แต่รูปแบบ FILTER ใช้มันไม่ได้ เพราะ WHERE ของ query เป็น TRUE — ต้องอ่านทุกแถวก่อน
+        // แยกเป็น subquery ที่มี WHERE ของตัวเอง ทั้งคู่จึงเข้า index ได้
+        // (`$1` ตัวเดียวใช้ซ้ำได้ทั้งสอง subquery — args จึงเท่าเดิม ไม่ต้องขยับ offset)
+        _t('clipStats', () => pool.query(`
           SELECT
-            COUNT(*) FILTER (WHERE clip_file IS NOT NULL AND clip_status = 'done')::int AS done,
-            COUNT(*) FILTER (WHERE clip_status = 'pending')::int AS pending
-          FROM events
-          WHERE TRUE ${swBare1.sql}
-        `, swBare1.args),
+            (SELECT count(*) FROM events
+              WHERE clip_file IS NOT NULL AND clip_status = 'done' ${swBare1.sql})::int AS done,
+            (SELECT count(*) FROM events
+              WHERE clip_status = 'pending' ${swBare1.sql})::int AS pending
+        `, swBare1.args)),
 
-        dirStats(snapshotDir),
-        diskStats(snapshotDir),
-        dirStats(mediaDir, ['.mp4'])
+        _t('dirStats_snapshots', () => dirStats(snapshotDir)),
+        _t('diskStats',           () => diskStats(snapshotDir)),
+        _t('dirStats_media',      () => dirStats(mediaDir, ['.mp4'])),
       ]);
+      _diag.db_and_fs_total = Date.now() - _tStart;
 
-      const ec = eventsCounts.rows[0]  || { today: 0, yesterday: 0 };
-      const ac = alertsCounts.rows[0]  || { today: 0, yesterday: 0 };
-      const tc = trafficCounts.rows[0] || { today: 0, yesterday: 0 };
-      const pc = peopleCounts.rows[0]  || { today: 0, yesterday: 0 };
+      const kc = kpiCounts.rows[0] || {};
+      const ec = { today: kc.events_today  || 0, yesterday: kc.events_yesterday  || 0 };
+      const ac = { today: kc.alerts_today  || 0, yesterday: kc.alerts_yesterday  || 0 };
+      const tc = { today: kc.traffic_today || 0, yesterday: kc.traffic_yesterday || 0 };
+      const pc = { today: kc.people_today  || 0, yesterday: kc.people_yesterday  || 0 };
+      const fc = { today: kc.faces_today   || 0, yesterday: kc.faces_yesterday   || 0 };
+      const lc = platesCounts.rows[0] || { today: 0, yesterday: 0 };
 
       // ----- Camera list from cameras-config.json (source of truth) -----
       // The DB `cameras` table is runtime-only and over-counts (it auto-
@@ -385,8 +459,10 @@ module.exports = function registerExecutiveSummaryRoute(app, pool, opts = {}) {
       // the cameraRuntime query keyed by id. Scoped by allowedCameraIds (DB
       // cameras.site_id, canonical) rather than the config's free-text
       // `site` name field, which is fragile to match against.
+      // ไซต์ archived ไม่ใช่ส่วนของระบบที่ทำงานอยู่ — ซ่อนจากหน้าสด (ค้นหา/รายงานยังเห็น)
+      const archivedCams = await archivedCameraIds(pool);
       const cfgCams = ((loadCameraConfig().cameras) || [])
-        .filter(c => allowedCameraIds === null || allowedCameraIds.has(c.camera_id));
+        .filter(c => (allowedCameraIds === null || allowedCameraIds.has(c.camera_id)) && !archivedCams.has(c.camera_id));
       const runtimeById = {};
       for (const r of cameraRuntime.rows) runtimeById[r.id] = r;
       const evCountById = {};
@@ -425,6 +501,46 @@ module.exports = function registerExecutiveSummaryRoute(app, pool, opts = {}) {
         offline:   cameraView.filter(c => !c.online).length,
         recording: cameraView.filter(c => c.recording).length,
       };
+
+      // ── กล้องที่ "ไม่ส่งข้อมูล" — คนละคำถามกับ online/offline ข้างบนโดยตั้งใจ ──
+      //
+      // 🔴 การ์ดใบนี้เคยกรอง `cameraView.filter(c => !c.online)` ซึ่งมีปัญหาสองชั้น
+      // (แก้ 2026-09-12): `online` มาจาก isFresh(last_seen_at) = TCP probe ที่กะพริบ
+      // 677 ครั้งต่อวันจาก 76 กล้อง ⇒ การ์ดขึ้นราว 20 ตัวเป็นปกติจนไม่มีใครอ่าน ·
+      // และ cameraLocationsView ที่มันอ่านถูกกรองเหลือเฉพาะกล้องที่มี lat/lon อยู่แล้ว
+      // ⇒ กล้องที่ไม่ได้ปักหมุดหายจากการ์ดเงียบ ๆ
+      //
+      // ตอนนี้ใช้แหล่งเดียวกับป้ายบน topbar คือ camera_quiet_alerts ซึ่งเทียบกับ
+      // นิสัยของกล้องแต่ละตัว (p99 ของช่องว่าง received_at) ไม่ใช่เกณฑ์ตายตัว
+      // **เลข "กล้องดับ" สองตัวบนจอเดียวกันที่ไม่มีวันตรงกัน = GOTCHAS #199**
+      //
+      // แถบสถานะด้านบน (cs.online/cs.total) ยังใช้ค่าเดิม — "ติดต่อกล้องได้กี่ตัว"
+      // เป็นคำถามที่ถูกต้องของมันเอง และไม่ได้พาดหัวว่า "ดับ" จึงไม่ชนกัน
+      //
+      // ⚠️ `null` ≠ `[]` ตรงนี้สำคัญ: `[]` แปลว่า "ตรวจแล้ว ทุกตัวส่งข้อมูลปกติ" ส่วน
+      // `null` แปลว่า "ยังตอบไม่ได้" — ตารางยังไม่มี (ก่อน migration 225) หรือยังไม่เคย
+      // คำนวณฐาน (alert-worker ยังไม่ restart) · ถ้าปนกันการ์ดจะขึ้นข้อความเขียวว่า
+      // "ส่งข้อมูลครบทุกตัว" ตั้งแต่วันแรกทั้งที่ยังไม่ได้ตรวจอะไรเลย = คำรับรองเท็จ
+      let quietView = null;
+      try {
+        const { rows: b } = await pool.query(`SELECT count(*)::int AS n FROM camera_event_baseline`);
+        if (b[0].n > 0) quietView = [];
+        const { rows } = await pool.query(`
+          SELECT q.camera_id, c.name AS camera_name, q.quiet_since,
+                 extract(epoch from (now() - q.quiet_since))::int AS quiet_sec
+            FROM camera_quiet_alerts q
+            JOIN cameras c ON c.id = q.camera_id
+           WHERE q.quiet_since IS NOT NULL
+           ORDER BY q.quiet_since`);
+        if (quietView) quietView = rows
+          .filter(r => allowedCameraIds === null || allowedCameraIds.has(r.camera_id))
+          .map(r => ({
+            camera_id: r.camera_id,
+            camera_name: r.camera_name || r.camera_id,
+            quiet_since: r.quiet_since,
+            quiet_sec: r.quiet_sec,
+          }));
+      } catch { /* ตารางยังไม่มี (ก่อน migration 225) — การ์ดขึ้นว่าง ไม่ใช่ทั้งหน้าพัง */ }
 
       // Map markers: only cameras with lat/lon. cfgCams is in insertion order
       // (POST /api/cameras pushes new ones to the end), so reverse → index 0
@@ -471,7 +587,9 @@ module.exports = function registerExecutiveSummaryRoute(app, pool, opts = {}) {
 
       const uptimeSeconds = Math.floor((Date.now() - startedAt) / 1000);
 
-      const payload = {
+      _diag.total = Date.now() - _tStart;
+      return {
+        diagnostics_ms: _diag,
         timestamp: new Date().toISOString(),
         tz,
         kpis: {
@@ -494,6 +612,16 @@ module.exports = function registerExecutiveSummaryRoute(app, pool, opts = {}) {
             value: pc.today,
             change_pct: pctChange(pc.today, pc.yesterday),
             trend: pc.today >= pc.yesterday ? 'up' : 'down',
+          },
+          faces: {
+            value: fc.today,
+            change_pct: pctChange(fc.today, fc.yesterday),
+            trend: fc.today >= fc.yesterday ? 'up' : 'down',
+          },
+          plates: {
+            value: lc.today,
+            change_pct: pctChange(lc.today, lc.yesterday),
+            trend: lc.today >= lc.yesterday ? 'up' : 'down',
           },
           system_health: {
             status: healthStatus,
@@ -527,6 +655,7 @@ module.exports = function registerExecutiveSummaryRoute(app, pool, opts = {}) {
           recording: cs.recording,
           motion: motionCount,
           locations: cameraLocationsView,
+          quiet: quietView,
         },
         system: {
           mqtt_connected: mqttConnected,
@@ -549,7 +678,10 @@ module.exports = function registerExecutiveSummaryRoute(app, pool, opts = {}) {
           version_date: versionDate,
         },
       };
-      _execCache.set(scopeKey, { payload, at: now });
+      // staleWhileRevalidate: หน้า poll ทุก 30 วิเท่ากับ TTL (นับจากเริ่มโหลด) ⇒ เดิมแทบทุกรอบพลาด cache แล้วรอโหลด
+      // ~10 คิวรีขนาน (slow-req avg 15 วิ) · ตอนนี้ตอบค่าก่อนหน้าทันทีแล้วโหลดใหม่เบื้องหลัง เก่าสุด ~TTL+เวลาโหลด
+      // เกิน 5×TTL ไม่ตอบของเก่า (audit 2026-10-02 · O2)
+      }, { scope: allowedSites, staleWhileRevalidate: true });   // scope เข้าคีย์ผ่าน helper — ไม่ประกอบเอง
       res.json(payload);
     } catch (err) {
       console.error('[stats/executive-summary] error:', err);

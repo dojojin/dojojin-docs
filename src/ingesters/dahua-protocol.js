@@ -137,16 +137,37 @@ function parseSnapManagerIndex(text) {
     const n = parseInt(arr[1], 10);
     return Number.isInteger(n) ? n : null;
   }
+  // Third shape, on the NVR face channels (live text part, 2026-07-27): the
+  // channel sits under EventBaseInfo, which neither branch above matches — so
+  // face snapshots used to arrive tagged channel=null and any channel of the
+  // device could claim them. On a 2-channel face NVR (ขาเข้า/ขาออก) that means
+  // one person's crop landing on the other direction's event, which is worse
+  // than no crop: it is a confident wrong answer.
+  const base = text.match(/Events\[\d+\]\.EventBaseInfo\.Index=([^\r\n]+)/);
+  if (base) {
+    const n = parseInt(base[1], 10);
+    return Number.isInteger(n) ? n : null;
+  }
   return null;
 }
 
-// The plate cutout the camera already cropped, delivered inside the snapManager
+// The cutout the camera already cropped, delivered inside the snapManager
 // image part (appended after the scene JPEG). The text metadata gives its byte
-// {offset,length} into that image body. Two field shapes, live-verified
-// 2026-07-17: cars carry it under Object.Image (when Object.ObjectType=Plate),
-// motorcycles under NonMotor.Plate.PlateImage. Returns {off,len} or null.
-function parsePlateCutout(text) {
-  if (/Object\.ObjectType=Plate/.test(text)) {
+// {offset,length} into that image body. Field shapes, live-verified:
+// cars carry it under Object.Image (when Object.ObjectType=Plate, 2026-07-17),
+// motorcycles under NonMotor.Plate.PlateImage, and FACES under the very same
+// Object.Image with ObjectType=HumanFace (2026-07-27 — 7/7 sampled face events
+// across HDY-NVR-03/04 had a complete JPEG at the advertised window, crops
+// 128x144 to 240x264, 1.3-2.5KB against a 78-101KB scene part).
+//
+// NOTE the face crop rides the snapManager stream ONLY. The eventManager
+// stream carries the same Object.Image numbers but never the bytes they point
+// at — those offsets index the NVR's internal packed storage there, not the
+// live body (confirmed 2026-07-15, see handlePart() in dahua-cgi.js). Reading
+// this off the wrong stream is byte-math against a blob that was never sent.
+// Returns {off,len} or null.
+function parseObjectCutout(text) {
+  if (/Object\.ObjectType=(?:Plate|HumanFace)/.test(text)) {
     const o = text.match(/Object\.Image\.Offset=(\d+)/);
     const l = text.match(/Object\.Image\.Length=(\d+)/);
     if (o && l) return { off: parseInt(o[1], 10), len: parseInt(l[1], 10) };
@@ -292,7 +313,26 @@ const DAHUA_CATEGORY_TO_HIK_VTYPE = {
   MPV:            'SUVMPV',          // รถอเนกประสงค์ — bucket name is literally MPV's match
   MicroTruck:     'truck',           // Pickup is its own separate category — this is a small truck, not a pickup
   MidTruck:       'truck',
-  PassengerCar:   'vehicle',         // generic car, same bucket as SaloonCar
+  // 🔴 แก้ 2026-08-31 — เดิม map เป็น 'vehicle' พร้อมคอมเมนต์ว่า "generic car,
+  // same bucket as SaloonCar" ซึ่งผิด · ชื่อ PassengerCar เป็นเพื่อนปลอม: รถเก๋ง
+  // จริง ๆ คือ SaloonCar ซึ่งมีช่องของตัวเองอยู่แล้ว ส่วนชุดนี้เป็นบันไดขนาดของ
+  // "รถโดยสาร" — Microbus → MidPassengerCar → PassengerCar
+  //
+  // หลักฐานตรง: กล้อง Dahua เผาคลาสลงบนภาพเองผ่าน OSD และในตัวอย่างที่ตรวจ
+  // OSD เขียนว่า "Vehicle Type:Large Bus" ขณะที่ field ในpayload ส่ง PassengerCar
+  // มา · ตรวจภาพ 10 คันสุ่มจาก hdy กับเจ้าของ (วิธีเดียวกับรอบ 2026-07-18):
+  // 8 ใน 10 เป็นรถบัส/รถทัวร์ (Nong Peens, Kan Eng, รถร่วม บขส., Scania)
+  // ยี่ห้อที่ผลิตรถบัสอย่างเดียว (YuTong/JingLong/Sunlong) พบใน PassengerCar
+  // 4.6% เทียบกับ SaloonCar 0.006% — หนาแน่นกว่าราว 700 เท่า
+  //
+  // ⚠️ ไม่ใช่ 100%: 2 ใน 10 ตัวอย่างเป็นรถกระบะ ซึ่งกล้องเองก็เขียน "Large Bus"
+  //    ให้เหมือนกัน · ถังนี้จึงถูกกว่าเดิมมาก แต่ไม่สมบูรณ์
+  //
+  // ผลกระทบก่อนแก้: largeBus มีเฉพาะที่ hkt (Hikvision) · ไซต์ Dahua ทั้งสาม
+  // รายงานศูนย์ ค้นรถบัสที่หาดใหญ่จึงไม่เจอเลยทั้งที่มีวิ่งอยู่ตลอด และเพราะผลลัพธ์
+  // เป็นเซตว่างพิสูจน์ได้ query จึงกวาดทั้งประวัติจนหน้าค้าง — อาการช้ากับข้อมูลผิด
+  // เป็นบั๊กตัวเดียวกัน
+  PassengerCar:   'largeBus',        // รถบัส/รถทัวร์ (ดูเหตุผลด้านบน)
   Bicycle:        'twoWheelVehicle', // no dedicated bicycle bucket; a plated "Bicycle" read is almost
                                       // certainly a misclassified e-bike/motorcycle anyway
   Electricbike:   'twoWheelVehicle',
@@ -305,9 +345,29 @@ const DAHUA_CATEGORY_TO_HIK_VTYPE = {
 // Dahua's on-camera logo OCR mangles some brand names — correct the ones seen
 // live (2026-07-16). Keys are the exact camera output, values the real brand.
 // Only fix confirmed observations; unrecognised brands pass through unchanged.
+//
+// 2026-07-23 — numbered-suffix duplicates (CarLogoIndex confirms these are
+// separate trained logo classes in the camera's recognition model — e.g.
+// Toyota=idx5 vs Toyota2=idx416 — but the same real-world manufacturer, just
+// a different logo variant/angle the firmware never renamed back to the
+// base brand). Verified against production distinct-brand counts before
+// merging (Toyota 222,420 + Toyota2 13,553 etc.) — categories A (clean
+// base+suffix pair) and B (3+ variants, ChangAn/1/2) below. Category C
+// entries (Dodge2, Dacia2/3, Vauxhall2/3, Hyundai3, Smart2) had no base-name
+// row in the current data window but are the same pattern — mapped on the
+// same confidence. NOT merged: Mazda2 (real model name, not a logo variant),
+// RANGEROVER2/ESQ2 (ambiguous vs LandRover/Infiniti), Alphard2/Crown/Harrier/
+// Estima/DISCOVERY2 (model names in the brand field, different bug entirely).
 const DAHUA_BRAND_FIX = {
   Lsuzu: 'Isuzu',   // live-verified — the camera reads the Isuzu logo as "Lsuzu"
   Hino2: 'Hino',    // OCR quirk of the Hino truck logo (2026-07-16)
+  Toyota2: 'Toyota', Ford2: 'Ford', Nissan2: 'Nissan', Volvo2: 'Volvo',
+  Porsche2: 'Porsche', Suzuki2: 'Suzuki', Kia2: 'Kia', Chery2: 'Chery',
+  JAC2: 'JAC', Jaguar2: 'Jaguar', TataMotors2: 'TataMotors', Lincoln2: 'Lincoln',
+  Hafu1: 'Hafu', ChangAn1: 'ChangAn', ChangAn2: 'ChangAn',
+  Dodge2: 'Dodge', Dacia2: 'Dacia', Dacia3: 'Dacia',
+  Vauxhall2: 'Vauxhall', Vauxhall3: 'Vauxhall', Hyundai3: 'Hyundai', Smart2: 'Smart',
+  FIAT: 'Fiat', // same brand, camera sends both cases depending on logo variant
 };
 // Brand values that mean "couldn't recognise" — store null, not the literal,
 // so they drop out of the brand breakdown (the LPR chart filters NULL/'' but
@@ -401,9 +461,17 @@ function parseDahuaTrafficJunction(data, xyzToColorName) {
   // Thai registration category from the plate colour (obj is the Plate object).
   const plateReg = plateType(obj.MainColor);
 
-  // Direction: Head = toward camera, Tail = away. Map to the in/out tokens the
-  // LPR page/gates use. UNVERIFIED that Head=in for this mounting — revisit
-  // per gate config; null when absent/other.
+  // Direction: Head = toward camera, Tail = away → in/out tokens.
+  // 🔴 ยืนยัน 2026-09-01 (ITC431-RW1F-IRL8, fw 5.000.0000000.1.R build:2025-03-12
+  // @rmutr-v — ดัก eventManager.cgi ตรงจากกล้อง 16 event/98KB): ตระกูล ITC
+  // **ไม่ส่งคีย์ VehicleDirection เลย** (grep ทั้ง payload = 0 hit) → direction
+  // เป็น null 100% บนกล้องพวกนี้ ตรงกับข้อมูลเก็บจริง (DAHUA-ANPR-CAM01: null
+  // 6,290/6,290 แถวใน 24 ชม.) · คีย์อื่นแทนก็ไม่ได้: data.Direction = ทิศเลี้ยว
+  // ที่แยก ไม่ใช่เข้า-ออก · directionRun = เลขเลน (จับคู่ Lane เป๊ะ 16/16) ·
+  // และภาพเป็น snapshot จุดเดียว (Speed:0, Center เดียว) derive เองไม่ได้
+  // การนับเข้า-ออกบน Dahua จึงต้องใช้ cameras.lpr_direction ที่ตั้งมือ (RF5)
+  // หรือกล้อง Bosch ที่มี track จริงเท่านั้น — ดู GOTCHAS #186
+  // บรรทัดนี้คงไว้เผื่อรุ่น non-ITC ที่อาจส่งจริง แต่ห้ามสร้างฟีเจอร์บนมัน
   const rawDir = veh.VehicleDirection;
   const direction = rawDir === 'Head' ? 'in' : rawDir === 'Tail' ? 'out' : null;
 
@@ -423,6 +491,27 @@ function parseDahuaTrafficJunction(data, xyzToColorName) {
              width: Math.round(ob[2] - ob[0]), height: Math.round(ob[3] - ob[1]) };
   }
 
+  // Vehicle box (migration 117) — unlike the plate bbox above, this one uses
+  // Vehicle.BoundingBox (the "NVR-internal grid" the plate bbox comment says
+  // is discarded), on purpose: DetectRegion on every live sample spans the
+  // fixed corners [[0,0],[8191,0],[8191,8191],[0,8191]] regardless of actual
+  // scene resolution, i.e. it's already a resolution-independent 0-8191
+  // square — normalize /8192 → the same 0-1000 grid license_plates.bbox_x
+  // stores for Hikvision's <PlateRect>, so the frontend/backend overlay code
+  // (which only knows that one wire format) needs no vendor branch.
+  // OriginalBoundingBox isn't used here because Vehicle's copy of it wasn't
+  // verified live the way Object's (the plate's) was.
+  let vehicleBbox = null;
+  const vb = veh.BoundingBox;
+  if (Array.isArray(vb) && vb.length >= 4 && vb.every(Number.isFinite)) {
+    vehicleBbox = {
+      x:      Math.round((vb[0] / 8192) * 1000),
+      y:      Math.round((vb[1] / 8192) * 1000),
+      width:  Math.round(((vb[2] - vb[0]) / 8192) * 1000),
+      height: Math.round(((vb[3] - vb[1]) / 8192) * 1000),
+    };
+  }
+
   // Helmet + pillion count — NonMotor-only classification carried alongside
   // ANPR data on Dahua ITC431 (live-verified 2026-07-21 against camera OSD
   // burn-in; absent on ITC237 and on car/Pickup events — both read as null,
@@ -440,15 +529,55 @@ function parseDahuaTrafficJunction(data, xyzToColorName) {
   return {
     plate, confidence, country, region,
     vehicleType, rawCategory, vehicleBrand, vehicleColor, plateColor, plateType: plateReg,
-    direction, laneNo, noSeatbelt, bbox, speed,
+    direction, laneNo, noSeatbelt, bbox, vehicleBbox, speed,
     helmet, nonMotorManned, riderCount,
   };
 }
 
+// ---------- storage pruning ----------
+// The Dahua event payload is stored whole in raw_json.data, and that payload is
+// 90.4% of every byte in the events table (measured 2026-07-31 across the July
+// partition: 5.4M anprAlarm rows, ~90% of them Dahua).
+//
+// These four keys are dead weight. Not "probably unused" — grepped across all
+// of src/ and dashboard/, the only mention of any of them is a comment in this
+// file saying TrafficCar.Speed is always null. Nothing reads them at ingest, in
+// the snapshot second pass, in the frame scorer, or in the browser.
+//
+//   TrafficCar             ~945 B  the biggest single key in the payload
+//   YuvPacket              ~382 B  image-packet metadata for a frame we already saved
+//   Object.SlaveSeat               passenger seatbelt/phone/smoking, always "unknow"
+//   Object.ValidAnalyseAttributes  an attribute bitmask
+//
+// Dropping them shrinks stored Dahua ANPR rows by 20.3% on disk, which is 18.4%
+// of the events heap and ~16.5% of the whole partition once indexes are counted.
+// Measured by materialising both variants into real tables — computing the
+// stripped value inline and calling pg_column_size on it reports the
+// UNCOMPRESSED size and makes stripping look like it grows the row.
+//
+// Forward-only, and reversible by deleting this function's call site: rows
+// already written keep their keys. What is deliberately NOT dropped, despite
+// looking similar: DetectRegion (page-snapshots.js draws it) and NonMotor
+// (read here, line ~475).
+const DAHUA_DROP_KEYS = ['TrafficCar', 'YuvPacket'];
+const DAHUA_DROP_OBJECT_KEYS = ['SlaveSeat', 'ValidAnalyseAttributes'];
+
+function pruneDahuaData(data) {
+  if (!data || typeof data !== 'object') return data;
+  const out = { ...data };
+  for (const k of DAHUA_DROP_KEYS) delete out[k];
+  if (out.Object && typeof out.Object === 'object') {
+    out.Object = { ...out.Object };
+    for (const k of DAHUA_DROP_OBJECT_KEYS) delete out.Object[k];
+  }
+  return out;
+}
+
 module.exports = {
+  pruneDahuaData,
   DAHUA_EVENT_MAP, DAHUA_CLASS, DAHUA_CATEGORY_CODES, FACE_BLACKLIST_SIM_THRESHOLD,
   DAHUA_CATEGORY_TO_HIK_VTYPE, DAHUA_BRAND_FIX, DAHUA_BRAND_UNKNOWN,
-  parseDahuaEventText, parseSnapManagerCode, parseSnapManagerIndex, parsePlateCutout, extractObjectClass,
+  parseDahuaEventText, parseSnapManagerCode, parseSnapManagerIndex, parseObjectCutout, extractObjectClass,
   deviceKey, codesForCategories, channelAllowsCode, extractFaceAttributes, faceComparisonListType,
   parseDahuaTrafficJunction, dahuaRgbaToName, normalizeDahuaEmotion,
 };

@@ -40,6 +40,7 @@ When assumptions change, update this guide first. Use the spreadsheet only as th
 | **🆕 RAM_ffmpeg** = RAM per ffmpeg subprocess | **~80 MB** | 1 instance ต่อกล้องที่เปิด clip capture (`-c copy`) |
 | **🆕 CPU_ffmpeg** = CPU per ffmpeg subprocess | **~3-5%** ของ 1 core | 1080p `-c copy` (no re-encode) |
 | **🆕 B_buffer** = rolling buffer per camera (transient) | **~7.5 MB** | 30s × 2 Mbps in `media-buffer/<cam>/` |
+| **🆕 RAM_chromium** = Chromium ของ report-worker ขณะ render | **~700 MB RSS (transient)** | 🟡 ตัวเลขจาก CODEX audit 2026-09-06 — **ยังไม่ได้ probe ซ้ำในรอบนี้** · เกิดเฉพาะตอน render แล้วปิดตัวเองหลังว่าง 5 นาที (`REPORT_BROWSER_IDLE_MS`=300000) · **มีชุดเดียวทั้งเครื่อง** เพราะ manual download ยิงเข้า worker ตัวเดียวกัน (decision VMOD-03) |
 
 ### 🎯 Event Rate Scenarios
 
@@ -74,7 +75,29 @@ RtspNetwork_in   = N_clip_cams × Net_rtsp           = bps   (LAN inbound, serve
 ffmpeg_RAM       = N_clip_cams × RAM_ffmpeg         = bytes
 ffmpeg_CPU_cores = N_clip_cams × CPU_ffmpeg / 100   = cores
 RollingBuffer    = N_clip_cams × B_buffer           = bytes (transient on disk)
+
+# Chromium ของ report-worker — ไม่สเกลตามจำนวนกล้อง มีชุดเดียวทั้งเครื่อง
+# แต่ต้องกันที่ไว้ ไม่งั้น peak ตอน render ไปเบียด Postgres
+RAM_headroom     = ffmpeg_RAM + RAM_chromium        = bytes
 ```
+
+---
+
+## 📏 เครื่อง production ปัจจุบัน (central — วัด 2026-09-06)
+
+ตัวเลขอ้างอิงเวลาจะเทียบสูตรข้างบนกับของจริง **ไม่ใช่ข้อเสนอการซื้อ**
+(spec ที่แนะนำสำหรับ tier ต่าง ๆ อยู่ในหัวข้อ G1–G5 ด้านล่าง)
+
+| รายการ | ค่าที่วัดได้ | ที่มา |
+|---|---|---|
+| RAM ทั้งเครื่อง | **15.3 GiB** (`MemTotal: 16050404 kB` ≈ 16.05 GB ตามป้ายผู้ผลิต) | `/proc/meminfo` บนเครื่อง central |
+| Postgres `shared_buffers` | **4 GB** | 🟡 ตัวเลขจาก CODEX audit 2026-09-06 — **ยังไม่ได้ query `SHOW shared_buffers` ซ้ำในรอบนี้** · ตรงกับค่าที่คู่มือนี้แนะนำสำหรับ tier 16 GB พอดี |
+| ขนาด `events` | **~40.5 ล้านแถว** | `CODEX/CODEX_MODULAR_PERFORMANCE_AUDIT_2026-09-06.md:495` |
+| partition ของ `events` | **21 ใบ** (เปลี่ยนตาม retention) | `CODEX/CODEX_MODULAR_PERFORMANCE_AUDIT_2026-09-06.md:483` |
+| PM2 apps | **9** | `ecosystem.config.js` |
+| Chromium ของ report-worker | **~700 MB RSS ชั่วคราว** ปิดเองหลังว่าง 5 นาที | 🟡 CODEX audit 2026-09-06 — ยังไม่ได้ probe ซ้ำ · ค่า idle-close ยืนยันจาก `src/report-renderer.js:224` |
+
+> 🟡 = ยังไม่ได้ probe ซ้ำในรอบเอกสารนี้ ตามกฎ "ห้ามเดา spec" — ก่อนเอาไปใช้ตัดสินใจซื้อ ให้วัดใหม่
 
 ---
 

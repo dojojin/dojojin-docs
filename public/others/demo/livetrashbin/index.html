@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="th" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>สถิติการทิ้งขยะ · จุดคัดแยกขยะ</title>
+<!-- Served at: /others/demo/livetrashbin/  (auth-gated)
+     ผลสังเกตการณ์จากแบบบันทึก ภาคผนวก ก (กลางวัน/กลางคืน) · ภาพ = event จริงผ่าน /snapshots/
+     data-theme="light" ตายตัว · CSP: script-src 'self' — ห้าม inline script / handler / style -->
+<link rel="stylesheet" href="/vendor/fonts/fonts.css">
+<script src="/vendor/chartjs/chart-4.4.1.umd.min.js"></script>
+<link rel="stylesheet" href="/index.css">
+<link rel="stylesheet" href="./trashbin.css?v=t8">
+</head>
+<body>
+<svg class="sprite" aria-hidden="true">
+  <symbol id="i-bin" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-cam" viewBox="0 0 24 24"><path d="M3 7h13v10H3zM16 10l5-3v10l-5-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></symbol>
+</svg>
+
+<div class="tb-wrap">
+
+  <header class="tb-head">
+    <div class="tb-title">
+      <span class="tb-mark"><svg><use href="#i-bin"/></svg></span>
+      <div>
+        <h1>สถิติการทิ้งขยะ</h1>
+        <div class="tb-sub" id="tbSub">—</div>
+      </div>
+    </div>
+    <div class="seg" id="tbSeg" role="tablist" aria-label="ช่วงเวลา">
+      <button class="segbtn active" data-action="session" data-session="all" role="tab">ทั้งหมด</button>
+      <button class="segbtn" data-action="session" data-session="day" role="tab"><svg><use href="#i-sun"/></svg>กลางวัน</button>
+      <button class="segbtn" data-action="session" data-session="night" role="tab"><svg><use href="#i-moon"/></svg>กลางคืน</button>
+    </div>
+  </header>
+
+  <!-- ภาพเหตุการณ์ล่าสุด + ตัวเลขหลัก -->
+  <section class="tb-hero">
+    <div class="tb-live card">
+      <div class="tb-live-top">
+        <span class="live-pill"><i class="live-dot"></i>เหตุการณ์ล่าสุด</span>
+        <span class="tb-live-meta" id="tbLiveMeta">—</span>
+      </div>
+      <button class="tb-live-frame" data-action="openLive" aria-label="ดูภาพขนาดเต็ม">
+        <img id="tbLiveImg" alt="ภาพเหตุการณ์ทิ้งขยะล่าสุด">
+        <span class="tb-live-badge"><svg><use href="#i-bin"/></svg>ตรวจพบการทิ้งขยะ</span>
+        <span class="tb-live-time" id="tbLiveTime">—</span>
+      </button>
+      <div class="tb-strip" id="tbStrip"></div>
+    </div>
+
+    <div class="tb-kpis">
+      <div class="kpi kpi-hero">
+        <span class="kpi-label">การทิ้งขยะที่ตรวจพบ</span>
+        <b class="kpi-value" id="kTotal">—</b>
+        <span class="kpi-foot" id="kTotalFoot">ครั้ง</span>
+      </div>
+      <div class="kpi">
+        <span class="kpi-label">ชั่วโมงที่ทิ้งมากสุด</span>
+        <b class="kpi-value sm" id="kPeak">—</b>
+        <span class="kpi-foot" id="kPeakFoot">—</span>
+      </div>
+      <div class="kpi">
+        <span class="kpi-label">กลางวัน</span>
+        <b class="kpi-value" id="kDay">—</b>
+        <span class="kpi-foot" id="kDayFoot">ครั้ง</span>
+      </div>
+      <div class="kpi">
+        <span class="kpi-label">กลางคืน</span>
+        <b class="kpi-value" id="kNight">—</b>
+        <span class="kpi-foot" id="kNightFoot">ครั้ง</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- รายนาที -->
+  <section class="card">
+    <div class="card-head">
+      <div>
+        <h2>การทิ้งขยะราย 10 นาที</h2>
+        <div class="card-sub" id="tbMinuteScope">—</div>
+      </div>
+      <div class="legend">
+        <span><i class="lg lg-rec"></i>จำนวนครั้ง</span>
+        <span><i class="lg lg-cum"></i>ยอดสะสม</span>
+      </div>
+    </div>
+    <div class="chart-box"><canvas id="cMinute"></canvas></div>
+  </section>
+
+  <section class="grid-2">
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <h2>ความหนาแน่นตามช่วงเวลา</h2>
+          <div class="card-sub">สีเข้ม = ทิ้งมาก · ช่องละ 10 นาที</div>
+        </div>
+      </div>
+      <div class="heat" id="tbHeat"></div>
+    </div>
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <h2>จำนวนครั้งรายชั่วโมง</h2>
+          <div class="card-sub" id="tbHourScope">—</div>
+        </div>
+        <div class="legend">
+          <span><i class="lg lg-rec"></i>กลางวัน</span>
+          <span><i class="lg lg-night"></i>กลางคืน</span>
+        </div>
+      </div>
+      <div class="chart-box sm"><canvas id="cCompare"></canvas></div>
+    </div>
+  </section>
+
+  <!-- คลังภาพ -->
+  <section class="card">
+    <div class="card-head">
+      <div>
+        <h2>ภาพเหตุการณ์</h2>
+        <div class="card-sub" id="tbGalleryScope">—</div>
+      </div>
+      <span class="count-chip" id="tbGalleryCount">—</span>
+    </div>
+    <div class="gallery" id="tbGallery"></div>
+    <div class="gallery-more"><button class="btn" data-action="more" id="tbMore">แสดงเพิ่ม</button></div>
+  </section>
+
+  <!-- รายการเหตุการณ์ -->
+  <section class="card">
+    <details class="log">
+      <summary><h2>รายการเหตุการณ์</h2><span class="card-sub" id="tbLogScope">—</span></summary>
+      <div class="table-scroll">
+        <table class="log-table">
+          <thead><tr><th class="num">#</th><th>เวลา</th><th>ช่วง</th><th>ภาพ</th></tr></thead>
+          <tbody id="tbLog"></tbody>
+        </table>
+      </div>
+    </details>
+  </section>
+
+</div>
+
+<div class="lightbox" id="tbLightbox" hidden>
+  <button class="lb-close" data-action="closeLb" aria-label="ปิด"><svg><use href="#i-x"/></svg></button>
+  <figure>
+    <img id="tbLbImg" alt="ภาพเหตุการณ์ขนาดเต็ม">
+    <figcaption id="tbLbCap">—</figcaption>
+  </figure>
+</div>
+
+<script src="./trashbin-data.js?v=t6"></script>
+<script src="./trashbin.js?v=t6"></script>
+</body>
+</html>

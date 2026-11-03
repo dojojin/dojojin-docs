@@ -34,4 +34,42 @@ function buildDigestHeader(user, pass, method, uri, challenge, nc = '00000001') 
   return h;
 }
 
-module.exports = { parseChallenge, buildDigestHeader };
+// Vendor-specific endpoint that actually enforces auth on GET, used to test
+// whether a set of credentials is accepted. Root ("/") is not usable for this
+// on some Hikvision firmware — it 200s unconditionally regardless of auth.
+const AUTH_CHECK_PATH = {
+  hikvision: '/ISAPI/System/deviceInfo',
+  dahua: '/cgi-bin/magicBox.cgi?action=getSystemInfo',
+  // RCP+ read of CONF_MQTT_SETTINGS — read-only, and anonymous gets 401 (probed
+  // on a DINION 5100i 2026-09-28), so a 2xx here means the stored service
+  // credential really works
+  bosch: '/rcp.xml?command=0x0d0a&type=P_OCTET&direction=READ&num=1',
+};
+
+// Probes <user>/<pass> against <path>: tries unauthenticated first, then
+// retries with Digest or Basic per the WWW-Authenticate challenge (mirrors
+// _probeHttpImage in routes/cameras.js). Resolves 'ok' (2xx after auth),
+// 'failed' (still 401), or 'unknown' (network error/timeout).
+function probeAuth(host, port, path, user, pass, timeout = 4000) {
+  const http = require('http');
+  return new Promise((resolve) => {
+    const attempt = (authHeader) => {
+      const headers = authHeader ? { Authorization: authHeader } : {};
+      const r = http.get({ host, port, path, headers, timeout }, (pr) => {
+        pr.resume();
+        if (pr.statusCode === 401 && !authHeader) {
+          const wa = pr.headers['www-authenticate'] || '';
+          if (/digest/i.test(wa)) return attempt(buildDigestHeader(user, pass, 'GET', path, parseChallenge(wa)));
+          if (/basic/i.test(wa)) return attempt('Basic ' + Buffer.from(`${user}:${pass}`).toString('base64'));
+          return resolve('failed');
+        }
+        resolve(pr.statusCode === 401 ? 'failed' : 'ok');
+      });
+      r.on('error', () => resolve('unknown'));
+      r.on('timeout', () => { r.destroy(); resolve('unknown'); });
+    };
+    attempt(null);
+  });
+}
+
+module.exports = { parseChallenge, buildDigestHeader, probeAuth, AUTH_CHECK_PATH };

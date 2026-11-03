@@ -56,11 +56,13 @@
 <p>ทุก REST endpoint ใน Vigil Platform จัดตาม module · Auth level แสดงด้วย badge · ดู <a href="file-navigator.html">File Navigator</a> สำหรับ source file</p>
 
 <div class="krow">
-  <div class="kpi"><div class="kn">132</div><div class="kl">routes (src/routes/)</div></div>
-  <div class="kpi"><div class="kn">7</div><div class="kl">inline (api-server.js)</div></div>
-  <div class="kpi"><div class="kn">19</div><div class="kl">route modules</div></div>
-  <div class="kpi"><div class="kn">139</div><div class="kl">รวมทั้งหมด</div></div>
+  <div class="kpi"><div class="kn">335</div><div class="kl">routes (src/routes/)</div></div>
+  <div class="kpi"><div class="kn">9</div><div class="kl">inline (api-server.js)</div></div>
+  <div class="kpi"><div class="kn">39</div><div class="kl">route modules</div></div>
+  <div class="kpi"><div class="kn">344</div><div class="kl">รวมทั้งหมด</div></div>
 </div>
+
+<p style="margin-top:.5rem">ยอดรวม 344 คือจำนวน route ที่ mount อยู่ใน process ของ api-server จริง วัดด้วย <code>node scripts/check-api-reference.js</code> (2026-09-06) — ไม่นับ <code>src/lpr-receiver.js</code> ซึ่งเป็นคนละ service ตารางด้านล่างเป็นชุดที่คัดมาอธิบาย ไม่ใช่สารบัญครบทุก route · รันสคริปต์ตัวนี้ทุกครั้งหลังเพิ่ม/ลบ route เพื่อดูว่าตัวเลขยังตรงไหม</p>
 
 <div class="ibox">
   <h4>Auth Levels</h4>
@@ -231,7 +233,7 @@
 </table>
 
 <!-- ========= CATEGORIES ========= -->
-<h2>Categories — <code>src/routes/categories.js</code> (7 routes)</h2>
+<h2>Categories — <code>src/routes/categories.js</code> (11 routes · ตารางแสดง 9)</h2>
 <table>
 <thead><tr><th>Method</th><th>Path</th><th>Auth</th><th>หน้าที่</th></tr></thead>
 <tbody>
@@ -242,6 +244,8 @@
 <tr><td><span class="method m-get">GET</span></td><td><code>/api/categories/:id/rules</code></td><td><span class="auth-tag a-auth">auth</span></td><td>Rules ใน category</td></tr>
 <tr><td><span class="method m-post">POST</span></td><td><code>/api/categories/:id/rules</code></td><td><span class="auth-tag a-admin">admin</span></td><td>เพิ่ม rule เข้า category</td></tr>
 <tr><td><span class="method m-delete">DELETE</span></td><td><code>/api/category-rules/:id</code></td><td><span class="auth-tag a-admin">admin</span></td><td>ลบ category rule</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/categories/backup</code></td><td><span class="auth-tag a-auth">auth</span></td><td>Export categories + rules ของ site เป็น JSON — ต้องส่ง <code>?site_id=N</code> (ไม่ส่ง = 400)</td></tr>
+<tr><td><span class="method m-post">POST</span></td><td><code>/api/categories/restore</code></td><td><span class="auth-tag a-admin">admin</span></td><td>Restore categories + rules จาก JSON ที่ backup ไว้ — body: <code>{site_id, mode, data}</code></td></tr>
 </tbody>
 </table>
 
@@ -313,6 +317,67 @@
 <tr><td><span class="method m-delete">DELETE</span></td><td><code>/api/users/:id</code></td><td><span class="auth-tag a-admin">admin</span></td><td>ลบ user</td></tr>
 <tr><td><span class="method m-get">GET</span></td><td><code>/api/audit-log</code></td><td><span class="auth-tag a-auditor">admin+auditor</span></td><td>Audit log (login, config changes)</td></tr>
 <tr><td><span class="method m-post">POST</span></td><td><code>/api/csp-report</code></td><td><span class="auth-tag a-pub">public</span></td><td>CSP violation report receiver</td></tr>
+</tbody>
+</table>
+
+<!-- ========= TRAFFIC ========= -->
+<h2>Traffic Enforcement — <code>src/routes/traffic.js</code> (1 route, added 2026-08-11)</h2>
+<table>
+<thead><tr><th>Method</th><th>Path</th><th>Auth</th><th>หน้าที่</th></tr></thead>
+<tbody>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/traffic/enforcement</code></td><td><span class="auth-tag a-auth">auth</span></td><td>ข้อมูลทั้งหน้า Traffic Enforcement — ชั่วโมง×วัน, รายกล้อง, รายชนิดรถ, อนุกรมรายวัน (อ่านจาก <code>traffic_hourly_stats</code>, ไม่ใช่ <code>license_plates</code> ตรงๆ) · decision #237</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/traffic/helmet-series</code></td><td><span class="auth-tag a-auth">auth</span></td><td>ข้อมูลแท็บ "สถิติหมวกนิรภัย" ในหน้า Traffic Enforcement (pilot) — <code>?date=&cameras=</code> คืน hourly (24 ชม.จริงของวันที่ระบุ), daily (120 วัน), cameras/sites — <b>กรองกล้อง/no-detect ฝั่ง SQL จริง</b> ต่างจาก <code>/enforcement</code> ที่กรองฝั่งจอ · decision #243</td></tr>
+</tbody>
+</table>
+
+<!-- ========= PARTNER API (outbound, /v1) ========= -->
+<h2>Partner API — <code>src/routes/partner-api.js</code> + <code>src/routes/integrations.js</code> + <code>src/openapi-gen.js</code> (added 2026-08-11, registered from pre-existing 2026-08-07 feature)</h2>
+<p>Outbound, server-to-server. Served on a separate host (<code>meta.dojojin.tech</code>, <code>PARTNER_HOST</code> env) — not under <code>/api/*</code>. AK/SK HMAC signing (<code>X-Ca-Key</code>/<code>X-Ca-Nonce</code>/<code>X-Ca-Timestamp</code>/<code>X-Ca-Signature</code>), same string-to-sign shape as HCP Artemis. Every query runs inside <code>BEGIN; SET LOCAL ROLE &lt;consumer&gt;_ro;</code> — privilege is enforced by Postgres GRANT, not app code. Full detail: <a href="md-viewer.html?src=../docs/REF_partner-api-tunnel.md">REF_partner-api-tunnel.md</a> · <a href="md-viewer.html?src=../docs/REF_partner-onboarding.md">REF_partner-onboarding.md</a> · <a href="md-viewer.html?src=../docs/SPEC_partner-api_2026-08-07.md">SPEC_partner-api_2026-08-07.md</a> (historical design rationale) · DECISIONS.md #227–#236</p>
+<table>
+<thead><tr><th>Method</th><th>Path</th><th>Host</th><th>หน้าที่</th></tr></thead>
+<tbody>
+<tr><td><span class="method m-get">GET</span></td><td><code>/v1/healthz</code></td><td>meta.dojojin.tech</td><td>ตรวจว่าลายเซ็นถูก + role ใช้ได้จริง</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/v1/cameras</code></td><td>meta.dojojin.tech</td><td>รายชื่อกล้องที่ partner รายนี้เห็นได้ (cursor pagination)</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/v1/lpr/events</code></td><td>meta.dojojin.tech</td><td>ฟีดป้ายทะเบียน — keyset pagination, <code>since</code>/<code>until</code></td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/v1/face/events</code></td><td>meta.dojojin.tech</td><td>ฟีดบุคคล/ยานพาหนะ (attribute-only, no identity)</td></tr>
+<tr><td><span class="method m-post">POST</span></td><td><code>/v1/lpr/search</code></td><td>meta.dojojin.tech</td><td>ค้นป้ายทะเบียน — POST เพราะต้องรับภาษาไทยในตัวค้น (เซ็นผ่าน query ไม่ได้)</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/v1/openapi.json</code></td><td>meta.dojojin.tech</td><td>OpenAPI 3.1 spec auto-generate ตามสิทธิ์จริงของ partner รายนั้น (<code>has_column_privilege()</code>, ไม่ใช่ hand-written)</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/integrations</code></td><td>dashboard</td><td>Admin lifecycle UI — list partners + 7-day traffic + unknown-key attempts</td></tr>
+<tr><td><span class="method m-post">POST</span></td><td><code>/api/integrations</code></td><td>dashboard</td><td>สร้าง partner ใหม่ — <code>CREATE ROLE</code> จาก HTTP request โดยตรง (ระวังเป็นพิเศษ, decision #227-236)</td></tr>
+<tr><td><span class="method m-put">PUT</span></td><td><code>/api/integrations/:slug/grants</code></td><td>dashboard</td><td>แก้สิทธิ์รายคอลัมน์ — confirm-before-apply UX, กด Apply แล้วค่อยมีผลจริง</td></tr>
+</tbody>
+</table>
+
+<!-- ========= INBOUND BLACKLIST (DSS Pro / GuruSquare / HCP) ========= -->
+<h2>Inbound Blacklist Import — <code>src/routes/blacklist-sources.js</code> (added 2026-08-11, registered from pre-existing 2026-07-26 feature)</h2>
+<p>Pluggable framework — DSS Pro, GuruSquare, HCP, manual entry, and an archived/tombstone type all implement the same probe+import contract. Reverse direction of Partner API: we pull FROM these systems, never push except via a triple-gated opt-in push-back path (DSS Pro only, currently dry-run-only in prod). Full detail: <code>docs/superpowers/specs/2026-07-24-blacklist-central-database-design.md</code>. All routes admin-only.</p>
+<table>
+<thead><tr><th>Method</th><th>Path</th><th>หน้าที่</th></tr></thead>
+<tbody>
+<tr><td><span class="method m-post">POST</span></td><td><code>/api/blacklist/sources/test-connection</code></td><td>ทดสอบเชื่อมต่อ source (ผ่าน edge proxy)</td></tr>
+<tr><td><span class="method m-post">POST</span></td><td><code>/api/blacklist/sources</code></td><td>สร้าง source instance ใหม่ (เข้ารหัส credential ที่เก็บ)</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/blacklist/sources</code></td><td>รายการ source ทั้งหมด + จำนวนแถวต่อชนิด</td></tr>
+<tr><td><span class="method m-post">POST</span></td><td><code>/api/blacklist/sources/:id/import</code></td><td>สั่ง import — คืน 202 ทันที ผลลัพธ์ poll แยก (กัน Cloudflare 100s timeout)</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/blacklist/master</code></td><td>รายชื่อ identity ที่ dedup ข้าม source แล้ว</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/blacklist/duplicates</code></td><td>ป้ายทะเบียนซ้ำข้าม source — triage conflict/complement/same</td></tr>
+<tr><td><span class="method m-post">POST</span></td><td><code>/api/blacklist/record/:id/override</code></td><td>แก้/ซ่อนแถวเดียว — เขียนที่ชั้น override ไม่แตะ mirror ของ source เดิม</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/blacklist/bridge/rules</code></td><td>กฎเชื่อม blacklist → <code>lpr_watchlist</code> สำหรับแจ้งเตือนจริง</td></tr>
+<tr><td><span class="method m-post">POST</span></td><td><code>/api/blacklist/bridge/sync</code></td><td>ยืนยัน apply กฎ bridge — ต้อง confirm count ตรงกับ preview ก่อน (409 ถ้าไม่ตรง)</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/blacklist/sources/:id/push-preview</code></td><td>Push-back gate 1/3 — ดูว่าจะส่งอะไรกลับ source ก่อนเปิดใช้จริง</td></tr>
+</tbody>
+</table>
+
+<!-- ========= HCP (HikCentral, hkt only) ========= -->
+<h2>HCP · HikCentral — <code>src/routes/hcp.js</code> (added 2026-08-11, registered from pre-existing feature)</h2>
+<p><strong>ขอบเขต: hkt เท่านั้น</strong> — เข้าถึง HCP ผ่าน edge ภูเก็ตเท่านั้น (central ไปไม่ถึง <code>10.0.10.9</code> ตรงๆ) ทุก route hardcode <code>site_id='hkt'</code>. รายละเอียดเต็ม → <a href="md-viewer.html?src=../docs/REF_api-reference.md">REF_api-reference.md §23</a>. ทุก route admin-only.</p>
+<table>
+<thead><tr><th>Method</th><th>Path</th><th>หน้าที่</th></tr></thead>
+<tbody>
+<tr><td><span class="method m-post">POST</span></td><td><code>/api/hcp/face-search</code></td><td>ค้นใบหน้าย้อนหลังด้วยรูป ผ่าน HCP เป็นเครื่องค้น แล้วต่อผลเข้ากับ events ของเราเอง</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/hcp/engine-stats</code></td><td>ความครอบคลุมของ index + รายกล้อง + breakdown รายวัน</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/hcp/devices</code></td><td>HC4 — รายการอุปกรณ์ HCP + ทำเครื่องหมายว่าตัวไหนเราจัดการ</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/hcp/picture</code></td><td>Proxy รูปจาก HCP ผ่าน edge (central ไปตรง <code>10.0.10.9</code> ไม่ได้)</td></tr>
+<tr><td><span class="method m-get">GET</span></td><td><code>/api/hcp/cameras</code></td><td>แมปกล้องกับ HCP + ตรวจ drift เทียบกับ manifest ของ edge</td></tr>
 </tbody>
 </table>
 

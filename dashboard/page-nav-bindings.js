@@ -34,10 +34,80 @@ function _bindNavChrome() {
   document.getElementById('ddThemeDark')?.addEventListener('click', function() { setTheme('dark'); });
   document.getElementById('ddThemeLight')?.addEventListener('click', function() { setTheme('light'); });
   document.getElementById('ddLogout')?.addEventListener('click', doLogout);
+
+  // เมนูที่จัดกลุ่มแล้ว (decision #245) — navGroupToggle เดินผ่าน [data-action]
+  // dispatcher กลางอยู่แล้ว (click) ผูกเพิ่มแค่ keydown ให้กด Enter/Space ได้
+  // เพราะหัวกลุ่มมี role="button" (nav-item เดิมไม่มี tabindex เลยไม่ต้องทำ
+  // ส่วนนี้ — หัวกลุ่มเป็นของใหม่ เลยทำให้ครบตั้งแต่แรก)
+  document.querySelector('.nav')?.addEventListener('keydown', function(e) {
+    const head = e.target.closest('.nav-group-head');
+    if (head && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); navGroupToggle(head); }
+  });
+  _navGroupApplyOpen();
+}
+
+// ── เมนูที่จัดกลุ่มแล้ว (decision #245) ──────────────────────────────
+// เก็บเฉพาะกลุ่มที่ผู้ใช้ "เปิดเอง" ไว้ใน localStorage — กลุ่มที่มีหน้า active
+// อยู่เปิดค้างเสมอไม่ว่าจะเคยกดหรือไม่ (คำนวณสด ไม่ persist) ส่วนกลุ่มอื่น
+// ปิดเป็นค่าเริ่มต้น (ต่างจาก nav_hidden_pages ที่เก็บ "สิ่งที่ซ่อน" เพราะเรื่องนี้
+// เป็นการจำ preference การพับ/ขยาย ไม่ใช่การกันเมนูใหม่หายไปเงียบๆ)
+const NAV_GROUPS_LS_KEY = 'vigilNavOpenGroups';
+function _navGroupsGetStored() {
+  try { return new Set(JSON.parse(localStorage.getItem(NAV_GROUPS_LS_KEY) || '[]')); }
+  catch { return new Set(); }
+}
+function _navGroupsSetStored(set) {
+  try { localStorage.setItem(NAV_GROUPS_LS_KEY, JSON.stringify([...set])); } catch {}
+}
+function _navGroupApplyOpen() {
+  const stored = _navGroupsGetStored();
+  const activeGroup = document.querySelector('.nav-item.active')?.closest('.nav-group');
+  document.querySelectorAll('.nav-group').forEach(g => {
+    const open = stored.has(g.dataset.group) || g === activeGroup;
+    g.classList.toggle('open', open);
+    const head = g.querySelector('.nav-group-head');
+    if (head) head.setAttribute('aria-expanded', String(open));
+  });
+}
+// เรียกทุกครั้งที่ showPage() เปลี่ยนหน้า — บังคับให้กลุ่มของหน้า active เปิดอยู่
+// เสมอ โดยไม่ไปรบกวนกลุ่มอื่นที่ผู้ใช้เปิด/ปิดไว้เอง
+function _navGroupEnsureOpen() {
+  const activeGroup = document.querySelector('.nav-item.active')?.closest('.nav-group');
+  if (!activeGroup || activeGroup.classList.contains('open')) return;
+  activeGroup.classList.add('open');
+  activeGroup.querySelector('.nav-group-head')?.setAttribute('aria-expanded', 'true');
+}
+function navGroupToggle(el) {
+  const g = el.closest('.nav-group');
+  if (!g) return;
+  const id = g.dataset.group;
+  const nowOpen = !g.classList.contains('open');
+  const stored = _navGroupsGetStored();
+  if (nowOpen) stored.add(id); else stored.delete(id);
+  _navGroupsSetStored(stored);
+  g.classList.toggle('open', nowOpen);
+  el.setAttribute('aria-expanded', String(nowOpen));
+}
+// badge รวมของกลุ่ม — เรียกจาก renderNavBadge() ทุกครั้งที่ badge ลูกเปลี่ยน
+// ประมาณค่าจาก textContent ที่ตัด "99+" ไว้แล้ว (พอสำหรับ nav badge ไม่ต้องเป๊ะ)
+function _navGroupUpdateBadge(childBadgeEl) {
+  const grp = childBadgeEl.closest('.nav-group');
+  if (!grp) return;
+  const gb = grp.querySelector('.nav-group-badge');
+  if (!gb) return;
+  const sum = [...grp.querySelectorAll('.nav-badge')].reduce((a, b) => {
+    if (!b.classList.contains('show')) return a;
+    const n = parseInt(b.textContent, 10);
+    return a + (Number.isFinite(n) ? n : 0);
+  }, 0);
+  if (sum > 0) { gb.textContent = sum > 99 ? '99+' : String(sum); gb.classList.add('show'); }
+  else gb.classList.remove('show');
 }
 
 function _bindStaticHandlers() {
-  function bind(id, fn) { document.getElementById(id)?.addEventListener('click', fn); }
+  // evt defaults to 'click'; checkboxes pass 'change' so keyboard toggling works
+  // too, which a click listener alone would miss.
+  function bind(id, fn, evt = 'click') { document.getElementById(id)?.addEventListener(evt, fn); }
   function delegate(id, sel, fn) {
     document.getElementById(id)?.addEventListener('click', function(e) {
       const el = e.target.closest(sel);
@@ -59,11 +129,15 @@ function _bindStaticHandlers() {
   bind('evtResetBtn',      resetEventFilters);
   bind('evtExportCsvBtn',  exportEventsCsv);
   bind('evtPauseBtn',      toggleEventsPause);
+  bind('evtIncludeSpecialized', toggleEventsSpecialized, 'change');
+  delegate('evtRangeBanner', 'button[data-range-days]', (e, el) => evtSetRangeDays(parseInt(el.dataset.rangeDays, 10)));
   delegate('evtTabBar', '.tab[data-tab]', (e, el) => setEventTab(el.dataset.tab, el));
 
   // ── Snapshots ──────────────────────────────────────────────────
   bind('snapSearchBtn', () => loadSnapshots(1));
   bind('snapResetBtn',  resetSnapFilters);
+  bind('snapRefreshBtn', () => loadSnapshots(_snapPage));
+  bind('snapGroupBurst', toggleSnapGroupBurst, 'change');
   delegate('snapViewBar', '.tab[data-view]', (e, el) => setSnapView(el.dataset.view, el));
 
   // ── Media ──────────────────────────────────────────────────────
@@ -71,6 +145,17 @@ function _bindStaticHandlers() {
   bind('mediaResetBtn',   resetMediaFilters);
   backdropClose('mediaModal', closeMediaModal);
   bind('mediaModalClose', closeMediaModal);
+
+  // ── ค้นหาอัจฉริยะ · โมดัลภาพใหญ่ ───────────────────────────────
+  bind('ssxModalClose', () => ssxCloseModal());
+  backdropClose('ssxModal', () => ssxCloseModal());
+
+  // ── HC2 · ค้นใบหน้าด้วยรูป ────────────────────────────────────
+  // input[type=file] ต้องผูกด้วย change ไม่ใช่ click และ CSP บล็อก inline handler
+  document.getElementById('page-hcp-face-search')?.addEventListener('change', function (e) {
+    const el = e.target.closest('input[data-input="hfsFile"]');
+    if (el) hfsPickFile(el);
+  });
 
   // ── Faces ──────────────────────────────────────────────────────
   bind('faceSearchBtn',  loadFaces);
@@ -87,8 +172,11 @@ function _bindStaticHandlers() {
 
   // ── Face Recognition Tabs ────────────────────────────────
   bind('faceTabOverview', () => _switchFaceTab('overview'));
+  bind('faceTabLive',     () => _switchFaceTab('live'));
   bind('faceTabRecog',    () => _switchFaceTab('recog'));
   bind('faceTabSearch',   () => _switchFaceTab('search'));
+  bind('faceTabLab',      () => _switchFaceTab('lab'));
+  bind('afbDetailModalClose', afbCloseDetail);
   bind('faceTabSettings', () => _switchFaceTab('settings'));
   bind('faceSearchBtn2',  _loadFaceTab);
   bind('faceResetBtn2',   resetFaceTab2);
@@ -96,10 +184,31 @@ function _bindStaticHandlers() {
   // ── LPR ────────────────────────────────────────────────────────
   delegate('lprTabBar', '.tab[data-tab]', (e, el) => _switchLprTab(el.dataset.tab));
 
+  // ── Settings › LPR System (tabs + watchlist edit modal) ─────────
+  delegate('lprSetTabBar', '.tab[data-tab]', (e, el) => _switchLprSetTab(el.dataset.tab));
+  delegate('wlSubTabBar',  'button[data-tab]', (e, el) => _switchWlSetTab(el.dataset.tab));
+  delegate('afbRosterSubTabBar', 'button[data-tab]', (e, el) => _afbSwitchRosterTab(el.dataset.tab));
+  backdropClose('wlEditModal', wlEditClose);
+
   // ── Appearance ─────────────────────────────────────────────────
   delegate('appTabBar',   '.tab[data-tab]',       (e, el) => setAppTab(el.dataset.tab, el));
   delegate('appRangeBar', '.per-btn[data-range]', (e, el) => setAppRange(el.dataset.range, el));
   bind('appSearchBtn', () => loadAppearanceSearch(1));
+
+  // ── ช่วงเวลาด่วน (Quick Range) — 4 หน้าใช้ชุดเดียวกันจาก dashboard.js ─────────
+  // กดแล้วเติมช่องวันที่ + ค้นหาให้เลย ไม่ต้องกดค้นหาซ้ำ (เจ้าของสั่ง 2026-08-21)
+  // หน้า LPR คงปุ่ม "24 ชม." เดิมไว้ด้วย ผู้ใช้เดิมจึงไม่เสียปุ่มที่ใช้ประจำ
+  if (typeof initQuickRange === 'function') {
+    initQuickRange('appQuickRange',  'appFilterFrom',  'appFilterTo',  () => loadAppearanceSearch(1));
+    initQuickRange('faceQuickRange', 'faceFilterFrom', 'faceFilterTo', () => loadFaces());
+    // แท็บ "ค้นหา" ของหน้าข้อมูลใบหน้า (page-face-matches) ใช้ช่องคนละชุด ลงท้าย 2
+    // — รอบแรกใส่ผิดหน้าไป ใส่ให้ page-faces ซึ่งเป็นหน้าเก่าที่เจ้าของไม่ได้เปิด
+    initQuickRange('faceQuickRange2', 'faceFilterFrom2', 'faceFilterTo2', () => _loadFaceTab());
+    initQuickRange('snapQuickRange', 'snapFilterFrom', 'snapFilterTo', () => loadSnapshots(1));
+    initQuickRange('lprQuickRange',  'lprFilterFrom',  'lprFilterTo',  () => loadLpr(1),
+      ['hour', 'h24', 'dawn', 'morning', 'afternoon', 'evening', 'night',
+       'yesterday', 'week', 'month']);
+  }
   bind('appTimelineBtn', loadAppearanceTimeline);
   bind('appResetBtn',  resetAppearanceFilters);
   bind('appForensicToggle', toggleAppForensic);
@@ -118,6 +227,7 @@ function _bindStaticHandlers() {
   bind('btnMapPulse',       toggleMapPulse);
   bind('btnMapFace',        toggleMapFaceOverlay);
   bind('btnMapLpr',         toggleMapLprOverlay);
+  bind('btnMapMute',        toggleMapMuteAll);
   bind('mapRecenterBtn',    recenterMap);
   bind('btnMapMore',        toggleMapSecondary);
   bind('togStyle',          toggleMapStyle);
@@ -127,24 +237,17 @@ function _bindStaticHandlers() {
   bind('mapDrawerBackdrop', toggleMapDrawer);
 
   // ── Stats ──────────────────────────────────────────────────────
-  document.getElementById('statsRangeBar')?.addEventListener('click', function(e) {
-    const btn = e.target.closest('.per-btn[data-range]');
-    if (!btn || !this.contains(btn)) return;
-    btn.dataset.range === 'custom' ? openCustomRangeModal() : setStatsRange(btn.dataset.range, btn);
-  });
-  bind('tlExpandBtn',        toggleTimelineExpand);
-  bind('csvBtnTimeline',     () => exportCsv('timeline'));
-  bind('csvBtnBreakdown',    () => exportCsv('breakdown'));
-  bind('csvBtnKpi',          () => exportCsv('kpi'));
-  bind('csvBtnPeople',       () => exportCsv('people'));
-  bind('csvBtnVehicle',      () => exportCsv('vehicle'));
-  bind('csvBtnHeatmap',      () => exportCsv('heatmap'));
-  bind('csvBtnQuietCameras', () => exportCsv('quietCameras'));
-  bind('csvBtnTopRules',     () => exportCsv('topRules'));
+  // (stats redesign 2026-08) ปุ่มชุดหน้า stats เดิมถูกถอด — หน้าใหม่ผูก event เอง
 
   // ── Reports ────────────────────────────────────────────────────
   bind('rbLoadBtn',        updateReportPreview);
   bind('rbDownload',       downloadPDF);
+  document.getElementById('rbFmtBar')?.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-rfmt]');
+    if (b) _rbSetFmt(b.dataset.rfmt);
+  });
+  // ตัวเลือก "ค่าที่แสดงในสรุปภาพรวม" + "การเรียงลำดับหมวดหมู่" — เรนเดอร์ preview ใหม่ทันที
+  if (typeof _rptBindOptionBars === 'function') _rptBindOptionBars();
   bind('hrPreviewBtn',     previewHealthReport);
   bind('hrDownload',       _hrDownloadByFmt);
   bind('hrSendNowBtn',     sendHealthReportNow);
@@ -165,6 +268,8 @@ function _bindStaticHandlers() {
   bind('imgQualRefreshBtn',   () => loadImageQualityLog(1));
   bind('auditRefreshBtn',     loadAuditLog);
   bind('healthRefreshBtn',    loadHealth);
+  delegate('healthTabBar', '.tab[data-tab]',   (e, el) => switchHealthTab(el.dataset.tab));
+  delegate('perfRangeBar', '.tab[data-range]', (e, el) => setPerfRange(el.dataset.range, el));
 
   // ── Settings srail ─────────────────────────────────────────────
   delegate('settingsSrail', '.srail-item[data-sec]', (e, el) => settingsNav(el.dataset.sec, el));
@@ -175,6 +280,7 @@ function _bindStaticHandlers() {
   bind('camSubTabGroups',        function() { camerasSubTab('groups',  this); });
   bind('camSubTabCsv',           function() { camerasSubTab('csv',     this); });
   bind('openCameraFormBtn',      openCameraForm);
+  bind('detectModelsBtn',        detectCameraModels);
   bind('openNvrScanBtn',         openNvrScan);
   bind('nvrScanClose',           closeNvrScan);
   bind('nvrScanBtn',             nvrScan);
@@ -199,10 +305,17 @@ function _bindStaticHandlers() {
   bind('mqttCopyPassBtn',        () => copyMqttCreds('pass'));
   bind('mqttRegenBtn',           regenerateMqttPassword);
   bind('mqttCopyRegenPassBtn',   copyMqttRegenPass);
+  bind('mqttPushBtn',            pushCameraMqtt);
   bind('frmFacePushGenBtn',      generateFacePushToken);
   bind('frmFacePushCopyBtn',     copyFacePushUrl);
+  bind('frmFacePushCheckBtn',    () => checkAlarmServer('face'));
   bind('frmLprPushGenBtn',       generateLprPushToken);
   bind('frmLprPushCopyBtn',      copyLprPushUrl);
+  bind('frmLprPushCheckBtn',     () => checkAlarmServer('lpr'));
+  bind('frmHhBackupBtn',         httpHostBackup);
+  bind('frmHhSetBtn',            httpHostSet);
+  bind('frmHhRestoreBtn',        httpHostRestore);
+  bind('frmMqttBrokerTestBtn',   checkMqttBroker);
   bind('saveCameraBtn',          saveCamera);
   bind('closeCameraFormBtn',     closeCameraForm);
   bind('camEditBackBtn',         closeCameraForm); // CS4: full-page editor back
@@ -215,7 +328,11 @@ function _bindStaticHandlers() {
   });
   document.querySelector('.content')?.addEventListener('scroll', camEditScrollSpy, { passive: true });
   document.addEventListener('keydown', (e) => { // CS4: Esc closes the editor (matches demo)
+    if (e.key === 'Escape' && document.getElementById('ssxModal')?.style.display === 'flex') ssxCloseModal();
     if (e.key === 'Escape' && document.getElementById('set-cameras')?.classList.contains('cam-editing')) closeCameraForm();
+    // ฟอร์มผู้ใช้เป็น full page แล้ว (2026-08-12) — Escape ต้องปิดได้เหมือนกัน
+    // ไม่งั้นคนที่ชินกับ modal เดิมจะกด Escape แล้วไม่มีอะไรเกิดขึ้น
+    if (e.key === 'Escape' && document.getElementById('set-users')?.classList.contains('user-editing')) closeUserEditor();
     if (e.key === 'Escape' && document.getElementById('appPersonModal')?.style.display === 'flex') appClosePerson();
   });
 
@@ -233,13 +350,42 @@ function _bindStaticHandlers() {
     });
   }
 
+  // Lab Test roster ref-image drag&drop — same pattern as #wlDrop above.
+  // #afbDrop is static in #faceTabPanelLab (index.html), so this binding
+  // survives afbRenderRoster()'s innerHTML rewrites of the sibling list area.
+  const afbDrop = document.getElementById('afbDrop');
+  if (afbDrop) {
+    afbDrop.addEventListener('click', (e) => { if (!e.target.closest('.wl-drop-clear')) document.getElementById('afbAddImg')?.click(); });
+    afbDrop.addEventListener('dragover', (e) => { e.preventDefault(); afbDrop.classList.add('dragover'); });
+    afbDrop.addEventListener('dragleave', () => afbDrop.classList.remove('dragover'));
+    afbDrop.addEventListener('drop', (e) => {
+      e.preventDefault(); afbDrop.classList.remove('dragover');
+      const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (f && typeof _afbUploadFile === 'function') _afbUploadFile(f);
+    });
+  }
+
   // ── Users / Categories / Alerts ────────────────────────────────
   bind('openUserEditorBtn',       () => openUserEditor());
   bind('openCategoryEditorBtn',   () => openCategoryEditor());
+  bind('catDeleteAllBtn',         () => catDeleteAll());
   bind('alertTabRules',           () => switchAlertTab('rules'));
   bind('alertTabConfig',          () => switchAlertTab('config'));
+  bind('alertTabTelegram',        () => switchAlertTab('telegram'));
+  bind('alertTabEdge',            () => switchAlertTab('edge'));
+  bind('alertTabHcpface',         () => switchAlertTab('hcpface'));
+  bind('alertTabAuraface',        () => switchAlertTab('auraface'));
+  bind('alertTabLpr',             () => switchAlertTab('lpr'));
+  bind('alertTabGsalarm',         () => switchAlertTab('gsalarm'));
+  bind('alertTabCommands',        () => switchAlertTab('commands'));
+  bind('alertTabTgcommands',      () => switchAlertTab('tgcommands'));
+  bind('saveEdgeAlertBtn',        saveEdgeAlert);
   bind('openRuleEditorBtn',       () => openRuleEditor());
   bind('saveLineConfigBtn',       saveLineConfig);
+  bind('saveTgConfigBtn',         saveTgConfig);
+  bind('tgTestSendBtn',           tgTestSend);
+  bind('loadTgPendingBtn',        loadTgPending);
+  bind('saveQuotaAlertBtn',       saveQuotaAlertSettings);
   bind('onboardGuideToggle',      toggleOnboardGuide);
   bind('loadPendingRecipientsBtn',loadPendingRecipients);
   bind('loadBlockedRecipientsBtn',loadBlockedRecipients);
@@ -247,6 +393,8 @@ function _bindStaticHandlers() {
   bind('backupRunBtn',            runBackup);
   bind('mapboxTokenToggleBtn',    toggleMapboxTokenVis);
   bind('saveMapboxTokenBtn',      saveMapboxToken);
+  bind('cartoKeyToggleBtn',       toggleCartoKeyVis);
+  bind('saveCartoKeyBtn',         saveCartoKey);
   bind('mapDownloadStartBtn',     startDownload);
   bind('mapDownloadEstimateBtn',  estimateDownload);
   bind('mapClearCacheBtn',        clearAllCache);
@@ -281,13 +429,17 @@ function _bindStaticHandlers() {
   bind('appCustomModalClose',      closeAppCustomModal);
   bind('appCustomModalCancelBtn',  closeAppCustomModal);
   bind('applyAppCustomRangeBtn',   applyAppCustomRange);
-  bind('customRangeModalClose',    closeCustomRangeModal);
-  delegate('crQuickBar', '.btn[data-quick]', (e, el) => crQuick(el.dataset.quick));
-  bind('customRangeCancelBtn',     closeCustomRangeModal);
-  bind('applyCustomRangeBtn',      applyCustomRange);
+  // (stats redesign 2026-08) custom-range modal ของหน้า stats เดิมถูกถอด
   bind('categoryEditorModalClose', closeCategoryEditor);
   bind('categoryEditorCancelBtn',  closeCategoryEditor);
   bind('saveCategoryBtn',          saveCategory);
+  bind('crEditCancelBtn',          _crCancelEdit);
+  bind('catDiscReload',            () => loadCatDiscovery(true));
+  // checkbox ใช้ change ไม่ใช่ click — bind() ผูก click ให้เท่านั้น
+  document.getElementById('catDiscLpr')
+    ?.addEventListener('change', (e) => catDiscToggleAuto('lpr', e.target.checked));
+  document.getElementById('catDiscFace')
+    ?.addEventListener('change', (e) => catDiscToggleAuto('face', e.target.checked));
   bind('categoryRulesModalClose',  closeCategoryRules);
   bind('addCategoryRuleBtn',       addCategoryRule);
   bind('deleteAllCatRulesBtn',     deleteAllCategoryRules);
@@ -301,10 +453,7 @@ function _bindStaticHandlers() {
   document.getElementById('camVendorFilter')?.addEventListener('change', _camRefilter);
   document.getElementById('camTypeFilter')?.addEventListener('change', _camRefilter);
   document.getElementById('camStatusFilter')?.addEventListener('change', _camRefilter);
-  // Stats selects
-  document.getElementById('occTlCamRule')?.addEventListener('change', loadOccupancyTimeline);
-  document.getElementById('occHmCamRule')?.addEventListener('change', loadOccupancyHeatmap);
-  document.getElementById('heatmapCatFilter')?.addEventListener('change', loadHeatmap);
+  // (stats redesign 2026-08) select ของหน้า stats เดิมถูกถอด
   // Reports
   document.getElementById('reportType')?.addEventListener('change', onReportTypeChange);
   document.getElementById('hrRangePreset')?.addEventListener('change', _hrToggleCustomRange);
@@ -319,7 +468,10 @@ function _bindStaticHandlers() {
   // Camera form
   document.getElementById('frmCamId')?.addEventListener('blur', onCamIdBlur);
   document.getElementById('frmCamVendor')?.addEventListener('change', onVendorChange);
-  document.getElementById('frmCamRole')?.addEventListener('change', _updatePushUrlVisibility);
+  // onVendorChange, not just the two helpers: the Data Forwarding section is now
+  // gated on the role as well as the vendor, and switching a camera to/from LPR
+  // has to show or hide it without reopening the form.
+  document.getElementById('frmCamRole')?.addEventListener('change', onVendorChange);
   // CS5: Pull/Push radios write back to the canonical #frmCamPushOnly checkbox
   ['frmIngestPull', 'frmIngestPush'].forEach(id => document.getElementById(id)?.addEventListener('change', () => {
     const chk = document.getElementById('frmCamPushOnly');
@@ -338,10 +490,9 @@ function _bindStaticHandlers() {
   // Report schedule type
   document.getElementById('rsType')?.addEventListener('change', _rsToggleTypeFields);
   // Category editor icon
-  document.getElementById('ceIcon')?.addEventListener('input', syncIconPresets);
   // Category rule camera filter — MultiPicker fires mp:change on the .mp
   // wrapper, not a native 'change' on the underlying <select>.
-  document.getElementById('crCamera')?.closest('.mp')?.addEventListener('mp:change', loadFacets);
+  document.getElementById('crCamera')?.addEventListener('change', loadFacets);
 }
 
 // ============================================================
@@ -351,6 +502,41 @@ function _bindStaticHandlers() {
 // ============================================================
 function _bindDynamicHandlers() {
   const ACTION_MAP = {
+    // ช่องทางแจ้งเตือนประจำระบบ (Settings › LINE › HCP Face / AuraFace / ป้ายทะเบียน)
+    achSave: (el) => saveAlertChannel(el.dataset.ch),
+    achLprRcpToggle: (el) => achLprRcpToggle(el),
+    achTest: (el) => testAlertChannel(el.dataset.ch),
+
+    // เมนูที่จัดกลุ่มแล้ว (decision #245)
+    navGroupToggle: (el) => navGroupToggle(el),
+
+    // ป้าย "กล้องยังไม่ส่งข้อมูล" บน topbar → เปิด/ปิด dropdown รายชื่อ
+    quietCamToggle: (el, e) => quietCamToggle(e),
+    // แถวในรายชื่อ → ไปหน้ากล้อง กรองด้วยชื่อกล้องตัวนั้น
+    quietCamGo: (el) => quietCamGo(el),
+
+    // Settings › LINE › คำสั่งผ่าน LINE (page-line-commands.js)
+    lcOpAdd:     () => lcOpAdd(),
+    lcOpPick:    (el) => lcOpPick(el),
+    lcOpToggle:  (el) => lcOpToggle(el),
+    lcOpDelete:  (el) => lcOpDelete(el),
+    lcOpTgLink:   (el) => lcOpTgLink(el),
+    lcOpTgUnlink: (el) => lcOpTgUnlink(el),
+    lcCmdNew:    () => lcCmdNew(),
+    lcEdKind:    (el) => lcEdKind(el),
+    lcCmdEdit:   (el) => lcCmdEdit(el),
+    lcCmdSave:   () => lcCmdSave(),
+    lcCmdCancel: () => lcCmdCancel(),
+    lcCmdToggle: (el) => lcCmdToggle(el),
+    lcCmdDelete: (el) => lcCmdDelete(el),
+    lcTest:      () => lcTest(),
+
+    // Settings › LINE › คำสั่งผ่าน Telegram (page-line-commands.js — แท็บแยก, ทะเบียนร่วมกับ LINE)
+    lctOpRoomsSave: (el) => lctOpRoomsSave(el),
+    lctGoToLineOps: () => lctGoToLineOps(),
+    lctCmdTgToggle: (el) => lctCmdTgToggle(el),
+    lctCmdEdit:     (el) => lctCmdEdit(el),
+
     // Pagination — reads window._pgHandlers[data-pg] stash set by renderPagination
     pgGo: (el) => {
       const handler = window._pgHandlers?.[el.dataset.pg];
@@ -383,6 +569,7 @@ function _bindDynamicHandlers() {
 
     // Snapshots / Media / Events — idx-based routing into module-level arrays
     // _currentSnapEv / _currentMediaEv set on modal open for in-modal actions
+    evtSetView:   (el) => evtSetView(el),
     showSnapshot: (el) => {
       const SOURCE = { events: allEvents, snaps: snapshots, app: window._appRows || [], lpr: window._lprRows || [], lprLatest: window._lprLatestRows || [] };
       const arr = SOURCE[el.dataset.source];
@@ -408,7 +595,14 @@ function _bindDynamicHandlers() {
       const file = ev.raw_json?._snapshot_full || ev.snapshot_file;
       const cap = camFullViewWidth(ev.camera_id);
       const encoded = file.split('/').map(encodeURIComponent).join('/');
-      window.open(`${API}/snapshots/${encoded}${cap ? '?w=' + cap : ''}`, '_blank');
+      // A new tab gets no live overlay — whatever marks the object has to be in
+      // the pixels. Ask the server to burn it when this event carries geometry
+      // and the image we are opening is the full scene the box describes; the
+      // server re-checks both, this only avoids a pointless round trip.
+      const wantBox = ev.raw_json?._bbox && ev.id
+        && file === ev.raw_json?._snapshot_full ? `bbox=1&eid=${ev.id}` : '';
+      const qs = [cap ? `w=${cap}` : '', wantBox].filter(Boolean).join('&');
+      window.open(`${API}/snapshots/${encoded}${qs ? '?' + qs : ''}`, '_blank');
     },
     closeAndShowClip: () => {
       const ev = window._currentSnapEv;
@@ -423,6 +617,7 @@ function _bindDynamicHandlers() {
 
     // Sites (renderSiteTabs — cameras page · Phase A)
     setActiveSite:    (el) => setActiveSite(el.dataset.sid),
+    setActiveCamType: (el) => setActiveCamType(el.dataset.type),
     setMapActiveSite: (el) => setMapActiveSite(el.dataset.sid),
     setOpActiveSite:  (el) => setOpActiveSite(el.dataset.sid),
     setFaceActiveSite: (el) => setFaceActiveSite(el.dataset.sid),
@@ -457,19 +652,19 @@ function _bindDynamicHandlers() {
 
     // Stats / Heatmap / Insights (renderQuietCameras + renderTopRules + heatmap td + renderCategoryKPI)
     goPage:           (el) => showPage(el.dataset.page, document.querySelector(`.nav-item[data-page="${el.dataset.page}"]`)),
-    drillHeatmapCell: (el) => drillHeatmapCell(+el.dataset.d, +el.dataset.h, +el.dataset.v),
-    drillToCamera:    (el) => drillTo({ camera: el.dataset.camera, label: el.dataset.label }),
-    drillToRule:      (el) => drillTo({ rule_name: el.dataset.ruleName, label: el.dataset.label }),
-    setFocusCat:      (el) => setStatsFocusCategory(el.dataset.catId === '' ? null : +el.dataset.catId),
+    // (stats redesign 2026-08) action ของหน้า stats เดิมถูกถอด — goPage ยังใช้ที่อื่น
 
     // Categories (renderCategories + _renderIconPresets + loadCategoryRules)
     openCatRules:     (el) => openCategoryRules(+el.dataset.id),
+    editCatRule:      (el) => startEditCatRule(el.dataset.ids.split(',').map(Number)),
+    catDiscCreate:    (el) => catDiscCreate(+el.dataset.i),
     openCatEditor:    (el) => openCategoryEditor(+el.dataset.id),
     deleteCat:        (el) => deleteCategory(+el.dataset.id),
-    selectIconPreset: (el) => selectIconPreset(el.dataset.preset),
     deleteCatRule:    (el) => deleteCategoryRule(+el.dataset.id),
     toggleCatRuleGroup: (el) => toggleCatRuleGroup(el.dataset.group),
     deleteCatRuleGroup: (el) => deleteCategoryRuleGroup(el.dataset.ids.split(',').map(Number), +el.dataset.count),
+    catBackup:        () => catBackup(),
+    catRestore:       () => catRestore(),
 
     // Reports (renderReportSchedules + loadReportHistoryStats winBtn + loadReportHistory pager)
     openReportScheduleModal: () => openReportScheduleModal(),
@@ -481,6 +676,7 @@ function _bindDynamicHandlers() {
 
     // Cameras (renderCameraRows)
     setCamActiveSite: (el) => setCamActiveSite(el.dataset.sid),
+    setCamActiveType: (el) => setCamActiveType(el.dataset.type),
     editCamera:       (el) => editCamera(el.dataset.cameraId),
     toggleCamPause:   (el) => toggleCameraPause(el.dataset.cameraId, el.dataset.pauseState === 'true'),
     deleteCamera:     (el) => deleteCamera(el.dataset.cameraId),
@@ -507,7 +703,6 @@ function _bindDynamicHandlers() {
     // Face Recognition (B8)
     openFaceModal:        (el)    => openFaceModal(+el.dataset.id),
     openFaceMatchModal:   (el)    => openFaceMatchModal(el.dataset.id),
-    faceRecogSeg:         (el)    => _faceRecogSeg(el.dataset.seg),
     facePeriod:           (el)    => faceSetPeriod(el.dataset.p),
     saveFaceNote:         (el)    => saveFaceNote(el),
     ackFaceMatch:         (el)    => ackFaceMatch(el),
@@ -532,15 +727,79 @@ function _bindDynamicHandlers() {
 
     // Brand / Settings (B8)
     clearBrandLogo:       ()      => clearBrandLogo(),
-    saveSetting:          (el)    => saveSetting(el.dataset.key),
+    clearBrandFooterLogo: ()      => clearBrandFooterLogo(),
+    saveSetting:          (el)    => saveSetting(el.dataset.key, el),
+    saveNavVisibility:    ()      => saveNavVisibility(),
+
+    // หน้าค้นหาอัจฉริยะ (page-smart-search.js)
+    ssxTab:           (el) => ssxTab(el),
+    ssxSearch:        ()   => ssxSearch(),
+    ssxRerun:         ()   => ssxRerun(),
+    ssxToggleBlocked: ()   => ssxToggleBlocked(),
+    ssxToggleAdv:     ()   => ssxToggleAdv(),
+    ssxOpen:          (el) => ssxOpen(el),
+
+    // หน้ากวดขันวินัยจราจร (page-traffic.js)
+    trfTab:        (el) => trfTab(el),
+    trfDays:       (el) => trfDays(el),
+    trfGran:       (el) => trfGran(el),
+    trfVolMode:    (el) => trfVolMode(el),
+    trfDow:        (el) => trfDow(el),
+    trfDowAll:     ()   => trfDowAll(),
+    trfSite:       (el) => trfSite(el),
+    trfSiteAll:    ()   => trfSiteAll(),
+    trfOpenCams:   ()   => trfOpenCams(),
+    trfCloseCams:  ()   => trfCloseCams(),
+    trfCamToggle:  (el) => trfCamToggle(el),
+    trfCamAll:     ()   => trfCamAll(),
+    trfCamNone:    ()   => trfCamNone(),
+    trfApplyCams:  ()   => trfApplyCams(),
+    trfOpenTypes:  ()   => trfOpenTypes(),
+    trfTypeToggle: (el) => trfTypeToggle(el),
+    trfApplyTypes: ()   => trfApplyTypes(),
+    trfEffKind:    (el) => trfEffKind(el),
+    trfEffWin:     (el) => trfEffWin(el),
+    trfEffDate:    (el) => trfEffDateChange(el),
+    trfGroupsReset:()   => trfGroupsReset(),
+    trfSaveThresh: ()   => trfSaveThresh(),
+    trfMetric:     (el) => trfMetric(el),
+
+    // แท็บ "อันดับไม่สวมหมวกนิรภัย" (page-traffic.js)
+    trfTopPeriod:  (el) => trfTopPeriod(el),
+    trfTopPlate:   (el) => trfTopPlate(el),
+    trfTopMore:    (el) => trfTopMore(el),
+    trfTopReport:  ()   => trfTopReport(),
+    trfTopTable:   (el) => trfTopTable(el),
+
+    // แท็บ "สถิติหมวกนิรภัย" ภายในหน้ากวดขันวินัยจราจร (page-traffic.js)
+    trfHelmetDateChange: (el) => trfHelmetDateChange(el),
+    trfHelmetMonthChange:(el) => trfHelmetMonthChange(el),
+    trfHelmetRangeDays:  (el) => trfHelmetRangeDays(el),
+    trfHelmetRangeFrom:  (el) => trfHelmetRangeFrom(el),
+    trfHelmetRangeTo:    (el) => trfHelmetRangeTo(el),
+    trfTopFrom:          (el) => trfTopFrom(el),
+    trfTopTo:            (el) => trfTopTo(el),
     saveBrandColor:       ()      => saveBrandColor(),
     saveAnalyticsDisplay: ()      => saveAnalyticsDisplay(),
 
     // Site management (Settings › Sites)
     addSite:        ()   => addSite(),
+    retPreview:         (el) => retPreview(el),
+    siteRetention:      (el) => siteRetention(el),
+    saveSiteRetention:  (el) => saveSiteRetention(el),
     editSite:       (el) => editSite(el),
     saveSiteForm:   ()   => saveSiteForm(),
     deleteSite:     (el) => deleteSite(el),
+    moveSite:       (el) => moveSite(el),
+    siteMaintenance:        (el) => siteMaintenance(el),
+    confirmSiteMaintenance: (el) => confirmSiteMaintenance(el),
+    cancelSiteMaintenance:  ()   => cancelSiteMaintenance(),
+    siteArchive:            (el) => siteArchive(el),
+    siteUnarchive:          (el) => siteUnarchive(el),
+    sitePurgeOpen:          (el) => sitePurgeOpen(el),
+    sitePurgeConfirm:       (el) => sitePurgeConfirm(el),
+    sitePurgeClose:         ()   => sitePurgeClose(),
+    sitePurgeInput:         (el) => sitePurgeInput(el),
     provisionSiteEdge:  (el) => provisionSiteEdge(el),
     pushSiteConfig:     (el) => pushSiteConfig(el),
     copySiteEdgeCreds:  ()   => copySiteEdgeCreds(),
@@ -549,6 +808,16 @@ function _bindDynamicHandlers() {
 
     // Services (B8)
     svcAction:            (el)    => _svcAction(el.dataset.svc, el.dataset.svcCmd),
+    edgeSvcAction:        (el)    => _edgeSvcAction(el.dataset.edgeSite, el.dataset.svc, el.dataset.svcCmd),
+    devTest:              (el)    => _devTest(el),
+    devReboot:            (el)    => _devReboot(el),
+    devRebootNvr:         (el)    => _devRebootNvr(el),
+    devProbe:             (el)    => _devProbe(el.dataset.srcId),
+    devSetSite:           (el)    => devSetSite(el),
+    hcpSetFilter:         (el)    => hcpSetFilter(el),
+    relaySetSite:         (el)    => relaySetSite(el),
+    ueTogglePw:           (el)    => ueTogglePw(el),
+    trfExportPdf:         (el)    => trfExportPdf(el),
     clearSpool:           (el)    => window._clearSpool(el),
 
     // Summary (B8)
@@ -564,6 +833,14 @@ function _bindDynamicHandlers() {
     unblockRecipient:          (el) => unblockRecipient(el.dataset.lineId),
     testRecipient:             (el) => testRecipient(el.dataset.id),
     removeRecipient:           (el) => removeRecipient(+el.dataset.idx),
+    rcpScopeToggle:            (el) => rcpScopeToggle(el),
+
+    // Telegram config (T1)
+    approveTgPending:   (el) => approveTgPending(el.dataset.chatId),
+    ignoreTgPending:    (el) => ignoreTgPending(el.dataset.chatId),
+    blockTgPending:     (el) => blockTgPending(el.dataset.chatId),
+    tgScopeToggle:      (el) => tgScopeToggle(el),
+    tgChatFieldToggle:  (el) => tgChatFieldToggle(el),
 
     // Events nudge link (i18n.js aux.evtNewNudge — was onclick=)
     goEventsPage1:    ()   => loadEvents(1),
@@ -572,6 +849,8 @@ function _bindDynamicHandlers() {
     lprOpenModal:       (el) => _lprOpenModal(el.dataset.src, +el.dataset.idx),
     lprPage:            (el) => loadLpr(+el.dataset.page),
     lprSearch:          ()   => loadLpr(1),
+    lprMatchMode:       (el) => lprMatchModeClick(el),
+    lprPatternBuilder:  ()   => _lprToggleBuilder(),
     lprReset:           ()   => lprResetSearch(),
     lprExportCsv:       ()   => lprExportCsv(),
     lprGotoMismatch:    ()   => lprGotoMismatch(),
@@ -587,6 +866,8 @@ function _bindDynamicHandlers() {
     lprNoReadQuickWeek: ()   => lprNoReadQuickWeek(),
     lprNoReadQuickMonth:()   => lprNoReadQuickMonth(),
     lprSearchDebounce:  ()   => _lprSearchDebounce(),
+    lprAlertHistOpen:   (el) => lprAlertHistOpen(el),
+    lprSearchPlate:     (el) => lprSearchPlate(el),
     lprGotoAlerts:      ()   => lprGotoAlerts(),
     lprAlertPeriod:     (el) => lprAlertSetPeriod(el.dataset.p),
     lprAlertGroup:      (el) => lprAlertSetGroup(el.dataset.g || ''),
@@ -594,17 +875,169 @@ function _bindDynamicHandlers() {
     lprAckAlertRow:     (el) => lprAckAlertRow(el),
     lprCloseAlert:      ()   => lprCloseAlert(),
     lprAckAlert:        ()   => lprAckAlert(),
+    lprNotifyAlert:     ()   => lprNotifyAlert(),
+    lprNotifyTelegram:  ()   => lprNotifyTelegram(),
+    notifyFaceMatch:    (el) => notifyFaceMatch(el),
+    notifyFaceMatchTelegram: (el) => notifyFaceMatchTelegram(el),
     lprAlertSearchDebounce: () => lprAlertSearchDebounce(),
     lprApplyPeriod:     ()   => lprApplyPeriod(),
+    lprGsPeriod:        (el) => lprGsSetPeriod(el.dataset.p),
+    lprOpenGsAlarm:     (el) => lprOpenGsAlarm(+el.dataset.idx),
+
+    // ── Blacklist reservoir (migration 093) ──
+    // Dashboard CSP forbids inline handlers, so every control routes here.
+    _blNavTab:          (el) => _blNavTab(el),
+    blOpenDetail:       (el) => _blOpenDetail(el.dataset.id, el.dataset.rec),
+    blCloseDetail:      ()   => document.getElementById('blDetailModal').classList.add('hidden'),
+    blOpenDups:         ()   => _blOpenDups(),
+    blPickSource:       (el) => _blPickSource(el.dataset.dt, el.dataset.src),
+    blOpenEdit:         (el) => _blOpenEdit(el.dataset.rid),
+    blCloseEdit:        ()   => document.getElementById('blEditModal').classList.add('hidden'),
+    blRevertField:      (el) => _blRevertField(el.dataset.k),
+    blSaveOverride:     ()   => blSaveOverride(),
+    blExcludeRecord:    ()   => blExcludeRecord(),
+    blRestoreRecord:    ()   => blRestoreRecord(),
+    blOpenQualDupName:  ()   => _blOpenQualDupName(),
+    blOpenQualBadId:    ()   => _blOpenQualBadId(),
+    blCloseQual:        ()   => document.getElementById('blQualModal').classList.add('hidden'),
+    blToggleFacePhoto:  ()   => _blToggleFacePhoto(),
+    blToggleId:         (el) => _blToggleId(el),
+    blSavePageSettings: (el) => blSavePageSettings(el.dataset.dt),
+    blDupBack:          ()   => blDupBack(),
+    blDupGoPage:        (el) => blDupGoPage(el),
+    blDupRemoveRow:     (el) => blDupRemoveRow(el),
+    blDupRestoreRow:    (el) => blDupRestoreRow(el),
+    blDupRemoveGroup:   (el) => blDupRemoveGroup(el),
+    blDupKeepRow:       (el) => blDupKeepRow(el),
+    blDupSetFilter:     (el) => blDupSetFilter(el),
+    blDetailRemove:     (el) => blDetailRemove(el),
+    blOpenBin:          (el) => blOpenBin(el),
+    blBinBack:          ()   => blBinBack(),
+    blBinSearch:        ()   => blBinSearch(),
+    blBinSetKind:       (el) => blBinSetKind(el),
+    blBinGoPage:        (el) => blBinGoPage(el),
+    blBinRestore:       (el) => blBinRestore(el),
+    blBinRestoreAll:    ()   => blBinRestoreAll(),
+    blDupToggleRemoved: (el) => blDupToggleRemoved(el),
+    blFaceSearch:       ()   => _blApplyFilter('face'),
+    blFaceGroupPick:    (el) => _blFaceGroupPick(el.dataset.group),
+    blFaceGroupAll:     ()   => _blFaceGroupAll(),
+    blLprSearch:        ()   => _blApplyFilter('lpr'),
+    blFaceReset:        ()   => _blResetFilter('face'),
+    blLprReset:         ()   => _blResetFilter('lpr'),
+    blAddSource:        ()   => blAddSource(),
+    blCloseSrc:         ()   => document.getElementById('blSrcModal').classList.add('hidden'),
+    blOpenChangeHistory:(el) => blOpenChangeHistory(el),
+    blCloseChangeHistory:()  => blCloseChangeHistory(),
+    blPickType:         (el) => _blOpenSourceForm(el.dataset.type, null),
+    blOrphan:          (el) => blOrphanAction(el),
+    blBackToTypes:      ()   => _blOpenTypePicker(),
+    blToggleType:       (el) => el.classList.toggle('on'),
+    blEditSource:       (el) => _blEditSource(el.dataset.id),
+    blSaveSource:       ()   => blSaveSource(),
+    blTestSource:       ()   => blTestSource(),
+    blPickDiscovered:   (el) => blPickDiscovered(el),
+    blOpenPush:         (el) => blOpenPush(el.dataset.id),
+    blPushToggleType:   (el) => blPushToggleType(el),
+    blPushEnable:       ()   => blPushEnable(),
+    blPushDisable:      ()   => blPushDisable(),
+    blPushApply:        ()   => blPushApply(),
+    blOpenBridge:       ()   => blOpenBridge(),
+    blmOpen:            ()   => blmOpen(),
+    blmClose:           ()   => blmClose(),
+    blmSave:            (el) => blmSave(el),
+    // ปุ่มแท็บใน modal ประกาศ data-action="blmSwitchTab" แต่ไม่เคยลงทะเบียนที่นี่ —
+    // CSP บล็อก inline handler ทุกตัว ปุ่มจึงกดแล้วเงียบ แท็บใบหน้าเปิดไม่ได้เลย
+    blmSwitchTab:       (el) => blmSwitchTab(el),
+    hfsSearch:          ()   => hfsSearch(),
+    heLoad:             ()   => heLoad(),
+    heShowPic:          (el) => heShowPic(el),
+    hfsView:            (el) => hfsView(el),
+    hfsEngine:          (el) => hfsEngine(el),
+    afbTab:             (el) => afbTab(el),
+    afbOpenDetail:      (el) => afbOpenDetail(el),
+    afbOpenRosterDetail:(el) => afbOpenRosterDetail(el),
+    afbToggleActive:    (el) => afbToggleActive(el),
+    afbToggleRefBlur:   ()   => afbToggleRefBlur(),
+    afbGroupAddNew:     ()   => afbGroupAddNew(),
+    afbGroupColor:      (el) => afbGroupColor(el),
+    afbGroupRename:     (el) => afbGroupRename(el),
+    afbGroupNotify:     (el) => afbGroupNotify(el),
+    afbGroupSite:       (el) => afbGroupSite(el),
+    afbGroupDelete:     (el) => afbGroupDelete(el),
+    afbUploadImg:       (el) => afbUploadImg(el),
+    afbDropClear:       ()   => afbDropClear(),
+    afbRosterAdd:       ()   => afbRosterAdd(),
+    afbFilterGroup:     (el) => afbFilterGroup(el),
+    afbRosterSearch:    (el) => afbRosterSearch(el),
+    afbPageRoster:      (el) => afbPageRoster(el),
+    hfsWin:             (el) => hfsWin(el),
+    hfsUseOsd:          ()   => hfsUseOsd(),
+    hfsResetOsd:        ()   => hfsResetOsd(),
+    hfsPickNear:        (el) => hfsPickNear(el),
+    hfsOpen:            (el) => hfsOpen(el),
+    hfsClose:           ()   => hfsClose(),
+    // ปุ่มเลือก/ล้างรูปของฟอร์มเพิ่มด้วยตนเอง — ต้องอยู่ตรงนี้ ไม่งั้นกดแล้วเงียบ
+    // (พลาดแบบเดียวกับ blmSwitchTab ด้านบนเป๊ะ: ประกาศ data-action ในหน้า แต่ลืม
+    //  ลงทะเบียนที่นี่ ⇒ ฟีเจอร์รูปตายสนิททั้งที่ฝั่ง server พร้อมแล้ว — เจอตอน audit 2026-08-13)
+    blmPickPhoto:       ()   => blmPickPhoto(),
+    blmClearPhoto:      ()   => blmClearPhoto(),
+    blmAnother:         ()   => blmAnother(),
+    blmGoBridge:        ()   => blmGoBridge(),
+    blCloseBridge:      ()   => document.getElementById('blBridgeModal').classList.add('hidden'),
+    blBridgeAddRule:    ()   => blBridgeAddRule(),
+    blBridgeToggle:     (el) => blBridgeToggle(el),
+    blBridgeDelRule:    (el) => blBridgeDelRule(el),
+    blBridgePreview:    ()   => blBridgePreview(),
+    blBridgeSync:       ()   => blBridgeSync(),
+    blBridgeSrcChange:  ()   => blBridgeSrcChange(),
+    blBridgeMapFacet:   (el) => blBridgeMapFacet(el),
+    // FB5 — face_blacklist bridge, same shape as blBridge* above
+    fbOpenBridge:       ()   => fbOpenBridge(),
+    fbCloseBridge:      ()   => document.getElementById('fbBridgeModal').classList.add('hidden'),
+    fbBridgeAddRule:    ()   => fbBridgeAddRule(),
+    fbBridgeToggle:     (el) => fbBridgeToggle(el),
+    fbBridgeDelRule:    (el) => fbBridgeDelRule(el),
+    fbBridgePreview:    ()   => fbBridgePreview(),
+    fbBridgeSync:       ()   => fbBridgeSync(),
+    fbBridgeSrcChange:  ()   => fbBridgeSrcChange(),
+    fbBridgeMapFacet:   (el) => fbBridgeMapFacet(el),
+    fbToggleType:       (el) => el.classList.toggle('on'),
+    faceApplyNew:       ()   => faceApplyNew(),
+    faceGotoLive:       ()   => faceGotoLive(),
+    faceLiveReload:     ()   => faceLiveReload(),
+    faceLiveTogglePause:()   => faceLiveTogglePause(),
+    faceLiveToggleMiss: ()   => faceLiveToggleMiss(),
+    appApplyNew:        ()   => appApplyNew(),
+    blRunImport:        (el) => blRunImport(el.dataset.id),
+    blDeleteSource:     (el) => blDeleteSource(el.dataset.id),
     wlAdd:              ()   => _wlAdd(),
     wlUploadImg:        (el) => _wlUploadImg(el),
     wlFilter:           (el) => _wlSetFilter(el.dataset.wg),
     wlFilterRo:         (el) => _wlSetFilterRo(el.dataset.wg),
     wlToggle:           (el) => _wlToggle(el.dataset.plate, el.dataset.active === 'true'),
-    wlDelete:           (el) => _wlDelete(el.dataset.plate),
+    wlToggleNotify:     (el) => wlToggleNotify(el),
+    wlPurge:            ()   => wlPurge(),
+    wlRowDelete:        (el) => wlRowDelete(el),
+    wlSearch:           (el) => wlSearch(el),
+    wlSearchRo:         (el) => wlSearchRo(el),
+    wlOpenDetail:       (el) => wlOpenDetail(el),
+    wlOpenDetailRo:     (el) => wlOpenDetailRo(el),
+    wlPage:             (el) => _wlSetPage(+el.dataset.page),
+    wlPageRo:           (el) => _wlSetPageRo(+el.dataset.page),
+    wlEditModalClose:   ()   => wlEditClose(),
+    wlEditSave:         ()   => wlEditSave(),
+    wlEditToggleActive: ()   => wlEditToggleActive(),
+    wlEditDelete:       ()   => wlEditDelete(),
+    wlEditUploadImg:    (el) => _wlEditUploadImg(el),
+    wlEditDropClear:    ()   => _wlEditResetDrop(),
     wlGroupAddNew:      ()   => wlGroupAddNew(),
     wlGroupRename:      (el) => wlGroupRename(el),
     wlGroupColor:       (el) => wlGroupColor(el),
+    wlGroupMode:        (el) => wlGroupMode(el),
+    wlGroupSite:        (el) => wlGroupSite(el),
+    wlGroupNotify:    (el) => wlGroupNotify(el),
+    wlGoLineConfig:   ()   => wlGoLineConfig(),
     wlGroupDelete:      (el) => wlGroupDelete(el),
     wlDropClear:        ()   => _wlResetDrop(),
     lprCloseModal:      ()   => _lprCloseModal(),
@@ -613,6 +1046,9 @@ function _bindDynamicHandlers() {
     lprViewFull:        (el) => { if (el.dataset.url) window.open(el.dataset.url, '_blank', 'noopener'); },
     lprMismatchDismiss:  (el) => lprMismatchDismiss(el),
     lprSearchThisPlate:  (el) => lprSearchThisPlate(el),
+    lprOpenAlarmList:    ()   => lprOpenAlarmList(),
+    lprCloseAlarmList:   ()   => lprCloseAlarmList(),
+    lprAlarmListOpen:    (el) => lprAlarmListOpen(el),
     lprMmOpenRow:        (el) => lprMmOpenRow(el),
     lprSaveImg:         (el) => { if (!el.dataset.url) return; const a = document.createElement('a'); a.href = el.dataset.url; a.download = el.dataset.name || 'lpr.jpg'; document.body.appendChild(a); a.click(); a.remove(); },
 
@@ -620,12 +1056,29 @@ function _bindDynamicHandlers() {
     eulaToggle:       (el) => { document.getElementById('licenseActivateBtn').disabled = !el.checked; },
     toggleMapGroup:   (el) => toggleMapGroup(el.dataset.gid),
     legendSearch:     (el) => _legendSearch(el.value),
+    mapSearchInput:   (el) => mapSearchInput(el),
+    mapSearchGo:      (el) => mapSearchGo(el),
     updateHrSendBtn:  ()   => _updateHealthSendBtnLabel(),
     updateRecipient:  (el) => updateRecipient(+el.dataset.idx, el.dataset.field, el.checked),
-    uploadBrandLogo:  (el) => uploadBrandLogo(el),
-    syncBrandColor:   (el) => { document.getElementById('ss_brand_primary_color').value = el.value; },
+    uploadBrandLogo:       (el) => uploadBrandLogo(el),
+    uploadBrandFooterLogo: (el) => uploadBrandFooterLogo(el),
+    syncBrandColor:        (el) => { document.getElementById('ss_brand_primary_color').value = el.value; },
+    // ย้ายกลุ่มแจ้งเตือนของป้ายจาก Blacklist — เป็น <select> จึงอยู่ในชุด data-change
+    // ไม่ใช่ data-action (ที่ผูกกับ click) เหมือนปุ่มข้าง ๆ มันในแบนเนอร์เดียวกัน
+    wlChangeGroup:         (el) => wlChangeGroup(el),
     // resetStatusPage already in map (B6) — reused by data-change on select + data-action-enter on input
+    lprGsOwner:         (el) => lprGsSetOwner(el),
+    lprGsSearchDebounce: ()  => lprGsSearchDebounce(),
   };
+
+  // Any click outside the camera search closes its result list — a dropdown
+  // left hanging over the map is worse than the problem it solves.
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.map-cam-search') && typeof _mapSearchClose === 'function') {
+      const box = document.getElementById('mapCamSearchResults');
+      if (box && !box.classList.contains('hidden')) _mapSearchClose();
+    }
+  });
 
   document.addEventListener('click', (e) => {
     const target = e.target.closest('[data-action]');

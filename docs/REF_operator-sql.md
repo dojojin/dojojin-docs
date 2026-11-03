@@ -26,6 +26,13 @@ Edit via UI: Settings → ⚙️ System (admin only), or via SQL below.
 | `brand_logo_path` | `''` | `[A-Za-z0-9._-]+` or empty | File under `/branding/` — auto-resized 256×256 PNG |
 | `brand_primary_color` | `#5b8def` | `#RRGGBB` | Single accent color (CSS `--accent`) |
 | `analytics_event_display` | `ImageTooBright,ImageTooBlurry,ImageTooDark,GlobalSceneChange` | CSV of analytics keys | Which camera-automation event types shown in Stats/Events feed |
+| `signed_image_expire_hours` | not seeded | `1..720` (clamped) | TTL of the signed image links LINE alerts send from our own domain. Only the imgbb *fallback* uses `lpr_line_image_expire_hours`, and only when `imgbb_fallback_enabled` is not `'false'` (migration 147) |
+| `lpr_noread_check` | **written by the job — do not edit** | JSON | Result of the weekly "no plate read" self-check. `ok` is `mismatch = 0`, **not** `predicate = anti_join` — two equal totals can still be two different row sets. `predicate = 0` and `anti_join = 0` means *nothing to check*, not *check passed*. Written Sun 04:30 ICT by `src/helpers/noreadCheck.js`; read at `/api/health/details → lpr.noread_check` |
+| `traffic_stats_reconciled_day` | **written by the job — do not edit** | `YYYY-MM-DD` (Bangkok) | The date the traffic/LPR hourly-stats reconcile last completed. Clearing it makes the next tick inside the reconcile hour redo the heaviest job of the day — which is exactly what it exists to prevent (decision #267) |
+
+> The two "written by the job" rows have no seed migration: the row simply does not exist until
+> the background job has run once. A missing row is not a misconfiguration, and hand-editing
+> either one only lies to the next reader.
 
 ```sql
 -- Quick read all settings
@@ -205,6 +212,29 @@ SELECT filename, applied_at, duration_ms
 ```sql
 TRUNCATE appearances, license_plates, events CASCADE;
 ```
+
+### Slow SQL / slow requests
+
+Don't guess. The full copy-paste recipe lives in `service_start.md` →
+**"หน้าเว็บโหลดช้า — หา query / request ที่ช้าใน 5 นาที"**; the two entry points are:
+
+```bash
+# api-server requests over SLOW_REQ_LOG_MS (default 2000), token/sig already redacted
+grep "\[slow-req\]" ~/.pm2/logs/api-server-error.log | tail -20
+```
+```sql
+-- currently-running statements, longest first — the one to check before blaming a page
+SELECT pid, now() - query_start AS runtime, application_name, left(query, 120)
+  FROM pg_stat_activity
+ WHERE state = 'active' AND query NOT ILIKE '%pg_stat_activity%'
+ ORDER BY runtime DESC;
+```
+
+For a slow Health page specifically, read `diagnostics_ms` in `/api/health/details` — it names
+the section instead of making you re-measure the whole endpoint.
+Symptom triage: GOTCHAS **#187–#191**. And before reporting "the numbers are wrong":
+totals prefixed `≈` are approximate on purpose (decision #263), and `/api/events` stops counting
+at 10,000 and shows `"10,000+"` with an `X-Total-Capped: 1` header (decision #264).
 
 ---
 

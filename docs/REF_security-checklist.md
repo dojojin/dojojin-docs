@@ -22,12 +22,16 @@
 | Upload ใหม่ → อ่าน `req.file.buffer` ตรวจ **magic bytes** ก่อน accept (ไม่ใช่แค่ MIME type) | GOTCHAS #55, DECISIONS #158 |
 | ประเภทที่รองรับ: PNG (`\x89PNG`) · JPEG (`\xFF\xD8\xFF`) · WebP (`RIFF....WEBP`) · GIF (`GIF87a/89a`) | GOTCHAS #55 |
 | SVG ห้าม accept เป็น upload ทั่วไป (librsvg CVE) | GOTCHAS #25a, DECISIONS #158 |
+| HTML upload (`/api/files` เท่านั้น) → `sniffUploadType` แค่บอกว่า "หน้าตาเหมือน HTML" **ต้อง**ต่อด้วย `helpers/htmlSanitize.js` ก่อนเขียนลงดิสก์เสมอ ห้าม serve ของดิบ | GOTCHAS #213 |
+| หน้าที่เสิร์ฟ HTML แบบ inline (ไม่ใช่ attachment) → ต้องมี CSP บล็อก script/object/form ด้วย เป็นเกราะที่สอง ไม่ใช่พึ่ง sanitizer อย่างเดียว | GOTCHAS #213, `routes/media-files.js` |
 
 ## 🌐 GET Endpoint ที่คืนข้อมูลจาก DB
 
 | ต้องเช็ค | Reference |
 |---|---|
 | มี credential / token / secret ใน response ไหม → redact ถ้า role ≠ admin | GOTCHAS #52, DECISIONS #154 |
+| **คืน `events.raw_json` ให้ non-admin (auditor นับเป็น non-admin) → ต้องผ่าน `scrubRawJson()` หรือ `scrubRawJsonSql()`** — `rawXml` ของ Hikvision มี IP/MAC ของกล้อง = แผนผังเครือข่ายภายใน · **ปกปิดค่า ไม่ใช่ลบ key** (หน้า LPR อ่าน `pilotsafebelt` จากก้อนเดียวกัน) | SEC-018 · `src/helpers/scrubRawJson.js` · LOGIC_auth-security §S1 |
+| **cache ที่ผูกกับสิทธิ์ผู้ใช้ → key ต้องมาจาก `auth.scopeCacheKey()` เท่านั้น** ห้าม `allowedSites.join(',')` เอง — `siteWhere()` ใช้ทั้งแกน Site **และ** แกนกล้อง คนที่ถูกจำกัด 4 กล้องจะได้ผลของคนที่เห็น 84 กล้องกลับไป เงียบ ๆ ไม่มี error | DECISIONS #266 · GOTCHAS #190 · `src/auth.js:637` |
 | ทุก field ที่จะ inject ใน innerHTML → ผ่าน `escapeHtml()` เสมอ | GOTCHAS #51, DECISIONS #153 |
 | URL path จาก DB/MQTT → `encodeURIComponent()` | GOTCHAS #51 |
 
@@ -100,6 +104,7 @@
 | SEC-015 | Dead DB columns | **✅ Done 2026-06-02** | `DROP COLUMN cameras.http_password`, `cameras.rtsp_url` — migration 038; NULL verified (0 rows); dry-run passed; `cameras.http_user` still present (deferred) | GOTCHAS #70 · DECISIONS #193 |
 | SEC-016 | Postgres SSL | **✅ Done 2026-06-02** | `ssl=on` (TLSv1.3) via `ALTER SYSTEM` + `pg_reload_conf()` (zero-downtime); self-signed cert in data volume; `scripts/postgres-ssl-setup.sh` (idempotent, run after fresh volume); local apps unbroken (`127.0.0.1 trust`); `hostssl` enforcement deferred until remote port opens | DECISIONS #195 · REF_third-party-integration.md §3.6 |
 | SEC-017 | Mapbox token proxy | **✅ Done 2026-06-02** | `GET /api/map/tiles/mapbox/:style/:z/:x/:y.png` (auth-gated, cache-first); `/api/config` removes `mapboxToken` field (returns `mapboxAvailable` only); `dashboard.js` uses proxy URLs; zero direct `api.mapbox.com` tile requests from browser; CSP tightened | DECISIONS #197 · DECISIONS #60 |
+| SEC-018 | Camera LAN IP/MAC ใน `raw_json.rawXml` หลุดถึง non-admin | **✅ Done 2026-09-06** | `scrubRawJson()` / `scrubRawJsonSql()` ปกปิด `<ipAddress>` `<ipv6Address>` `<macAddress>` เป็น `***` — ปกปิดค่าไม่ลบ key (หน้า LPR อ่าน `pilotsafebelt` จากก้อนเดียวกัน) · ครอบ 6 route (`events`, `appearances`, `lpr-query`, `lpr-alerts`, `lpr-watchlist`, `traffic`) + WebSocket `broadcast()` ที่ fail-closed (`ws._isAdmin === true`) · auditor นับเป็น non-admin | `d3fe320` `3883fc2` `6beb9fa` · security backlog 2026-08-12 (S1) · LOGIC_auth-security §S1 |
 
 ## 📋 Quick Reference: SEC-2T-001 to SEC-2T-008 (CODEX 2nd Tier Audit, 2026-06-03)
 
@@ -141,11 +146,11 @@
 | LIVE-MED-004 | `concurrently`/`shell-quote` advisory | ✅ Done (verified — แก้ไปแล้วก่อน audit เขียนเสร็จ) | `npm audit` สะอาดจาก `3995f29` | `3995f29` |
 | LIVE-LOW-001 | `X-Powered-By` header | ✅ Done | `app.disable('x-powered-by')` ใน `lpr-receiver.js` | `7fd4204` |
 | LIVE-PASS-001 | Core auth boundary | ✅ Pass (ไม่ต้องแก้) | `/api`, static, snapshots, media, WS, CORS ผ่าน probe จริงหมด | — |
-| — | `sharp` CVE (พบใหม่ระหว่าง multer upgrade) | ⏳ Deferred | Severity high, libvips CVE — ต้อง verify cycle แยกกับ `report-renderer.js` (decision #148) ก่อนอัป | `088fedf` (พบ ไม่ได้แก้) |
+| — | `sharp` CVE (พบใหม่ระหว่าง multer upgrade) | ✅ Done | 0.34.5→0.35.3 ครบ 3 เครื่อง (central+hdy-edge+vss-edge); byte-identical verify แยก `report-renderer.js` ก่อน bump; `npm audit` สะอาด | `67995e9` `1aacb65` · DECISIONS #224 · GOTCHAS #117 |
 | — | `CAMERA_SECRET_KEY` transcript exposure | ⏳ Deferred (script พร้อม) | ประเมิน severity ต่ำกว่า cloudflared token — migration script พร้อมใช้ `scripts/rotate-camera-secret-key.js` | DECISIONS #223 |
 
 รายละเอียดเต็มต่อ finding → `CODEX/CODEX_Audit_5th_part_security.md` §7 และ `CODEX/CODEX_Audit_6th_live_pentest_summary.md` §9 (verification log)
 
 ---
 
-<sub>REF_security-checklist.md · Vigil Platform v1.5.3 · Created 2026-05-28 · Updated 2026-07-22</sub>
+<sub>REF_security-checklist.md · Vigil Platform v1.5.4 · Created 2026-05-28 · Updated 2026-09-06</sub>

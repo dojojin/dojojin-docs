@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="th" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>3rd Party Integration — Live Demo</title>
+
+<!-- MOCKUP DEMO — ไม่ต่อกับของจริงเลยสักจุด
+     ข้อมูล partner / event / ป้ายทะเบียน ในหน้านี้เป็นข้อมูลสมมติทั้งหมด
+     การติ๊ก/ปลดฟิลด์ในหน้านี้ไม่ได้ GRANT อะไรจริง — เป็นการแสดงแนวคิดเท่านั้น
+     Served at: /others/demo/OpenAPI/
+     ที่มา: ข้อเสนอของเจ้าของ 2026-08-06 · ต่อยอดจาก docs/REF_third-party-integration.md
+     data-theme="light" ตั้งตายตัวและไม่โหลด /theme-init.js — หน้า demo ใช้ light เสมอ
+     ?v= บน css/js: express.static ตั้ง maxAge 1h ดังนั้นแก้ไฟล์แล้วเบราว์เซอร์ยัง
+     รันของเก่าอีกเป็นชั่วโมง — ต้องขยับเลขทุกครั้งที่แก้ (convention เดียวกับ demo อื่น) -->
+<link rel="stylesheet" href="/vendor/fonts/fonts.css">
+<link rel="stylesheet" href="/index.css">
+<link rel="stylesheet" href="./openapi-demo.css?v=oa4">
+</head>
+<body>
+<div class="demo-wrap">
+
+  <div class="demo-banner">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+    <span><b>MOCKUP — ข้อมูลสมมติทั้งหมด ไม่ต่อของจริง</b> ·
+    partner / เหตุการณ์ / ป้ายทะเบียน ในหน้านี้ถูกแต่งขึ้นเพื่อแสดงแนวคิด ·
+    การติ๊กฟิลด์ที่นี่ <b>ไม่ได้ GRANT สิทธิ์อะไรจริง</b> ·
+    หน้านี้เสนอว่า <b>การบังคับใช้อยู่ที่ Postgres GRANT</b> ส่วน OpenAPI เป็นเอกสารที่ generate ตามสิทธิ์จริง ไม่ใช่ตัวคุมสิทธิ์</span>
+  </div>
+
+  <div class="page-head">
+    <div>
+      <h1 class="oa-title">3rd Party Integration</h1>
+      <p class="oa-sub">กำหนดว่า partner แต่ละรายได้รับ<strong>อะไรบ้าง</strong>จากเรา — ระดับฟิลด์ ไม่ใช่ระดับตาราง · <strong>ขาออกเท่านั้น</strong> การรับข้อมูลเข้าอยู่ที่หน้าฐานข้อมูลใบหน้า/ป้ายทะเบียน</p>
+    </div>
+  </div>
+
+  <div class="oa-layout">
+
+    <!-- ── ซ้าย: รายชื่อ partner ───────────────────────────── -->
+    <aside class="oa-side">
+      <div class="oa-side-head">
+        <span>Partner</span>
+        <span class="oa-count" id="oaCount">3</span>
+      </div>
+      <div id="oaPartners" class="oa-partners"><!-- js --></div>
+
+      <div class="oa-note">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4m0-4h.01"/></svg>
+        <span>วันนี้ปิดข้อมูลได้แค่ระดับ <b>ทั้ง view</b> (<code>REVOKE SELECT ON v_license_plates_public</code>) — หน้านี้เสนอให้ลงลึกถึง <b>รายคอลัมน์</b></span>
+      </div>
+    </aside>
+
+    <!-- ── ขวา: รายละเอียด partner ที่เลือก ────────────────── -->
+    <main class="oa-main">
+
+      <div class="card oa-card">
+        <div class="oa-card-head">
+          <div>
+            <h2 id="oaName">—</h2>
+            <div class="oa-meta" id="oaMeta"></div>
+          </div>
+          <div class="oa-modewrap">
+            <div class="oa-modelabel">รูปแบบการส่ง</div>
+            <div class="seg oa-seg" id="oaMode" role="tablist">
+              <button data-action="mode" data-mode="passthrough" role="tab">ส่งดิบ</button>
+              <button data-action="mode" data-mode="filtered" role="tab">กรองฟิลด์</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="oa-modehint" id="oaModeHint"></div>
+      </div>
+
+      <div class="card oa-card" id="oaMatrixCard">
+        <div class="oa-card-head oa-card-head--tight">
+          <h3>ฟิลด์ที่ partner นี้ได้รับ</h3>
+          <div class="oa-bulk">
+            <button class="btn btn-sm" data-action="none">ไม่เอาเลย</button>
+            <button class="btn btn-sm" data-action="all">เลือกทั้งหมด</button>
+          </div>
+        </div>
+        <div id="oaMatrix" class="oa-matrix"><!-- js --></div>
+      </div>
+
+      <div class="card oa-card">
+        <div class="oa-tabs" id="oaTabs" role="tablist">
+          <button class="oa-tab is-on" data-action="tab" data-tab="payload" role="tab">สิ่งที่เขาได้รับ</button>
+          <button class="oa-tab" data-action="tab" data-tab="openapi" role="tab">OpenAPI (generate)</button>
+          <button class="oa-tab" data-action="tab" data-tab="sql" role="tab">GRANT ที่บังคับใช้จริง</button>
+        </div>
+
+        <section class="oa-pane is-on" data-pane="payload">
+          <div id="oaPayload"><!-- js --></div>
+        </section>
+
+        <section class="oa-pane" data-pane="openapi">
+          <p class="oa-panehint">generate จากสิทธิ์ที่ติ๊กไว้ — ไม่ใช่ไฟล์ที่คนเขียนเอง จึงหลุดจากความจริงไม่ได้</p>
+          <pre class="oa-code" id="oaOpenapi"></pre>
+        </section>
+
+        <section class="oa-pane" data-pane="sql">
+          <p class="oa-panehint"><b>จุดสำคัญของข้อเสนอนี้</b> — สิทธิ์จริงอยู่ที่ Postgres ต่อให้โค้ดเราบั๊ก partner ก็ยังอ่านคอลัมน์ที่ไม่ได้ให้ไม่ได้</p>
+          <pre class="oa-code" id="oaSql"></pre>
+        </section>
+      </div>
+
+    </main>
+  </div>
+
+  <footer class="oa-foot">
+    Vision Meta Hub · หน้าเสนอแนวคิด (mockup) · ยังไม่มีอะไรใน ROADMAP จนกว่าเจ้าของจะอนุมัติ
+  </footer>
+</div>
+
+<script src="/lpr-plaque.js"></script>
+<script src="./openapi-demo.js?v=oa4"></script>
+</body>
+</html>

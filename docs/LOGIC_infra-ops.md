@@ -113,11 +113,67 @@ How to apply: a new settings area = add `.srail-item` + `#set-<key>` section + a
 
 | Priority | Bottleneck | Action |
 |---|---|---|
-| 1 | `events` table → hundreds of millions of rows | Partition BY RANGE (event_time) monthly — TimescaleDB or native declarative |
+| 1 | ~~`events` table → hundreds of millions of rows~~ **DONE 2026-07-22** (`195d743`) | Native declarative `PARTITION BY RANGE (event_time)`, monthly — see `docs/REF_database-schema.md` §3.3 |
 | 2 | Camera grid rendering 3,000 cards | Virtualize + lazy-load snapshots via IntersectionObserver |
 | 3 | Ingester = single Node process per vendor | Shard by topic-prefix / camera-id hash |
 | 4 | api-server single instance | api-server HA behind load balancer (session in DB already) |
 | 5 | Snapshot dir one folder | Shard to `snapshots/YYYY-MM-DD/` |
+
+---
+
+## Report rendering & boot staggering
+
+### Chromium lives in `report-worker`, not `api-server`
+
+Puppeteer/Chromium runs inside `src/report-worker.js` — a separate PM2 process. If Chrome dies,
+PM2 restarts *that*; api-server stays online. api-server borrows it over loopback
+(`POST /render` on `127.0.0.1:REPORT_WORKER_PORT`, via `src/helpers/renderViaWorker.js`) for
+operator-initiated downloads, and falls back to rendering in-process when the worker is
+unreachable — see `docs/REF_api-reference.md` → *Internal endpoints*.
+
+**Idle close** — `REPORT_BROWSER_IDLE_MS` (default `300000` = 5 min, `report-renderer.js:224`).
+A browser held open between reports costs RSS all day for a job that runs a handful of times;
+the pool is dropped after the idle gap and the relaunch is paid on the next render. The timer is
+`unref()`d so it never holds the process open.
+
+### Boot staggering (2026-09-06)
+
+Measured right after `pm2 restart api-server`: within the first 60 s the DB was running the LPR
+warm loop, the category/kpi/traffic rollup ticks, the helmet criteria **and** the first health
+poll simultaneously. Every page was slow for about a minute after each deploy. Now: one job at a
+time, each overridable by env.
+
+| Job | Delay after boot | Env override |
+|---|---|---|
+| helmet criteria | 3 s | — |
+| KPI rollup | 45 s | `KPI_STATS_FIRST_RUN_MS` |
+| category rollup | 90 s | `CAT_ROLLUP_FIRST_RUN_MS` |
+| traffic/LPR rollup | 135 s | `TRAFFIC_STATS_FIRST_RUN_MS` |
+| LPR warm | 180 s | — |
+| retention: events · snapshot · lpr · clip · rawXml · apiLog · partition | 300 / 330 / 360 / 390 / 420 / 450 / 480 s | — |
+
+The 24 h `setInterval` periods are unchanged; only the *first* run moved. Declaration order in
+`src/api-server.js` is **not** schedule order (partition at 480 s is declared above rawXml at
+420 s) — read the delays, not the file order.
+
+Two more scheduled jobs deliberately sit outside this ramp:
+- **traffic/LPR reconcile — 05:00 Bangkok**, never 03:00 (decision #267): the nightly `pg_dump`
+  finishes around 04:05 and the old 03:00 slot ran straight through it. The last completed date
+  is persisted in `system_settings.traffic_stats_reconciled_day` so a restart during that hour
+  does not redo the heaviest job of the day.
+- **LPR no-read self-check — Sunday 04:30 Bangkok**, and **not at boot** by design: the query
+  takes ~16 s and should not compete with a warming api-server for the pool
+  (`src/helpers/noreadCheck.js`).
+
+### Kill switches
+
+| Switch | Effect |
+|---|---|
+| `REPORT_RENDER_VIA_WORKER=0` | api-server renders downloads in-process; never calls the worker |
+| `DASHBOARD_BUNDLE=0` | Skip the `/dashboard.bundle.js` build; serve the unbundled scripts |
+| `partition_drop_enabled` (setting, not env) | Must be `'true'` before an `events` partition is actually dropped |
+| `SLOW_REQ_LOG_MS` | Threshold for the `[slow-req]` log (default 2000) — raise to quieten, lower to see more |
+| `EVENTS_COUNT_CAP` | Where `/api/events` stops counting (default 10000) |
 
 ---
 
@@ -140,4 +196,8 @@ How to apply: a new settings area = add `.srail-item` + `#set-<key>` section + a
 - `src/singleton.js` — PID-file lock
 - `db/db_migration_000_schema_migrations.sql` — tracking table bootstrap
 - `HARDWARE_SIZING_GUIDE.md` — full scale-up plan
+- `src/report-worker.js` + `src/helpers/renderViaWorker.js` — report rendering out-of-process
+- `src/report-renderer.js` — Puppeteer/SVG renderers + browser idle close
+- `db/MANUAL_partition_events_option_a.sql` + `src/helpers/partitionRetention.js` — `events` partitioning
+- `service_start.md` — env table (canonical) + the slow-request/slow-SQL recipe
 - GOTCHAS #13 (snapshot mtime), #19 (migration fail-fast), #20 (pg_dump binary)

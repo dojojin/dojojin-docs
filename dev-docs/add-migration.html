@@ -23,8 +23,9 @@
   <div class="step-num">1</div>
   <div class="step-body">
     <p>ตรวจ migration number ล่าสุด:</p>
-<pre>ls db/db_migration_0*.sql | sort | tail -3</pre>
-    <p>ถ้าล่าสุดคือ <code>074</code> → ไฟล์ใหม่ต้องเป็น <code>075</code></p>
+<pre>ls db/db_migration_*.sql | sort | tail -3</pre>
+    <p>ถ้าล่าสุดคือ <code>199</code> → ไฟล์ใหม่ต้องเป็น <code>200</code></p>
+    <p>หมายเหตุ: glob ต้องเป็น <code>db_migration_*.sql</code> ไม่ใช่ <code>db_migration_0*.sql</code> — เลข migration ผ่านหลัก 100 ไปแล้ว glob เดิมจึงมองไม่เห็นไฟล์ใหม่และจะบอกเลขล่าสุดผิด (runner ใน <code>src/migrate.js</code> ใช้ pattern <code>/^db_migration_.*\.sql$/</code>)</p>
   </div>
 </div>
 

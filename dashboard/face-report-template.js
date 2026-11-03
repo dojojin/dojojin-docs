@@ -143,7 +143,7 @@
     return `<div class="cmp-card" style="--gc:var(--status-bad)">
       <div class="cmp-imgs">
         <div class="cmp-box">${thumb(r.snapshot)}<span class="cmp-cap">${esc(label('rpt.captured', 'ภาพจากกล้อง'))}</span><span class="rpt-muted">#${esc(String(r.id))}</span></div>
-        <div class="cmp-box ref">${thumb(r.ref_snapshot)}<span class="cmp-cap">${esc(label('rpt.reference', 'ภาพอ้างอิง'))}</span><span class="rpt-muted">${esc(r.human_id || '-')}</span></div>
+        <div class="cmp-box ref">${r.ref_snapshot ? thumb(r.ref_snapshot) : (r.ref_photo ? `<img src="/api/blacklist/photo/${r.ref_photo.split('/').map(encodeURIComponent).join('/')}" alt="" style="max-width:100%;max-height:80px;border-radius:5px;object-fit:cover;margin-bottom:4px">` : '')}<span class="cmp-cap">${esc(label('rpt.reference', 'ภาพอ้างอิง'))}</span><span class="rpt-muted">${esc(r.human_id || '-')}</span></div>
       </div>
       <span class="rpt-badge" style="background:var(--status-bad);margin-top:8px;display:inline-block">${esc(r.group_name || 'blackList')}</span>
       <div class="cmp-name">${esc(r.name || 'Unknown')}</div>

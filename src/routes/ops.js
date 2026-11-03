@@ -54,7 +54,9 @@ module.exports = function opsRoutes(app, pool, { auth, getIP }) {
   // allowedSites (same pattern as events/faces/appearances/lpr routes).
   app.get('/api/alert-logs', async (req, res) => {
     try {
-      const { limit = 100, ruleId, cameraId, status, since } = req.query;
+      const { limit = 100, ruleId, cameraId, status, since, recipient } = req.query;
+      const canSeeRecipients = req.internal === true
+        || req.user?.role === 'admin' || req.user?.role === 'auditor';
       const where = [];
       const values = [];
       let idx = 1;
@@ -62,12 +64,27 @@ module.exports = function opsRoutes(app, pool, { auth, getIP }) {
       if (cameraId) { where.push(`camera_id = $${idx++}`); values.push(cameraId); }
       if (status)   { where.push(`status = $${idx++}`);    values.push(status); }
       if (since)    { where.push(`sent_at >= $${idx++}`);  values.push(since); }
+      // ⚠️ ตัวกรองผู้รับต้องอยู่หลังด่านสิทธิ์เดียวกับการ "เห็นชื่อ" — ไม่งั้น role
+      // ที่ถูกปิดชื่อไว้ยังเดาได้ด้วยการยิง ?recipient=<ชื่อ> แล้วดูว่ามีแถวกลับมาไหม
+      // (oracle attack) ซึ่งรั่วข้อมูลชุดเดียวกับที่ตั้งใจปิด
+      if (recipient && canSeeRecipients) {
+        where.push(`recipients_json @> jsonb_build_array(jsonb_build_object('name', $${idx++}))`);
+        values.push(recipient);
+      }
       const sw = siteWhere(req.user?.allowedSites ?? null, 'camera_id', idx);
       if (sw.sql) { where.push(sw.sql.replace(/^AND /, '')); values.push(...sw.args); idx += sw.args.length; }
       const sql = `SELECT * FROM alert_logs ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY sent_at DESC LIMIT $${idx}`;
       values.push(parseInt(limit));
       const { rows } = await pool.query(sql, values);
-      res.json(rows);
+
+      // ปิดชื่อผู้รับสำหรับ role ที่ไม่ใช่ admin/auditor — เหลือแค่ recipient_count
+      // auditor ต้องเห็น เพราะหน้าที่ของ role นี้คือตรวจ log โดยตรง (เกณฑ์เดียวกับ
+      // auth.requireAdminOrAuditor ที่ /api/health/details ใช้)
+      const redacted = canSeeRecipients ? rows : rows.map(row => (
+        row.recipients_json ? { ...row, recipients_json: null } : row
+      ));
+
+      res.json(redacted);
     } catch (e) { routeError(res, e, 'GET /api/alert-logs'); }
   });
 

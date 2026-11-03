@@ -178,6 +178,7 @@
       <div class="abox-title">Report Pipeline</div>
       <div class="abox-sub">
         <code>report-worker.js</code> (PM2 process)<br>
+        scheduler 60s tick + <code>POST /render</code><br>
         <code>report-template.js</code> → Puppeteer PDF<br>
         <code>report-renderer.js</code> → SVG+sharp PNG
       </div>
@@ -275,7 +276,7 @@
   <td><code>report-worker.js</code></td>
   <td>353</td>
   <td><span class="role-tag role-worker">worker</span></td>
-  <td>Analytics report PDF via Puppeteer — background PM2 process · calls report-template.js · scheduled + on-demand</td>
+  <td>Analytics report PDF via Puppeteer — background PM2 process · calls report-template.js · scheduled (60s tick) + on-demand <code>POST /render</code> on 127.0.0.1:3001 (VMOD-03, 2026-09-06): manual PDF/PNG downloads render here too, so Chromium never starts inside api-server · api-server falls back to in-process render if the worker is down</td>
   <td><a href="md-viewer.html?src=../docs/LOGIC_stats-reports.md">LOGIC_stats-reports</a></td>
 </tr>
 <tr>
@@ -312,6 +313,27 @@
   <td><span class="role-tag role-infra">infra</span></td>
   <td>DB migration runner — scan db/db_migration_*.sql · run idempotent on boot · ถ้า migration fail = startup abort (by design)</td>
   <td><a href="add-migration.html">Recipe: Migration</a></td>
+</tr>
+<tr>
+  <td><code>traffic-stats-refresher.js</code></td>
+  <td>95</td>
+  <td><span class="role-tag role-infra">infra</span></td>
+  <td>Refreshes <code>traffic_hourly_stats</code> every 15 min (called from api-server.js, no separate PM2 process) · added 2026-08-11</td>
+  <td>decision #237</td>
+</tr>
+<tr>
+  <td><code>openapi-gen.js</code></td>
+  <td>340</td>
+  <td><span class="role-tag role-lib">lib</span></td>
+  <td>Generates OpenAPI 3.1 spec per Partner API consumer from real Postgres grants (<code>has_column_privilege()</code>) — endpoints the consumer can't call are omitted, not documented-but-403 · registered 2026-08-11</td>
+  <td>decision #232</td>
+</tr>
+<tr>
+  <td><code>partner-admin.js</code></td>
+  <td>147</td>
+  <td><span class="role-tag role-infra">infra</span></td>
+  <td>CLI entrypoint for Partner API lifecycle (create/rotate/extend/revoke/reveal) — thin wrapper over <code>src/helpers/partnerAdmin.js</code>, same logic the dashboard UI calls · registered 2026-08-11</td>
+  <td><a href="md-viewer.html?src=../docs/REF_partner-onboarding.md">REF_partner-onboarding.md</a></td>
 </tr>
 <tr>
   <td><code>singleton.js</code></td>
@@ -373,11 +395,17 @@
 <tr><td><code>branding.js</code></td><td>81</td><td>3</td><td>Branding config · logo upload/delete (public GET; admin write)</td></tr>
 <tr><td><code>license.js</code></td><td>89</td><td>4</td><td>Machine ID · license status · activate · deactivate</td></tr>
 <tr><td><code>eula.js</code></td><td>70</td><td>3</td><td>EULA content · acceptance status · accept endpoint</td></tr>
+<tr><td><code>traffic.js</code></td><td>283</td><td>2</td><td>Traffic Enforcement + Helmet Stats page data — <code>GET /api/traffic/enforcement</code>, <code>GET /api/traffic/helmet-series</code>, reads pre-aggregated <code>traffic_hourly_stats</code> · added 2026-08-11, extended same day</td></tr>
+<tr><td><code>partner-api.js</code></td><td>698</td><td>6</td><td>Outbound Partner API (<code>/v1/*</code>, separate host) — AK/SK HMAC auth, <code>SET LOCAL ROLE</code> per query, keyset pagination · registered 2026-08-11</td></tr>
+<tr><td><code>integrations.js</code></td><td>423</td><td>~8</td><td>Partner lifecycle admin UI backend — create/rotate/extend/revoke/reveal, column-grant editor · registered 2026-08-11</td></tr>
+<tr><td><code>blacklist-sources.js</code></td><td>1,950</td><td>32</td><td>Inbound blacklist import — DSS Pro / GuruSquare / HCP / manual, source CRUD, dedup master reservoir, LPR bridge, gated push-back · registered 2026-08-11</td></tr>
+<tr><td><code>hcp.js</code></td><td>506</td><td>~7</td><td>HikCentral Professional (HCP) — face search, engine stats, device list (HC4), camera mapping — <strong>hkt-only, hardcoded</strong> · registered 2026-08-11</td></tr>
 </tbody>
 </table>
+<p><em>หมายเหตุ 2026-08-11: header ด้านบน ("19 ไฟล์, 132 routes") ค้างมาจากรอบก่อนหน้านี้มาก — <code>src/routes/</code> จริงมี 35 ไฟล์แล้ว (เช็คด้วย <code>ls src/routes/*.js</code>) เพิ่ม traffic.js/partner-api.js/integrations.js/blacklist-sources.js/hcp.js เข้าตารางนี้แล้ว (ตรงกับงานเซสชันนี้) แต่ยังขาด lpr-*.js, faces.js, sites.js, ฯลฯ อีกหลายไฟล์ — ไม่ได้ backfill ทั้งตาราง</em></p>
 
 <!-- ============================= src/helpers/ ============================= -->
-<h2>src/helpers/ — Utilities (3 ไฟล์)</h2>
+<h2>src/helpers/ — Utilities (78 ไฟล์บนดิสก์ · ตารางนี้แสดง 10 ตัวที่แตะบ่อย)</h2>
 
 <table>
 <thead>
@@ -387,6 +415,13 @@
 <tr><td><code>routeError.js</code></td><td>Standard error handler สำหรับ route — <code>routeError(res, err, 'endpoint name')</code> → HTTP 500 + JSON; require ไว้แล้วใน api-server.js</td></tr>
 <tr><td><code>getSystemSetting.js</code></td><td>Helper query system_settings table — ใช้ใน routes ที่ต้องการ setting ระหว่าง request</td></tr>
 <tr><td><code>normalizeTimeOfDay.js</code></td><td>Normalize time-of-day filter values สำหรับ stats queries</td></tr>
+<tr><td><code>streamWatchdog.js</code></td><td>Byte-level dead-stream detector for <code>timeout:0</code> HTTP event streams (Hikvision/Dahua ingesters) — GOTCHAS #152 · added 2026-08-11</td></tr>
+<tr><td><code>partnerAdmin.js</code></td><td>Single source of Partner API lifecycle logic — both the CLI (<code>src/partner-admin.js</code>) and the dashboard HTTP endpoints (<code>routes/integrations.js</code>) call the same functions · registered 2026-08-11</td></tr>
+<tr><td><code>partnerSchema.js</code></td><td>Column-list source of truth for Partner API — both the SQL in <code>partner-api.js</code> and the OpenAPI generator read from this one file, so the generated spec can never drift from what the endpoint actually returns · registered 2026-08-11</td></tr>
+<tr><td><code>dashboardBundle.js</code></td><td>รวม <code>&lt;script src&gt;</code> ทุกตัวใน <code>dashboard/index.html</code> เป็นไฟล์เดียว <code>/dashboard.bundle.js</code> ตอน api-server boot (ลำดับตาม index.html) — first load เหลือ 9 คำขอจาก 47 · kill switch <code>DASHBOARD_BUNDLE=0</code> คืนพฤติกรรมเดิมทั้งหมด · added 2026-09-06</td></tr>
+<tr><td><code>noreadCheck.js</code></td><td>ยามตรวจนิยาม "ไม่ทราบทะเบียน" — นับด้วย predicate <code>raw_json-&gt;&gt;'plate' = ''</code> เทียบกับ anti-join <code>license_plates</code> แบบเดิม ถ้าสองนิยามเริ่มไม่ตรงกันจะโผล่ที่ <code>/api/health/details</code> → <code>lpr.noread_check</code> · รันสัปดาห์ละครั้ง (อาทิตย์ 04:30) · override ด้วย <code>NOREAD_CHECK_INTERVAL_MS</code> สำหรับเทสต์เท่านั้น · added 2026-09-06</td></tr>
+<tr><td><code>renderViaWorker.js</code></td><td>ส่งงาน render ของปุ่มดาวน์โหลด PDF/PNG ไปที่ <code>POST http://127.0.0.1:3001/render</code> ของ report-worker (VMOD-03) — api-server จึงไม่ต้องเปิด Chromium เอง · allowlist ชื่อฟังก์ชัน 6 ตัว · timeout 120 วิ · fallback เรนเดอร์ในโปรเซสเมื่อ worker ล่ม/ต่อไม่ติด/ตอบไม่ใช่ 2xx หรือเมื่อ <code>REPORT_RENDER_VIA_WORKER=0</code> / ไม่มี <code>INTERNAL_API_SECRET</code> · added 2026-09-06</td></tr>
+<tr><td><code>scrubRawJson.js</code></td><td>ปิดบัง <code>&lt;ipAddress&gt;</code> / <code>&lt;ipv6Address&gt;</code> / <code>&lt;macAddress&gt;</code> ใน <code>raw_json.rawXml</code> สำหรับ non-admin (SEC-018 · security backlog S1) — ปิดบังค่า ไม่ตัดฟิลด์ เพราะ page-lpr.js ยังอ่านฟิลด์เข็มขัดนิรภัยจาก XML ก้อนเดียวกัน · มีสองรุ่นที่ต้องให้ผลตรงกัน: <code>scrubRawJson()</code> (JS ต่อแถว) และ <code>scrubRawJsonSql()</code> (ใน SELECT list) · ใช้ที่ events, appearances, lpr-query, lpr-watchlist, lpr-alerts, traffic + WebSocket broadcast · added 2026-09-06</td></tr>
 </tbody>
 </table>
 
@@ -475,8 +510,10 @@
 <tr><td><code>page-branding.js</code></td><td>81</td><td>Branding page — logo preview + upload/remove (white-label)</td></tr>
 <tr><td><code>report-template.js</code></td><td>241</td><td>Analytics report HTML template — buildReportHTML() สำหรับ Puppeteer PDF · ห้ามสร้าง template ซ้ำ</td></tr>
 <tr><td><code>report-print.js</code></td><td>64</td><td>report-print.html helper — print layout logic สำหรับ static PDF view</td></tr>
+<tr><td><code>page-traffic.js</code></td><td>1099</td><td>Traffic Enforcement page — 7 tabs (volume/violation/effect/deploy/<b>helmet</b>/report/settings), per-site camera badges, rate-vs-count metric toggle · added 2026-08-11, decisions #237–238, #243</td></tr>
 </tbody>
 </table>
+<p><em>หมายเหตุ 2026-08-11: header ด้านบน ("21 ไฟล์") ก็ค้างมาก่อนหน้านี้เช่นกัน ไม่ใช่แค่ page-traffic.js ที่หาย — ไม่ได้ backfill ทั้งตารางรอบนี้</em></p>
 
 <!-- ============================= dashboard CSS/HTML ============================= -->
 <h2>dashboard/ — CSS, HTML, SVG</h2>
@@ -540,7 +577,7 @@
 </thead>
 <tbody>
 <tr><td><code>package.json</code></td><td>Node dependencies + npm scripts (<code>start</code> = api-server, <code>migrate</code> = run migrations)</td></tr>
-<tr><td><code>ecosystem.config.js</code></td><td>PM2 process definitions — api-server, alert-worker, report-worker, media-recorder ฯลฯ (7 processes)</td></tr>
+<tr><td><code>ecosystem.config.js</code></td><td>PM2 process definitions — api-server, mqtt-subscriber, media-recorder, hikvision, dahua, report-worker, alert-worker, face-embed-worker, lpr-receiver (9 processes)</td></tr>
 <tr><td><code>docker-compose.yml</code></td><td>PostgreSQL + EMQX containers สำหรับ dev/production</td></tr>
 <tr><td><code>Dockerfile</code></td><td>Node.js app image (production deployment)</td></tr>
 <tr><td><code>.env.example</code></td><td>Template env vars — copy เป็น <code>src/.env</code> · ดู service_start.md</td></tr>

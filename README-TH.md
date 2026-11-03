@@ -2,7 +2,7 @@
 
 > **ระบบวิเคราะห์และจัดการกล้องวงจรปิดแบบครบวงจร** — แพลตฟอร์มวิเคราะห์ภาพแบบ real-time รองรับกล้อง Bosch, Hikvision, Dahua และ ONVIF ทั่วไป
 
-[![Version](https://img.shields.io/badge/version-1.5.3-blue.svg)]()
+[![Version](https://img.shields.io/badge/version-1.5.4-blue.svg)]()
 [![License](https://img.shields.io/badge/license-Proprietary-red.svg)]()
 [![Status](https://img.shields.io/badge/status-Production-green.svg)]()
 [![Multi--vendor](https://img.shields.io/badge/Multi--vendor-Bosch%20%C2%B7%20Hikvision%20%C2%B7%20Dahua%20%C2%B7%20ONVIF-success.svg)]()
@@ -583,4 +583,4 @@ Repository นี้มี source code และ configuration ที่เป�
 
 ---
 
-<sub>**Vigil Platform** v1.5.3 · by DojoJin Tech · สร้างด้วยความใส่ใจในประเทศไทย 🇹🇭 · © 2025-2026</sub>
+<sub>**Vigil Platform** v1.5.4 · by DojoJin Tech · สร้างด้วยความใส่ใจในประเทศไทย 🇹🇭 · © 2025-2026</sub>

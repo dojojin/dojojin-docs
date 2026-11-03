@@ -214,7 +214,18 @@
 
 <p>ทุก session ที่ login แล้วสามารถเปิด WebSocket connection เพื่อรับเหตุการณ์ใหม่แบบ real-time โดยไม่ต้อง reload หน้า</p>
 
-<pre>wss://&lt;host&gt;/ws   (ต้องมี session cookie หรือ Bearer token)</pre>
+<h3>การยืนยันตัวตน (ตอน HTTP upgrade)</h3>
+<p>ตรวจสิทธิ์ตั้งแต่จังหวะ <strong>HTTP upgrade</strong> ไม่ใช่หลังต่อสำเร็จ — ไม่มี token ที่ใช้ได้ = ถูกปฏิเสธด้วย <code>401</code> ตั้งแต่ยังไม่เป็น WebSocket แหล่งของ token มีสองทางเหมือนฝั่ง REST API คือ cookie ชื่อ <code>session</code> (ส่งเองอัตโนมัติเมื่อ upgrade แบบ same-origin) หรือ query param <code>?token=</code> (ทางสำรองสำหรับ Safari ITP)</p>
+
+<pre>wss://&lt;host&gt;/ws              # ใช้ session cookie
+wss://&lt;host&gt;/ws?token=&lt;token&gt; # ทางสำรอง (Safari ITP)</pre>
+
+<p>สิทธิ์ระดับ Site และ View ถูกอ่านครั้งเดียว ณ ตอนต่อ — ถ้า admin แก้สิทธิ์ระหว่างที่ผู้ใช้เปิดจอค้างอยู่ จะมีผลเมื่อ reconnect</p>
+
+<h3>การขอรับหัวข้อ (subscribe)</h3>
+<p>ค่าเริ่มต้นของทุก connection คือ "ยังไม่ขอ stream หนัก" หน้าที่ต้องใช้ข้อมูลเต็มต้องส่ง frame นี้เข้ามาเอง หัวข้อที่ขอได้มี <code>lpr</code> และ <code>face</code> เท่านั้น (นอกเหนือจากนี้ถูกเมินเงียบ ๆ)</p>
+
+<pre>{"type":"subscribe","topics":["lpr","face"]}</pre>
 
 <h3>ประเภทข้อความที่รับได้</h3>
 <table>
@@ -230,23 +241,37 @@
   <td>เหตุการณ์ใหม่จากกล้อง — ID ชนิด กล้อง เวลา มีรูปหรือไม่</td>
 </tr>
 <tr>
+  <td><code>new_face</code></td>
+  <td>ใบหน้าที่จับได้ใหม่ (Face Capture)</td>
+</tr>
+<tr>
+  <td><code>event_snapshot</code></td>
+  <td>รูป snapshot ของเหตุการณ์มาถึงทีหลัง — หน้าจอเอาไปเติมรูปให้แถวที่แสดงอยู่แล้ว</td>
+</tr>
+<tr>
+  <td><code>clip_done</code></td>
+  <td>media-recorder บันทึกคลิปเสร็จแล้ว</td>
+</tr>
+<tr>
+  <td><code>occupancy_update</code></td>
+  <td>จำนวนคน/รถในพื้นที่เปลี่ยน (occupancy สดของจอ Live)</td>
+</tr>
+<tr>
   <td><code>camera_status</code></td>
-  <td>กล้องเปลี่ยนสถานะ online/offline</td>
-</tr>
-<tr>
-  <td><code>alert_fired</code></td>
-  <td>กฎแจ้งเตือนทำงาน — ส่ง LINE แล้ว</td>
-</tr>
-<tr>
-  <td><code>system</code></td>
-  <td>ข้อความระบบ — เช่น service restart, migration สำเร็จ</td>
+  <td>สถานะกล้องเปลี่ยน online/offline — ส่งเป็นชุด <code>changes</code> ทุก 30 วินาทีเมื่อมีการเปลี่ยน (ส่งถึงทุก socket ไม่ผ่านตัวกรอง topic)</td>
 </tr>
 </tbody>
 </table>
 
+<h3>ข้อความรุ่นย่อ (<code>lite</code>)</h3>
+<p>ข้อความ "หัวข้อหนัก" (anprAlarm ของ <code>new_event</code> และ <code>new_face</code>) ถูกยิงถี่มาก — วัดจริงราว 10 + 3.4 ข้อความ/วินาที ถ้าส่งเต็มทุกใบให้ทุกแท็บที่เปิดค้าง จะกินระดับหลายร้อย KB ต่อ 10 วินาทีต่อแท็บ แท็บที่ <strong>ไม่ได้ subscribe</strong> หัวข้อนั้นจึงได้ข้อความรุ่นย่อแทน (ไม่ใช่ "ไม่ได้รับเลย" เพราะตัวนับ badge และ toast ของทุกหน้ายังต้องขยับตาม) รุ่นย่อมีธง <code>lite: true</code> และเหลือเฉพาะ field ที่จำเป็น ขนาดราว 200–300 ไบต์ต่อใบ</p>
+
+<pre>{"type":"new_event","lite":true,"event":{ "id":…, "camera_id":…, "event_type":…, "event_time":…, "raw_json":{ "plate":… } }}</pre>
+
 <div class="ibox">
   <h4>ข้อควรทราบ</h4>
   <p>WebSocket ต้องมี session ที่ valid เสมอ — ถ้า session หมดอายุ connection จะถูกตัดและ dashboard จะแสดง toast "session expired" แล้ว redirect ไป login</p>
+  <p>ผู้ใช้ที่ <strong>ไม่ใช่ admin</strong> จะได้ข้อความรุ่นที่ปิดบัง IP / MAC ของกล้องใน <code>raw_json.rawXml</code> แล้ว (v1.5.4 — ปิดช่องข้อมูลแผนผังเครือข่ายภายใน) รุ่นย่อไม่ได้รับผลกระทบเพราะไม่มี <code>rawXml</code> ติดมาอยู่แล้ว</p>
 </div>
 
 <h2>รูปแบบ Response</h2>
@@ -290,8 +315,17 @@ GET /api/appearances/search?limit=20&amp;offset=0</pre>
 <ul>
   <li><code>limit</code> — จำนวนรายการต่อหน้า (ค่าเริ่มต้นต่างกันตาม endpoint)</li>
   <li><code>offset</code> — ตำแหน่งเริ่มต้น (0 = หน้าแรก)</li>
-  <li>Response มี field <code>total</code> สำหรับคำนวณจำนวนหน้า</li>
+  <li>จำนวนรวมมาทาง <strong>response header</strong> <code>X-Total-Count</code> สำหรับคำนวณจำนวนหน้า</li>
 </ul>
+
+<h3>เพดานการนับ (count cap)</h3>
+<p>บนตาราง events ที่มีหลายสิบล้านแถว การนับให้ครบจริงแพงกว่าการดึงรายการที่จะแสดงเสียอีก <code>/api/events</code> จึงหยุดนับที่ <strong>10,000</strong> (ปรับด้วย <code>EVENTS_COUNT_CAP</code>) และ <code>/api/appearances/search</code> ใช้เพดานเดียวกัน (<code>APP_COUNT_CAP</code>)</p>
+<ul>
+  <li>ถ้าชนเพดาน จะมี header <code>X-Total-Capped: 1</code> ติดมาด้วย และ <code>X-Total-Count</code> จะเท่ากับเพดานพอดี</li>
+  <li>หน้าจอเห็น header ตัวนี้แล้วแสดงผลเป็น <strong>"10,000+"</strong> แทนตัวเลขตรง ๆ — ไม่ใช่บอกว่ามีแค่หนึ่งหมื่นแถว</li>
+</ul>
+<pre>X-Total-Count: 10000
+X-Total-Capped: 1</pre>
 
 <h2>ตัวอย่าง: ดึงเหตุการณ์ล่าสุด</h2>
 
@@ -310,6 +344,96 @@ Authorization: Bearer &lt;token&gt;
   },
   ...
 ]</pre>
+
+<h2>API สำหรับพันธมิตรภายนอก (Partner API)</h2>
+
+<p>นอกจาก REST API ภายในข้างต้น (<code>/api/*</code> — ใช้โดย dashboard และแอปมือถือ) Vigil Platform
+ยังเปิด <strong>Partner API</strong> แยกต่างหาก (<code>/v1/*</code>) สำหรับให้พันธมิตรภายนอก
+(เช่นหน่วยงานที่ต้องการดึงข้อมูลป้ายทะเบียน/เหตุการณ์ไปประมวลผลต่อ) เชื่อมต่อแบบ server-to-server
+โดยไม่ต้องมี session หรือเบราว์เซอร์เลย</p>
+
+<div class="ibox">
+  <h4>คนละระบบ คนละการยืนยันตัวตนกับ API ภายใน</h4>
+  <p>Partner API เปิดให้บริการบนโดเมนแยก (ไม่ใช่โดเมนของ dashboard) และใช้การเซ็นคำขอด้วยกุญแจ
+  (API Key + Secret เฉพาะพันธมิตรแต่ละราย) แทน cookie/JWT ที่ dashboard ใช้ — ป้องกันไม่ให้
+  ผู้บุกรุกที่ได้ credential ฝั่งพันธมิตรไปสามารถเข้าถึง dashboard ของผู้ดูแลระบบได้</p>
+</div>
+
+<h3>สิ่งที่พันธมิตรดึงข้อมูลได้</h3>
+
+<table>
+<thead>
+<tr>
+<th>Endpoint</th>
+<th>ทำอะไร</th>
+</tr>
+</thead>
+<tbody>
+<tr><td><code>GET /v1/healthz</code></td><td>ตรวจสอบว่า credential ยังใช้งานได้</td></tr>
+<tr><td><code>GET /v1/cameras</code></td><td>รายชื่อกล้องที่พันธมิตรรายนี้มีสิทธิ์เห็น</td></tr>
+<tr><td><code>GET /v1/lpr/events</code></td><td>ฟีดเหตุการณ์ป้ายทะเบียน ย้อนหลังตามช่วงเวลาที่กำหนด</td></tr>
+<tr><td><code>GET /v1/face/events</code></td><td>ฟีดเหตุการณ์บุคคล/ยานพาหนะ (คุณลักษณะที่ไม่ระบุตัวตน)</td></tr>
+<tr><td><code>POST /v1/lpr/search</code></td><td>ค้นหาป้ายทะเบียนที่ต้องการ (รองรับภาษาไทย)</td></tr>
+<tr><td><code>GET /v1/openapi.json</code></td><td>เอกสาร API แบบมาตรฐาน OpenAPI 3.1 — สร้างขึ้นเฉพาะสำหรับพันธมิตรรายนั้น ตามสิทธิ์จริงที่ได้รับ (endpoint/คอลัมน์ที่ไม่มีสิทธิ์จะไม่ปรากฏในเอกสารเลย ไม่ใช่ปรากฏแต่เรียกไม่ได้)</td></tr>
+</tbody>
+</table>
+
+<h3>สิทธิ์เข้าถึงถูกบังคับที่ฐานข้อมูล ไม่ใช่แค่ในโค้ด</h3>
+
+<p>ผู้ดูแลระบบกำหนดได้ละเอียดถึงระดับคอลัมน์ว่าพันธมิตรแต่ละรายเห็นข้อมูลอะไรได้บ้าง (เช่น ปิดคอลัมน์
+ป้ายทะเบียนไว้จนกว่าจะมีข้อตกลงแบ่งปันข้อมูลที่จำเป็นตามกฎหมาย PDPA) — สิทธิ์นี้บังคับใช้ที่ชั้น
+ฐานข้อมูลโดยตรง ไม่ใช่แค่เงื่อนไขในโค้ด API เพื่อไม่ให้บั๊กในโค้ดกลายเป็นช่องทางรั่วไหลข้อมูลที่ไม่ได้รับอนุญาต</p>
+
+<h3>ระบบป้องกันเพิ่มเติม</h3>
+<ul>
+  <li><strong>จำกัดอัตราการเรียก (rate limit)</strong> ต่อพันธมิตรแต่ละราย ป้องกันการดึงข้อมูลถี่เกินไป</li>
+  <li><strong>บันทึกทุกคำขอ</strong> (audit log) ทั้งที่สำเร็จและถูกปฏิเสธ — เห็นได้ว่าใครพยายามเข้าถึงอะไรบ้าง</li>
+  <li><strong>credential มีวันหมดอายุได้</strong> ตั้งเป็นช่วงเวลา (30/60/90/120/180/365 วัน) และปิดการใช้งานได้ทันทีโดยไม่ต้องลบ</li>
+  <li><strong>เพิ่ม/ถอนสิทธิ์ได้ทุกเมื่อ</strong> โดยไม่กระทบการเชื่อมต่อเดิม — ปิดเฉพาะคอลัมน์ที่ต้องการได้ทันที</li>
+</ul>
+
+<p>ต้องการเชื่อมต่อ Partner API ติดต่อผู้ดูแลระบบเพื่อขอ credential — ใช้เวลาตั้งค่าไม่กี่นาที</p>
+
+<h2>แหล่งข้อมูลจากระบบภายนอก (Inbound Integrations)</h2>
+
+<p>นอกจากเปิดข้อมูลออกให้พันธมิตรแล้ว Vigil Platform ยังดึงข้อมูล "บัญชีเฝ้าระวัง" (บุคคล/ยานพาหนะ)
+เข้ามาจากระบบภายนอกที่หน่วยงานอื่นดูแลอยู่แล้ว เพื่อให้แจ้งเตือนอัตโนมัติเมื่อกล้องของเราจับภาพตรงกับ
+รายชื่อเฝ้าระวังนั้น โดยไม่ต้องพิมพ์ข้อมูลซ้ำเอง</p>
+
+<table>
+<thead>
+<tr>
+<th>ระบบต้นทาง</th>
+<th>ดึงข้อมูลอะไร</th>
+<th>ใช้ยืนยันตัวตนแบบไหน</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><strong>Dahua DSS Pro</strong></td>
+  <td>รายชื่อบุคคล + ยานพาหนะเฝ้าระวังจากระบบตำรวจ/รักษาความปลอดภัย</td>
+  <td>บัญชีที่หน่วยงานเจ้าของระบบมอบให้ ผ่านทาง edge node ในไซต์นั้น</td>
+</tr>
+<tr>
+  <td><strong>GuruSquare</strong></td>
+  <td>ทะเบียนยานพาหนะเฝ้าระวัง (เฉพาะป้ายทะเบียน)</td>
+  <td>API Key ต่อระบบ</td>
+</tr>
+<tr>
+  <td><strong>HikCentral Professional (HCP)</strong></td>
+  <td>ค้นหาใบหน้าย้อนหลังข้ามกล้องผ่านดัชนีของ HCP — เฉพาะไซต์ที่มี HikCentral อยู่แล้ว</td>
+  <td>ผ่าน edge node ของไซต์นั้นเท่านั้น (ไม่เปิดให้เข้าถึงตรงจาก central)</td>
+</tr>
+</tbody>
+</table>
+
+<div class="ibox">
+  <h4>เราไม่แก้ไขข้อมูลที่ระบบต้นทางโดยตรง</h4>
+  <p>ถ้าพบข้อมูลที่ผิดพลาดจากระบบต้นทาง (เช่น พิมพ์ชื่อผิด) เราไม่มีสิทธิ์ไปแก้ไขระบบต้นทางเอง
+  — การแก้ไขทำที่ฝั่งเราเป็นชั้นเสริมทับไว้ ครั้งถัดไปที่ดึงข้อมูลใหม่จากต้นทาง ระบบจะยังใช้ค่าที่แก้ไว้
+  โดยอัตโนมัติ ไม่ต้องแก้ซ้ำทุกครั้ง และไม่มีการลบข้อมูลทิ้งถาวร — "ซ่อน" รายการที่ไม่ต้องการได้
+  แต่กู้คืนได้เสมอพร้อมประวัติว่าใครซ่อนไว้เมื่อไหร่</p>
+</div>
 
 <div class="ref">
   <p><a href="14-appearances.html">← 14 วิเคราะห์ลักษณะบุคคล</a></p>

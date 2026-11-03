@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="th" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>แดชบอร์ดกวดขันวินัยจราจร — Live Demo</title>
+
+<!-- LIVE DEMO — ข้อมูลบนหน้านี้เป็น mock ทั้งหมด ไม่ได้ query ของจริง
+     แต่ "รูปทรง" ของข้อมูลถอดมาจากของจริงที่วัดได้ 2026-08-11 เพื่อให้ตัวเลข
+     ผ่านสายตาคนหน้างาน (ดู accumulative-data.js — มีที่มาของทุกชุดตัวเลข)
+     Served at: /others/demo/accumulative/   (auth-gated)
+     data-theme="light" ตายตัว ไม่โหลด /theme-init.js — หน้า demo ใช้ light เสมอ
+     CSP: script-src 'self' — ห้าม inline <script> / inline handler ทุกกรณี -->
+<link rel="stylesheet" href="/vendor/fonts/fonts.css">
+<script src="/vendor/chartjs/chart-4.4.1.umd.min.js"></script>
+<link rel="stylesheet" href="/index.css">
+<link rel="stylesheet" href="./accumulative.css?v=ac7">
+</head>
+<body>
+<div class="demo-wrap">
+
+  <div class="demo-banner">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+    <span><b>LIVE DEMO — ตัวเลขทั้งหมดเป็น mock</b> ·
+    ยังไม่ต่อข้อมูลจริง แต่รูปทรงกราฟ/อัตราฝ่าฝืน/รายชื่อกล้อง
+    <b>ถอดมาจากข้อมูลจริงของระบบ</b> (ป้ายทะเบียน 5.05 ล้านรายการ ย้อนหลัง 7 วัน)
+    เพื่อให้ประเมินหน้าตาและการใช้งานได้ตรงกับของจริง</span>
+  </div>
+
+  <div class="page-head">
+    <div>
+      <h1>กวดขันวินัยจราจร · Traffic Enforcement</h1>
+      <div class="sub">ปริมาณรถสะสมรายชั่วโมง · อัตราการฝ่าฝืน · วัดผลก่อน-หลังตั้งจุดกวดขัน</div>
+    </div>
+    <div class="tabs" id="acTabBar">
+      <button class="tab active" data-action="acTab" data-tab="volume">ปริมาณรถสะสม</button>
+      <button class="tab" data-action="acTab" data-tab="violation">วินัยจราจร</button>
+      <button class="tab" data-action="acTab" data-tab="effect">ก่อน-หลังกวดขัน</button>
+      <button class="tab" data-action="acTab" data-tab="deploy">จุดที่ควรตั้งด่าน</button>
+      <button class="tab" data-action="acTab" data-tab="report">รายงาน</button>
+      <button class="tab" data-action="acTab" data-tab="settings">ตั้งค่า</button>
+    </div>
+  </div>
+
+  <!-- ───────── แถบเลือกขอบเขต (ใช้ร่วมทุกแท็บ ยกเว้นตั้งค่า) ───────── -->
+  <!-- แต่ละแท็บใช้ตัวกรองไม่เหมือนกัน — ตัวไหนแท็บนั้นไม่ได้เอาไปคำนวณจะถูกซ่อน
+       (data-scope บอกว่าแท็บไหนใช้บ้าง) ไม่งั้นผู้ใช้กดแล้วไม่มีอะไรเกิดขึ้น
+       ซึ่งทำให้เข้าใจผิดว่าระบบเสีย -->
+  <div class="scope-bar" id="acScopeBar">
+    <div class="scope-group" data-scope="volume violation effect deploy">
+      <span class="scope-label">กล้อง</span>
+      <button class="btn sm" data-action="acOpenCams" id="acCamBtn">ทุกกล้อง (14)</button>
+      <span class="scope-hint" id="acCamHint">เลือกเฉพาะจุดที่จะกวดขันได้</span>
+    </div>
+    <div class="scope-group" data-scope="volume violation deploy">
+      <span class="scope-label">ช่วงเวลา</span>
+      <div class="seg" id="acRangeSeg">
+        <button class="segbtn" data-action="acRange" data-range="7">7 วัน</button>
+        <button class="segbtn active" data-action="acRange" data-range="28">28 วัน</button>
+        <button class="segbtn" data-action="acRange" data-range="90">90 วัน</button>
+      </div>
+    </div>
+    <div class="scope-group" data-scope="volume">
+      <span class="scope-label">ประเภทรถ</span>
+      <button class="btn sm" data-action="acOpenTypes" id="acTypeBtn">ทุกประเภท</button>
+    </div>
+    <div class="scope-group grow" data-scope="volume violation">
+      <span class="scope-label">ระดับ</span>
+      <div class="seg" id="acGranSeg">
+        <button class="segbtn active" data-action="acGran" data-gran="day">รายวัน</button>
+        <button class="segbtn" data-action="acGran" data-gran="week">รายสัปดาห์</button>
+        <button class="segbtn" data-action="acGran" data-gran="month">รายเดือน</button>
+      </div>
+    </div>
+    <div class="scope-group grow" id="acDowGroup" data-scope="volume violation effect deploy">
+      <span class="scope-label">วัน</span>
+      <div class="dow-chips" id="acDowChips"></div>
+      <button class="btn sm ghost" data-action="acDowAll">ทุกวัน</button>
+    </div>
+  </div>
+
+  <!-- สรุปขอบเขตที่เลือกอยู่ — ให้อ่านออกทันทีว่ากราฟข้างล่างคือชุดข้อมูลไหน -->
+  <div class="scope-summary" id="acScopeSummary"></div>
+
+  <!-- ───────── แท็บ 1 · ปริมาณรถสะสม ───────── -->
+  <section class="ac-panel" id="acPanel-volume">
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <div class="card-title" id="acVolTitle">ปริมาณรถสะสม</div>
+          <div class="card-sub" id="acVolSub">เส้นสะสม (cumulative) ตั้งแต่ 00:00 ถึงชั่วโมงนั้น · เฉลี่ยต่อวัน</div>
+        </div>
+        <div class="seg sm">
+          <button class="segbtn active" data-action="acVolMode" data-mode="cum">สะสม</button>
+          <button class="segbtn" data-action="acVolMode" data-mode="hour">รายชั่วโมง</button>
+        </div>
+      </div>
+      <div class="chart-box lg"><canvas id="acChartVolume"></canvas></div>
+      <div class="insight" id="acVolInsight"></div>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">แยกตามประเภทรถ — เฉลี่ยต่อวัน</div>
+        <div class="card-sub">จัดกลุ่มประเภทได้เองในแท็บ “ตั้งค่า”</div>
+        <div class="chart-box"><canvas id="acChartByType"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">สัดส่วนวันทำงาน เทียบ วันหยุด</div>
+        <div class="card-sub">ปริมาณรวมต่อวัน แยกตามกลุ่มประเภทรถ</div>
+        <div class="chart-box"><canvas id="acChartSplit"></canvas></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ───────── แท็บ 2 · วินัยจราจร ───────── -->
+  <section class="ac-panel" id="acPanel-violation" hidden>
+    <div class="kpi-row" id="acViolKpis"></div>
+
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <div class="card-title">อัตราไม่สวมหมวกนิรภัย รายชั่วโมง</div>
+          <div class="card-sub" id="acHelmetDenom"></div>
+        </div>
+      </div>
+      <div class="chart-box lg"><canvas id="acChartHelmet"></canvas></div>
+      <div class="insight" id="acHelmetInsight"></div>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">อัตราไม่คาดเข็มขัดนิรภัย รายชั่วโมง</div>
+        <div class="card-sub" id="acBeltDenom"></div>
+        <div class="chart-box"><canvas id="acChartBelt"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">ซ้อน 3 คนขึ้นไป</div>
+        <div class="card-sub">นับจากคอลัมน์ <code>rider_count</code> ของจริง · เฉลี่ยต่อวัน</div>
+        <div class="chart-box"><canvas id="acChartRiders"></canvas></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">อัตราฝ่าฝืนรายกล้อง — เรียงจากมากไปน้อย</div>
+      <div class="card-sub">ใช้เลือกว่าจะไปตั้งด่านที่ไหน</div>
+      <div class="tablewrap"><table class="ac-table" id="acCamTable"></table></div>
+    </div>
+  </section>
+
+  <!-- ───────── แท็บ 3 · ก่อน-หลังกวดขัน ───────── -->
+  <section class="ac-panel" id="acPanel-effect" hidden>
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <div class="card-title" id="acEffTitle">วัดผลการกวดขัน — เทียบก่อนและหลัง</div>
+          <div class="card-sub" id="acEffSub">เลือกวันที่เริ่มตั้งจุดกวดขัน ระบบจะเทียบอัตราฝ่าฝืนก่อนหน้ากับหลังจากนั้น</div>
+        </div>
+        <div class="eff-controls">
+          <label class="mini-label">เรื่องที่วัด</label>
+          <div class="seg sm" id="acEffKindSeg">
+            <button class="segbtn active" data-action="acEffKind" data-kind="helmet">ไม่สวมหมวก</button>
+            <button class="segbtn" data-action="acEffKind" data-kind="belt">ไม่คาดเข็มขัด</button>
+            <button class="segbtn" data-action="acEffKind" data-kind="riders">ซ้อน 3</button>
+          </div>
+          <label class="mini-label">วันที่เริ่มกวดขัน</label>
+          <input type="date" class="form-input sm" id="acEffDate" value="2026-07-28">
+          <label class="mini-label">หน้าต่างเทียบ</label>
+          <div class="seg sm" id="acEffWinSeg">
+            <button class="segbtn" data-action="acEffWin" data-win="3">3 วัน</button>
+            <button class="segbtn" data-action="acEffWin" data-win="7">7 วัน</button>
+            <button class="segbtn active" data-action="acEffWin" data-win="14">14 วัน</button>
+            <button class="segbtn" data-action="acEffWin" data-win="custom">กำหนดเอง</button>
+          </div>
+          <span class="eff-custom" id="acEffCustom" hidden>
+            <label class="mini-label" for="acEffCustomN">จำนวนวัน</label>
+            <input type="number" class="form-input sm num" id="acEffCustomN" min="1" max="60" step="1" value="21">
+            <span class="unit">วัน (ก่อน/หลัง อย่างละเท่านี้)</span>
+          </span>
+        </div>
+      </div>
+      <div class="eff-verdict" id="acEffVerdict"></div>
+      <div class="chart-box lg"><canvas id="acChartEffect"></canvas></div>
+      <div class="insight" id="acEffInsight"></div>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">เทียบก่อน-หลัง รายกล้องที่ตั้งด่าน</div>
+        <div class="card-sub">กล้องที่ตั้งด่านจริงควรเปลี่ยนแปลงมากกว่ากล้องรอบข้าง</div>
+        <div class="tablewrap"><table class="ac-table" id="acEffTable"></table></div>
+      </div>
+      <div class="card">
+        <div class="card-title">ผลอยู่ได้นานแค่ไหน</div>
+        <div class="card-sub">อัตราฝ่าฝืนรายสัปดาห์หลังเลิกตั้งด่าน — ดูว่ากลับไปเท่าเดิมเมื่อไหร่</div>
+        <div class="chart-box"><canvas id="acChartDecay"></canvas></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ───────── แท็บ 4 · จุดที่ควรตั้งด่าน ───────── -->
+  <section class="ac-panel" id="acPanel-deploy" hidden>
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <div class="card-title">ตารางความหนาแน่นการฝ่าฝืน — ชั่วโมง × วันในสัปดาห์</div>
+          <div class="card-sub">สีเข้ม = อัตราไม่สวมหมวกสูง · ใช้เลือกวันและเวลาที่ควรตั้งด่าน</div>
+        </div>
+        <div class="legend-scale"><span>ต่ำ</span><i class="sc s1"></i><i class="sc s2"></i><i class="sc s3"></i><i class="sc s4"></i><i class="sc s5"></i><span>สูง</span></div>
+      </div>
+      <div class="heatwrap"><div class="heatmap" id="acHeatmap"></div></div>
+      <div class="insight" id="acHeatInsight"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">ข้อเสนอจุดตั้งด่าน — เรียงตามจำนวนคันที่คาดว่าจะพบฝ่าฝืน</div>
+      <div class="card-sub">คำนวณจาก อัตราฝ่าฝืน × ปริมาณรถ ในช่วงเวลานั้น ไม่ใช่ดูอัตราอย่างเดียว
+        (จุดที่อัตราสูงแต่รถน้อย จับได้น้อยกว่าจุดที่อัตรากลางแต่รถเยอะ)</div>
+      <div class="tablewrap"><table class="ac-table" id="acDeployTable"></table></div>
+    </div>
+  </section>
+
+  <!-- ───────── แท็บ · รายงาน (ยังไม่เปิดใช้) ─────────
+       กดได้จริงและมีหน้ารองรับ ไม่ใช่ปุ่มตาย — บอกตรง ๆ ว่ากำลังทำ
+       พร้อมบอกว่าจะทำอะไรบ้าง เพื่อให้เจ้าของคอมเมนต์ทิศทางได้ก่อนลงมือ -->
+  <section class="ac-panel" id="acPanel-report" hidden>
+    <div class="card soon-card">
+      <div class="soon-badge">กำลังจัดทำ</div>
+      <div class="card-title" style="font-size:16px;margin-top:8px">รายงานเพื่อออกใบสั่ง</div>
+      <div class="card-sub" style="font-size:12.5px;margin-top:6px;max-width:720px">
+        ส่วนนี้ยังไม่เปิดใช้งาน · เป้าหมายคือออกรายงานที่<b>เจ้าหน้าที่นำไปออกใบสั่งต่อได้จริง</b>
+        ไม่ใช่แค่กราฟสรุป จึงต้องคุยเรื่องรูปแบบเอกสารและข้อกฎหมายให้จบก่อนลงมือ
+      </div>
+      <div class="soon-list">
+        <div class="soon-item">
+          <div class="si-h">รายการฝ่าฝืนพร้อมหลักฐาน</div>
+          <div class="si-d">ป้ายทะเบียน · ภาพเต็ม + ภาพครอปป้าย · วันเวลา · จุดติดตั้ง · ชนิดความผิด
+            — ข้อมูลทั้งหมดนี้ระบบเก็บครบอยู่แล้ว</div>
+        </div>
+        <div class="soon-item">
+          <div class="si-h">กรองก่อนออกใบสั่ง</div>
+          <div class="si-d">คัดเฉพาะรายการที่ความมั่นใจของการอ่านป้ายสูงพอ และภาพชัดพอจะใช้เป็นหลักฐาน
+            ลดงานตรวจซ้ำด้วยมือ</div>
+        </div>
+        <div class="soon-item">
+          <div class="si-h">ส่งออก PDF / Excel</div>
+          <div class="si-d">รูปแบบเดียวกับที่ใช้ยื่นจริง พร้อมเลขที่เอกสารและผู้จัดทำ</div>
+        </div>
+        <div class="soon-item">
+          <div class="si-h">ตามสถานะ</div>
+          <div class="si-d">ออกใบสั่งแล้ว / ชำระแล้ว / ยกเลิก — กันออกซ้ำคันเดิมวันเดียวกัน</div>
+        </div>
+      </div>
+      <div class="insight" style="margin-top:16px">
+        <b>ต้องตกลงก่อนเริ่มทำ:</b> เกณฑ์ความมั่นใจขั้นต่ำที่ยอมรับให้ออกใบสั่งได้ ·
+        ใครมีสิทธิ์กดออกใบสั่ง · เก็บหลักฐานย้อนหลังกี่วันตามระเบียบ ·
+        และรูปแบบเอกสารที่ต้นสังกัดใช้อยู่
+      </div>
+    </div>
+  </section>
+
+  <!-- ───────── แท็บ 5 · ตั้งค่า (mockup) ───────── -->
+  <section class="ac-panel" id="acPanel-settings" hidden>
+    <div class="demo-banner sub-banner">
+      <span><b>MOCKUP</b> — หน้าตั้งค่านี้ยังไม่บันทึกอะไรทั้งสิ้น แสดงให้เห็นว่าถ้าทำจริงจะตั้งอะไรได้บ้าง</span>
+    </div>
+
+    <div class="card">
+      <div class="card-title">จัดกลุ่มประเภทรถ</div>
+      <div class="card-sub">ระบบเก็บ <code>vehicle_type</code> ดิบจากกล้อง 11 แบบ ·
+        จับกลุ่มใหม่ได้ตามที่ตำรวจอยากดู แล้วกราฟทุกใบจะใช้กลุ่มนี้</div>
+      <div class="grp-wrap" id="acGroupEditor"></div>
+      <div class="grp-actions">
+        <button class="btn sm" data-action="acAddGroup">+ เพิ่มกลุ่ม</button>
+        <button class="btn sm primary" data-action="acSaveGroups">บันทึก</button>
+        <span class="save-note" id="acSaveNote"></span>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">เกณฑ์การฝ่าฝืนที่จะเฝ้า</div>
+        <div class="card-sub">เลือกว่าจะให้หน้านี้ติดตามเรื่องอะไรบ้าง</div>
+        <div class="opt-list" id="acRuleList"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">เกณฑ์เตือนเมื่อแย่ลง</div>
+        <div class="card-sub">ถ้าอัตราฝ่าฝืนของกล้องใดเกินเกณฑ์ ให้แจ้งเข้า LINE</div>
+        <div class="thresh-row">
+          <label class="mini-label">ไม่สวมหมวก เกิน</label>
+          <input type="number" class="form-input sm num" value="35"><span class="unit">%</span>
+        </div>
+        <div class="thresh-row">
+          <label class="mini-label">ไม่คาดเข็มขัด เกิน</label>
+          <input type="number" class="form-input sm num" value="2"><span class="unit">%</span>
+        </div>
+        <div class="thresh-row">
+          <label class="mini-label">เทียบย้อนหลัง</label>
+          <select class="form-input sm"><option>7 วัน</option><option selected>14 วัน</option><option>28 วัน</option></select>
+        </div>
+        <div class="thresh-row">
+          <label class="mini-label">แจ้งเข้า</label>
+          <select class="form-input sm"><option>กลุ่ม จราจรภูเก็ต</option><option>กลุ่ม ผู้บังคับบัญชา</option></select>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">หมายเหตุภายใน — กล้องที่ยังตรวจวินัยจราจรไม่ได้</div>
+      <div class="card-sub">
+        <b>เรื่องนี้เป็นงานหลังบ้านของเรา ไม่ใช่ข้อมูลจราจร</b> จึงเก็บไว้ในหน้าตั้งค่าเท่านั้น
+        ไม่แสดงในหน้าที่ตำรวจใช้งาน · กล้องกลุ่มนี้ส่งค่า “ไม่ฝ่าฝืน” มาทุกคันทั้งที่มีรถผ่านเป็นแสน
+        ซึ่งเป็นไปไม่ได้ทางสถิติ แปลว่ายังไม่ได้เปิดฟังก์ชันตรวจจับบนตัวกล้อง
+        · ระบบกันออกจากค่าเฉลี่ยให้อัตโนมัติแล้ว เพื่อไม่ให้สถิติดูดีเกินจริง
+        · <b>สิ่งที่ต้องทำ:</b> เข้าไปเปิด detection บนกล้อง แล้วรายการนี้จะหายไปเอง
+      </div>
+      <div class="tablewrap"><table class="ac-table" id="acNoDetectTable"></table></div>
+    </div>
+  </section>
+
+  <!-- ───────── modal เลือกกล้อง ───────── -->
+  <div class="ac-modal" id="acCamModal" hidden>
+    <div class="ac-modal-box">
+      <div class="ac-modal-head">
+        <div class="card-title">เลือกกล้อง</div>
+        <button class="btn sm ghost" data-action="acCloseCams">ปิด</button>
+      </div>
+      <div class="ac-modal-tools">
+        <input type="text" class="form-input sm" id="acCamSearch" placeholder="ค้นหาชื่อจุดติดตั้ง…">
+        <button class="btn sm" data-action="acCamAll">เลือกทั้งหมด</button>
+        <button class="btn sm" data-action="acCamNone">ล้างทั้งหมด</button>
+      </div>
+      <div class="ac-modal-list" id="acCamList"></div>
+      <div class="ac-modal-foot">
+        <span class="save-note" id="acCamCount"></span>
+        <button class="btn sm primary" data-action="acApplyCams">ใช้ตัวเลือกนี้</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ───────── modal เลือกประเภทรถ ───────── -->
+  <div class="ac-modal" id="acTypeModal" hidden>
+    <div class="ac-modal-box narrow">
+      <div class="ac-modal-head">
+        <div class="card-title">เลือกประเภทรถ</div>
+        <button class="btn sm ghost" data-action="acCloseTypes">ปิด</button>
+      </div>
+      <div class="ac-modal-list" id="acTypeList"></div>
+      <div class="ac-modal-foot">
+        <span class="save-note" id="acTypeCount"></span>
+        <button class="btn sm primary" data-action="acApplyTypes">ใช้ตัวเลือกนี้</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot-note">
+    ที่มาของรูปทรงข้อมูล · วัดจากฐานข้อมูลจริง 2026-08-11 ·
+    ป้ายทะเบียน 5,051,967 รายการย้อนหลัง 7 วัน · อัตราไม่สวมหมวกของจริง 20.5% (จักรยานยนต์)
+    · ไม่คาดเข็มขัด 0.22% (รถ 4 ล้อขึ้นไป) · ตัวเลขที่แสดงบนหน้านี้เป็น mock ที่จำลองตามรูปทรงนั้น
+  </div>
+</div>
+
+<script src="./accumulative-data.js?v=ac7"></script>
+<script src="./accumulative.js?v=ac7"></script>
+</body>
+</html>

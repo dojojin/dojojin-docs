@@ -1,0 +1,114 @@
+/* ============================================================
+   Vigil Platform — HCP Integration gateway page (light theme fixed)
+   @author Prakasit Rochanavipart (Dojo-mAn)
+   @copyright (c) 2025-2026 All Rights Reserved. @license Proprietary
+   โหลดคู่กับ hcp-demo.css — ใช้ .hcp-card / .hcp-note / .hcp-badge ร่วมกัน
+   ============================================================ */
+
+.hidden{display:none !important}
+
+/* หัวหน้า + แท็บ */
+.gw-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.gw-title{font-size:21px;font-weight:700;margin:0;color:#1a202c}
+.gw-back{border:1px solid #e2e8f0;background:#fff;border-radius:999px;width:32px;height:32px;
+  display:inline-flex;align-items:center;justify-content:center;cursor:pointer;color:#4a5568;flex:0 0 auto}
+.gw-back:hover{border-color:#cbd5e0}
+.gw-tabs{display:flex;gap:2px;margin-left:auto;flex-wrap:wrap}
+.gw-tab{border:0;background:none;font-family:inherit;font-size:13px;color:#718096;padding:8px 14px;
+  cursor:pointer;border-bottom:2px solid transparent}
+.gw-tab.active{color:#1a202c;font-weight:700;border-bottom-color:#e53e3e}
+
+/* สวิตช์หลัก */
+.gw-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding-bottom:14px;border-bottom:1px solid #edf2f7;margin-bottom:14px}
+.gw-lbl{font-size:13px;font-weight:600;color:#2d3748;min-width:120px}
+.gw-switch{width:46px;height:24px;border-radius:999px;border:0;background:#cbd5e0;position:relative;
+  cursor:pointer;flex:0 0 auto;padding:0;transition:background .15s}
+.gw-switch span{position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:left .15s}
+.gw-switch.on{background:#38a169}
+.gw-switch.on span{left:25px}
+.gw-hint{font-size:11.5px;color:#718096;line-height:1.55}
+
+.gw-sec{font-size:13.5px;font-weight:700;color:#1a202c;margin:0 0 10px}
+.gw-tools{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+
+/* ตาราง */
+.gw-tablewrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.gw-table{width:100%;border-collapse:collapse;font-size:12.5px;min-width:600px}
+.gw-table th{text-align:left;font-weight:600;color:#4a5568;background:#f7fafc;padding:9px 11px;
+  border-bottom:1px solid #e2e8f0;white-space:nowrap}
+.gw-table td{padding:10px 11px;border-bottom:1px solid #edf2f7;color:#2d3748;vertical-align:middle}
+.gw-table tr.on td{background:#f5f8ff}
+.gw-table tr.dim td{color:#a0aec0}
+.gw-table code{font-size:11px;background:#f7fafc;border:1px solid #edf2f7;border-radius:4px;padding:1px 6px;color:#4a5568}
+.gw-cbcol{width:34px}
+.gw-link{border:0;background:none;font-family:inherit;font-size:12.5px;color:#3b6fd4;cursor:pointer;padding:0;text-align:left}
+.gw-link:hover{text-decoration:underline}
+.gw-empty{text-align:center;color:#a0aec0;padding:22px;font-size:12.5px}
+.gw-pill{display:inline-block;font-size:10.5px;background:#eef4ff;color:#2c5282;border:1px solid #c9dcff;
+  border-radius:999px;padding:2px 9px;margin:1px 0}
+.gw-off{font-size:11.5px;color:#a0aec0}
+
+/* ฟอร์ม */
+.gw-fgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+.gw-field{display:flex;flex-direction:column;gap:5px;min-width:0}
+.gw-flabel{font-size:12px;font-weight:600;color:#2d3748}
+.gw-req{color:#e53e3e;margin-right:3px}
+.gw-fhint{font-size:11px;color:#718096;line-height:1.55}
+.gw-gen{display:flex;gap:5px;align-items:center}
+.gw-gen input{flex:1;min-width:0;background:#f7fafc}
+.gw-icon{border:1px solid #e2e8f0;background:#fff;border-radius:6px;width:32px;height:32px;cursor:pointer;
+  flex:0 0 auto;font-size:13px;line-height:1;color:#4a5568}
+.gw-icon:hover{border-color:#cbd5e0}
+.gw-regen{border:0;background:none;font-family:inherit;font-size:11.5px;color:#3b6fd4;cursor:pointer;
+  flex:0 0 auto;padding:0 4px;white-space:nowrap}
+.gw-expand{border:0;background:none;font-family:inherit;font-size:12px;color:#3b6fd4;cursor:pointer;
+  padding:9px 0 0;display:block}
+
+/* ต้นไม้สิทธิ์ */
+.gw-search{margin-bottom:10px}
+.gw-tree{border:1px solid #e2e8f0;border-radius:9px;padding:11px;max-height:520px;overflow-y:auto;background:#fff}
+.gw-node{margin-bottom:12px}
+.gw-node:last-child{margin-bottom:0}
+.gw-nodehead{display:flex;gap:9px;align-items:baseline;flex-wrap:wrap;padding-bottom:6px;border-bottom:1px solid #edf2f7;margin-bottom:7px}
+.gw-nodesub{font-size:11px;color:#a0aec0}
+.gw-ck{display:flex;gap:7px;align-items:center;cursor:pointer;font-size:12.5px;color:#2d3748;min-width:0}
+.gw-leaf{border:1px solid #edf2f7;border-radius:8px;padding:8px 10px;margin-bottom:6px;background:#fbfcfd;
+  display:grid;grid-template-columns:1fr auto;gap:3px 9px}
+.gw-leaf.on{border-color:#3b6fd4;background:#f7faff}
+.gw-leaf .hcp-badge{align-self:center}
+.gw-rank{font-size:10.5px;font-weight:700;color:#fff;background:#a0aec0;border-radius:5px;
+  min-width:20px;height:19px;display:inline-flex;align-items:center;justify-content:center;padding:0 5px;flex:0 0 auto}
+.gw-leaf.on .gw-rank{background:#3b6fd4}
+.gw-leafname{font-weight:600}
+.gw-leafwhy{grid-column:1/-1;font-size:11px;color:#718096;line-height:1.55;padding-left:26px}
+.gw-leafeps{grid-column:1/-1;padding-left:26px;display:flex;gap:5px;flex-wrap:wrap}
+.gw-leafeps code{font-size:10px;background:#fff;border:1px solid #e2e8f0;border-radius:4px;padding:1px 5px;color:#718096}
+
+/* ทดสอบ */
+.gw-testbar{display:flex;gap:11px;align-items:center;flex-wrap:wrap;margin-bottom:11px}
+.gw-testing{font-size:12.5px;color:#718096;padding:11px;background:#f7fafc;border-radius:8px}
+.gw-testhead{padding:11px 13px;border-radius:8px;margin-bottom:11px;font-size:12.5px;line-height:1.6}
+.gw-testhead.ok{border:1px solid #b7e3c6;background:#f4fbf6;color:#1e7a3c}
+.gw-testhead.warn{border:1px solid #f0c36d;background:#fdf9ef;color:#8a6116}
+.gw-testhead b{display:block}
+.gw-testhead span{color:#4a5568}
+
+.gw-actions{display:flex;gap:9px;justify-content:flex-end;flex-wrap:wrap;margin-bottom:16px}
+
+@media (max-width:768px){
+  .gw-head{gap:8px}
+  .gw-title{font-size:18px}
+  .gw-tabs{margin-left:0;width:100%;overflow-x:auto}
+  .gw-tab{padding:8px 11px;font-size:12px;white-space:nowrap}
+  .gw-row{flex-wrap:wrap}
+  .gw-lbl{min-width:0;flex:1}
+  .gw-hint{width:100%}
+  /* ฟอร์มคอลัมน์เดียว — สองคอลัมน์บน 390px ทำให้ช่อง Key/Secret แคบจนอ่านไม่ออก */
+  .gw-fgrid{grid-template-columns:1fr}
+  .gw-actions{flex-direction:column-reverse}
+  .gw-actions .btn{width:100%}
+  .gw-tools .btn{flex:1}
+  .gw-leaf{grid-template-columns:1fr}
+  .gw-leaf .hcp-badge{justify-self:start;margin-left:26px}
+  .gw-tree{max-height:none}
+}

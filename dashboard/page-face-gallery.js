@@ -141,7 +141,7 @@ function renderFaceGrid(faces) {
     return `<div class="face-card" data-action="openFaceModal" data-id="${f.id}">
       ${img}
       <div class="face-card-body">
-        <div style="font-size:10px;color:var(--text-secondary);margin-bottom:3px">${t} · ${escapeHtml(f.camera_id || '')}</div>
+        <div style="font-size:10px;color:var(--text-secondary);margin-bottom:3px">${t} · ${escapeHtml((typeof _faceCamName === 'function' ? _faceCamName(f.camera_id) : f.camera_id) || '')}</div>
         <div>
           <span class="face-chip">${escapeHtml(faceGenderLabel(f.gender))}</span>
           <span class="face-chip">${escapeHtml(faceAgeBucket(f.age))}</span>
@@ -201,7 +201,7 @@ function openFaceModal(id) {
   const showExpr = (typeof _faceShowExpr === 'undefined') || _faceShowExpr;
   const rows = [
     [I18N.t('evt.colTime'),    escapeHtml(t)],
-    [I18N.t('common.camera'),  escapeHtml(f.camera_id || '—')],
+    [I18N.t('common.camera'),  escapeHtml((typeof _faceCamName === 'function' ? _faceCamName(f.camera_id) : f.camera_id) || '—')],
     [I18N.t('face.gender'),    escapeHtml(faceGenderLabel(f.gender))],
     [I18N.t('face.age'),       escapeHtml(faceAgeBucket(f.age))],
     ...(showExpr && f.expression ? [[I18N.t('face.emotion'), escapeHtml(faceExprLabel(f.expression))]] : []),

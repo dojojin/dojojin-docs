@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+# commit-msg: ปฏิเสธ commit ที่มี trailer ของผู้ช่วย AI ติดมาด้วย
+#
+# Install (once per clone):
+#   npm run hooks:install
+#
+# ทำไมต้องเป็น hook ไม่ใช่กฎในเอกสาร (2026-09-18):
+# CLAUDE.md ข้อ 13 เขียนห้ามไว้ตั้งแต่ 2026-05-24 (commit 65d8eed) และมีบันทึกย้ำ
+# อีกที่หนึ่ง แต่ยังหลุดเข้ามา 141 commit โดย 138 ตัวกระจุกอยู่ในเดือน ก.ย. 2026
+# เพราะตัว harness ของผู้ช่วย AI เริ่มยิงคำสั่งระดับระบบเข้ามาทุก session พร้อม
+# ข้อความ trailer สำเร็จรูป แล้ว session ทำตามคำสั่งนั้นแทนที่จะยึดกฎของ repo
+# (ทั้งที่คำสั่งนั้นเองเขียนกำกับว่ากฎของเจ้าของมาก่อน) การแก้ต้องเขียนประวัติใหม่
+# 2,076 จาก 2,090 commit พร้อม tag และอีก 3 branch
+#
+# บทเรียน: กฎที่เป็นข้อความอย่างเดียวแพ้คำสั่งที่ยิงเข้ามาทีหลังได้เสมอ
+# สิ่งที่ไม่แพ้คือเครื่องที่ปฏิเสธไปตรง ๆ
+#
+# เจ้าของยืนยัน: commit ของ repo นี้เป็น sole authorship เสมอ
+# False positive? bypass ด้วย: git commit --no-verify
+
+MSG_FILE="$1"
+[ -f "$MSG_FILE" ] || exit 0
+
+# ตัดคอมเมนต์ของ git ออกก่อน (บรรทัดขึ้นต้น #) ไม่งั้น template จะทำให้ตรวจเพี้ยน
+BODY=$(grep -v '^#' "$MSG_FILE")
+
+# ตรวจเฉพาะบรรทัดที่ขึ้นต้นตรงรูปแบบ trailer เท่านั้น เนื้อความที่บังเอิญพูดถึง
+# Claude Code หรือ "regenerated with" ต้องผ่านได้ตามปกติ
+HITS=$(echo "$BODY" | grep -nE \
+  '^(Co-Authored-By:[[:space:]]*(Claude|none \(sole authorship)|Claude-Session:[[:space:]]*https://claude\.ai/code/|Generated with \[Claude Code\]|🤖 Generated with)' \
+  || true)
+
+if [ -n "$HITS" ]; then
+  echo "[commit-msg] พบ trailer ของผู้ช่วย AI ในข้อความ commit:"
+  echo "$HITS" | sed 's/^/             /'
+  echo ""
+  echo "[commit-msg] repo นี้ใช้ sole authorship เสมอ (CLAUDE.md ข้อ 13) — ลบบรรทัดข้างบนออกแล้ว commit ใหม่"
+  echo "[commit-msg] This repo uses sole authorship. Remove the AI attribution trailer(s) and commit again."
+  echo "[commit-msg] ถ้าจงใจจริง ๆ: git commit --no-verify"
+  exit 1
+fi
+
+# ── บรรทัดแรกต้องเป็นภาษาอังกฤษ เนื้อความข้างล่างเป็นไทยได้ (2026-09-19) ──────
+# เจ้าของเลือกรูปแบบนี้หลังพบว่า commit ในรีโปปนกันจนไม่มีรูปแบบ: 2,095 commit
+# เป็นอังกฤษ 1,854 (88%) แต่แนวโน้มกลับทาง ส.ค. 25% ก.ย. 42% เป็นไทย
+# ⇒ `git log --oneline` สแกนหาของยาก เพราะสายตาต้องสลับภาษาไปมา
+#
+# เจ้าของสั่ง "ใช้กับของใหม่เท่านั้น ของเก่าช่างมัน" — ไม่เขียนประวัติใหม่ เพราะ
+# การแปล 241 หัวข้อย้อนหลังคือการ**แต่งข้อความใหม่** ไม่ใช่การลบตามรูปแบบแบบ
+# ตอนถอด trailer ซึ่งตรวจสอบได้ 100% · และ body ของ 4,694 commit เป็นไทยอยู่ดี
+# แปลแค่หัวข้อจึงได้เปลือกที่หลอกตา ไม่ได้ทำให้คนที่อ่านไทยไม่ออกอ่านรู้เรื่องจริง
+#
+# เกณฑ์เป็น **สัดส่วน** ไม่ใช่ "ห้ามมีอักษรไทยเลย" เพราะหัวข้ออังกฤษที่ยกคำบน UI
+# มาอ้างต้องเขียนได้ เช่น `fix(traffic): trim "ปริมาณ" from the Realtime chart title`
+# คิดจากส่วนคำอธิบาย (ตัด prefix ของ Conventional Commits ออกก่อน)
+#   สัดส่วนไทย = อักษรไทย / (อักษรไทย + อักษรละติน)
+# สอบเทียบกับหัวข้อจริง 241 ตัวที่มีอักษรไทยในประวัติ: เกณฑ์ 0.40 ปฏิเสธ 205
+# ปล่อยผ่าน 36 ซึ่งเป็นกลุ่ม "อังกฤษที่มีคำไทยแทรก" ตรงตามที่ตั้งใจ
+SUBJECT=$(echo "$BODY" | sed '/^[[:space:]]*$/d' | head -1)
+if [ -n "$SUBJECT" ]; then
+  RATIO=$(SUBJ="$SUBJECT" node -e '
+    const s = process.env.SUBJ || "";
+    const d = s.replace(/^[a-z]+(\([^)]*\))?!?:\s*/, "");
+    const t = (d.match(/[฀-๿]/g) || []).length;
+    const l = (d.match(/[A-Za-z]/g) || []).length;
+    process.stdout.write(t + l === 0 ? "0" : String(t / (t + l)));
+  ' 2>/dev/null || echo 0)
+  if node -e "process.exit(Number(process.argv[1]) >= 0.40 ? 0 : 1)" "$RATIO" 2>/dev/null; then
+    echo "[commit-msg] บรรทัดแรกของ commit ต้องเป็นภาษาอังกฤษ (เนื้อความข้างล่างเป็นไทยได้ตามปกติ)"
+    echo "             ${SUBJECT}"
+    echo "             สัดส่วนอักษรไทยในคำอธิบาย $(node -e "process.stdout.write((Number(process.argv[1])*100).toFixed(0))" "$RATIO")% (เกณฑ์ 40%)"
+    echo ""
+    echo "[commit-msg] Subject line must be English; the body may stay Thai."
+    echo "[commit-msg] ยกคำไทยมาอ้างในหัวข้ออังกฤษได้ เช่น: fix(traffic): trim \"ปริมาณ\" from the chart title"
+    echo "[commit-msg] ถ้าจงใจจริง ๆ: git commit --no-verify"
+    exit 1
+  fi
+fi
+
+exit 0
