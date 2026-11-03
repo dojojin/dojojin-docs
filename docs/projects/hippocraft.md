@@ -13,7 +13,7 @@ The name is a nod to the Hippocratic Oath, a doctor's promise to do no harm. Hip
 
 ---
 
-![HippoCraft home screen, every tool named in Thai](/hippocraft/welcome.webp)
+![HippoCraft home screen, every tool named in Thai](/hippocraft/home.webp)
 *Every tool, menu and message is in Thai.*
 
 ## Why It Exists
@@ -38,7 +38,7 @@ Click a line or a paragraph and type. The edit keeps the document's own font and
 - The caret lands on the right character after sara am, and backspace deletes the one you meant
 - An edited paragraph remembers where its lines broke, so editing it repeatedly does not reflow it differently each time
 
-![A Thai meeting memo open in HippoCraft with its text blocks outlined for editing](/hippocraft/edit-thai.webp)
+![A Thai meeting memo open in HippoCraft with its text blocks outlined for editing](/hippocraft/edit.webp)
 *Click a Thai paragraph and type. The edit keeps the document's own font and size.*
 
 ### Thai Fonts Embedded Correctly
@@ -62,7 +62,7 @@ Scanned Thai pages are read by a PaddleOCR model that runs locally. No file is s
 ![The Recognize Text dialog with Thai selected as the document language](/hippocraft/ocr-dialog.webp)
 *Recognising a scanned Thai page. The model runs on the machine.*
 
-![Searching the recognised page for a Thai word, with two matches highlighted](/hippocraft/ocr-searchable.webp)
+![Searching the recognised page for a Thai word, with two matches highlighted](/hippocraft/ocr-search.webp)
 *After recognition the scan is searchable: two matches for ภาษาไทย, the image itself unchanged.*
 
 ### Thai Handwriting, Optional
@@ -77,6 +77,12 @@ Handwritten regions can be sent to OpenTyphoon for recognition, but only when th
 - Tone marks stacked above vowels are not clipped, and text boxes grow to fit them
 - Thai text stays searchable and copyable everywhere it is placed
 
+![A Thai memo with three Thai comments in the sidebar, a Thai watermark across the page and a Thai header](/hippocraft/fill-sign.webp)
+*Comments, a watermark and a header, all in Thai, on one page.*
+
+![The header and footer dialog, every field and control in Thai](/hippocraft/header-footer.webp)
+*Headers and footers take Thai text and preview before they are applied.*
+
 ### A Thai Interface
 
 Every menu, command, tool and message is in Thai, switchable in Preferences. Filenames the application generates from bookmarks or signer names keep their Thai vowels and tone marks. The update check looks at HippoCraft's own releases, so it is never replaced by an upstream build without Thai support.
@@ -88,6 +94,12 @@ The same application runs in a browser through WebAssembly, Thai OCR included. F
 ### Inherited from PdfCraft
 
 Accurate rendering with worldwide language coverage, transparency, gradients and damaged files. Page organisation, merge, split, rotate, delete and move. Comments, forms, layers and attachments. Whole-document search, password protection and permanent redaction. Incremental saves, multi-level undo, no account and no telemetry. A `hippocraft-cli` command-line tool for batch work such as running OCR across a folder.
+
+![Page organisation showing two page thumbnails with rotate and delete controls](/hippocraft/organize.webp)
+*Pages arranged as cards: rotate, delete, split, insert.*
+
+![The Combine files screen waiting for files to be dropped in](/hippocraft/combine.webp)
+*Combine files opens its own page, ready for PDFs, images or folders.*
 
 ---
 
@@ -101,6 +113,9 @@ Accurate rendering with worldwide language coverage, transparency, gradients and
 | Browser | WebAssembly build, same engine |
 
 Built on 33 Rust crates with a test suite of 5,775 cases.
+
+![The same document in the dark theme](/hippocraft/dark.webp)
+*The dark theme, Thai text included.*
 
 ---
 
