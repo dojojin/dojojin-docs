@@ -4,7 +4,7 @@
 
 ## Vigil Platform
 
-ระบบ CCTV analytics แบบ on-premise รองรับกล้องหลายยี่ห้อ ติดตามสถานะแบบ real-time แจ้งเตือนผ่าน LINE และบริหารข้อมูลตามมาตรฐาน PDPA
+ระบบ CCTV analytics แบบ on-premise รองรับกล้องหลายยี่ห้อ ติดตามสถานะแบบ real-time แจ้งเตือนผ่าน LINE และ Telegram และบริหารข้อมูลตามมาตรฐาน PDPA
 
 - [Vigil Platform](./vigil-platform) — Dashboard, analytics, alerting, และความปลอดภัย
 - [Vigil Mobile](./vigil-mobile) — แอปมือถือ iOS & Android
