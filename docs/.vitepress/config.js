@@ -28,6 +28,7 @@ export default defineConfig({
                     { text: 'Mobile App', link: '/projects/vigil-mobile' }
                   ]
                 },
+                { text: 'HippoCraft', link: '/projects/hippocraft' },
                 { text: 'AI OCR Pipeline', link: '/projects/ai-ocr-pipeline' },
                 { text: 'AI Stack (Local LLM)', link: '/projects/ai-stack' }
               ]
@@ -67,6 +68,7 @@ export default defineConfig({
                     { text: 'แอปมือถือ', link: '/th/projects/vigil-mobile' }
                   ]
                 },
+                { text: 'HippoCraft', link: '/th/projects/hippocraft' },
                 { text: 'AI OCR Pipeline', link: '/th/projects/ai-ocr-pipeline' },
                 { text: 'AI Stack (Local LLM)', link: '/th/projects/ai-stack' }
               ]

@@ -9,6 +9,12 @@ An on-premise CCTV analytics platform with multi-vendor camera support, real-tim
 - [Vigil Platform](./vigil-platform) — Dashboard, analytics, alerting, and security
 - [Vigil Mobile](./vigil-mobile) — Native iOS & Android companion app
 
+## HippoCraft
+
+An open-source PDF reader and editor in Rust, built on PdfCraft, with the Thai support the rest of them skip.
+
+- [HippoCraft](./hippocraft) — Thai text editing, on-device Thai OCR, Thai fonts embedded correctly
+
 ## AI OCR Pipeline
 
 - [AI OCR Pipeline](./ai-ocr-pipeline) — Automated document extraction via Google Apps Script *(Paused)*
