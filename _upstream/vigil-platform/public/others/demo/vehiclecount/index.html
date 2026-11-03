@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="th" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ปริมาณยานพาหนะเข้า–ออก</title>
+<!-- Served at: /others/demo/vehiclecount/   (auth-gated)
+     data-theme="light" ตายตัว ไม่โหลด /theme-init.js
+     CSP: script-src 'self' — ห้าม inline <script> / inline handler ทุกกรณี -->
+<link rel="stylesheet" href="/vendor/fonts/fonts.css">
+<script src="/vendor/chartjs/chart-4.4.1.umd.min.js"></script>
+<link rel="stylesheet" href="/index.css">
+<link rel="stylesheet" href="./vehiclecount.css?v=vc4">
+</head>
+<body>
+<div class="vc-wrap">
+
+  <header class="vc-head">
+    <div>
+      <h1>ปริมาณยานพาหนะเข้า–ออก</h1>
+      <div class="vc-sub" id="vcSub">ช่วงเวลา 07:00–18:00</div>
+    </div>
+    <div class="vc-live" id="vcLive" aria-live="off">
+      <span class="vc-live-dot" aria-hidden="true"></span>
+      <span class="vc-live-tag" id="vcLiveTag">LIVE</span>
+      <span class="vc-live-clock" id="vcClock">--:--</span>
+    </div>
+  </header>
+
+  <section class="vc-controls" aria-label="ตัวเลือกการแสดงผล">
+    <div class="vc-ctl-row">
+      <div class="vc-ctl-group">
+        <span class="vc-ctl-label">วันทำการ</span>
+        <div class="vc-chips" id="vcDaysWeekday"></div>
+      </div>
+      <div class="vc-ctl-group">
+        <span class="vc-ctl-label">วันหยุด</span>
+        <div class="vc-chips" id="vcDaysWeekend"></div>
+      </div>
+    </div>
+    <div class="vc-ctl-row">
+      <div class="vc-ctl-group">
+        <span class="vc-ctl-label">การแสดงผล</span>
+        <div class="vc-seg" id="vcMode" role="group" aria-label="โหมด">
+          <button class="vc-segbtn" data-action="vcMode" data-mode="live" aria-pressed="false">สด</button>
+          <button class="vc-segbtn" data-action="vcMode" data-mode="replay" aria-pressed="false">เล่นซ้ำ</button>
+          <button class="vc-segbtn" data-action="vcMode" data-mode="full" aria-pressed="false">ทั้งวัน</button>
+        </div>
+        <div class="vc-seg" id="vcSpeed" role="group" aria-label="ความเร็ว" hidden>
+          <button class="vc-segbtn" data-action="vcSpeed" data-speed="5" aria-pressed="false" title="ข้อมูล 5 นาที = 1 วินาที">1×</button>
+          <button class="vc-segbtn" data-action="vcSpeed" data-speed="15" aria-pressed="false" title="ข้อมูล 15 นาที = 1 วินาที">3×</button>
+          <button class="vc-segbtn" data-action="vcSpeed" data-speed="60" aria-pressed="false" title="ข้อมูล 60 นาที = 1 วินาที">12×</button>
+        </div>
+      </div>
+      <div class="vc-ctl-group">
+        <span class="vc-ctl-label">ประเภท</span>
+        <div class="vc-chips" id="vcClasses"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="vc-kpis" aria-label="สรุปปริมาณ">
+    <div class="vc-kpi vc-kpi-in">
+      <div class="vc-kpi-label">เข้า</div>
+      <div class="vc-kpi-val" id="kpiIn">0</div>
+    </div>
+    <div class="vc-kpi vc-kpi-out">
+      <div class="vc-kpi-label">ออก</div>
+      <div class="vc-kpi-val" id="kpiOut">0</div>
+    </div>
+    <div class="vc-kpi">
+      <div class="vc-kpi-label">รวม</div>
+      <div class="vc-kpi-val" id="kpiTotal">0</div>
+    </div>
+    <div class="vc-kpi vc-kpi-ratio">
+      <div class="vc-kpi-label">สัดส่วนเข้า : ออก</div>
+      <div class="vc-ratio-nums"><span class="in" id="kpiInPct">0%</span><span class="out" id="kpiOutPct">0%</span></div>
+      <div class="vc-ratio-bar" id="kpiBar"><span class="in" style="width:50%"></span><span class="out" style="width:50%"></span></div>
+    </div>
+  </section>
+
+  <section class="vc-peaks" aria-label="ช่วง Peak">
+    <article class="vc-peak" id="peakAm">
+      <header class="vc-peak-head">
+        <div><h2>Peak ช่วงเช้า</h2><div class="vc-peak-time">07:30–09:30</div></div>
+        <span class="vc-badge" id="peakAmState"></span>
+      </header>
+      <div class="vc-peak-nums">
+        <div><span class="lbl">เข้า</span><b class="in" id="peakAmIn">0</b></div>
+        <div><span class="lbl">ออก</span><b class="out" id="peakAmOut">0</b></div>
+        <div><span class="lbl">รวม</span><b id="peakAmTotal">0</b></div>
+      </div>
+      <div class="vc-ratio-nums"><span class="in" id="peakAmInPct">0%</span><span class="out" id="peakAmOutPct">0%</span></div>
+      <div class="vc-ratio-bar"><span class="in" id="peakAmBarIn" style="width:50%"></span><span class="out" id="peakAmBarOut" style="width:50%"></span></div>
+      <div class="vc-peak-share" id="peakAmShare"></div>
+    </article>
+    <article class="vc-peak" id="peakPm">
+      <header class="vc-peak-head">
+        <div><h2>Peak ช่วงเย็น</h2><div class="vc-peak-time">15:30–17:30</div></div>
+        <span class="vc-badge" id="peakPmState"></span>
+      </header>
+      <div class="vc-peak-nums">
+        <div><span class="lbl">เข้า</span><b class="in" id="peakPmIn">0</b></div>
+        <div><span class="lbl">ออก</span><b class="out" id="peakPmOut">0</b></div>
+        <div><span class="lbl">รวม</span><b id="peakPmTotal">0</b></div>
+      </div>
+      <div class="vc-ratio-nums"><span class="in" id="peakPmInPct">0%</span><span class="out" id="peakPmOutPct">0%</span></div>
+      <div class="vc-ratio-bar"><span class="in" id="peakPmBarIn" style="width:50%"></span><span class="out" id="peakPmBarOut" style="width:50%"></span></div>
+      <div class="vc-peak-share" id="peakPmShare"></div>
+    </article>
+  </section>
+
+  <section class="vc-card">
+    <header class="vc-card-head">
+      <h2>ปริมาณเข้า–ออกทุก 5 นาที</h2>
+      <div class="vc-legend"><span class="in">เข้า</span><span class="out">ออก</span><span class="band">ช่วง Peak</span></div>
+    </header>
+    <div class="vc-chart tall"><canvas id="vcChartTimeline"></canvas></div>
+  </section>
+
+  <div class="vc-grid2">
+    <section class="vc-card">
+      <header class="vc-card-head"><h2>ปริมาณรายชั่วโมง</h2></header>
+      <div class="vc-chart"><canvas id="vcChartHourly"></canvas></div>
+    </section>
+    <section class="vc-card">
+      <header class="vc-card-head"><h2>แยกตามประเภทยานพาหนะ</h2></header>
+      <div class="vc-table-wrap">
+        <table class="vc-table" id="vcTable">
+          <thead><tr><th>ประเภท</th><th class="num">เข้า</th><th class="num">ออก</th><th class="num">รวม</th><th class="num">เข้า %</th><th class="num">ออก %</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <section class="vc-card vc-gal" id="vcGal" aria-label="ภาพเหตุการณ์">
+    <header class="vc-card-head">
+      <h2>ภาพเหตุการณ์</h2>
+      <span class="vc-count" id="galCount"></span>
+    </header>
+    <div class="vc-gal-filters">
+      <div class="vc-ctl-group">
+        <label class="vc-ctl-label" for="galDay">วัน</label>
+        <select class="vc-select" id="galDay" data-action="galDay"></select>
+      </div>
+      <div class="vc-ctl-group">
+        <span class="vc-ctl-label">ช่วงเวลา</span>
+        <div class="vc-chips" id="galRange">
+          <button class="vc-chip" data-action="galRange" data-r="day" aria-pressed="false">ทั้งวัน</button>
+          <button class="vc-chip" data-action="galRange" data-r="am" aria-pressed="false">Peak เช้า</button>
+          <button class="vc-chip" data-action="galRange" data-r="pm" aria-pressed="false">Peak เย็น</button>
+          <button class="vc-chip" data-action="galRange" data-r="custom" aria-pressed="false">กำหนดเอง</button>
+        </div>
+        <div class="vc-timepair" id="galCustom" hidden>
+          <input class="vc-time" type="time" id="galFrom" min="07:00" max="18:00" step="300" value="07:00" aria-label="เริ่ม">
+          <span>–</span>
+          <input class="vc-time" type="time" id="galTo" min="07:00" max="18:00" step="300" value="18:00" aria-label="สิ้นสุด">
+        </div>
+      </div>
+      <div class="vc-ctl-group">
+        <span class="vc-ctl-label">ทิศทาง</span>
+        <div class="vc-seg" id="galDir" role="group" aria-label="ทิศทาง">
+          <button class="vc-segbtn" data-action="galDir" data-d="all" aria-pressed="false">ทั้งหมด</button>
+          <button class="vc-segbtn" data-action="galDir" data-d="in" aria-pressed="false">เข้า</button>
+          <button class="vc-segbtn" data-action="galDir" data-d="out" aria-pressed="false">ออก</button>
+        </div>
+      </div>
+    </div>
+    <div class="vc-gal-state" id="galState" role="status"></div>
+    <div class="vc-gal-grid" id="galGrid"></div>
+    <nav class="vc-pager" id="galPager" aria-label="หน้าภาพ"></nav>
+  </section>
+
+  <div class="vc-lb" id="vcLb" role="dialog" aria-modal="true" aria-labelledby="lbTitle" hidden>
+    <div class="vc-lb-panel">
+      <header class="vc-lb-head">
+        <h3 id="lbTitle"></h3>
+        <div class="vc-lb-ctl">
+          <button class="vc-lb-btn" data-action="lbPrev" aria-label="ก่อนหน้า">&#8249;</button>
+          <button class="vc-lb-btn" data-action="lbNext" aria-label="ถัดไป">&#8250;</button>
+          <button class="vc-lb-btn" data-action="lbClose" aria-label="ปิด">&times;</button>
+        </div>
+      </header>
+      <div class="vc-lb-body" id="lbBody"></div>
+    </div>
+  </div>
+
+</div>
+<script src="./vehiclecount-data.js?v=vc2"></script>
+<script src="./vehiclecount.js?v=vc8"></script>
+</body>
+</html>

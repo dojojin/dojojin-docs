@@ -20,7 +20,7 @@
 
 <h2>ภาพรวมสถาปัตยกรรม (Architecture Overview)</h2>
 <p>Vigil Platform ประกอบด้วย 4 ชั้นหลัก: <strong>Ingestion</strong> (รับเหตุการณ์จากกล้อง), <strong>Backend API</strong> (ประมวลผล สถิติ), <strong>Worker Processes</strong> (แจ้งเตือน + รายงาน), <strong>Database</strong> (เก็บข้อมูล), และ <strong>Frontend</strong> (dashboard + mobile app)</p>
-<p>ระบบทำงานเป็น <strong>8 PM2 processes</strong> แยกกัน — ถ้า Chrome/Puppeteer ของ report-worker crash หรือ LINE timeout ใน alert-worker จะไม่กระทบ api-server หรือ MQTT ingester</p>
+<p>ระบบทำงานเป็น <strong>9 PM2 processes</strong> แยกกัน — ถ้า Chrome/Puppeteer ของ report-worker crash หรือ LINE timeout ใน alert-worker จะไม่กระทบ api-server หรือ MQTT ingester</p>
 <p>รองรับ <strong>Site Edge Node</strong> (VIGIL-ARCH-003) — mini PC (N150/Ubuntu) วางข้างกล้อง รัน ingester ด้วย <code>EDGE_MODE=1</code> ส่ง events ขึ้น central ผ่าน MQTT bridge แทน direct DB</p>
 
 <div class="feat-grid">
@@ -67,6 +67,7 @@
     <ul>
       <li><strong>alert-worker</strong> — รับ <code>pg_notify alert_event</code> → ประมวล rule → ส่ง LINE + push; EM6 edge stale alert ทุก 5 นาที</li>
       <li><strong>report-worker</strong> — scheduler รายงาน (60s tick) + on-demand HTTP <code>127.0.0.1:3001</code> — crash isolation ถ้า Puppeteer/Chrome พัง</li>
+      <li><strong>face-embed-worker</strong> — ดึงคิว <code>face_embed_queue</code> ไปสร้าง embedding ของใบหน้า (AuraFace-v1) เก็บลง <code>face_embeddings</code> แล้วเทียบกับ face blacklist; ถ้าคล้ายเกินเกณฑ์จะส่งต่อให้ alert-worker ใช้กลไกแจ้งเตือนเดิม — ไม่ทำใน hot path ของ ingest</li>
       <li><strong>lpr-receiver</strong> (PM2 id 8) — standalone ANPR HTTP push receiver (port 3003); รับ LPR + face-push; disk spool/retry สำหรับ LPR forward</li>
     </ul>
   </div>
@@ -105,8 +106,8 @@
     <h3>บริการสนับสนุน</h3>
     <ul>
       <li><strong>EMQX</strong> (สำหรับ Bosch MQTT)</li>
-      <li><strong>Redis</strong> (session cache real-time pub/sub)</li>
-      <li><strong>PM2</strong> (8 workers: api-server, mqtt-subscriber, hikvision-isapi, dahua-cgi, media-recorder, lpr-receiver, alert-worker, report-worker)</li>
+      <li><strong>Postgres LISTEN/NOTIFY</strong> + in-process cache ใน api-server (ช่องทาง real-time และ cache ภายใน — ไม่มี Redis)</li>
+      <li><strong>PM2</strong> (9 workers: api-server, mqtt-subscriber, media-recorder, hikvision, dahua, report-worker, alert-worker, face-embed-worker, lpr-receiver)</li>
       <li><strong>Cloudflare Tunnel</strong> (reverse proxy)</li>
       <li><strong>LINE API</strong> (bot webhook)</li>
       <li><strong>Puppeteer</strong> (health report PDF/PNG — ใน report-worker)</li>
@@ -126,6 +127,18 @@
       <li><strong>บริหารจัดการ Edge จากศูนย์กลาง (remote management):</strong> ตรวจจับรุ่น/เฟิร์มแวร์กล้องอัตโนมัติเมื่อกดบันทึกการตั้งค่า, ลบข้อมูล/รูปภาพบน edge อัตโนมัติเมื่อลบกล้องออกจากระบบ — ทำผ่านช่องทางคำสั่งเฉพาะ (MQTT command channel) ยืนยันตัวตนด้วย shared secret ก่อนสั่งการทุกครั้ง</li>
     </ul>
   </div>
+
+  <div class="card">
+    <h3>เชื่อมต่อระบบภายนอก (External Integrations)</h3>
+    <p><strong>รับข้อมูลบัญชีเฝ้าระวังเข้ามา + เปิดข้อมูลให้พันธมิตรดึงออกไป</strong></p>
+    <ul>
+      <li><strong>Dahua DSS Pro</strong> — ดึงรายชื่อบุคคล/ยานพาหนะเฝ้าระวังจากระบบตำรวจ/รักษาความปลอดภัย เข้ามาเทียบกับกล้องของเราแบบอัตโนมัติ</li>
+      <li><strong>GuruSquare</strong> — ทะเบียนยานพาหนะเฝ้าระวังอีกแหล่งหนึ่ง (เฉพาะป้ายทะเบียน)</li>
+      <li><strong>HikCentral Professional (HCP)</strong> — ค้นหาใบหน้าย้อนหลังข้ามกล้องผ่านดัชนีของ HCP เฉพาะไซต์ที่มี HikCentral อยู่แล้ว</li>
+      <li>ข้อมูลจากทั้ง 3 แหล่งไหลเข้ามารวมกันเป็นชุดเดียว จับคู่ซ้ำ (dedup) ข้ามแหล่งอัตโนมัติ ก่อนส่งเข้าระบบแจ้งเตือน</li>
+      <li><strong>Partner API</strong> (<code>/v1/*</code>, โดเมนแยกจาก dashboard) — เปิดให้พันธมิตรภายนอกดึงข้อมูลป้ายทะเบียน/เหตุการณ์ออกไปได้ ด้วยกุญแจเฉพาะรายและสิทธิ์ที่บังคับใช้ระดับฐานข้อมูล (รายละเอียด → หน้า 15 ภาพรวม REST API)</li>
+    </ul>
+  </div>
 </div>
 
 <h2>ลำดับการไหลของข้อมูล</h2>
@@ -134,7 +147,7 @@
 <pre>กล้อง → [Bosch MQTT | Hik ISAPI | Dahua HTTP] → Ingester Node.js
         → ตรวจสอบ + ดาวน์โหลด snapshot/บทตัดใบหน้า
         → INSERT INTO ตารางเหตุการณ์
-        → เผยแพร่ไปยังช่อง Redis (real-time → dashboard WS)
+        → pg_notify new_event → api-server (LISTEN) → WebSocket → dashboard
         → pg_notify alert_event → alert-worker (process แยก)
              → ตรวจ alert rules → ส่ง LINE + Push (ถ้าตรงกัน)
         → Return 200 OK</pre>
@@ -142,7 +155,7 @@
 <h3>Frontend Real-time (WebSocket)</h3>
 <pre>Frontend → การเชื่อมต่อ WS → Backend
          → [สมัครสมาชิกช่อง alert]
-         → Backend เผยแพร่ alert ใหม่ผ่าน Redis
+         → Backend เผยแพร่ alert ใหม่ผ่าน pg_notify alert_event → api-server (LISTEN)
          → WS ส่งไปยังไคลเอนต์ทั้งหมดที่เชื่อมต่อ
          → UI อัปเดต (บัตรเหตุการณ์ใหม่ เสียง toast)</pre>
 
@@ -157,7 +170,15 @@
          → api-server proxy → report-worker (HTTP 127.0.0.1:3001)
          → report-worker ใช้ Puppeteer render HTML → PDF/PNG
          → ถ้า Chrome crash → PM2 restart เฉพาะ report-worker
-            api-server ยังออนไลน์ปกติ</pre>
+            api-server ยังออนไลน์ปกติ
+
+ผู้ใช้กดปุ่มดาวน์โหลด PDF / PNG ด้วยมือ (v1.5.4)
+         → api-server POST /render → report-worker (HTTP 127.0.0.1:3001)
+         → Chromium ทำงานในฝั่ง worker เท่านั้น
+            (api-server ไม่ต้องเปิด Chromium เอง = ไม่กิน RAM หลักร้อย MB
+             และไม่ถูกลากล้มถ้า render พัง)
+         → ถ้า worker ล่ม / ต่อไม่ติด / ตอบไม่ใช่ 2xx
+            → fallback เรนเดอร์ในโปรเซส api-server แทน ปุ่มยังทำงานได้เสมอ</pre>
 
 <h2>เทคโนโลยีสแต็ก</h2>
 
@@ -209,9 +230,9 @@
 </tr>
 <tr>
 <td></td>
-<td>Redis</td>
-<td>7.x</td>
-<td>In-memory cache pub/sub สำหรับเหตุการณ์ real-time</td>
+<td>Postgres LISTEN/NOTIFY</td>
+<td>(ใน PostgreSQL)</td>
+<td>ช่องทาง real-time ระหว่าง process (mqtt-subscriber → api-server → WebSocket) — ไม่ใช้ Redis; cache ภายในเป็น in-process Map ของ api-server</td>
 </tr>
 <tr>
 <td><strong>Media</strong></td>
@@ -246,8 +267,8 @@
 
 <div class="two">
   <div class="card">
-    <h3>Backend — 27 Route Modules</h3>
-    <p>ตรรกะ API แยกเป็น 27 ไฟล์ใน <code>src/routes/</code> แต่ละไฟล์รับผิดชอบงานเดียว:</p>
+    <h3>Backend — 35 Route Modules</h3>
+    <p>ตรรกะ API แยกเป็น 35 ไฟล์ใน <code>src/routes/</code> แต่ละไฟล์รับผิดชอบงานเดียว:</p>
     <ul>
       <li><code>cameras.js</code> — กล้องและการตั้งค่า EMQX</li>
       <li><code>stats.js</code> — สถิติและการวิเคราะห์</li>
@@ -259,12 +280,12 @@
       <li><code>lpr-watchlist.js</code> / <code>lpr-alerts.js</code> / <code>lpr-gates.js</code> — watchlist, alert ack, lane/gate config</li>
       <li><code>faces.js</code> / <code>face-push.js</code> — Face Capture gallery + push receiver</li>
       <li><code>sites.js</code> — multi-site scoping และ site management</li>
-      <li>และอีก 15 modules (alert-rules, appearances, events, map, reports, ...)</li>
+      <li>และอีก 21 modules (alert-rules, appearances, events, map, reports, hcp, blacklist-sources, integrations, traffic, ...)</li>
     </ul>
     <p>ผลลัพธ์: <code>api-server.js</code> ลดจาก ~7,156 → 1,893 บรรทัด (−73%)</p>
   </div>
   <div class="card">
-    <h3>Frontend — 22 Page Files</h3>
+    <h3>Frontend — 29 Page Files</h3>
     <p>UI แต่ละหน้าแยกเป็นไฟล์ใน <code>dashboard/page-*.js</code> ไม่รวมกันใน bundle เดียว:</p>
     <ul>
       <li><code>page-cameras.js</code> — หน้าจัดการกล้อง</li>
@@ -273,7 +294,7 @@
       <li><code>page-map.js</code> — แผนที่และ heatmap</li>
       <li><code>page-executive-summary.js</code> — บรรยายสรุปตอนเช้า</li>
       <li><code>page-lpr.js</code> / <code>page-lpr-settings.js</code> — แกลเลอรี่ป้ายทะเบียน + ตั้งค่า retention/gate/vehicle-type</li>
-      <li>และอีก 16 ไฟล์ (health, reports, faces, user-mgmt, ...)</li>
+      <li>และอีก 22 ไฟล์ (health, reports, faces, user-mgmt, traffic, ...)</li>
     </ul>
     <p>ผลลัพธ์: <code>dashboard.js</code> ลดจาก ~10,500 → 1,379 บรรทัด (−87%)</p>
     <p>Shared component: <code>multipicker.js</code> — checkbox-dropdown multi/single-select แทน native <code>&lt;select&gt;</code> ใน filter bar ทุกหน้า</p>
@@ -339,8 +360,8 @@
 <pre style="font-size:12px">
 1. เข้าสู่ระบบผู้ใช้ (username + password)
    → Backend ตรวจสอบ credentials (bcrypt)
-   → สร้าง JWT token (httpOnly cookie)
-   → สร้าง refresh token ด้วย (Redis)
+   → สร้างแถว session ในตาราง sessions (PostgreSQL) แล้วส่ง session id ที่เซ็นด้วย HMAC เป็น httpOnly cookie
+   → Safari (ITP บล็อก cookie) ใช้ Authorization: Bearer token เดียวกันแทน — ไม่มี JWT/refresh token
 
 2. ทุกการร้องขอ API
    → ไคลเอนต์ส่ง JWT ผ่าน httpOnly cookie (ไม่ใช่ header)
@@ -368,7 +389,6 @@
       <li>Frontend (nginx)</li>
       <li>API (Node.js)</li>
       <li>PostgreSQL</li>
-      <li>Redis</li>
       <li>EMQX (optional)</li>
     </ul>
   </div>
@@ -379,7 +399,7 @@
       <li>Systemd service สำหรับ PM2</li>
       <li>Nginx reverse proxy</li>
       <li>PostgreSQL จัดการแยก</li>
-      <li>Redis จัดการแยก</li>
+      <li>EMQX จัดการแยก (Redis เป็นทางเลือกในแผนขยายตาม HARDWARE_SIZING_GUIDE เท่านั้น — ระบบปัจจุบันไม่ใช้)</li>
     </ul>
   </div>
   <div class="card">

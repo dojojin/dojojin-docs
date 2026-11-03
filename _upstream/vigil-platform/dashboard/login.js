@@ -107,6 +107,20 @@ document.getElementById('langEn').addEventListener('click', () => I18N.setLang('
 }());
 
 // ถ้า login อยู่แล้ว → redirect ไป dashboard
+//
+// GOTCHAS #118: this check can pass via the Authorization-header fallback
+// (Safari ITP triple-layer) when the session cookie is missing/cleared but the
+// localStorage token is still valid — /api/auth/me succeeds because fetch()
+// CAN carry a custom header. But a plain `location.href` navigation can only
+// carry cookies, NEVER headers, and URL hash fragments are client-side only
+// (never reach the server) — so there is no way to hand the server this
+// credential via a bare navigation. Redirecting anyway lands on a server that
+// sees no cookie, which bounces '/' back to disclaimer.html, which bounces
+// right back here (capped by disclaimer.js's loop guard, but the user never
+// actually gets in). Only auto-skip when a real `session` cookie is present —
+// that's the one credential a plain navigation can actually carry. Otherwise
+// leave the user on the form so a real POST /api/auth/login can set a fresh
+// cookie (and localStorage token) the normal way.
 (async () => {
   try {
     const token = localStorage.getItem('bosch_session_token');
@@ -116,6 +130,8 @@ document.getElementById('langEn').addEventListener('click', () => I18N.setLang('
       credentials: 'include',
       headers,
     });
-    if (res.ok) window.location.href = '/';
+    if (res.ok && /(?:^|;\s*)session=/.test(document.cookie)) {
+      window.location.href = '/';
+    }
   } catch {}
 })();

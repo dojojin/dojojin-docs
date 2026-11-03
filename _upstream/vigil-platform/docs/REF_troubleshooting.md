@@ -259,6 +259,37 @@ GROUP BY camera_id;
 
 ---
 
+## หน้าเว็บ/endpoint ช้า
+
+### §8.23 — "หน้านี้เปิดนาน / กดแล้วหมุนค้าง"
+
+**อย่าเดาว่าอะไรช้า — มี log ที่บอกให้แล้ว** สูตรเต็ม (คำสั่ง copy-paste ได้) อยู่ที่
+`service_start.md` → **"หน้าเว็บโหลดช้า — หา query / request ที่ช้าใน 5 นาที"**
+สั้น ๆ คือสองบรรทัด:
+
+```bash
+# request ฝั่ง api-server ที่นานเกินเกณฑ์ (default 2 s, ปรับที่ SLOW_REQ_LOG_MS)
+grep "\[slow-req\]" ~/.pm2/logs/api-server-error.log | tail -20
+# SQL ที่ช้ากว่า 2 วินาทีใน 1 ชม.ล่าสุด (จาก Postgres log)
+```
+
+`[slow-req]` พิมพ์ `<status> <ms> <method> <url> user=… ip=…` โดย redact `token=`/`sig=` ให้แล้ว
+(`src/api-server.js:243-258`) · เป็น log ล้วน ไม่ throw ไม่แตะ control flow
+ถ้าช้าอยู่ที่หน้า Health โดยเฉพาะ ให้ดู `diagnostics_ms` ใน `/api/health/details` — มันชี้ section
+ที่กินเวลาให้ตรง ๆ แทนที่จะต้องวัดใหม่ทั้งหน้า
+
+**คลาสของบั๊กที่เจอซ้ำในกลุ่มนี้ — อ่านก่อนแก้:** GOTCHAS **#187–#191**
+(`COUNT(*) OVER ()` ที่ทำให้ `LIMIT` ไร้ความหมาย · `SUM() FILTER` คืน `NULL` ไม่ใช่ `0` ·
+query ที่ไม่มีขอบเวลาเลยบนตารางที่ partition แล้ว · cache key ที่ลืมแกนกล้อง ·
+`LIKE`/`IN` ที่ทำให้ planner ทิ้ง index ต่อ partition)
+
+**สองอย่างที่ต้องรู้ก่อนบอกว่า "ตัวเลขผิด" ไม่ใช่ "ช้า":**
+- ยอดรวมบางตัวเป็น **ค่าประมาณโดยตั้งใจ** — หน้าจอจะขึ้น `≈` นำหน้า (decision #263)
+- `/api/events` **นับได้ถึงเพดาน 10,000 แล้วหยุด** — หน้าจอขึ้น `"10,000+"` และ response มี
+  header `X-Total-Capped: 1` (decision #264) · ไม่ใช่ข้อมูลหาย
+
+---
+
 ## UI Issues
 
 ### §8.17 — "A date field looks different / shows 12-hour time"

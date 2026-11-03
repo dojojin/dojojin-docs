@@ -53,6 +53,29 @@ describe('IM3-R face multipart', () => {
     assert.ok(images.faceImage.equals(Buffer.from([0xFF, 0xD8, 0xFF, 0xAA, 0xBB])), 'face bytes intact');
   });
 
+  it('reports a structural manifest of every part, JSON parts included', () => {
+    const { partsInfo } = parseFaceAlarmMultipart(buildBody(), B);
+    assert.deepEqual(partsInfo.map(p => p.name), ['alarmResult', 'faceImage', 'backgroundImage']);
+    assert.equal(partsInfo[0].contentType, 'application/json');
+    assert.equal(partsInfo[1].contentType, 'image/jpeg');
+    assert.equal(partsInfo[1].bytes, 5);
+  });
+
+  it('does not treat a non-face alarm JSON part as alarmJson (regionTargetNumberCounting)', () => {
+    // Real payload shape observed live 2026-08-05, C23WIC-SB-17 — a people-
+    // counting alarm, not face recognition, with no CaptureResult at all.
+    // Before this guard it was accepted as alarmJson and produced an
+    // all-null "FaceRecognition, no match" row every time.
+    const counting = { eventType: 'regionTargetNumberCounting', enterNum: 3, leaveNum: 1 };
+    const body = Buffer.concat([
+      part('regionTargetNumberCounting', 'application/json', Buffer.from(JSON.stringify(counting), 'utf8')),
+      Buffer.from(`--${B}--\r\n`, 'utf8'),
+    ]);
+    const { alarmJson, partsInfo } = parseFaceAlarmMultipart(body, B);
+    assert.equal(alarmJson, null, 'a payload with no CaptureResult must not become alarmJson');
+    assert.equal(partsInfo[0].name, 'regionTargetNumberCounting');
+  });
+
   it('skips a mixedTargetDetection part out of alarmJson', () => {
     const body = Buffer.concat([
       part('mixedTargetDetection', 'application/json', Buffer.from(JSON.stringify({ x: 1 }), 'utf8')),

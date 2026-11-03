@@ -40,8 +40,28 @@ document.getElementById('langEn').addEventListener('click', () => I18N.setLang('
 
 // ถ้าเคยยอมรับแล้ว — redirect ไป login ทันที
 // ใช้ sessionStorage เพื่อให้ user ยอมรับใหม่ทุกครั้งที่เปิด browser ใหม่
+//
+// Loop-guard (GOTCHAS #118): a transient hiccup in getUserFromToken() (DB pool
+// blip etc.) can bounce "/" back to disclaimer.html even with a valid session —
+// disclaimer_accepted is still '1' here, so without a cap this auto-redirects
+// straight back to login.html, which auto-redirects back to "/", forever,
+// every ~100ms, until the tab itself crashes. Cap consecutive bounces within a
+// short window; past the cap, stop and let the user click the button manually
+// (single click = single redirect attempt, not a loop).
 if (sessionStorage.getItem('disclaimer_accepted') === '1') {
-  window.location.href = '/login.html';
+  const LOOP_KEY = 'disclaimer_redirect_loop';
+  const LOOP_WINDOW_MS = 5000;
+  const LOOP_MAX = 3;
+  let loop;
+  try { loop = JSON.parse(sessionStorage.getItem(LOOP_KEY) || 'null'); } catch { loop = null; }
+  const now = Date.now();
+  loop = (loop && now - loop.first < LOOP_WINDOW_MS) ? { first: loop.first, count: loop.count + 1 } : { first: now, count: 1 };
+  sessionStorage.setItem(LOOP_KEY, JSON.stringify(loop));
+  if (loop.count > LOOP_MAX) {
+    console.warn('[disclaimer] redirect loop detected (' + loop.count + ' bounces in ' + LOOP_WINDOW_MS + 'ms) — stopping auto-redirect, click the button to continue manually');
+  } else {
+    window.location.href = '/login.html';
+  }
 }
 
 document.getElementById('acceptBtn').addEventListener('click', function() {

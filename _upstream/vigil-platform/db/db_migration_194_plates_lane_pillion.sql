@@ -1,0 +1,26 @@
+-- ============================================================
+-- Vigil Platform — Migration 194: เลนและคนซ้อนท้าย เป็นคอลัมน์จริง
+-- @author Prakasit Rochanavipart (Dojo-mAn)
+-- @copyright (c) 2025-2026 Prakasit Rochanavipart. All Rights Reserved.
+-- @license Proprietary
+-- ------------------------------------------------------------
+-- เหตุ 2026-09-01: ตัวกรอง เลน/คนซ้อนท้าย ในหน้าค้นหาป้าย อ่านจาก
+-- events.raw_json ต่อแถว — วัดจริงที่ hdy: กรองเลน 2 เดี่ยว ๆ โดน statement
+-- timeout (>45 วิ) แม้เป็นเลนที่หนาแน่นที่สุด เพราะทุกแถว candidate ต้อง probe
+-- events + detoast raw_json ก่อนถึงจะรู้ว่าผ่านตัวกรองไหม · และเป็นสองตัวกรอง
+-- สุดท้ายที่กันไม่ให้ด่าน probe ของ /api/lpr ทำงาน (ด่านนั้นใช้ได้เฉพาะ WHERE
+-- ที่อยู่บน license_plates ล้วน)
+--
+-- แนวเดียวกับ #073/#085/#090/#108 (no_seatbelt / no_helmet / rider_count /
+-- plate_char_believe): ค่าที่ตัวกรองใช้ ต้อง parse ลงคอลัมน์ตอน ingest
+--   lane_no  ← raw_json.laneNo         ('0','1','2','3', NULL = ไม่รายงาน)
+--   pillion  ← raw_json.nonMotorManned ('yes','no','unknown', NULL = ไม่รายงาน)
+-- เก็บเป็น text ตามค่าดิบ ไม่แปลงเป็น boolean — 'unknown' กับ NULL คนละความหมาย
+-- (unknown = กล้องดูแล้วไม่แน่ใจ · NULL = กล้องรุ่นนั้นไม่รายงาน)
+--
+-- backfill 27.6 ล้านแถวทำด้วยมือแบบแบ่งก้อนบน central (ดูบทเรียน migration 191:
+-- migration ที่ช้าบล็อกการบูต) · เครื่องติดตั้งใหม่ตารางว่าง ADD COLUMN ก็พอ
+-- index ประกอบสร้างด้วยมือแบบ CONCURRENTLY แล้วบันทึกใน migration 195
+-- ============================================================
+ALTER TABLE license_plates ADD COLUMN IF NOT EXISTS lane_no varchar(8);
+ALTER TABLE license_plates ADD COLUMN IF NOT EXISTS pillion varchar(8);

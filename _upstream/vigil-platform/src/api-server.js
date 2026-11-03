@@ -20,7 +20,8 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const sharp = require('sharp');
-require('dotenv').config();
+require('dotenv').config({ quiet: true });
+const env = require('./config');     // ทะเบียน env กลาง — default/coercion อยู่ที่เดียว
 process.env.APP_NAME = 'api-server'; // spool dir isolation (procTag fix)
 
 const app = express();
@@ -30,50 +31,76 @@ const app = express();
 // 'loopback' = trust traffic จาก localhost (cloudflared มาจาก localhost)
 app.set('trust proxy', 'loopback');
 const server = http.createServer(app);
-// 🔐 WebSocket — reject the upgrade BEFORE it completes if the request
-// carries no valid session. The broadcast stream is PDPA-sensitive (event
-// details, Face Capture attributes, snapshot filenames), so an anonymous
-// client must never be allowed to subscribe. Token sources mirror the REST
-// API: the `session` cookie (sent automatically on a same-origin upgrade)
-// or a `?token=` query param (Safari ITP fallback). `auth` is required
-// further down — verifyClient is a closure, only invoked at connect time.
-const wss = new WebSocket.Server({
-  server,
-  verifyClient: (info, cb) => {
-    let token = null;
-    try { token = new URL(info.req.url, 'http://x').searchParams.get('token'); } catch {}
-    if (!token && info.req.headers.cookie) {
-      for (const c of info.req.headers.cookie.split(';')) {
-        const [k, ...v] = c.trim().split('=');
-        if (k === 'session') { token = decodeURIComponent(v.join('=')); break; }
-      }
-    }
-    if (!token) return cb(false, 401, 'Unauthorized');
-    auth.getUserFromToken(token)
-      .then(u => cb(!!u, u ? 200 : 401, u ? 'OK' : 'Unauthorized'))
-      .catch(() => cb(false, 500, 'Auth error'));
-  },
-});
+// WebSocket server + broadcast → src/ws/hub.js (built further down, where the
+// WS section used to declare its client set — `auth` / `pool` exist by then and
+// nothing between here and there touches `wss`; `server` is still not listening).
 
-const SNAPSHOT_DIR = path.join(__dirname, '..', 'snapshots');
+const { snapshotDir } = require('./helpers/snapshotDir');
+const mediaScope = require('./helpers/mediaScope');
+const signedImage = require('./helpers/signedImage');
+const { createTtlCache } = require('./helpers/ttlCache');
+const { checkSiteAdminWrite } = require('./helpers/siteAdminGate');
+const { quietSiteCodes } = require('./helpers/siteStatus');
+const { PHOTO_DIR: BLACKLIST_PHOTO_DIR } = require('./helpers/blacklistImport');
+const viewRegistry = require('./view-registry');
+const { viewGuard, viewAllows, effectiveViews } = require('./helpers/viewGuard');
+const { scrubRawJson } = require('./helpers/scrubRawJson');
+const { touchCamera } = require('./helpers/touchCamera');
+const retentionBeat = require('./helpers/retentionBeat');
+const SNAPSHOT_DIR = snapshotDir();
 const CONFIG_FILE = path.join(__dirname, '..', 'cameras-config.json');
 const GROUPS_FILE = path.join(__dirname, '..', 'camera-groups.json');
 if (!fs.existsSync(SNAPSHOT_DIR)) fs.mkdirSync(SNAPSHOT_DIR, { recursive: true });
 
 const pool = new Pool({
-  host: process.env.DB_HOST,
-  port: process.env.DB_PORT,
-  database: process.env.DB_NAME,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
+  ...env.db(),
   max: 15,
   application_name: 'api-server',
+  // 2026-08-19 incident: a month-wide, all-site stats query held a pool slot
+  // for 5+ min (pg_stat_statements shows this query class already averaging
+  // 20-40s with a 656s max — 120s clears the pathological tail while giving
+  // real headroom to the merely-slow ones). Set as a startup option, not a
+  // `SET` in pool.on('connect'): that handler is fire-and-forget and races
+  // the pool's first real query on the same connection — verified empirically
+  // that the SET can lose the race and silently leave the session at the
+  // Postgres default (unlimited). `-c` on the startup packet applies before
+  // Postgres accepts any query, so there's nothing to race.
+  options: '-c statement_timeout=120000',
 });
 
 // บังคับ session ทุก connection ให้ใช้ UTC — กันปัญหา timezone mismatch
 pool.on('connect', async (client) => {
   try { await client.query("SET TIME ZONE 'UTC'"); } catch (e) { /* ignore */ }
 });
+
+// 🔴 สถิติ LPR หนัก (~12 คิวรีขนาน/คำขอ + warm loop) มี pool ของตัวเอง — ถ้าใช้ pool หลัก 15 ช่อง
+// สองคำขอก็กินหมดและหน้าค้นหา/รายการต้องรอคิว (2026-10-01 · routes/lpr-query.js)
+const statsPool = new Pool({
+  ...env.db(),
+  max: 10,
+  application_name: 'api-server-stats',
+  connectionTimeoutMillis: 60000,   // รอช่องว่างใน pool นี้ได้ไม่เกิน 60 วิ แล้วตอบ error (ค่าเริ่มต้น pg = รอตลอดไป)
+  options: '-c statement_timeout=120000',
+});
+statsPool.on('connect', async (client) => {
+  try { await client.query("SET TIME ZONE 'UTC'"); } catch (e) { /* ignore */ }
+});
+statsPool.on('error', (e) => console.error('[stats-pool] idle client error:', e.message));
+// คำขอ GET ที่ผู้ใช้ทิ้งไปแล้ว → ยกเลิกคิวรีที่ยังรันของคำขอนั้น (helpers/requestDb.js · perf ข้อ 1 ระยะ A)
+// ห่อทั้งสอง pool · ไม่มีผลกับงานเบื้องหลัง (ไม่อยู่ในบริบทคำขอ) และคำขอที่ไม่ใช่ GET
+const reqDb = require('./helpers/requestDb');
+reqDb.wrapPool(pool);
+reqDb.wrapPool(statsPool);
+
+// สรุป env ตอน boot — "ตัวไหนมาจาก .env จริง ตัวไหนใช้ default" เคยตอบไม่ได้เลย
+// นอกจากไล่อ่านทีละไฟล์ · ชื่อ secret ไม่ถูกพิมพ์ออกมา (แค่ไม่อยู่ในรายการ)
+{
+  const rows = env.summary();
+  const fromEnv = rows.filter((r) => r.source === 'env');
+  console.log(`[config] ${fromEnv.length} from env, ${rows.length - fromEnv.length} defaults`);
+  const shown = fromEnv.filter((r) => !r.masked).map((r) => r.name);
+  if (shown.length) console.log(`[config] from env: ${shown.join(', ')}`);
+}
 
 // 🔐 CORS — allowlist, not blanket reflection. The dashboard is served
 // SAME-ORIGIN by this Express app, so cross-origin access is never needed
@@ -83,8 +110,7 @@ pool.on('connect', async (client) => {
 // — Origin host === Host, so the dashboard keeps working however it's
 // reached (Cloudflare domain, LAN IP, localhost); (b) any extra origins
 // explicitly listed in ALLOWED_ORIGINS (.env, comma-separated).
-const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '')
-  .split(',').map(s => s.trim()).filter(Boolean);
+const ALLOWED_ORIGINS = env.list('ALLOWED_ORIGINS');
 app.use(cors((req, cb) => {
   const origin = req.headers.origin;
   let allow = false;
@@ -99,9 +125,100 @@ app.use(cors((req, cb) => {
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Cookie', 'X-Internal-Token'],
-    exposedHeaders: ['Set-Cookie', 'X-Total-Count'],
+    // X-Total-Capped (2026-09-06): /api/events caps its count at EVENTS_COUNT_CAP;
+    // a cross-origin client (vigil-mobile) must be able to see the cap flag or it
+    // would show the floor as the real total.
+    exposedHeaders: ['Set-Cookie', 'X-Total-Count', 'X-Has-More', 'X-Total-Capped'],
   });
 }));
+// 🔑 Partner hostname isolation (TP-PUB).
+//
+// A second hostname pointed at this same process isolates NOTHING on its own —
+// verified: with Host: meta.dojojin.tech, /login.html returned 200 and
+// /api/branding returned 200. Anyone logging in on the partner hostname would
+// receive a `session` cookie scoped to it (Path=/), and that cookie then
+// travels to /v1 on every request. Which is exactly the coupling the separate
+// hostname exists to remove.
+//
+// So the hostname only means something if this process refuses to be the
+// dashboard on it. First middleware in the chain, before CORS headers, static
+// files, or anything that could set a cookie.
+//
+// Unset PARTNER_HOST is a no-op, so nothing changes for a deployment that has
+// not configured one.
+const PARTNER_HOST = env.str('PARTNER_HOST').trim().toLowerCase();
+if (PARTNER_HOST) {
+  app.use((req, res, next) => {
+    // req.hostname strips the port; the Host header may carry one.
+    const host = String(req.headers.host || '').toLowerCase().split(':')[0];
+    if (host !== PARTNER_HOST) return next();
+
+    // Allow-list the SHAPE of the path rather than trying to sanitise it.
+    //
+    // The first attempt was startsWith('/v1/'), which '/v1/../login.html'
+    // satisfies — Express resolves it afterwards and served the dashboard
+    // (302, confirmed). Decoding once and normalising fixed that pair but not
+    // '/v1/..;/login.html' or '/v1/%25%32%65%25%32%65/login.html', because how
+    // many decode passes happen further down the stack is not something this
+    // middleware can know.
+    //
+    // So: every segment must be plain, starting alphanumeric. '%' cannot
+    // appear at all, which kills every encoding trick in one rule; '..' fails
+    // on the leading dot; ';' and empty segments fail outright. Nothing the
+    // partner API legitimately serves needs any of them.
+    const segs = req.path.split('/');
+    if (segs.length && segs[segs.length - 1] === '') segs.pop();     // trailing slash
+    const shaped = segs[0] === '' && segs[1] === 'v1' &&
+      segs.slice(2).every((s) => /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(s));
+    if (shaped) return next();
+    // 404 rather than 403: on this hostname those paths genuinely do not
+    // exist, and saying "forbidden" would confirm the dashboard is behind it.
+    const proto = req.headers['x-forwarded-proto'] || 'https';
+    const baseUrl = env.str('PUBLIC_ORIGIN') || `${proto}://${req.headers.host}`;
+    res.status(404).type('application/problem+json').json({
+      type: `${baseUrl}/v1/errors/not-found`,
+      title: 'not-found', status: 404,
+      detail: `${PARTNER_HOST} serves the partner API only. Everything here lives under /v1/.`,
+    });
+  });
+  console.log(`[partner-api] ${PARTNER_HOST} restricted to /v1/* only`);
+}
+
+// FILES_HOST — โดเมนแยกสำหรับไฟล์ที่แอดมินอัปให้ลูกค้า (upl.dojojin.tech)
+//
+// เหตุผลที่แยกโดเมน: ไม่ให้ไฟล์ที่คนอัปขึ้นมาอยู่บน origin ที่ถือ session cookie
+// cookie ของเราเป็น host-only (ไม่มี Domain= — ดู routes/auth.js) การแยกจึงกันได้จริง
+// แต่กันได้ก็ต่อเมื่อโดเมนนั้น "ไม่มี" หน้าอื่นให้ล็อกอิน — ถ้าปล่อยให้ /api/auth/login
+// ตอบบน upl. ได้ ก็จะมี cookie ของ upl. เกิดขึ้นมาเอง ซึ่งคือสิ่งที่ตั้งใจตัดทิ้ง
+//
+// Cloudflare public hostname ตั้ง Path เป็น pub/fil/* ไว้แล้วเป็นด่านแรก · ตัวนี้เป็น
+// ด่านที่สองสำหรับคนที่ยิงเข้า origin ตรง ๆ ไม่ผ่าน tunnel และเป็นกฎที่เรา audit เองได้
+//
+// กติกาเดียวกับ PARTNER_HOST ข้างบน — ไม่ sanitize แต่ปฏิเสธรูปทรง เหตุผลเต็มอยู่ที่นั่น
+// ชื่อไฟล์ที่ /pub/fil/ เสิร์ฟเป็น uuid ที่เราสร้างเองเสมอ (routes/files.js) จึงล็อกรูปทรง
+// ได้แน่นกว่า: สามส่วนพอดี และส่วนสุดท้ายต้องเป็น uuid + นามสกุลใน allowlist
+const FILES_HOST = env.str('FILES_HOST').trim().toLowerCase();
+if (FILES_HOST) {
+  app.use((req, res, next) => {
+    const host = String(req.headers.host || '').toLowerCase().split(':')[0];
+    if (host !== FILES_HOST) return next();
+    const segs = req.path.split('/');
+    if (segs.length && segs[segs.length - 1] === '') segs.pop();
+    const shaped = !req.path.includes('%') &&
+      segs.length === 4 && segs[0] === '' && segs[1] === 'pub' && segs[2] === 'fil' &&
+      // ⚠️ ต้องตรงกับ allowlist ใน routes/media-files.js /pub/fil/ เสมอ — 2026-09-24
+      // เพิ่ม html ที่นั่นแล้วลืมตรงนี้ ลิงก์ .html ตอบ 404 บน upl. ทั้งที่ localhost ได้ 200
+      (/^[0-9a-f-]{36}\.(png|jpg|pdf|docx|xlsx|html)$/.test(segs[3]) ||
+       // ลิงก์สั้น (migration 266) — ต้องตรงกับ SHORT_CODE_RE ใน routes/media-files.js
+       /^[a-z0-9]{8}(\.png)?$/.test(segs[3]));   // + ภาพพรีวิว <code>.png
+    if (shaped) return next();
+    // 404 ไม่ใช่ 403 — บนโดเมนนี้ path พวกนั้นไม่มีอยู่จริง และการตอบ forbidden
+    // เท่ากับยืนยันให้คนนอกรู้ว่ามี dashboard ซ่อนอยู่หลังโดเมนเดียวกัน
+    res.status(404).end();
+  });
+  console.log(`[files-host] ${FILES_HOST} restricted to /pub/fil/* only`);
+}
+
 // 🔒 Security headers — token lives in localStorage for Safari ITP fallback,
 // so XSS impact is higher than cookie-only auth. Apply conservative headers:
 // nosniff stops MIME-type confusion, DENY blocks clickjacking, same-origin
@@ -111,6 +228,29 @@ app.use(cors((req, cb) => {
 //   dashboard  → Content-Security-Policy (enforced) — zero inline scripts/handlers; policy gaps patched
 // All inline onclick= / onerror= attrs removed (Phase 1–4). report-uri kept for drift detection.
 app.disable('x-powered-by');
+
+// ⏱ Slow-request log (2026-09-05 perf audit): api-server had no request-duration
+// log at all, so a slow page could only be found by re-measuring everything by
+// hand. Log-only — never throws, never touches control flow (WA#3.4).
+const SLOW_REQ_LOG_MS = env.int('SLOW_REQ_LOG_MS');
+app.use((req, res, next) => {
+  const t0 = process.hrtime.bigint();
+  res.on('finish', () => {
+    try {
+      const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+      if (ms < SLOW_REQ_LOG_MS) return;
+      // Redact before truncating — slicing first can leave a token prefix behind.
+      const url = String(req.originalUrl || '').replace(/(token|sig)=[^&]*/gi, '$1=***').slice(0, 200);
+      const user = req.user?.username || (req.internal ? 'internal' : '-');
+      console.warn(`[slow-req] ${res.statusCode} ${ms.toFixed(0)}ms ${req.method} ${url} user=${user} ip=${getIP(req)}`);
+    } catch {}
+  });
+  next();
+});
+
+// ผูกคำขอ GET กับบริบทของ requestDb — ต้องอยู่ก่อน route ทุกตัว (หลัง slow-req log)
+app.use(reqDb.middleware);
+
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
@@ -175,7 +315,11 @@ app.use((req, res, next) => {
 app.use(express.json({
   limit: '10mb',
   verify: (req, _res, buf) => {
-    if (String(req.originalUrl || '').startsWith('/api/line/webhook')) req.rawBody = Buffer.from(buf);
+    const url = String(req.originalUrl || '');
+    // Both of these authenticate over the bytes as sent, so the parsed object
+    // is not good enough — re-serialising it would not reproduce the sender's
+    // whitespace or key order and every signature would fail.
+    if (url.startsWith('/api/line/webhook') || url.startsWith('/v1/')) req.rawBody = Buffer.from(buf);
   },
 }));
 
@@ -186,7 +330,9 @@ app.use((req, res, next) => {
   if (cookieHeader) {
     cookieHeader.split(';').forEach(c => {
       const [k, ...v] = c.trim().split('=');
-      if (k) req.cookies[k] = decodeURIComponent(v.join('='));
+      // cookie ที่ % เสีย (เช่นจากเว็บอื่นใต้ .dojojin.tech) ห้ามทำทั้งคำขอล้ม — 31 ต.ค. 01:00 ทุกหน้าเป็น 500
+      // เพราะ decodeURIComponent โยน URIError ⇒ ใช้ค่าดิบแทน
+      if (k) { const raw = v.join('='); try { req.cookies[k] = decodeURIComponent(raw); } catch { req.cookies[k] = raw; } }
     });
   }
   next();
@@ -198,10 +344,13 @@ const license = require('./license');
 const { decryptCamCreds, encryptCamCreds } = require('./crypto-creds');
 const routeError = require('./helpers/routeError');
 const { getSystemSetting, getSystemSettings, invalidateSystemSetting } = require('./helpers/getSystemSetting');
+const publishSiteRetention = require('./helpers/publishSiteRetention');
 const normalizeTimeOfDay = require('./helpers/normalizeTimeOfDay');
 const { edgeProxyBaseUrl } = require('./helpers/edgeProxyBaseUrl');
+const { edgeCall } = require('./helpers/edgeCall');
+const { bundleIndexHtml } = require('./helpers/dashboardBundle');
 const { OFFLINE_THRESHOLD_SEC } = require('./constants');
-auth.init(pool, process.env.SESSION_SECRET);
+auth.init(pool, env.str('SESSION_SECRET'));
 
 // 🆕 Helper: get client IP.
 // Behind Cloudflare Tunnel every connection arrives from localhost, so a
@@ -258,6 +407,19 @@ const PUBLIC_PREFIXES = [
   '/branding/',           // brand logo image
   '/tiles/',              // cached map tiles, non-sensitive
   '/face-push/',          // IM3-R cross-site face push — camera auth via per-camera token in path (not session)
+  '/pub/img/',            // ภาพแนบการแจ้งเตือน LINE — auth ด้วยลายเซ็น+วันหมดอายุใน URL
+  '/pub/ref/',            // ภาพอ้างอิงบัญชีดำ (อยู่คนละโฟลเดอร์กับ snapshots)
+                          //   ไม่ใช่ session (LINE เป็นคนมาดึง ไม่มี cookie ของเรา)
+                          //   ดู src/helpers/signedImage.js
+  '/pub/seek/',           // ภาพผลค้นหาอัจฉริยะที่แนบไปกับคำตอบใน LINE — ไม่ใช่ไฟล์บนดิสก์
+                          //   URL ต้นทางถูกปิดผนึก (AES-GCM) + ลายเซ็น + วันหมดอายุ
+                          //   และเปิดผนึกแล้วยังต้องผ่าน PIC_RE ซ้ำ ดู routes/acuseek.js
+  '/pub/rpt/',            // รายงาน PNG ที่เรนเดอร์ด้วย Puppeteer — auth ด้วยลายเซ็น+วันหมดอายุใน URL
+                          //   LINE fetch ผ่าน public URL ไม่มี session cookie
+  '/pub/fil/',            // เอกสาร/ภาพอัปโหลดโดยแอดมิน — auth ด้วยลายเซ็น+วันหมดอายุใน URL
+                          //   ลิงก์ออกเป็นโดเมนแยก (FILES_PUBLIC_URL = upl.dojojin.tech)
+                          //   แต่ prefix ยังต้องเปิดที่นี่ เพราะทั้งสองโดเมนมาที่ origin เดียวกัน
+                          //   และลิงก์เก่าที่ mint ก่อนตั้งค่ายังชี้มาที่ dashboard.dojojin.tech
   // /others/ removed — SEC-2T-001: default-deny; see OTHERS_PUBLIC below
 ];
 
@@ -267,6 +429,41 @@ const OTHERS_PUBLIC = new Set([]);
 const OTHERS_PUBLIC_PREFIXES = [];
 
 function isPublicAsset(reqPath) {
+  // SEC — auth bypass ผ่าน path traversal (พบ 2026-08-24, reproduce แล้ว)
+  //
+  //   GET https://dashboard.dojojin.tech/pub/img/../../index.html
+  //     → 200, 423 KB, dashboard เต็ม ๆ โดยไม่ต้องล็อกอิน
+  //   GET https://dashboard.dojojin.tech/index.html
+  //     → 302 เด้งไป login (พฤติกรรมที่ถูก)
+  //
+  // เหตุ: การเทียบ prefix ข้างล่างใช้ startsWith() กับ path ดิบ '/pub/img/../../x'
+  // ขึ้นต้นด้วย '/pub/img/' จริง จึงถูกตัดสินว่าเป็น public แล้วข้าม auth ทั้งก้อน
+  // ส่วน Express มา resolve '..' ทีหลังแล้วเสิร์ฟไฟล์ให้ กระทบ prefix ทุกตัว
+  // ไม่ใช่แค่ /pub/ — /vendor/ /branding/ /tiles/ /face-push/ ก็โดนเหมือนกัน
+  //
+  // วิธีแก้ใช้ตรรกะเดียวกับ PARTNER_HOST ข้างล่าง ซึ่งเคยเจอบั๊กตัวเดียวกันและ
+  // สรุปไว้แล้วว่า sanitize เอาไม่อยู่ (decode กี่รอบเราคุมไม่ได้) → ปฏิเสธรูปทรงแทน:
+  // ห้ามมี '%' เลยแม้แต่ตัวเดียว (ฆ่าทุกกลเม็ด encoding ในกฎเดียว) และห้ามมี
+  // segment ที่เป็น '.' หรือ '..'
+  //
+  // ตรวจแล้วว่าไม่ตัดของจริงทิ้ง: snapshot_filename 0 จาก 26,729,370 แถวที่มีอักขระ
+  // ซึ่ง encodeURIComponent ต้อง escape · face_push_token ทั้ง 67 ตัว URL-safe หมด
+  // · ไฟล์ใต้ vendor/ branding/ ก็เป็น [A-Za-z0-9._-] ล้วน
+  // ไม่พอถ้าเช็คแค่ segment ที่เป็น '.' หรือ '..' — '..;' ไม่ใช่ทั้งคู่และไม่มี '%'
+  // จึงรอดออกไปได้ (เทสต์ public-asset-traversal จับได้) ใช้กติกาเดียวกับ
+  // PARTNER_HOST: ทุก segment ต้องขึ้นต้นด้วย alphanumeric ซึ่งตัดทั้ง '.' '..' '..;'
+  // และ segment ว่างในคราวเดียว
+  //
+  // ตรวจแล้วว่าไม่ตัดของจริงทิ้ง: snapshot_filename 0 แถวที่มี segment ขึ้นต้นด้วย
+  // ตัวอื่น · ไม่มีไฟล์ใต้ vendor//branding/ ที่ขึ้นต้นไม่ใช่ alphanumeric ·
+  // .thumbs/.bboxcache เป็น cache ฝั่งเซิร์ฟเวอร์ ไม่เคยปรากฏใน URL สาธารณะ
+  if (reqPath.includes('%')) return false;
+  {
+    const segs = reqPath.split('/');
+    if (segs.length && segs[segs.length - 1] === '') segs.pop();   // trailing slash
+    if (!segs.slice(1).every((seg) => /^[A-Za-z0-9]/.test(seg))) return false;
+  }
+
   if (PUBLIC_HTML_FILES.has(reqPath)) return true;
   if (PUBLIC_PATHS.has(reqPath)) return true;
   if (PUBLIC_PREFIXES.some(p => reqPath.startsWith(p))) return true;
@@ -289,9 +486,9 @@ function isPublicAsset(reqPath) {
 // NODE_ENV=production) keeps the old ephemeral-fallback convenience.
 // Constant-time compare; defined before static-asset middleware.
 const INTERNAL_API_TOKEN = (() => {
-  const s = process.env.INTERNAL_API_SECRET;
+  const s = env.str('INTERNAL_API_SECRET');
   if (!s || s.length < 32) {
-    if (process.env.NODE_ENV === 'production') {
+    if (env.str('NODE_ENV') === 'production') {
       console.error('[security] INTERNAL_API_SECRET not set or too short in src/.env — refusing to start in production');
       process.exit(1);
     }
@@ -300,8 +497,8 @@ const INTERNAL_API_TOKEN = (() => {
   }
   return s;
 })();
-const WORKER_PORT       = parseInt(process.env.REPORT_WORKER_PORT || '3001', 10);
-const ALERT_WORKER_PORT = parseInt(process.env.ALERT_WORKER_PORT  || '3002', 10);
+const WORKER_PORT       = env.int('REPORT_WORKER_PORT');
+const ALERT_WORKER_PORT = env.int('ALERT_WORKER_PORT');
 
 // Poll a worker's /health endpoint (loopback, short timeout).
 // Returns parsed JSON on success, { ok: false, error } on any failure.
@@ -331,6 +528,15 @@ function isValidInternalToken(req) {
   } catch { return false; }
 }
 
+// path ที่ express.static อาจเสิร์ฟไฟล์ให้ = ต้องล็อกอิน
+// 🔴 โฟลเดอร์ (ลงท้าย /) ต้องนับด้วย — express.static เสิร์ฟ index.html ของโฟลเดอร์นั้นให้
+//    เดิมเช็คแค่นามสกุล ⇒ /others/demo/<ชื่อ>/ ทุกโฟลเดอร์เปิดได้โดยไม่ล็อกอิน แม้ผ่าน Cloudflare
+//    ขณะที่ /others/demo/<ชื่อ>/index.html ถูกกันตามปกติ (พบ 2026-10-20 · 20 โฟลเดอร์ · GOTCHAS #230)
+function isGatedStaticPath(p) {
+  return p === '/' || p.endsWith('/') ||
+    /\.(html|js|css|png|jpg|jpeg|gif|svg|webp|woff2?|ico)$/i.test(p);
+}
+
 // 🆕 Auth middleware สำหรับ static assets (HTML/JS/CSS/images served from dashboard/)
 // API requests (/api/*) are gated separately by the global /api middleware below.
 app.use(async (req, res, next) => {
@@ -340,10 +546,8 @@ app.use(async (req, res, next) => {
   if (isValidInternalToken(req)) return next();
 
   // Treat any GET for an asset under dashboard/ as auth-required
-  const isStaticAsset = req.method === 'GET' && (
-    req.path === '/' ||
-    /\.(html|js|css|png|jpg|jpeg|gif|svg|webp|woff2?|ico)$/i.test(req.path)
-  );
+  // HEAD ด้วย — express.static ตอบ HEAD ได้เหมือน GET
+  const isStaticAsset = (req.method === 'GET' || req.method === 'HEAD') && isGatedStaticPath(req.path);
   if (!isStaticAsset) return next();
 
   const token = getSessionToken(req);
@@ -355,327 +559,39 @@ app.use(async (req, res, next) => {
     // Bad/expired token — clear cookie before redirecting
     res.setHeader('Set-Cookie', 'session=; Path=/; Max-Age=0');
   }
-  if (req.path === '/' || req.path === '/index.html' || req.path.endsWith('.html')) {
+  if (req.path.endsWith('/') || req.path === '/index.html' || req.path.endsWith('.html')) {
     return res.redirect('/disclaimer.html');
   }
   return res.status(401).type('text/plain').send('Authentication required');
 });
 
-// branding assets (logo) — public so login/disclaimer can fetch without auth
-const BRANDING_DIR = path.join(__dirname, '..', 'branding');
-if (!fs.existsSync(BRANDING_DIR)) fs.mkdirSync(BRANDING_DIR, { recursive: true });
-app.use('/branding', express.static(BRANDING_DIR, { maxAge: '5m', dotfiles: 'deny' }));
-
-// favicon — serve uploaded brand logo if present, otherwise 204
-app.get('/favicon.ico', async (req, res) => {
-  try {
-    const file = (await getSystemSetting(pool, 'brand_logo_path') || '').trim();
-    if (file && /^[A-Za-z0-9._-]+$/.test(file)) {
-      const full = path.join(BRANDING_DIR, file);
-      if (fs.existsSync(full)) {
-        res.set('Cache-Control', 'public, max-age=300');
-        res.set('Content-Type', 'image/png');
-        return res.sendFile(full);
-      }
-    }
-  } catch {}
-  res.status(204).end();
-});
-// ============================================================
-// Public HTML Pages (NO AUTH)
-// ============================================================
-
-app.use(
-  '/others',
-  express.static(
-    path.join(__dirname, '..', 'public', 'others'),
-    {
-      index: 'index.html',
-      maxAge: '1h',
-      dotfiles: 'deny',
-    }
-  )
-);
-// Dashboard shell — served through a route (not plain static) so local
-// .js AND .css get a cache-busting ?v=<mtime> stamp. Cloudflare caches
-// static assets aggressively; a stale dashboard.js silently breaks new UI
-// (MV.3c face modal hit exactly this) and a stale index.css leaves new
-// styles invisible until a manual purge. index.html itself goes out
-// no-cache — it's tiny and must always carry the current ?v.
-app.get(['/', '/index.html'], (req, res) => {
-  try {
-    const dir = path.join(__dirname, '..', 'dashboard');
-    let html = fs.readFileSync(path.join(dir, 'index.html'), 'utf8');
-    // Stamp every local (non-vendor) asset with its own mtime so Cloudflare
-    // never serves stale files after a deploy. Each file gets its own ?v=
-    // so only changed files get a cache miss.
-    const stamp = (attr, p) => {
-      try {
-        const mtime = Math.floor(fs.statSync(path.join(dir, p.slice(1))).mtimeMs);
-        return `${attr}="${p}?v=${mtime}"`;
-      } catch { return `${attr}="${p}"`; }
-    };
-    html = html
-      .replace(/src="(\/(?!vendor\/)[\w/-]+\.js)"/g, (_, p) => stamp('src', p))
-      .replace(/href="(\/(?!vendor\/)[\w/-]+\.css)"/g, (_, p) => stamp('href', p));
-    res.set('Cache-Control', 'no-cache');
-    res.type('html').send(html);
-  } catch (e) {
-    res.status(500).send('index load error');
-  }
-});
-app.use(express.static(path.join(__dirname, '..', 'dashboard'), { dotfiles: 'deny' }));
-
-// ponytail: single SVG served instead of 404 when edge proxy is unreachable,
-// so <img> renders a camera-offline placeholder instead of a broken icon.
-// Cache-Control: no-store ensures next request retries the live fetch.
-const _EDGE_OFFLINE_SVG = Buffer.from(
-  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 225">' +
-  '<rect width="400" height="225" fill="#1c2030"/>' +
-  '<g transform="translate(170,68)" fill="none" stroke="#4a5568" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">' +
-  '<rect x="0" y="22" width="60" height="42" rx="5"/>' +
-  '<circle cx="30" cy="43" r="13"/>' +
-  '<rect x="18" y="14" width="16" height="10" rx="2"/>' +
-  '</g>' +
-  '<text x="200" y="148" text-anchor="middle" fill="#4a5568" font-size="13" font-family="sans-serif">Edge offline</text>' +
-  '</svg>'
-);
-function _serveEdgeOffline(res) {
-  res.setHeader('Content-Type', 'image/svg+xml');
-  res.setHeader('Cache-Control', 'no-store');
-  return res.send(_EDGE_OFFLINE_SVG);
-}
-
-// 🔐 Auth-gated snapshot serving (PDPA — CCTV images must not be public).
-// Replaces the previous express.static('/snapshots') which exposed every file
-// to anyone who could guess a filename. Filename is regex-validated to block
-// path traversal attempts (../).
-// ── Thumbnail resize for snapshot serving (?w=N) ─────────────
-// The Camera Status grid + Events/Snapshot grids request a small
-// `?w=` thumbnail so the browser isn't pulling full 5MP frames ×N.
-// Stored-snapshot thumbnails are cached on disk (lazy — generated on
-// first view, pruned with the original by enforceSnapshotRetention);
-// live-snapshot thumbnails are resized in-flight (a sharp transform
-// stream, no cache — they're transient). Width is restricted to a
-// fixed set so the on-disk thumb cache stays bounded. The larger
-// widths (>=960) back the Phase 2 per-camera "view full" cap.
-const THUMB_WIDTHS = new Set([160, 240, 320, 400, 480, 640, 960, 1280, 1920, 2560]);
-// Phase 2 — allowed per-camera "view full" width caps (a subset of
-// THUMB_WIDTHS; the camera-settings form offers exactly these). The
-// stored original is always kept native — this only caps the
-// on-demand "view full" request, non-destructively.
-const FULL_VIEW_WIDTHS = new Set([960, 1280, 1920, 2560]);
-const THUMBS_DIR = path.join(SNAPSHOT_DIR, '.thumbs');
-// OPT5-CEN-006 — edge-site thumbnails skip the disk cache below (PDPA: no
-// persistent central copy of edge-owned images), so every repeat view was
-// re-fetching the full image from the edge tunnel and re-running sharp.
-// In-memory-only cache (never touches disk — the PDPA guarantee holds):
-// 60s TTL (thumbnail content is immutable per source file, so this is a
-// memory pressure valve, not a staleness control) + hard 500-entry cap,
-// evicting the oldest entry on overflow (Map preserves insertion order).
-// Worst case ~500 × ~20KB ≈ 10MB resident.
-const _edgeThumbCache = new Map();
-const EDGE_THUMB_CACHE_TTL_MS = 60_000;
-const EDGE_THUMB_CACHE_MAX = 500;
-function _edgeThumbGet(key) {
-  const hit = _edgeThumbCache.get(key);
-  if (!hit) return null;
-  if (Date.now() - hit.at > EDGE_THUMB_CACHE_TTL_MS) { _edgeThumbCache.delete(key); return null; }
-  return hit.buf;
-}
-function _edgeThumbSet(key, buf) {
-  if (_edgeThumbCache.size >= EDGE_THUMB_CACHE_MAX) {
-    _edgeThumbCache.delete(_edgeThumbCache.keys().next().value);
-  }
-  _edgeThumbCache.set(key, { buf, at: Date.now() });
-}
-function thumbWidth(q) {
-  const n = parseInt(q, 10);
-  return THUMB_WIDTHS.has(n) ? n : null;
-}
-function jpegResizer(w) {
-  return sharp({ failOn: 'none' })
-    .resize(w, null, { withoutEnlargement: true })
-    .jpeg({ quality: 78 });
-}
-
-app.get('/snapshots/*path', async (req, res) => {
-  try {
-    // Normal access requires a logged-in user session (PDPA gate). The internal
-    // renderer (Puppeteer) has no session — it carries X-Internal-Token (a
-    // server-only secret, never exposed to the browser) to load snapshot
-    // thumbnails for the report PDF/PNG. Same trust as /api/stats. GET only.
-    if (!isValidInternalToken(req)) {
-      const token = getSessionToken(req);
-      const user = token ? await auth.getUserFromToken(token) : null;
-      if (!user) return res.status(401).end();
-    }
-
-    // Support subdirectory paths (e.g. lpr/2026-06-18/file.jpg)
-    // Each path segment must be safe: alphanumeric, dot, dash, underscore only
-    const filename = decodeURIComponent(req.path.slice('/snapshots/'.length));
-    const segments = filename.split('/');
-    const validSegment = /^[A-Za-z0-9._-]+$/;
-    const validFile    = /\.(jpg|jpeg|png)$/i;
-    if (!segments.length || !validFile.test(filename) ||
-        segments.some(s => !s || s === '..' || !validSegment.test(s))) {
-      return res.status(400).end();
-    }
-    const file = path.join(SNAPSHOT_DIR, ...segments);
-    // T2-B: try local first; if missing, proxy-fetch from the OWNING SITE's
-    // edge (no disk copy — PDPA). Per-site (2026-07-15 plan): the camera_id
-    // is segments[2] per snapshot-path.js's layout
-    // (category/date/camId/slot/file) — look up which site it belongs to
-    // and derive that site's tunnel URL, instead of one global edge URL.
-    // main-site (or unassigned) cameras never proxy — same as today.
-    let proxyBuf = null;
-    if (!fs.existsSync(file)) {
-      // camId position depends on the path layout:
-      //  - deep event/face/lpr: category/date/camId/slot/file → segments[2]
-      //  - flat preview tile:    preview/<camId>.jpg           → segments[1] sans ext
-      // Both must resolve to the owning camera so the per-site proxy target is
-      // found. Regression from 27f10ea (per-site proxy) which only handled the
-      // deep layout → preview tiles 404'd silently for every edge-site camera.
-      const camId = (segments[0] === 'preview' && segments.length === 2)
-        ? segments[1].replace(/\.(jpe?g|png)$/i, '')
-        : (segments[2] || null);
-      let proxyUrl = null;
-      if (camId) {
-        try {
-          const { rows } = await pool.query(
-            `SELECT (c.site_id IS NULL OR s.code = 'main') AS is_local_site, s.code
-             FROM cameras c LEFT JOIN sites s ON s.id = c.site_id
-             WHERE c.id = $1`,
-            [camId]
-          );
-          const cam = rows[0];
-          if (cam && !cam.is_local_site && cam.code) {
-            proxyUrl = edgeProxyBaseUrl(cam.code, process.env.SNAPSHOT_PROXY_DOMAIN || 'dojojin.tech');
-          }
-        } catch (e) { console.warn(`[api] site lookup for snapshot proxy [${camId}]:`, e.message); }
-      }
-      // Fallback: segments[2] isn't a camera ID for face/ref/<fdLibName>/<humanId> paths.
-      // Find the owning edge site via any FaceRecognition event that stored this path.
-      if (!proxyUrl) {
-        try {
-          const { rows: evRows } = await pool.query(
-            `SELECT s.code FROM events e
-             JOIN cameras c ON c.camera_id = e.camera_id
-             JOIN sites s ON s.id = c.site_id
-             WHERE e.event_type = 'FaceRecognition'
-               AND e.raw_json->>'_snapshot_ref' = $1
-               AND s.code IS NOT NULL AND s.code <> 'main'
-             LIMIT 1`,
-            [filename]
-          );
-          if (evRows[0]) {
-            proxyUrl = edgeProxyBaseUrl(evRows[0].code, process.env.SNAPSHOT_PROXY_DOMAIN || 'dojojin.tech');
-          }
-        } catch (e) { console.warn(`[api] face-ref fallback lookup for ${filename}:`, e.message); }
-      }
-      const proxySecret = process.env.SNAPSHOT_PROXY_SECRET;
-      if (proxyUrl && proxySecret) {
-        try {
-          const up = await fetch(
-            `${proxyUrl}/snapshots/${encodeURIComponent(filename).replace(/%2F/g, '/')}`,
-            { headers: { Authorization: `Bearer ${proxySecret}` }, signal: AbortSignal.timeout(8000) }
-          );
-          if (!up.ok) {
-            console.warn(`[api] edge proxy ${up.status} for ${filename}`);
-            // 404 = file genuinely gone (retention-pruned on the edge too) → pass
-            // the 404 through so the client-side RF4 fallback (plate plaque /
-            // vehicle vector, data-err="hide") shows. The Edge-offline SVG is
-            // only for connectivity failures where the file may still exist.
-            // no-store: this 404 can flip to 200 after a deploy / when the tile
-            // regenerates — a heuristically-cached 404 in the browser would keep
-            // showing "no image" until a manual hard-refresh (real incident).
-            if (up.status === 404) { res.setHeader('Cache-Control', 'no-store'); return res.status(404).end(); }
-            return _serveEdgeOffline(res);
-          }
-          proxyBuf = Buffer.from(await up.arrayBuffer());
-        } catch (e) { console.warn(`[api] edge proxy fetch error for ${filename}:`, e?.message || e); return _serveEdgeOffline(res); }
-      } else {
-        res.setHeader('Cache-Control', 'no-store');
-        return res.status(404).end();
-      }
-    }
-
-    // ?w=N → serve a lazily-built, disk-cached thumbnail. The cache
-    // file lives in .thumbs/<w>/ and is pruned with the original.
-    const w = thumbWidth(req.query.w);
-    if (w) {
-      // Flatten subdirectory path for thumb cache: lpr/2026-06-18/file.jpg → file.jpg
-      const thumbName = segments[segments.length - 1];
-      const tdir  = path.join(THUMBS_DIR, String(w));
-      const tpath = path.join(tdir, thumbName);
-      const edgeThumbKey = proxyBuf ? `${filename}|${w}` : null;
-      try {
-        let thumb;
-        try {
-          if (proxyBuf) {
-            thumb = _edgeThumbGet(edgeThumbKey);
-            if (!thumb) throw new Error('proxy'); // no disk cache for edge images
-          } else {
-            thumb = await fs.promises.readFile(tpath);
-          }
-        } catch {
-          // cache miss — build thumbnail from local file or proxy buffer
-          const src = proxyBuf ?? await fs.promises.readFile(file);
-          thumb = await sharp(src, { failOn: 'none' })
-            .resize(w, null, { withoutEnlargement: true })
-            .jpeg({ quality: 78 }).toBuffer();
-          if (proxyBuf) {
-            _edgeThumbSet(edgeThumbKey, thumb);
-          } else {
-            await fs.promises.mkdir(tdir, { recursive: true });
-            await fs.promises.writeFile(tpath, thumb).catch(() => {});
-          }
-        }
-        // res.send(Buffer) — not sendFile: the .thumbs dot-folder would
-        // trip sendFile's default dotfiles:'ignore' and 404.
-        res.setHeader('Content-Type', 'image/jpeg');
-        res.setHeader('Cache-Control', 'private, max-age=300');
-        return res.send(thumb);
-      } catch { /* fall through to the full image */ }
-    }
-    res.setHeader('Cache-Control', 'private, max-age=300');
-    if (proxyBuf) {
-      res.setHeader('Content-Type', 'image/jpeg');
-      return res.send(proxyBuf);
-    }
-    res.sendFile(file);
-  } catch (e) {
-    res.status(500).end();
-  }
+// Branding assets + dashboard shell + static mounts (→ src/routes/static-shell.js)
+// Required HERE, not hoisted with the other requires at the top: the module
+// builds the dashboard bundle at load time, and that must still happen at this
+// point in boot (after env/CORS setup) — same as the IIFE it replaces.
+const ROOT_DIR = path.join(__dirname, '..');
+const { BRANDING_DIR } = require('./routes/static-shell')(app, pool, {
+  ROOT_DIR, env, getSystemSetting, bundleIndexHtml,
 });
 
-// 🎬 Phase 6.1 — Pre-alarm video clip serving (auth-gated, same PDPA pattern as /snapshots)
-const MEDIA_DIR = path.join(__dirname, '..', 'media');
-if (!fs.existsSync(MEDIA_DIR)) fs.mkdirSync(MEDIA_DIR, { recursive: true });
-
-// 📅 Phase 7.3 — generated report PDFs land here (email delivery: commit 3)
-const REPORTS_DIR = path.join(__dirname, '..', 'reports');
-if (!fs.existsSync(REPORTS_DIR)) fs.mkdirSync(REPORTS_DIR, { recursive: true });
-
-app.get('/media/:filename', async (req, res) => {
-  try {
-    const token = getSessionToken(req);
-    const user = token ? await auth.getUserFromToken(token) : null;
-    if (!user) return res.status(401).end();
-
-    const filename = req.params.filename;
-    if (!/^[A-Za-z0-9._-]+\.(mp4|webm)$/i.test(filename)) {
-      return res.status(400).end();
-    }
-    const file = path.join(MEDIA_DIR, filename);
-    if (!fs.existsSync(file)) return res.status(404).end();
-    // No long cache — clip lifecycle is short + may be deleted by retention
-    res.setHeader('Cache-Control', 'private, max-age=60');
-    res.sendFile(file);
-  } catch (e) {
-    res.status(500).end();
-  }
+// Snapshot / public image / report / uploaded-file serving + bbox burn-in
+// (→ src/routes/media-files.js). Returns the pieces still used further down.
+const {
+  THUMBS_DIR, BBOX_CACHE_DIR, thumbWidth, jpegResizer,
+  MEDIA_DIR, REPORTS_DIR, FILES_DIR,
+} = require('./routes/media-files')(app, pool, {
+  ROOT_DIR, SNAPSHOT_DIR, BLACKLIST_PHOTO_DIR,
+  env, sharp, auth, getSessionToken, isValidInternalToken,
+  mediaScope, signedImage, viewAllows, edgeProxyBaseUrl, getSystemSetting,
 });
+
+// 👤 View allowlist สำหรับ route ที่ mount **เหนือ** global `/api` middleware
+// (decision #250) — สามกลุ่มนี้ `req.user` ยังไม่ถูก set guard จึง resolve token เอง
+// ต้องมาก่อน `require()` ข้างล่าง ไม่งั้น express ลงทะเบียน handler ไปแล้ว middleware
+// ที่เพิ่มทีหลังจะไม่ทำงาน · `/api/auth/sessions` + `/api/audit-log` เป็น route ของแท็บ
+// `history:sessions` / `history:audit` จึงต้องถูกกันตามสิทธิ์เหมือน route อื่น
+const _viewGuard = viewGuard({ auth, getSessionToken, isValidInternalToken });
+app.use(['/api/auth/sessions', '/api/audit-log', '/api/users'], _viewGuard);
 
 // Authentication routes (→ src/routes/auth.js)
 require('./routes/auth')(app, pool, { auth, getIP, getSessionToken });
@@ -683,7 +599,14 @@ require('./routes/auth')(app, pool, { auth, getIP, getSessionToken });
 // User Management + Audit Log + CSP reporter (→ src/routes/users.js)
 // NOTE: must remain BEFORE the global /api auth middleware so that
 // user management works when the license write-block is active.
-require('./routes/users')(app, { auth, getIP });
+require('./routes/users')(app, { auth, getIP, pool });
+
+// 🔑 Partner API (→ src/routes/partner-api.js) — mounted at /v1, NOT /api.
+// Partners have no session and no cookie; they sign each request with AK/SK.
+// The three /api middlewares below all enforce session auth, so putting these
+// routes under /api would either lock partners out or force a hole in the
+// session check. Separate prefix, separate auth, no interaction.
+require('./routes/partner-api')(app, pool);
 
 // 🔐 Global auth middleware for ALL /api/* endpoints below this line
 // Endpoints above (login, logout, me, change-password, sessions, users, audit) มี middleware แล้ว
@@ -712,13 +635,47 @@ app.use('/api', async (req, res, next) => {
   req.user = user;
   req.user.allowedSites = await auth.getAllowedSites(req.user, pool);
   req.user.isSiteScoped = req.user.allowedSites !== null;
+  // site_admin ที่ยังไม่ผูก Site: scope ว่าง [] ถูกหลาย query ตีความเป็น "ไม่จำกัด" (พฤติกรรมเดิมของ viewer)
+  // → admin เฉพาะไซต์ที่ไม่มีไซต์จะเห็น/แก้ได้ทุกไซต์ ปฏิเสธทั้งบัญชีไว้ก่อน (เว้น login/logout/เปลี่ยนรหัส)
+  if (req.user.role === 'site_admin' && !(req.user.allowedSites && req.user.allowedSites.length)
+      && !req.path.startsWith('/auth/')) {
+    return res.status(403).json({ error: 'Site admin has no site assigned', code: 'NO_SITE_ASSIGNED' });
+  }
+  // แกนที่ 2 — จำกัดรายกล้อง (`user_cameras`, decision #253) · null = ไม่จำกัด
+  // ค่าเดียวกันนี้ติดอยู่กับ allowedSites ในรูป property `cameras` ให้ siteWhere() ใช้
+  req.user.allowedCameras = req.user.allowedSites ? (req.user.allowedSites.cameras || null) : null;
   next();
 });
 
+// 👤 View allowlist ของ route ทั้งหมดใต้ `/api` — default DENY สำหรับ user ที่ถูกจำกัด
+// วางหลัง middleware ที่ set `req.user` (ไม่เสีย DB round-trip เพิ่ม) และก่อน
+// `requireAdminForWrites` เพื่อให้ "ไม่มีสิทธิ์เห็นหน้านี้" ตอบก่อน "ต้องเป็น admin"
+app.use('/api', _viewGuard);
+
+// ทุกการเขียนของ Site Admin (ผ่านหรือถูกปฏิเสธ) ลง audit_log — เก็บแค่ชื่อช่องใน body ไม่เก็บค่า (รหัสผ่านกล้อง)
+// เจ้าของขอ 2026-10-14: "ต้องมี audit logs ให้รู้ว่าใครเป็นคนเซ็ต เป็นคนเปลี่ยน" · fire-and-forget
+function _auditSiteAdminWrite(req, deniedReason = null) {
+  auth.logAudit(req.user?.id, req.user?.username, deniedReason ? 'site_admin_write_denied' : 'site_admin_write',
+    null, null, getIP(req), req.headers['user-agent'], {
+      method: req.method, path: (req.baseUrl || '') + req.path,
+      body_fields: Object.keys(req.body || {}).slice(0, 40),
+      site_id: req.body?.site_id ?? null,
+      ...(deniedReason ? { reason: deniedReason } : {}),
+    }).catch(() => {});
+}
+
 // 🔐 Admin-only middleware for write operations on critical resources
 function requireAdminForWrites(resourcePath) {
-  return (req, res, next) => {
+  return async (req, res, next) => {
     if (req.path.startsWith(resourcePath) && req.method !== 'GET') {
+      // Admin เฉพาะไซต์: เปิดเฉพาะ route ใน siteAdminGate.RULES + ตรวจไซต์ของเป้าหมาย
+      // ทุก prefix ที่ครอบด้วยฟังก์ชันนี้ แต่ route ที่ไม่อยู่ใน RULES = 403 เหมือน viewer
+      if (req.user?.role === 'site_admin') {
+        const g = await checkSiteAdminWrite(req, { pool, loadGroups, loadCameraConfig });
+        if (g.ok) { req.siteAdminWriteOk = true; _auditSiteAdminWrite(req); return next(); }
+        _auditSiteAdminWrite(req, g.reason);
+        return res.status(403).json({ error: 'Admin role required for this operation', code: 'SITE_ADMIN_SCOPE', reason: g.reason });
+      }
       if (req.user?.role !== 'admin') {
         return res.status(403).json({ error: 'Admin role required for this operation' });
       }
@@ -737,28 +694,62 @@ app.use('/api/categories', requireAdminForWrites('/'));
 app.use('/api/category-rules', requireAdminForWrites('/'));
 app.use('/api/settings', requireAdminForWrites('/'));
 app.use('/api/report-schedules', requireAdminForWrites('/'));
+app.use('/api/reports', requireAdminForWrites('/'));   // POST /send-now pushes to LINE; GETs (render/download) unaffected
 app.use('/api/license', requireAdminForWrites('/'));
+app.use('/api/storage', requireAdminForWrites('/'));
 // DELETE /api/alert-logs TRUNCATEs the whole alert_logs table — must be
 // admin-only. (GET stays open to viewers; requireAdminForWrites gates
 // non-GET methods only.)
 app.use('/api/alert-logs', requireAdminForWrites('/'));
+// Blacklist source test-connection touches real external credentials against
+// classified/government-operated systems — admin-only, not just any viewer.
+// 🔴 /api/lpr เขียนได้เฉพาะ admin ยกเว้นงานของเจ้าหน้าที่ (ack · notify · mute) — helpers/lprWriteGuard.js
+// site_admin: ตรวจไซต์ของรายการเฝ้าระวังก่อน (siteAdminGate) แล้วให้ lprWriteGuard อ่านผล — ตั้งธงฝั่งเซิร์ฟเวอร์เท่านั้น
+app.use('/api/lpr', async (req, res, next) => {
+  if (req.user?.role === 'site_admin' && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+    const g = await checkSiteAdminWrite(req, { pool, loadGroups, loadCameraConfig });
+    req.siteAdminWriteOk = g.ok === true;
+    _auditSiteAdminWrite(req, g.ok ? null : g.reason);
+  }
+  next();
+});
+app.use('/api/lpr', require('./helpers/lprWriteGuard').lprWriteGuard);
+app.use('/api/blacklist', requireAdminForWrites('/'));
+app.use('/api/face-blacklist', requireAdminForWrites('/'));
+
+// 👤 View registry — หน้า/แท็บทั้งหมดที่จำกัดสิทธิ์ต่อ user ได้ + สิทธิ์ของคนที่ถามมาเอง
+// (decision #250) client ใช้สร้างเมนู/ตัดสินใจว่าจะโชว์หน้าไหน ส่วนการกันจริงอยู่ที่
+// allowlist ฝั่ง server — endpoint นี้จึงเป็น "ความสะดวก" ไม่ใช่ "ความปลอดภัย"
+// อยู่ใน CORE_ROUTES เสมอ ไม่งั้น user ที่ถูกจำกัดจะไม่มีเมนูให้กดเลย
+app.get('/api/views', async (req, res) => {
+  try {
+    let message = 'อยู่ระหว่างการปรับปรุงการให้บริการ';
+    try {
+      const r = await pool.query("SELECT value FROM system_settings WHERE key='restricted_view_message'");
+      if (r.rows[0]?.value) message = r.rows[0].value;
+    } catch { /* ใช้ค่า default — ข้อความบล็อกไม่ควรทำให้ทั้ง endpoint ล้ม */ }
+    res.json({
+      views: viewRegistry.clientRegistry(),
+      // auditor = เห็นทุกหน้า (อ่านอย่างเดียว) จึงต้องได้ null เหมือน server ตัดสิน
+      // ไม่งั้นหน้าจอจะซ่อนเมนูเองทั้งที่ยิง API ได้จริง (แบนเนอร์บอกว่าดูได้ทุกหน้า)
+      allowed: effectiveViews(req.user),         // null = ไม่จำกัด
+      landing: req.user?.landing_view ?? null,
+      message,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 // ============================================================
 // Phase 8.0 — License enforcement
 // ============================================================
 // 60-second cache so we don't hit the DB on every API request. Bumped
 // to a fresh read whenever activate/deactivate happens.
-let _licenseStateCache = null;
-let _licenseStateCacheAt = 0;
-async function getCurrentLicenseState() {
-  if (_licenseStateCache && Date.now() - _licenseStateCacheAt < 60_000) {
-    return _licenseStateCache;
-  }
-  _licenseStateCache = await license.computeLicenseState(pool);
-  _licenseStateCacheAt = Date.now();
-  return _licenseStateCache;
-}
-function invalidateLicenseStateCache() { _licenseStateCacheAt = 0; }
+const _licenseStateCache = createTtlCache({ name: 'license:state', ttlMs: 60_000, max: 1 });
+const getCurrentLicenseState = () =>
+  _licenseStateCache.wrap('state', () => license.computeLicenseState(pool));
+function invalidateLicenseStateCache() { _licenseStateCache.clear(); }
 
 // ── Auditor read-only enforcement ────────────────────────────
 // The 'auditor' role (ผู้ตรวจสอบระบบ) may GET everything — including
@@ -875,45 +866,67 @@ if (!fs.existsSync(GROUPS_FILE)) saveGroups({ groups: [] });
 // WebSocket
 // ============================================================
 
-const wsClients = new Set();
-wss.on('connection', (ws) => {
-  // Auth already enforced at the upgrade by verifyClient above.
-  wsClients.add(ws);
-  ws.on('close', () => wsClients.delete(ws));
+const { wss, broadcast } = require('./ws/hub')({
+  server, WebSocket, auth, pool,
+  mediaScope, viewRegistry, viewAllows, scrubRawJson,
 });
-
-function broadcast(data) {
-  const json = JSON.stringify(data);
-  wsClients.forEach(ws => { if (ws.readyState === WebSocket.OPEN) ws.send(json); });
-}
 
 // LPR watch-list plate cache — so the new_event broadcast can flag an anprAlarm
 // as a watch-list ALERT (vs a plain read) without a DB query per event. Plates
 // are normalized (UPPER, spaces stripped) to match on both sides. Refreshed on a
 // timer; the watch-list is small and changes rarely.
+const lprLineAlert = require('./helpers/lprLineAlert');
 const _normPlate = (p) => String(p || '').toUpperCase().replace(/\s+/g, '');
-let _lprWatchSet = new Set();
+// Keys are "PLATE" for plate-only rows and "PLATE|Province" for plate_region
+// ones, so the flag obeys the same rule the alert queries do. The old set held
+// bare plates while every one of the 482 active rows is plate_region, which
+// meant a plate matching in the wrong province was flagged as a watch-list hit
+// — the exact false-collision #130 measured at 93% and removed from the alert
+// path. Both key shapes live in one set because a list can hold both modes.
+// ค่าของ Map = site_id ของกลุ่ม (null = Global) — กลุ่มเฉพาะ Site จับคู่เฉพาะกล้องของ Site นั้น
+// กฎเดียวกับ helpers/watchScope.js ที่ query ฝั่งหน้าจอ/สถิติใช้ (migration 261)
+let _lprWatchSet = new Map();
 async function _refreshLprWatch() {
   try {
-    const { rows } = await pool.query('SELECT plate_number FROM lpr_watchlist WHERE active');
-    _lprWatchSet = new Set(rows.map(r => _normPlate(r.plate_number)));
-  } catch (e) { console.warn('[lpr-watch] refresh:', e.message); }
+    const { rows } = await pool.query(
+      `SELECT w.plate_number, w.alert_mode, w.region, g.site_id
+         FROM lpr_watchlist w LEFT JOIN lpr_watchlist_groups g ON g.id = w.group_id
+        WHERE w.active`);
+    _lprWatchSet = new Map(rows.map(r => [r.alert_mode === 'plate_region'
+      ? `${_normPlate(r.plate_number)}|${r.region || ''}`
+      : _normPlate(r.plate_number), r.site_id ?? null]));
+  } catch (e) {
+    // บรรทัดนี้รันตอนโหลดโมดูล ก่อน migration 261 จะเพิ่ม g.site_id (เจอจริงตอน deploy 2026-10-14) —
+    // ถ้าปล่อยให้ล้ม เซ็ตจะว่างจนรอบถัดไป 5 นาที = ป้ายเฝ้าระวังไม่แจ้ง LINE เลย · ถอยไปใช้แบบเดิม (ทุกกลุ่ม = Global)
+    console.warn('[lpr-watch] refresh:', e.message, '— fallback ไม่มีขอบเขต Site');
+    try {
+      const { rows } = await pool.query('SELECT plate_number, alert_mode, region FROM lpr_watchlist WHERE active');
+      _lprWatchSet = new Map(rows.map(r => [r.alert_mode === 'plate_region'
+        ? `${_normPlate(r.plate_number)}|${r.region || ''}` : _normPlate(r.plate_number), null]));
+    } catch (e2) { console.warn('[lpr-watch] fallback refresh:', e2.message); }
+  }
+}
+let _watchChangedTimer = null;
+async function _lprWatchHit(plate, region, cameraId) {
+  if (!plate) return false;
+  const key = _lprWatchSet.has(plate) ? plate : (_lprWatchSet.has(`${plate}|${region}`) ? `${plate}|${region}` : null);
+  if (key === null) return false;
+  const site = _lprWatchSet.get(key);
+  if (site == null) return true;
+  const { rows } = await pool.query('SELECT site_id FROM cameras WHERE id = $1', [cameraId]);
+  return rows[0]?.site_id === site;
 }
 _refreshLprWatch();
-setInterval(_refreshLprWatch, 5 * 60 * 1000);
+setInterval(() => { _refreshLprWatch(); }, 5 * 60 * 1000);
 
 // Phase 6.1.5 — Postgres LISTEN bridge: forward clip_done notifications
 // from media-recorder.js to all connected WebSocket clients so the Media
 // page can update without polling. Uses a dedicated pg.Client (LISTEN can't
 // run on a pooled connection).
-(async () => {
+{
   const { Client } = require('pg');
-  const listenClient = new Client({
-    host: process.env.DB_HOST, port: process.env.DB_PORT,
-    database: process.env.DB_NAME, user: process.env.DB_USER, password: process.env.DB_PASSWORD,
-  });
-  listenClient.on('error', e => console.error('[ws-bridge] listen error:', e.message));
-  listenClient.on('notification', async (msg) => {
+  const { listenForever } = require('./helpers/pgListen');
+  const onWsBridgeNotification = async (msg) => {
     if (msg.channel === 'clip_done') {
       try {
         const payload = JSON.parse(msg.payload);
@@ -928,6 +941,35 @@ setInterval(_refreshLprWatch, 5 * 60 * 1000);
         const p = JSON.parse(msg.payload);
         if (p.scan_id) require('./helpers/scanRegistry').resolve(p.scan_id, p);
       } catch {}
+      return;
+    }
+    if (msg.channel === 'storage_purge_result') {
+      // ผลลบไฟล์จาก edge — resolve คำสั่งที่ค้างอยู่ให้ GET /api/storage/purge/:reqId อ่านได้
+      try {
+        const p = JSON.parse(msg.payload);
+        if (p.reqId) require('./helpers/purgeRegistry').resolve(p.reqId, p);
+      } catch {}
+      return;
+    }
+    if (msg.channel === 'camera_mqtt_result') {
+      // ผลส่งค่า MQTT เข้ากล้อง Bosch จาก edge — resolve คำสั่งที่ POST
+      // /api/cameras/:id/push-mqtt กำลัง waitFor() ค้างอยู่
+      try {
+        const p = JSON.parse(msg.payload);
+        if (p.req_id) require('./helpers/cameraMqttRegistry').resolve(p.req_id, p);
+      } catch {}
+      return;
+    }
+    if (msg.channel === 'watchlist_changed') {
+      // migration 262 — รายการ/กลุ่มป้ายเปลี่ยน: โหลดชุดที่ใช้ยิง LINE ใหม่ทันที (เดิมรอรอบ 5 นาที)
+      // และล้างแคชสถิติ LPR ให้ตัวเลข "ตรงเฝ้าระวัง" ตามทัน · debounce กัน bridge sync ยิงรัว
+      if (/^lpr_watchlist/.test(msg.payload)) {
+        clearTimeout(_watchChangedTimer);
+        _watchChangedTimer = setTimeout(() => {
+          _refreshLprWatch();
+          try { app.locals.clearLprStatsCache?.(); } catch {}
+        }, 1000);
+      }
       return;
     }
     if (msg.channel === 'event_snapshot') {
@@ -976,7 +1018,38 @@ setInterval(_refreshLprWatch, 5 * 60 * 1000);
         // Flag watch-list ANPR hits so the map keeps a camera-point pulse for
         // alerts while plain reads drop into the side list (frontend routing).
         if (row.event_type === 'anprAlarm') {
-          row._lprAlert = _lprWatchSet.has(_normPlate(row.raw_json?.data?.Object?.Text));
+          // data.Object is Dahua's TrafficJunction envelope and Hikvision has
+          // none, so reading only that flagged nothing from Phuket: 11 of 32
+          // real watch-list hits in a week (34%) were silently treated as
+          // ordinary reads and dropped into a side list carrying 300 plates a
+          // minute. Both ingesters normalise `plate` and `region` to the top
+          // level, and `region` is already a Thai province name from both, so
+          // no code lookup is needed here.
+          const _rj = row.raw_json || {};
+          const _pl = _normPlate(_rj.plate || _rj.data?.Object?.Text);
+          const _rg = _rj.region || '';
+          row._lprAlert = await _lprWatchHit(_pl, _rg, row.camera_id);
+          // LINE for watch-list hits. Fire-and-forget on purpose: this path
+          // carries ~300 plate reads a minute and must not wait on LINE, or
+          // stall behind it when LINE is slow. The helper never throws and
+          // records every outcome — sent or suppressed — in alert_logs.
+          if (row._lprAlert) {
+            (async () => {
+              try {
+                const { rows: gr } = await pool.query(
+                  `SELECT group_id FROM lpr_watchlist
+                    WHERE plate_number = $1 AND active LIMIT 1`, [_pl]);
+                const groupId = gr[0]?.group_id;
+                if (!groupId) return;   // ungrouped plate has no notify switch to read
+                // No siteCode passed: the helper resolves it from the same
+                // join it needs anyway for the camera name in the message, so
+                // a cache here would be a second copy to keep in sync.
+                await lprLineAlert.sendLprAlert({
+                  pool, lineSender, event: row, plate: _pl, region: _rg, groupId,
+                });
+              } catch (e) { console.error('[lpr-line]', e.message); }
+            })();
+          }
         }
         broadcast({ type: 'new_event', event: row });
         // alert push ย้ายไป alert-engine.onEvent (คุมด้วย alert_rules ต้นทาง)
@@ -985,82 +1058,23 @@ setInterval(_refreshLprWatch, 5 * 60 * 1000);
       }
       return;
     }
+  };
+  // 🔴 ต้องต่อกลับเองเมื่อหลุด — เดิมมีแค่ on('error', log) หลุดตอน Postgres crash 2026-09-26 แล้ว
+  // dashboard ไม่ได้ event สด ~29 ชม. จน restart (GOTCHAS #217 · helpers/pgListen.js)
+  // สถานะการเชื่อมต่อให้หน้า Health อ่าน (routes/health.js → integrity.ws_bridge_connected)
+  app.locals.wsBridgeListen = listenForever({
+    label: 'ws-bridge',
+    channels: ['clip_done', 'new_event', 'event_snapshot', 'scan_result', 'storage_purge_result', 'camera_mqtt_result', 'watchlist_changed'],
+    onNotification: onWsBridgeNotification,
+    makeClient: () => new Client({ ...env.db() }),
   });
-  try {
-    await listenClient.connect();
-    await listenClient.query('LISTEN clip_done');
-    await listenClient.query('LISTEN new_event');
-    await listenClient.query('LISTEN event_snapshot');
-    await listenClient.query('LISTEN scan_result');
-    console.log('🎬 ws-bridge: LISTEN clip_done + new_event + event_snapshot + scan_result → WebSocket broadcast');
-  } catch (e) {
-    console.warn('🎬 ws-bridge connect failed:', e.message);
-  }
-})();
-
-// ============================================================
-// Occupancy tracker — live "People in Area" KPI
-// ============================================================
-// Bosch IVA "Counter" / "Crowd" rules emit CountAggregation/Counter events
-// with a numeric Count value. Bosch samples at high frequency (several per
-// second) and the raw count strobes when tracking briefly loses an object,
-// so we apply 2-second median smoothing to produce a stable display number.
-// Counters that go silent for > 30s decay to 0 (the area emptied and Bosch
-// stopped re-emitting).
-const OCC_SMOOTH_WINDOW_MS = 2_000;
-const OCC_STALE_TTL_MS     = 30_000;
-const _occupancy = new Map();   // camera_id -> Map(rule_name -> entry)
-
-function recordOccupancySample(cameraId, ruleName, rawCount) {
-  if (!cameraId || !ruleName) return;
-  if (!Number.isFinite(rawCount) || rawCount < 0) return;
-
-  let perCam = _occupancy.get(cameraId);
-  if (!perCam) { perCam = new Map(); _occupancy.set(cameraId, perCam); }
-  let entry = perCam.get(ruleName);
-  if (!entry) { entry = { samples: [], smoothed: 0, raw: 0, lastUpdate: 0 }; perCam.set(ruleName, entry); }
-
-  const now = Date.now();
-  entry.samples.push({ ts: now, count: rawCount });
-  entry.samples = entry.samples.filter(s => (now - s.ts) <= OCC_SMOOTH_WINDOW_MS);
-
-  const sorted = entry.samples.map(s => s.count).sort((a, b) => a - b);
-  const smoothed = sorted.length > 0 ? sorted[Math.floor(sorted.length / 2)] : 0;
-
-  const changed = entry.smoothed !== smoothed;
-  entry.raw = rawCount;
-  entry.smoothed = smoothed;
-  entry.lastUpdate = now;
-
-  if (changed) {
-    broadcast({
-      type: 'occupancy_update',
-      camera_id: cameraId,
-      rule_name: ruleName,
-      current: smoothed,
-      raw: rawCount,
-      ts: now,
-    });
-  }
 }
 
-setInterval(() => {
-  const now = Date.now();
-  for (const [cid, perCam] of _occupancy.entries()) {
-    for (const [rule, entry] of perCam.entries()) {
-      if (entry.smoothed > 0 && (now - entry.lastUpdate) > OCC_STALE_TTL_MS) {
-        entry.smoothed = 0;
-        entry.raw = 0;
-        entry.samples = [];
-        broadcast({
-          type: 'occupancy_update',
-          camera_id: cid, rule_name: rule,
-          current: 0, raw: 0, ts: now, stale: true,
-        });
-      }
-    }
-  }
-}, 5_000);
+// Occupancy tracker — live "People in Area" KPI (→ src/helpers/occupancy.js).
+// คืน Map ตัวจริงกลับมา ไม่ใช่สำเนา — routes/stats อ่านก้อนเดียวกับที่ตัวบันทึกเขียน
+const {
+  OCC_SMOOTH_WINDOW_MS, occupancy: _occupancy, recordOccupancySample,
+} = require('./helpers/occupancy')({ broadcast });
 
 
 // ============================================================
@@ -1073,9 +1087,23 @@ async function getMapboxToken() {
   if (_cachedMapboxToken !== null) return _cachedMapboxToken;
   try {
     const r = await pool.query("SELECT value FROM system_settings WHERE key='mapbox_token'");
-    _cachedMapboxToken = r.rows[0]?.value || process.env.MAPBOX_TOKEN || '';
-  } catch { _cachedMapboxToken = process.env.MAPBOX_TOKEN || ''; }
+    _cachedMapboxToken = r.rows[0]?.value || env.str('MAPBOX_TOKEN');
+  } catch { _cachedMapboxToken = env.str('MAPBOX_TOKEN'); }
   return _cachedMapboxToken;
+}
+
+// CARTO API key: DB-first, fallback .env, module-level cache
+// This one is sent to the browser intentionally (not proxied like Mapbox) — CARTO keys are
+// public by design (not billable, documented in browser URLs). Direct CDN load preserves
+// parallelism and avoids cache/disk bloat from proxying. (Decision #2 in carto-plan.md)
+let _cachedCartoKey = null;
+async function getCartoKey() {
+  if (_cachedCartoKey !== null) return _cachedCartoKey;
+  try {
+    const r = await pool.query("SELECT value FROM system_settings WHERE key='carto_api_key'");
+    _cachedCartoKey = r.rows[0]?.value || env.str('CARTO_API_KEY');
+  } catch { _cachedCartoKey = env.str('CARTO_API_KEY'); }
+  return _cachedCartoKey;
 }
 
 async function _logCameraAudit(req, action, cameraId, details) {
@@ -1097,7 +1125,7 @@ require('./routes/cameras')(app, pool, {
   loadCameraConfig, saveCameraConfig,
   loadGroups, saveGroups,
   logCameraAudit: _logCameraAudit,
-  getMapboxToken,
+  getMapboxToken, getCartoKey,
   license, getCurrentLicenseState,
   thumbWidth, jpegResizer,
   SNAPSHOT_DIR,
@@ -1110,134 +1138,19 @@ require('./routes/groups')(app, pool, { auth, getIP, loadGroups, saveGroups, log
 // API: Events
 // ============================================================
 
-// CountAggregation/* (and any other Bosch *Aggregation* event_type) are
-// metric samples emitted multiple times per second — they're counts, not
-// incidents. They feed the live occupancy tracker but should NOT appear in:
-//   - Events Live feed (would strobe at the sample rate)
-//   - /api/events lists or X-Total-Count
-//   - Today's count badge
-//   - rule_name / event_type facets used by editors and Events filters
-// They DO remain in the events table for the occupancy tracker and for
-// per-camera historical "People Counting" / "Vehicle Counting" stats
-// (which already aggregate via the event_category_rules mechanism).
-const METRIC_EVENT_TYPE_PATTERN = '%Aggregation%';
-function isMetricEventType(eventType) {
-  return typeof eventType === 'string' && eventType.includes('Aggregation');
-}
-
-// ============================================================
-// Camera-side automatic analytics events (Phase 7.1)
-// ============================================================
-// These fire AUTOMATICALLY from the camera (not IVA rules — no rule_name):
-// image-quality diagnostics, scene-change/tamper, and digital I/O triggers.
-// They come as pairs — event_state 'true' when the condition starts, 'false'
-// when it ends. Option B handling: always STORED, but display is filtered:
-//   - operator toggles which types appear in the Events feed (system_settings
-//     key 'analytics_event_display', CSV of enabled keys)
-//   - the event_state='false' "ended" half is always hidden from the feed
-//     (state dedup — otherwise every condition shows twice)
-// Image-quality counts are also surfaced on the Health Check page.
-// Broad prefix keys — every analytics event is matched by exactly one of
-// these. Trigger/DigitalInput catches Input_1 / Input_2 AND the IP-suffixed
-// variants Bosch FW 6-7.x emits ('Trigger/DigitalInput/&Input_1__192_168...'),
-// so the operator toggles two switches instead of one per physical port.
-const ANALYTICS_EVENT_KEYS = [
-  'ImageTooBright', 'ImageTooBlurry', 'ImageTooDark', 'GlobalSceneChange',
-  'Trigger/DigitalInput', 'Trigger/Relay',
-];
-// Image quality + scene change ON by default; digital I/O OFF (operator-
-// specific — depends what's physically wired).
-const ANALYTICS_DEFAULT_ENABLED =
-  'ImageTooBright,ImageTooBlurry,ImageTooDark,GlobalSceneChange';
-
-// SQL CASE that resolves an events row (alias `e`) to its analytics key,
-// or NULL if it isn't one of the known camera-automation events. All
-// matches are prefix-LIKE so every variant of the same automation type
-// folds into the same key (Bosch FW 6-7.x adds an `__<ip>_` suffix to
-// the port name; FW 9.x doesn't — same toggle controls both).
-const ANALYTICS_KEY_SQL = `
-  CASE
-    WHEN e.event_type LIKE 'ImageTooBright/%'      THEN 'ImageTooBright'
-    WHEN e.event_type LIKE 'ImageTooBlurry/%'      THEN 'ImageTooBlurry'
-    WHEN e.event_type LIKE 'ImageTooDark/%'        THEN 'ImageTooDark'
-    WHEN e.event_type LIKE 'GlobalSceneChange/%'   THEN 'GlobalSceneChange'
-    WHEN e.event_type LIKE 'Trigger/DigitalInput/%' THEN 'Trigger/DigitalInput'
-    WHEN e.event_type LIKE 'Trigger/Relay/%'        THEN 'Trigger/Relay'
-    ELSE NULL
-  END`;
-
-// SQL fragment — TRUE when the row is a camera-automation analytics event
-// (ImageToo* / GlobalSceneChange / Trigger/*). `col` = the event_type column
-// reference ('event_type' or 'e.event_type'). These fire automatically from
-// the camera, aren't incidents, and are already kept out of the Events feed
-// (Phase 7.1) — reports/stats that count raw events should exclude them too.
-function analyticsEventClause(col) {
-  return `(${col} LIKE 'ImageTooBright/%' OR ${col} LIKE 'ImageTooBlurry/%' `
-       + `OR ${col} LIKE 'ImageTooDark/%' OR ${col} LIKE 'GlobalSceneChange/%' `
-       + `OR ${col} LIKE 'Trigger/%')`;
-}
-
-// JS mirror of ANALYTICS_KEY_SQL — used by the WS-broadcast filter.
-function analyticsKeyOf(eventType) {
-  if (typeof eventType !== 'string') return null;
-  for (const key of ANALYTICS_EVENT_KEYS) {
-    if (eventType === key || eventType.startsWith(key + '/')) return key;
-  }
-  return null;
-}
-
-// Cached set of analytics keys the operator wants shown in the Events feed.
-// Module-level + 60s refresh so the 1s WS-broadcast loop reads it
-// synchronously; PUT /api/settings/analytics_event_display refreshes it
-// immediately on save.
-let _analyticsEnabledSet = new Set(ANALYTICS_DEFAULT_ENABLED.split(','));
-async function refreshAnalyticsEnabledSet() {
-  try {
-    const r = await pool.query(
-      "SELECT value FROM system_settings WHERE key='analytics_event_display'"
-    );
-    if (r.rows[0] && typeof r.rows[0].value === 'string') {
-      _analyticsEnabledSet = new Set(
-        r.rows[0].value.split(',').map(s => s.trim()).filter(Boolean)
-      );
-    }
-  } catch { /* keep last good set */ }
-}
-refreshAnalyticsEnabledSet();
-setInterval(refreshAnalyticsEnabledSet, 60_000);
-
-// True if this event should be hidden from the live Events feed:
-// either a disabled analytics type, or the event_state='false' half of
-// any analytics event. Non-analytics events always return false.
-function isHiddenAnalyticsEvent(eventType, eventState) {
-  const key = analyticsKeyOf(eventType);
-  if (!key) return false;
-  if (!_analyticsEnabledSet.has(key)) return true;
-  if (String(eventState) === 'false') return true;
-  return false;
-}
-
-// SQL fragment that excludes analytics events the operator has DISABLED
-// (e.g. Trigger/DigitalInput when not in analytics_event_display).
-// Returns ' AND NOT (…)' ready to be appended to a WHERE clause, or ''
-// when nothing is disabled. Used by stats-summary-route + other endpoints
-// that aggregate raw event counts and should respect the operator's
-// "what counts as an incident" preference. Safe to inline (no SQL
-// injection — keys come from the constant ANALYTICS_EVENT_KEYS list).
-function disabledAnalyticsClause(col = 'event_type') {
-  const disabled = ANALYTICS_EVENT_KEYS.filter(k => !_analyticsEnabledSet.has(k));
-  if (disabled.length === 0) return '';
-  // All keys are prefix-LIKE — folds Bosch FW 6-7.x IP-suffix variants
-  // under the same toggle as FW 9.x clean variants.
-  const conditions = disabled
-    .map(k => `${col} LIKE '${k.replace(/'/g, "''")}/%'`)
-    .join(' OR ');
-  return ` AND NOT (${conditions})`;
-}
+// ชนิดของ event ที่ไม่นับเป็น "เหตุการณ์" — metric samples (CountAggregation/*)
+// กับ camera-automation analytics (→ src/helpers/analyticsEvents.js)
+// คืน getter ของ enabled set กลับมา ไม่ใช่ตัว Set เพราะตัวรีเฟรชแทนที่ทั้งก้อนทุกรอบ
+const {
+  METRIC_EVENT_TYPE_PATTERN, isMetricEventType,
+  ANALYTICS_EVENT_KEYS, ANALYTICS_KEY_SQL,
+  analyticsEventClause, getAnalyticsEnabledSet, refreshAnalyticsEnabledSet,
+  isHiddenAnalyticsEvent, disabledAnalyticsClause,
+} = require('./helpers/analyticsEvents')({ pool });
 
 require('./routes/events')(app, pool, {
   getDisplayTz,
-  getAnalyticsEnabledSet: () => _analyticsEnabledSet,
+  getAnalyticsEnabledSet,
   METRIC_EVENT_TYPE_PATTERN, ANALYTICS_EVENT_KEYS, ANALYTICS_KEY_SQL,
 });
 
@@ -1256,7 +1169,7 @@ require('./routes/stats')(app, pool, {
 // ============================================================
 // Map Tile Cache (→ src/routes/map.js)
 // ============================================================
-require('./routes/map')(app, pool, { getMapboxToken, routeError });
+require('./routes/map')(app, pool, { getMapboxToken, getCartoKey, routeError });
 
 // ============================================================
 // API: Alert Rules + LINE Config (LINE Notification System)
@@ -1268,13 +1181,32 @@ const pushSender = require('./push-sender');
 // Push tokens + Alert logs + Backups (→ src/routes/ops.js)
 require('./routes/ops')(app, pool, { auth, getIP });
 
+// 3rd Party Integration console (→ src/routes/integrations.js) — the operator's
+// view of who can read what. Under /api and admin-gated, the mirror image of
+// routes/partner-api.js which is the partners' view of us.
+require('./routes/integrations')(app, pool, { auth, getIP });
+
 // ============================================================
 // LINE Config + Webhook (→ src/routes/line.js)
 // ============================================================
 require('./routes/line')(app, pool, { auth, getIP, routeError });
+// ตั้งค่าคำสั่งผ่าน LINE (ผู้มีสิทธิ์สั่ง / คำสั่ง / ปูม / ทดลองสั่ง)
+require('./routes/line-commands')(app, pool, { auth, routeError });
+
+// ============================================================
+// Telegram Config + Pending Chats (→ src/routes/telegram.js) — T1
+// ============================================================
+require('./routes/telegram')(app, pool, { auth, getIP, routeError });
+// poller (long-poll getUpdates) เริ่มหน่วงตอน boot — ดูจุดเริ่มจริงข้าง
+// LINE push-quota watcher ด้านล่าง (เหตุผลเดียวกัน: กัน boot storm + ให้ migration
+// 240 มีเวลารันก่อนที่ตัวแรกจะ SELECT ตาราง telegram_config)
 
 // Alert Rules CRUD + suggestions (→ src/routes/alert-rules.js)
 require('./routes/alert-rules')(app, pool);
+
+// ช่องทางแจ้งเตือนประจำระบบ — HCP Face · AuraFace · LPR (migration 146)
+// แยกจาก Alert Rules เพราะเป็นส่วนหนึ่งของระบบ ลบไม่ได้ และมีหน้า config ของตัวเอง
+require('./routes/alert-channels')(app, pool, { auth, routeError });
 
 // ============================================================
 // Report Schedules (Phase 7.3 — scheduled report delivery)
@@ -1286,7 +1218,7 @@ require('./routes/report-schedules')(app, pool, { WORKER_PORT, INTERNAL_API_TOKE
 // ============================================================
 require('./routes/reports')(app, pool, {
   routeError,
-  REPORTS_DIR, getBrandForReport, INTERNAL_API_TOKEN,
+  REPORTS_DIR, getBrandForReport, INTERNAL_API_TOKEN, getDisplayTz,
 });
 
 // Brand info for report headers — read straight from system_settings.
@@ -1314,6 +1246,35 @@ async function getBrandForReport() {
 // clause string, the params array, and the next free placeholder index.
 require('./routes/faces')(app, pool);
 
+// AuraFace-v1 hits + roster (Internal Test & Development) — kept off the
+// faces.js routes above on purpose, see routes/face-blacklist.js header.
+require('./routes/face-blacklist')(app, pool, { SNAPSHOT_DIR });
+
+// HC2 — ค้นใบหน้าด้วยรูปผ่าน HCP (ขอบเขต HKT เท่านั้น)
+require('./routes/hcp')(app, pool, { auth });
+
+// ค้นหาอัจฉริยะ — พิมพ์ไทยแล้วค้นวิดีโอย้อนหลัง (AcuSeek, ขอบเขต HKT เท่านั้น)
+require('./routes/acuseek')(app, pool, { auth });
+
+// หน้ากวดขันวินัยจราจร — อ่านจากตารางสรุป traffic_hourly_stats (migration 142)
+require('./routes/traffic')(app, pool, { auth, routeError });
+// ตัวเติมตารางสรุป รันในตัว api-server เอง ไม่ต้องตั้ง pm2 process ใหม่
+// เจ้าของเดียวของทั้งสี่งาน (helmet criteria · traffic · kpi · category rollup)
+// พร้อมตารางเวลาบูตแบบเหลื่อม, advisory lock กันสอง process ทำซ้ำ และ status()
+// ที่ /api/health/details อ่าน → src/jobs/rollups.js (VMOD-05)
+require('./jobs/rollups').start({ pool });
+// ยามรายสัปดาห์ของนิยาม "ไม่ทราบทะเบียน" (migration 199) — ไม่ใช่ตัวเติมตาราง
+// เทียบ predicate `plate` ว่าง กับ anti-join license_plates เดิม แล้วเก็บผลไว้ให้
+// /api/health/details อ่าน · อาทิตย์ 04:30 น. ไม่รันตอนบูต
+require('./helpers/noreadCheck').start(pool);
+// ยามรายวันของตัวเลข "ไม่สวมหมวก · พร้อมข้อมูลทะเบียน" (RCA 2026-09-18 ข้อ 8.3) —
+// ทั้งไซต์เคยเป็นศูนย์ 5 วันโดยไม่มีอะไรร้อง · 05:30 น. หลัง reconcile รายคืนจบ
+require('./helpers/helmetMetricCheck').start(pool);
+// ยามเฝ้าความเร็วรายวัน 18:25 — เทียบ pg_stat_statements กับ 7 วันก่อน (preventive P2 · 2026-10-06)
+require('./helpers/perfWatch').start(pool);
+// ยามเฝ้า partner API รายวัน 08:30 — ข้อตกลงครบทบทวน/หมดอายุ + ใช้งานผิดรูป → LINE ถึงผู้รับ perf_alert (OpenAPI R3 · 2026-10-22)
+require('./helpers/partnerWatch').start(pool);
+
 // ============================================================
 // Stats v2 — category-aware aggregation
 // ============================================================
@@ -1340,19 +1301,30 @@ require('./routes/appearances')(app, pool, { getDisplayTz, getIP });
 require('./routes/lpr')(app, pool, { SNAPSHOT_DIR, loadCameraConfig });
 
 // LPR query — gallery / search API
-require('./routes/lpr-query')(app, pool);
+require('./routes/lpr-query')(app, pool, statsPool);
 
 // LPR watchlist — CRUD for plate alert list
 require('./routes/lpr-watchlist')(app, pool, { SNAPSHOT_DIR });
 require('./routes/lpr-gates')(app, pool);  // RF4 — gate config CRUD
 require('./routes/lpr-alerts')(app, pool); // RF-ALERT — watch-list hit alerts + ack
+require('./routes/lpr-gs-alarms')(app, pool); // GuruSquare (HKT) Events Alarm feed — read-only
+// Blacklist reservoir — sources CRUD/discover/import + master read side (migration 093/094)
+require('./routes/blacklist-sources')(app, pool);
 // IM3-R: cross-site face push receiver — camera auth via per-camera token in path
 require('./routes/face-push')(app, pool, { SNAPSHOT_DIR, loadCameraConfig });
 
 // ============================================================
 // Sites — multi-site lookup (→ src/routes/sites.js)
 // ============================================================
-require('./routes/sites')(app, pool, { auth, loadCameraConfig });
+require('./routes/sites')(app, pool, { auth, loadCameraConfig, saveCameraConfig, loadGroups, saveGroups, SNAPSHOT_DIR });
+
+// ── งานลบไซต์ที่ค้าง (process ตายกลางทาง) → รันใหม่จากต้น · ทุกขั้น idempotent (S5) ──
+// หน่วง 60s แบบเดียวกับงาน boot อื่น กัน boot storm
+setTimeout(() => {
+  require('./helpers/sitePurge').resumePendingPurge(pool, {
+    loadCameraConfig, saveCameraConfig, loadCameraGroups: loadGroups, saveCameraGroups: saveGroups, snapshotDir: SNAPSHOT_DIR,
+  }).catch((e) => console.error('[site-purge] resume failed:', e.message));
+}, 60_000).unref?.();
 
 // ============================================================
 // Event Categories & Mapping Rules (→ src/routes/categories.js)
@@ -1363,6 +1335,7 @@ require('./routes/categories')(app, pool);
 require('./routes/settings')(app, pool, {
   auth, getIP, ANALYTICS_EVENT_KEYS, refreshAnalyticsEnabledSet,
   invalidateMapboxToken: () => { _cachedMapboxToken = null; },
+  invalidateCartoKey: () => { _cachedCartoKey = null; },
   invalidateSystemSetting,
 });
 
@@ -1381,284 +1354,83 @@ require('./routes/health')(app, pool, {
   getBrandForReport, REPORTS_DIR, getDisplayTz,
 });
 
+// สั่งรันงาน rollup ด้วยมือ (→ src/routes/jobs.js) — สถานะอ่านที่ /api/health/details
+require('./routes/jobs')(app, pool, { auth, routeError });
+
+// Host performance series for the Performance tab (→ src/routes/metrics.js).
+// Kept out of health/details deliberately — see that file's header for why.
+require('./routes/metrics')(app, pool, { auth, routeError });
+
+// Device + integration inventory for the Maintenance tab (→ src/routes/devices.js).
+require('./routes/devices')(app, pool, { auth, routeError, loadCameraConfig });
+
+// REPORTS_DIR ใช้ตัวที่ประกาศไว้แล้วด้านบน ห้ามคำนวณใหม่ — ประกาศซ้ำแล้ว resolve
+// ไปคนละที่คือ 404 ถาวรที่ดูเหมือนบั๊กอื่น (เจอมาแล้วตอนทำ /pub/rpt)
+// ── ส่งค่า retention ให้ทุก edge ตอน boot ─────────────────────────
+// เดิม publishSiteRetention ถูกเรียกจาก PUT /api/sites/:id/retention ที่เดียว คือ
+// ต่อเมื่อมีคนกด save ตั้งค่าไซต์ ไซต์ที่ไม่เคยมีใครกด จึงไม่เคยได้รับค่าเลย
+//
+// ผลจริงที่เจอ 2026-08-24: ไม่มี retained _config/retention บน EMQX แม้แต่ข้อความเดียว
+// → _retention.lpr_days/face_days เป็น undefined ทุก edge → edge/bridge.js:447
+// ข้ามการ prune ทั้งสองโฟลเดอร์ ("if (!Number.isFinite(days)) continue")
+// → ภาพ LPR ที่ hkt สะสมมา 27 วันโดยไม่มีอะไรลบ จนดิสก์ที่เก็บ snapshot เต็ม 93%
+// ส่วน events รอดเพราะมี fallback เป็น EDGE_IMG_DAYS ในโค้ด
+//
+// ส่งซ้ำตอน boot ทำให้สถานะนี้ซ่อมตัวเองได้ ข้อความเป็น retained อยู่แล้ว
+// edge ที่ต่อเข้ามาทีหลังจึงได้ค่าทันทีโดยไม่ต้องรอ boot รอบถัดไป
+setTimeout(async () => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, code FROM sites WHERE retention_events_days IS NOT NULL
+          OR retention_lpr_days IS NOT NULL OR retention_face_days IS NOT NULL
+          OR status <> 'active'`);   // 🧊 ไซต์ปิดปรับปรุงต้องได้ hold:true แม้ไม่ได้ตั้ง retention
+    for (const s of rows) {
+      try { await publishSiteRetention(s.id, pool); }
+      catch (e) { console.warn(`[edge-config] ส่ง retention ให้ ${s.code} ไม่สำเร็จ:`, e.message); }
+    }
+    if (rows.length) console.log(`[edge-config] ส่งค่า retention ให้ ${rows.length} ไซต์ตอน boot`);
+  } catch (e) { console.warn('[edge-config] อ่านรายชื่อไซต์ไม่สำเร็จ:', e.message); }
+}, 45_000).unref?.();
+
+// ── LINE push-quota watcher (migration 239) ─────────────────────
+// ตรวจทุก 2 นาที: ตัวเลข consumption ของ LINE เอง + error "monthly limit" จริงใน
+// alert_logs ของเดือนนี้ · ส่งคำเตือนได้อย่างมากเดือนละ 1 ครั้ง — ดู
+// src/helpers/lineQuotaWatch.js. หน่วง 60s แรกกัน boot storm ชนกับ query อื่น
+const { checkQuota: _checkLineQuota } = require('./helpers/lineQuotaWatch');
+setTimeout(() => {
+  setInterval(() => { _checkLineQuota(pool).catch((e) => console.error('[line-quota-watch]', e.message)); },
+    2 * 60 * 1000).unref?.();
+}, 60_000).unref?.();
+
+// ── Telegram long-poll getUpdates() (migration 240 T1 · migration 242 T4) ────
+// ตัวเดียวต่อ process (pm2 fork เดียว) — poll_offset/enabled/token อ่านสดจาก DB
+// ทุกรอบเองอยู่แล้ว จึงไม่ต้อง restart หลังเปิด/ตั้ง token จากหน้าเว็บ — ดู
+// src/helpers/telegramPoller.js. หน่วง 60s แรกเหมือน LINE quota watcher ข้างบน
+// (กัน boot storm + ให้ migration 240 รันก่อนที่ตัวแรกจะ query ตาราง telegram_config)
+// auth/baseUrl (T4): คำสั่งผ่าน Telegram ยิง endpoint ในนามผู้สั่งจริงผ่าน loopback
+// ตัวเดียวกับที่ routes/line.js ทำให้ webhook ของ LINE
+setTimeout(() => {
+  require('./helpers/telegramPoller').startTelegramPoller(pool,
+    { auth, baseUrl: `http://127.0.0.1:${env.int('API_PORT')}` });
+}, 60_000).unref?.();
+
+require('./routes/storage')(app, pool, {
+  SNAPSHOT_DIR, REPORTS_DIR, FILES_DIR, MEDIA_DIR,
+  PHOTO_DIR: require('./helpers/blacklistImport').PHOTO_DIR,
+});
+
+// Files (admin-only file host for sharing docs/images with customers)
+require('./routes/files')(app, pool, auth);
+
 // ============================================================
 // Retention enforcement (daily)
 // ============================================================
-
-// Delete rows in batches to avoid a long-running table lock at high volume.
-// Uses id-IN-subquery pattern so each batch is its own short transaction.
-const _RETENTION_BATCH = 10_000;
-async function _batchDelete(sql, params, label) {
-  let total = 0, count;
-  do {
-    const res = await pool.query(sql, params);
-    count = res.rowCount;
-    total += count;
-    if (count > 0) await new Promise(r => setTimeout(r, 100)); // yield between batches
-  } while (count === _RETENTION_BATCH);
-  if (total > 0) console.log(`🧹 Retention: deleted ${total} ${label}`);
-  return total;
-}
-
-async function enforceRetention() {
-  try {
-    const _drv = await getSystemSetting(pool, 'data_retention_days');
-    const days = Math.min(730, Math.max(1, parseInt(_drv || '365', 10)));
-    const cutoff = new Date(Date.now() - days * 86400 * 1000).toISOString();
-    // Explicit child-delete before events — all 5 children (appearances, license_plates,
-    // face_event_notes, face_event_acks, lpr_alert_acks) lose their FK cascade
-    // (dropped in MANUAL_partition_events_option_a.sql; required for partitioned parent).
-    let _totalEventsDeleted = 0, _evBatch;
-    do {
-      // Class-E decouple: anprAlarm (LPR) is EXCLUDED from general retention — it
-      // has its own window (lpr_retention_days, enforceLprRetention) so the slim
-      // plate log can outlive general events. IS DISTINCT FROM also deletes
-      // NULL-type rows. ⚠️ enforceLprRetention is now the SOLE authority for LPR
-      // rows — if it stalls, anprAlarm has no general backstop (surface a metric).
-      const _ids = await pool.query(
-        `SELECT id FROM events WHERE event_time < $1 AND event_type IS DISTINCT FROM 'anprAlarm'
-           ORDER BY event_time LIMIT $2`,
-        [cutoff, _RETENTION_BATCH]
-      );
-      _evBatch = _ids.rowCount;
-      if (_evBatch === 0) break;
-      const ids = _ids.rows.map(r => r.id);
-      await pool.query(`DELETE FROM appearances       WHERE event_id = ANY($1::bigint[])`, [ids]);
-      // No-op after the anprAlarm exclusion (non-LPR events have no plates) —
-      // kept defensively in case a non-anpr event ever carries a plate row.
-      await pool.query(`DELETE FROM license_plates    WHERE event_id = ANY($1::bigint[])`, [ids]);
-      await pool.query(`DELETE FROM face_event_notes  WHERE event_id = ANY($1::bigint[])`, [ids]);
-      await pool.query(`DELETE FROM face_event_acks   WHERE event_id = ANY($1::bigint[])`, [ids]);
-      await pool.query(`DELETE FROM lpr_alert_acks    WHERE event_id = ANY($1::bigint[])`, [ids]);
-      const _del = await pool.query(`DELETE FROM events WHERE id = ANY($1::bigint[])`, [ids]);
-      _totalEventsDeleted += _del.rowCount;
-      if (_evBatch === _RETENTION_BATCH) await new Promise(r => setTimeout(r, 100));
-    } while (_evBatch === _RETENTION_BATCH);
-    if (_totalEventsDeleted > 0)
-      console.log(`🧹 Retention: deleted ${_totalEventsDeleted} events older than ${days} days`);
-    // appearances — optional separate retention (partial anonymisation: keep event, drop biometrics)
-    // Capped at data_retention_days so it can never be LONGER than the event retention.
-    const _arv = await getSystemSetting(pool, 'appearances_retention_days');
-    if (_arv) {
-      const arDays = Math.min(days, Math.max(1, parseInt(_arv, 10)));
-      const arCutoff = new Date(Date.now() - arDays * 86400 * 1000).toISOString();
-      await _batchDelete(
-        `DELETE FROM appearances WHERE id IN (
-           SELECT a.id FROM appearances a
-           JOIN events e ON e.id = a.event_id
-           WHERE e.event_time < $1 LIMIT $2
-         )`,
-        [arCutoff, _RETENTION_BATCH],
-        `appearance rows older than ${arDays} days`
-      );
-    }
-    // camera_status_log fixed at 90-day retention (Ph.1, decision #134)
-    const logCutoff = new Date(Date.now() - 90 * 86400 * 1000).toISOString();
-    await pool.query(`DELETE FROM camera_status_log WHERE changed_at < $1`, [logCutoff]);
-    // report_history rows — 90-day retention (Ph.2)
-    const rhCutoff = new Date(Date.now() - 90 * 86400 * 1000).toISOString();
-    const rhDel = await pool.query(`DELETE FROM report_history WHERE created_at < $1`, [rhCutoff]);
-    if (rhDel.rowCount > 0) console.log(`🧹 Retention: deleted ${rhDel.rowCount} report_history rows`);
-    // LINE pending recipients — keep abandoned self-service requests for 30d.
-    const pendingCutoff = new Date(Date.now() - 30 * 86400 * 1000).toISOString();
-    const prDel = await pool.query(
-      `DELETE FROM pending_recipients WHERE status = 'pending' AND first_seen_at < $1`,
-      [pendingCutoff]
-    ).catch(() => ({ rowCount: 0 }));
-    if (prDel.rowCount > 0) console.log(`🧹 Retention: deleted ${prDel.rowCount} pending LINE recipient(s)`);
-    // report PNG files — 30-day retention (Ph.2)
-    try {
-      const pngCutoff = Date.now() - 30 * 86400 * 1000;
-      const reportFiles = await fs.promises.readdir(REPORTS_DIR).catch(() => []);
-      let pngDeleted = 0, pngFreed = 0;
-      for (const fname of reportFiles) {
-        if (!fname.toLowerCase().endsWith('.png')) continue;
-        const full = path.join(REPORTS_DIR, fname);
-        const st = await fs.promises.stat(full).catch(() => null);
-        if (st && st.mtimeMs < pngCutoff) {
-          pngFreed += st.size;
-          await fs.promises.unlink(full).catch(() => {});
-          pngDeleted++;
-        }
-      }
-      if (pngDeleted > 0) {
-        const mb = (pngFreed / (1024 * 1024)).toFixed(1);
-        console.log(`🧹 Report PNG retention: deleted ${pngDeleted} files older than 30 days (~${mb} MB freed)`);
-      }
-    } catch {}
-  } catch (err) {
-    console.warn('🧹 Retention error:', err.message);
-  }
-}
-// Run 60s after start, then once every 24h
-setTimeout(enforceRetention, 60 * 1000);
-setInterval(enforceRetention, 24 * 60 * 60 * 1000);
-
-async function enforceSnapshotRetention() {
-  try {
-    const _srv = await getSystemSetting(pool, 'snapshot_retention_days');
-    const days = Math.min(365, Math.max(1, parseInt(_srv || '30', 10)));
-    const cutoffMs = Date.now() - days * 86400 * 1000;
-    let scanned = 0, deleted = 0, freedBytes = 0;
-    // Flat root files (legacy + non-LPR ingesters not yet migrated)
-    const entries = await fs.promises.readdir(SNAPSHOT_DIR, { withFileTypes: true });
-    for (const ent of entries) {
-      if (!ent.isFile()) continue;
-      const lower = ent.name.toLowerCase();
-      if (!lower.endsWith('.jpg') && !lower.endsWith('.jpeg') && !lower.endsWith('.png')) continue;
-      scanned++;
-      const full = path.join(SNAPSHOT_DIR, ent.name);
-      try {
-        const st = await fs.promises.stat(full);
-        if (st.mtimeMs < cutoffMs) { freedBytes += st.size; await fs.promises.unlink(full); deleted++; }
-      } catch {}
-    }
-    // Structured subdirs: events/ and face/ (same recursive logic as lpr-retention)
-    for (const cat of ['events', 'face']) {
-      const catDir = path.join(SNAPSHOT_DIR, cat);
-      const dateDirs = await fs.promises.readdir(catDir, { withFileTypes: true }).catch(() => []);
-      for (const dd of dateDirs) {
-        if (!dd.isDirectory()) continue;
-        const dateDir = path.join(catDir, dd.name);
-        const camDirs = await fs.promises.readdir(dateDir, { withFileTypes: true }).catch(() => []);
-        for (const cd of camDirs) {
-          if (!cd.isDirectory()) continue;
-          const camDir = path.join(dateDir, cd.name);
-          const slotDirs = await fs.promises.readdir(camDir, { withFileTypes: true }).catch(() => []);
-          for (const sd of slotDirs) {
-            if (!sd.isDirectory()) continue;
-            const slotDir = path.join(camDir, sd.name);
-            for (const f of await fs.promises.readdir(slotDir).catch(() => [])) {
-              const full = path.join(slotDir, f);
-              const st = await fs.promises.stat(full).catch(() => null);
-              if (st && st.isFile() && st.mtimeMs < cutoffMs) {
-                freedBytes += st.size; await fs.promises.unlink(full).catch(() => {}); deleted++;
-              }
-            }
-            const left = await fs.promises.readdir(slotDir).catch(() => ['_']);
-            if (left.length === 0) await fs.promises.rmdir(slotDir).catch(() => {});
-          }
-          const left = await fs.promises.readdir(camDir).catch(() => ['_']);
-          if (left.length === 0) await fs.promises.rmdir(camDir).catch(() => {});
-        }
-        const left = await fs.promises.readdir(dateDir).catch(() => ['_']);
-        if (left.length === 0) await fs.promises.rmdir(dateDir).catch(() => {});
-      }
-    }
-    if (deleted > 0) {
-      const mb = (freedBytes / (1024 * 1024)).toFixed(1);
-      console.log(`🧹 Snapshot retention: deleted ${deleted}/${scanned} flat + structured files older than ${days} days (~${mb} MB freed)`);
-    }
-    // Prune thumbnails by mtime — same cutoff as originals (works with both flat and subdir originals)
-    try {
-      for (const wdir of await fs.promises.readdir(THUMBS_DIR).catch(() => [])) {
-        const wpath = path.join(THUMBS_DIR, wdir);
-        for (const tf of await fs.promises.readdir(wpath).catch(() => [])) {
-          const tfull = path.join(wpath, tf);
-          const st = await fs.promises.stat(tfull).catch(() => null);
-          if (st && st.mtimeMs < cutoffMs) await fs.promises.unlink(tfull).catch(() => {});
-        }
-      }
-    } catch {}
-  } catch (err) {
-    console.warn('🧹 Snapshot retention error:', err.message);
-  }
-}
-setTimeout(enforceSnapshotRetention, 90 * 1000);
-setInterval(enforceSnapshotRetention, 24 * 60 * 60 * 1000);
-
-// 🧹 RF4 — LPR retention: prune anprAlarm rows (lpr_retention_days, def 30) +
-// snapshots/lpr/ images (lpr_image_retention_days, def 7). Own try/catch so a
-// failure can't abort the other retention passes. (general enforceSnapshotRetention
-// skips subdirs → snapshots/lpr/ would otherwise never be pruned.)
-const { enforceLprRetention } = require('./lpr-retention');
-async function _runLprRetention() {
-  try {
-    const metaDays  = await getSystemSetting(pool, 'lpr_retention_days');
-    const imageDays = await getSystemSetting(pool, 'lpr_image_retention_days');
-    const r = await enforceLprRetention({ pool, snapshotDir: SNAPSHOT_DIR, metaDays, imageDays, batch: _RETENTION_BATCH });
-    if (r.rowsDeleted > 0)  console.log(`🧹 LPR retention: deleted ${r.rowsDeleted} anprAlarm rows older than ${r.metaDays} days`);
-    if (r.filesDeleted > 0 || r.dirsRemoved > 0)
-      console.log(`🧹 LPR retention: deleted ${r.filesDeleted} image files + ${r.dirsRemoved} whole expired date-dir(s) older than ${r.imageDays} days (~${(r.bytesFreed/1048576).toFixed(1)} MB freed from per-file path)`);
-  } catch (err) {
-    console.warn('🧹 LPR retention error:', err.message);
-  }
-}
-setTimeout(_runLprRetention, 120 * 1000);
-setInterval(_runLprRetention, 24 * 60 * 60 * 1000);
-
-// 🎬 Phase 6.1.2 — Clip retention (delete old MP4 from media/ by mtime)
-async function enforceClipRetention() {
-  try {
-    const _crv = await getSystemSetting(pool, 'clip_retention_days');
-    const days = Math.min(90, Math.max(1, parseInt(_crv || '30', 10)));
-    const cutoffMs = Date.now() - days * 86400 * 1000;
-    let scanned = 0, deleted = 0, freedBytes = 0;
-    const entries = await fs.promises.readdir(MEDIA_DIR, { withFileTypes: true });
-    for (const ent of entries) {
-      if (!ent.isFile()) continue;
-      const lower = ent.name.toLowerCase();
-      if (!lower.endsWith('.mp4') && !lower.endsWith('.webm')) continue;
-      scanned++;
-      const full = path.join(MEDIA_DIR, ent.name);
-      try {
-        const st = await fs.promises.stat(full);
-        if (st.mtimeMs < cutoffMs) {
-          freedBytes += st.size;
-          await fs.promises.unlink(full);
-          deleted++;
-        }
-      } catch {}
-    }
-    if (deleted > 0) {
-      const mb = (freedBytes / (1024 * 1024)).toFixed(1);
-      console.log(`🎬 Clip retention: deleted ${deleted}/${scanned} files older than ${days} days (~${mb} MB freed)`);
-    }
-  } catch (err) {
-    console.warn('🎬 Clip retention error:', err.message);
-  }
-}
-setTimeout(enforceClipRetention, 120 * 1000);
-setInterval(enforceClipRetention, 24 * 60 * 60 * 1000);
-
-// 🧹 Class-D retention — strip the raw Hik ANPR XML slice from OLD events while
-// keeping the row + parsed columns. rawXml is ~90% of the events table but is
-// debug/re-parse-only; the used field (seatbelt) is a column since migration 073,
-// so the filter/modal don't need it long-term. The time window is a safety net:
-// a newly-enabled camera analytic has `rawxml_retention_days` to be noticed and
-// columnised before its data ages out. Only reader is the modal remark, which
-// degrades gracefully (no remark on stripped rows — >window old = no image anyway).
-// NOTE keep-set: plateType / plateCharBelieve / tailandStateID / licenseBright are
-// still rawXml-only → they are LOST on expiry. Columnise before shrinking the window.
-async function enforceRawXmlRetention() {
-  try {
-    const _rrv = await getSystemSetting(pool, 'rawxml_retention_days');
-    const days = Math.min(365, Math.max(7, parseInt(_rrv || '90', 10)));  // default 90, clamp 7..365
-    const cutoff = new Date(Date.now() - days * 86400 * 1000).toISOString();
-    let total = 0, n;
-    // ponytail: `- 'rawXml'` rewrites the whole row (MVCC dead tuple). Fine now;
-    // at ~333k/day aging past cutoff, add a partial index
-    //   ON events(event_time) WHERE raw_json ? 'rawXml'  (shrinks as rows strip).
-    do {
-      const ids = await pool.query(
-        `SELECT id FROM events WHERE event_time < $1 AND raw_json ? 'rawXml'
-           ORDER BY event_time LIMIT $2`,
-        [cutoff, _RETENTION_BATCH]);
-      n = ids.rowCount;
-      if (n === 0) break;
-      const arr = ids.rows.map(r => r.id);
-      const upd = await pool.query(
-        `UPDATE events SET raw_json = raw_json - 'rawXml' WHERE id = ANY($1::bigint[])`, [arr]);
-      total += upd.rowCount;
-      if (n === _RETENTION_BATCH) await new Promise(r => setTimeout(r, 100));
-    } while (n === _RETENTION_BATCH);
-    if (total > 0) console.log(`🧹 rawXml retention: stripped ${total} rows older than ${days} days`);
-  } catch (err) {
-    console.warn('🧹 rawXml retention error:', err.message);
-  }
-}
-setTimeout(enforceRawXmlRetention, 150 * 1000);
-setInterval(enforceRawXmlRetention, 24 * 60 * 60 * 1000);
+// ทุกการกวาดของรอบวัน + ตารางเวลาบูตแบบเหลื่อม → src/jobs/retention.js
+// เรียก ณ จุดเดิมที่ timer เคยถูกประกาศ ค่าหน่วงทุกตัวจึงไม่เปลี่ยน
+require('./jobs/retention').start({
+  pool, getSystemSetting, retentionBeat,
+  SNAPSHOT_DIR, THUMBS_DIR, BBOX_CACHE_DIR, MEDIA_DIR, REPORTS_DIR, FILES_DIR,
+});
 
 // ============================================================
 // Executive Summary route (GET /api/stats/executive-summary)
@@ -1697,7 +1469,7 @@ require('./stats-summary-route')(app, pool, {
 // Schema migrations run BEFORE accepting traffic so any pending
 // db_migration_*.sql files land on the existing volume — this is
 // the safety net that replaced the old `down -v` workflow.
-const PORT = process.env.API_PORT || 3000;
+const PORT = env.int('API_PORT');
 (async () => {
   console.log('▶ Running schema migrations...');
   try {
@@ -1711,7 +1483,7 @@ const PORT = process.env.API_PORT || 3000;
   // dashboard same-origin, Vigil Mobile ผ่าน tunnel) เข้าทาง localhost ทั้งหมด
   // การเปิด 0.0.0.0 ทำให้ทั้ง LAN (รวม camera subnet) ยิง API ตรงข้าม
   // Cloudflare Access ได้ — ถ้า deployment ไหนต้องการ LAN ตรง ให้ตั้ง BIND_HOST=0.0.0.0
-  const BIND_HOST = process.env.BIND_HOST || '127.0.0.1';
+  const BIND_HOST = env.str('BIND_HOST');
   server.listen(PORT, BIND_HOST, () => {
     console.log('');
     console.log('╔══════════════════════════════════════════════════╗');
@@ -1730,6 +1502,110 @@ const PORT = process.env.API_PORT || 3000;
 // ตรวจทุก 30 วินาที, ถ้า last_seen เก่ากว่า OFFLINE_THRESHOLD_SEC
 // → update DB + broadcast ผ่าน WebSocket + log + LINE
 // ============================================================
+
+// 🔴 GOTCHAS #76 ต่อยอด (2026-09-15, ปมเดียวกับรายงาน HKT hourly-dropout):
+// กล้อง Hikvision push ส่ง `videoloss` heartbeat ทุก ~10 วิ เป็น keep-alive
+// (hikvision-isapi.js:250) — เครือข่ายที่หลุดเป็นรอบ (ทุกชั่วโมง) บางทีมี
+// heartbeat แค่ 1 แพ็กเก็ตหลุดผ่านมาได้ ระบบเดิมพลิกเป็น "online" ทันทีจาก
+// heartbeat เดียว ไม่มีการยืนยันซ้ำเลย ⇒ ยิง "กลับมาออนไลน์!" หลอก แล้ว 90s
+// ให้หลัง offline คืน (ยืนยันจริงจาก camera_status_log ของ C2-KML-SB-02:
+// online→offline ห่างกันแค่ 90 วิ 3 รอบติดในวันเดียว, last_event_at เป็น NULL
+// ตลอด — ไม่เคยมี event จริงเกิดขึ้นเลยระหว่าง "online" นั้น) ยืนยันจากภาคสนาม
+// ด้วยว่ากล้องไม่เคยกลับมาใช้งานได้จริง (Louis 2026-09-15)
+// ⇒ ต้องเห็น heartbeat สดต่อเนื่องข้าม poll cycle ที่สอง (นี่คือ 2) ก่อนถึงจะ
+// พลิกเป็น "online" จริง — เฉพาะกล้องที่ DB ยังคิดว่า offline อยู่เท่านั้น
+// (กล้องที่ online อยู่แล้วไม่ต้องรอ ไม่งั้นทุกกล้องจะดีเลย์ 30s โดยไม่จำเป็น)
+const _onlineConfirm = new Map();   // camera_id → จำนวน poll ติดกันที่ heartbeat สด
+const ONLINE_CONFIRM_POLLS = 2;
+
+// ── แจ้งเตือนซ้ำ (escalation) ให้เป็นนาฬิกาเดียวกันทั้งกลุ่มผู้รับ (เจ้าของสั่ง
+// 2026-09-15) ────────────────────────────────────────────────────────────
+// ของเดิม: sinceLastAlert คำนวณจาก last_alert_at ของกล้อง**ตัวเอง** — กล้องแต่ละ
+// ตัวดับคนละเวลา ได้ alert ครั้งแรกคนละเวลา ⇒ รอบแจ้งซ้ำกระจายกันไปเรื่อย ๆ ไม่มี
+// วันมาตรงกัน (เจ้าของเห็นจริง: "เห็นพฤติกรรมเตือนเป็นระยะๆ แบบกระจายกัน")
+// ⇒ ย้ายนาฬิกา "แจ้งซ้ำ" จากระดับกล้องไปเป็นระดับ**กลุ่มผู้รับ** (recipient_ids)
+// แทน — ครั้งแรกของแต่ละกล้องยังเป็นอิสระเหมือนเดิม (ตาม notify_after_sec ของ
+// ตัวเอง) แต่พอจะแจ้ง "ซ้ำ" ครั้งต่อไป ให้ยึดนาฬิกากลุ่มแทนนาฬิกาตัวเอง — กล้อง
+// ที่ยังดับอยู่ทุกตัวในกลุ่มเดียวกันจะถูกดึงมาแจ้งพร้อมกันในข้อความเดียว
+// (_sendGroupedCameraAlerts จัดกลุ่มตาม recipient_ids อยู่แล้ว)
+const _groupEscalation = new Map();  // recipient_ids → เวลาที่ควรแจ้งซ้ำรอบถัดไป (ms epoch)
+
+// ── ด่านที่สอง: ยืนยันด้วยการยิงไปเอา snapshot จริงจากกล้อง (เจ้าของสั่ง 2026-09-15) ──
+// heartbeat สดต่อเนื่อง 2 รอบ (ด่านแรกข้างบน) บอกได้แค่ว่า "มีแพ็กเก็ตหลุดมาถึง"
+// ไม่ได้ยืนยันว่ากล้องใช้งานได้จริง — เจ้าของขอให้ก่อนประกาศ online ต้องยิงไปขอ
+// snapshot จริงจากกล้อง ถ้าไม่ได้ภาพกลับมา = ยังไม่ถือว่าติด
+//
+// 🔴 central ต่อ IP กล้องที่ site ไม่ได้เลย (ทดสอบจริง 2026-09-15: ping/curl ไปหา
+// กล้อง HKT timeout ทั้งคู่ ไม่มี route ไปวง LAN ของไซต์) ⇒ ต้องให้ edge ของไซต์
+// นั้นเป็นคนยิงแทน (มันอยู่ LAN เดียวกับกล้อง) ผ่าน edgeCall() ตัวเดียวกับที่ใช้
+// เรียก edge อยู่แล้วหลายที่ (face-engine, blacklist push) endpoint ใหม่อยู่ที่
+// src/lpr-receiver.js: POST /probe-camera-snapshot
+//
+// 🔴 กันบัญชีกล้องถูกล็อก (feedback_hik_digest_lockout, GOTCHAS #144 —
+// Hikvision ล็อก ~30 นาทีถ้า digest auth fail ซ้ำ ๆ): เรียกเฉพาะตอน heartbeat
+// ยืนยันครบ 2 รอบแล้วเท่านั้น (ไม่ใช่ทุก poll ให้ทุกกล้องที่ดับอยู่) + มี cooldown
+// กันยิงถี่ตอน heartbeat ค้างจริงแต่ probe ล้มซ้ำ + auth fail ติดกัน 2 ครั้ง =
+// เลิกยิงชั่วคราว 35 นาที (mirror AUTH_GIVEUP_AFTER ของ edge-config-agent.js
+// เป๊ะ) แล้วตกกลับไปเชื่อ heartbeat อย่างเดียวแทน ไม่ใช่ค้าง offline ถาวร
+const _snapshotConfirm = new Map();  // camera_id → { nextAttemptAt, authFailStreak, authHeldUntil }
+const SNAPSHOT_CONFIRM_COOLDOWN_MS = 2 * 60_000;   // อย่างน้อย 2 นาทีระหว่างครั้งที่ยิงจริง
+const SNAPSHOT_AUTH_GIVEUP_AFTER = 2;
+const SNAPSHOT_AUTH_BACKOFF_MS = 35 * 60_000;      // เท่ากับ edge-config-agent.js เป๊ะ
+
+async function _confirmCameraViaSnapshot(pool, cameraId, siteCode) {
+  // site 'main' (central เอง) หรือไม่รู้ site — ไม่มี edge ให้ยิงแทน ตกกลับไปเชื่อ
+  // heartbeat อย่างเดียวเหมือนก่อนมีด่านนี้ ไม่บล็อกอะไร
+  if (!siteCode || siteCode === 'main') return true;
+
+  const st = _snapshotConfirm.get(cameraId) || { nextAttemptAt: 0, authFailStreak: 0, authHeldUntil: 0 };
+  const nowMs = Date.now();
+
+  // auth fail ติดกันครบแล้ว — พักการยิง 35 นาที กันบัญชีกล้องถูกล็อกซ้ำ แล้วเชื่อ
+  // heartbeat แทนระหว่างนี้ (ไม่ใช่ปฏิเสธ online ถาวรเพราะ credential ผิด)
+  if (st.authHeldUntil && nowMs < st.authHeldUntil) return true;
+  // cooldown จากครั้งก่อนที่ยิงแล้วไม่เจอภาพ (ไม่ใช่ auth) — ยังไม่ถึงเวลาลองใหม่
+  if (nowMs < st.nextAttemptAt) return false;
+
+  let result;
+  try {
+    // 🔴 timeout ต้องเผื่อ worst case ของฝั่ง edge เอง (แก้ 2026-09-15 หลังทดสอบจริง
+    // กับ C2 ที่ออฟไลน์แท้ ๆ แล้วเจอ "edge timeout" ทั้งที่ยังไม่ผิดพลาด) —
+    // lpr-receiver.js ลอง candidate URI สูงสุด 5 เส้น (snapshot_path + 4 fallback)
+    // ทีละเส้น เส้นละ 4s = worst case ~20s ตั้ง 25s กันพอดีเป๊ะจนพลาดบ่อย
+    const r = await edgeCall(siteCode, '/probe-camera-snapshot', { camera_id: cameraId }, 25000);
+    result = r.body || {};
+  } catch (e) {
+    console.warn(`[camera-snapshot-confirm] เรียก edge ${siteCode} ไม่สำเร็จ (${cameraId}):`, e.message);
+    result = { found: false, reason: 'edge_unreachable' };
+  }
+
+  if (result.found) {
+    _snapshotConfirm.delete(cameraId);
+    return true;
+  }
+
+  if (result.reason === 'auth') {
+    const authFailStreak = st.authFailStreak + 1;
+    if (authFailStreak >= SNAPSHOT_AUTH_GIVEUP_AFTER) {
+      console.warn(`[camera-snapshot-confirm] ${cameraId} auth fail ติดกัน ${authFailStreak} ครั้ง — `
+        + `พักการยิง 35 นาที (กันบัญชีกล้องถูกล็อก) เช็ค username/password ในตั้งค่ากล้อง`);
+      _snapshotConfirm.set(cameraId, { nextAttemptAt: 0, authFailStreak: 0, authHeldUntil: nowMs + SNAPSHOT_AUTH_BACKOFF_MS });
+    } else {
+      _snapshotConfirm.set(cameraId, { ...st, authFailStreak, nextAttemptAt: nowMs + SNAPSHOT_CONFIRM_COOLDOWN_MS });
+    }
+    return false;
+  }
+
+  // เหตุอื่น (unreachable/timeout/ไม่ใช่ภาพ) — ไม่นับเป็น auth fail streak แค่พัก
+  // cooldown ปกติก่อนลองใหม่
+  // log เมื่อเหตุผลเปลี่ยน — เดิมเงียบทั้งหมด กล้อง Bosch 8 ตัวจึงติด offline ถาวร 2 สัปดาห์
+  // (ตอบ http_400 เพราะไม่มี path ของ Bosch) โดยไม่มีใครเห็น (GOTCHAS #217)
+  if (result.reason !== st.lastReason) {
+    console.warn(`[camera-snapshot-confirm] ${cameraId} ยืนยันด้วยภาพไม่ผ่าน: ${result.reason || 'unknown'} — ยังไม่ประกาศ online`);
+  }
+  _snapshotConfirm.set(cameraId, { ...st, authFailStreak: 0, lastReason: result.reason, nextAttemptAt: nowMs + SNAPSHOT_CONFIRM_COOLDOWN_MS });
+  return false;
+}
 
 // Quiet-hours check for camera offline alerts — same semantics as
 // alert-engine's isWithinQuietHours (decision #90): LINE is SILENCED
@@ -1760,15 +1636,18 @@ async function _sendCameraStatusLine({ cameraId, status, offlineSince, camCfg, a
   const location = camCfg ? (camCfg.location || '—') : '—';
   const timeStr  = new Date().toLocaleString('th-TH', { timeZone: tz || 'Asia/Bangkok', hour12: false });
 
+  // เจ้าของสั่ง 2026-09-15: เอา emoji ออกจากการ์ดสถานะกล้องทั้งหมด ("ดูเป็น AI")
+  // — ใช้ป้ายข้อความแทน (กล้อง:/ตำแหน่ง:/เวลา:) ยังคงเว้นไว้ให้การ์ด LPR/ใบหน้า/
+  // watchlist ตามข้อยกเว้นเดิมของ CLAUDE.md (norm ของ LINE ไทย)
   let text;
   if (status === 'mqtt_silent') {
-    // ข้อ 7 (2026-06-12): กล้อง online (HTTP/ONVIF ตอบ) แต่ MQTT ไม่ต่อ EMQX
+    // ข้อ 7 (2026-06-12): กล้อง online (HTTP/ONVIF ตอบ) แต่ MQTT ไม่มีข้อความเข้า
     // → events เงียบทั้งที่ดูปกติ (เคสจริง: รหัส MQTT บนกล้องหลุด เงียบ 4 ชม.)
-    text = `🟠 กล้อง Online แต่ MQTT ขาด — events ไม่เข้า!\n📷 ${camName}\n📍 ${location}\n🕐 ${timeStr}\nตรวจรหัส MQTT บนกล้อง / EMQX (GOTCHAS: Online+ไม่มี events)`;
+    text = `กล้อง Online แต่ MQTT ขาด — events ไม่เข้า!\nกล้อง: ${camName}\nตำแหน่ง: ${location}\nเวลา: ${timeStr}\nตรวจรหัส MQTT บนกล้อง / broker (GOTCHAS: Online+ไม่มี events)`;
   } else if (status === 'mqtt_restored') {
-    text = `🟢 MQTT กลับมาปกติ\n📷 ${camName}\n📍 ${location}\n🕐 ${timeStr}`;
+    text = `MQTT กลับมาปกติ\nกล้อง: ${camName}\nตำแหน่ง: ${location}\nเวลา: ${timeStr}`;
   } else if (status === 'offline') {
-    text = `🔴 กล้องออฟไลน์!\n📷 ${camName}\n📍 ${location}\n🕐 ${timeStr}`;
+    text = `กล้องออฟไลน์!\nกล้อง: ${camName}\nตำแหน่ง: ${location}\nเวลา: ${timeStr}`;
   } else {
     let dur = '';
     if (offlineSince) {
@@ -1777,13 +1656,32 @@ async function _sendCameraStatusLine({ cameraId, status, offlineSince, camCfg, a
       else if (sec >= 60) dur = ` (ออฟไลน์ ${Math.floor(sec / 60)} นาที)`;
       else dur = ` (ออฟไลน์ ${sec} วินาที)`;
     }
-    text = `🟢 กล้องกลับมาออนไลน์!${dur}\n📷 ${camName}\n📍 ${location}\n🕐 ${timeStr}`;
+    text = `กล้องกลับมาออนไลน์!${dur}\nกล้อง: ${camName}\nตำแหน่ง: ${location}\nเวลา: ${timeStr}`;
   }
 
+  // 🔴 เดิม `.catch(() => {})` กลืนผลทิ้งเงียบสนิท — เจ้าของถามหลังเปิดแจ้งเตือนกล้อง
+  // LPR ที่ HKT (2026-09-14) ว่ายืนยันได้ไหมว่าข้อความไปถึงจริง คำตอบตอนนั้นคือ "ไม่มี
+  // หลักฐานฝั่งเซิร์ฟเวอร์เลย" เพราะ pushLineMessage() ไม่เคย throw — resolve
+  // ({success:false,error}) เสมอแม้ LINE ตอบ 4xx/5xx (บั๊กคลาสเดียวกับที่ alert-engine.js
+  // ของ _pushToAll เคยแก้ไปแล้ว — จุดนี้เป็นโค้ดเก่าคนละไฟล์ที่ยังไม่ได้ตาม)
+  //
+  // ⚠️ ตั้งใจไม่เปลี่ยนพฤติกรรมอื่นใด — last_alert_at ที่ผู้เรียกอัปเดตยังทำงานเหมือนเดิม
+  // ทุกกรณี (อัปเดตแม้ส่งไม่สำเร็จ) ไม่ใช่ของที่ขอวันนี้ เป็นคนละประเด็นที่ต้องตัดสินใจแยก
   const messages = [{ type: 'text', text }];
+  const results = [];
   for (const id of targetIds) {
-    await lineSender.pushLineMessage(lineCfg.channel_access_token, id, messages).catch(() => {});
+    const r = await lineSender.pushLineMessage(lineCfg.channel_access_token, id, messages)
+      .catch((e) => ({ success: false, error: e.message }));
+    // id_tail เท่านั้น ไม่ log LINE user/group id เต็ม — ตามแบบ _pushToAll ใน alert-engine.js
+    results.push({ id_tail: id ? String(id).slice(-4) : null, ok: !!r?.success,
+                   error: r?.success ? null : (r?.error || 'unknown') });
   }
+  const okCount = results.filter((r) => r.ok).length;
+  if (okCount < targetIds.length) {
+    console.warn(`[camera-alert] ส่ง LINE ไม่สำเร็จ ${targetIds.length - okCount}/${targetIds.length} `
+      + `(${status}) ${cameraId}:`, JSON.stringify(results));
+  }
+  return { sent: okCount > 0, okCount, total: targetIds.length, results };
 }
 
 // ── MQTT-silent watch (ข้อ 7, 2026-06-12) ────────────────────
@@ -1793,39 +1691,29 @@ async function _sendCameraStatusLine({ cameraId, status, offlineSince, camCfg, a
 // ใช้ recipients ของ camera offline alert เดิม (ไม่มี config = ไม่เตือน)
 const _mqttSilent = new Map();   // camera_id → { streak, lastAlertAt, alerted }
 const MQTT_SILENT_REALERT_MS = 60 * 60 * 1000;
+// เกณฑ์ "เงียบ" — ทุกกล้อง Bosch ส่ง <cam>/onvif-ej/... ทุก ~60 วิ (วัดจริง,
+// plan §8 A1) · 5 นาทีให้เผื่อ reconnect/GC blip โดยไม่แจ้งเตือนไว
+const MQTT_SILENT_STALE_MS = 5 * 60 * 1000;
 
-const EMQX_API_BASE = 'http://localhost:18083/api/v5';
-async function _emqxConnectedUsernames() {
-  const dashPass = process.env.EMQX_DASHBOARD_PASSWORD;
-  if (!dashPass) return null;
-  try {
-    const login = await fetch(`${EMQX_API_BASE}/login`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: 'admin', password: dashPass }),
-    });
-    if (!login.ok) return null;
-    const { token } = await login.json();
-    const r = await fetch(`${EMQX_API_BASE}/clients?limit=200`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!r.ok) return null;
-    const body = await r.json();
-    return new Set((body.data || []).filter(c => c.connected).map(c => c.username).filter(Boolean));
-  } catch { return null; }   // EMQX ล่ม/ช้า → null = งดตัดสิน (ห้าม false alarm)
-}
-
-async function checkMqttSilent({ cfgCameras, onlineIds, alertMap, lineCfg, tz }) {
+// ข้อ 7 เดิมพึ่ง brokerAdmin.listConnectedUsers() (รายชื่อที่ต่อ Central) ซึ่ง
+// ใช้ไม่ได้กับกล้อง Bosch เลย — กล้องทุกตัวต่อ broker ที่ EDGE ไม่ใช่ Central จึง
+// ไม่เคยอยู่ในรายชื่อนั้น ⇒ log ผิด "online but MQTT not connected" สะสม 904,783
+// บรรทัด (plan §8 ข้อเท็จจริงใหม่). เปลี่ยนมาใช้ cameras.last_mqtt_at
+// (migration 247, เขียนโดย mqtt-subscriber.js _flushMqttHeartbeats ทุก 60 วิ
+// จากข้อความ onvif-ej จริง) — broker-neutral ใช้ได้ทั้งสองโหมด BROKER_KIND
+async function checkMqttSilent({ cfgCameras, onlineIds, lastMqttAtById, alertMap, lineCfg, tz }) {
   const mqttCams = cfgCameras.filter(c =>
     (c.vendor || 'bosch').toLowerCase() === 'bosch' && c.mqtt_username);
   if (mqttCams.length === 0) return;
-  const connected = await _emqxConnectedUsernames();
-  if (!connected) return;
+  const now = Date.now();
   for (const cam of mqttCams) {
     const id = cam.camera_id;
     const st = _mqttSilent.get(id) || { streak: 0, lastAlertAt: 0, alerted: false };
-    const silent = onlineIds.has(id) && !connected.has(cam.mqtt_username);
+    const lastMqttAt = lastMqttAtById.get(id);
+    const stale = !lastMqttAt || (now - new Date(lastMqttAt).getTime()) >= MQTT_SILENT_STALE_MS;
+    const silent = onlineIds.has(id) && stale;
     if (!silent) {
-      if (st.alerted && connected.has(cam.mqtt_username)) {
+      if (st.alerted && !stale) {
         const alertCfg = alertMap[id];
         if (alertCfg && alertCfg.enabled) {
           _sendCameraStatusLine({ cameraId: id, status: 'mqtt_restored',
@@ -1854,14 +1742,16 @@ async function checkMqttSilent({ cfgCameras, onlineIds, alertMap, lineCfg, tz })
 async function checkOfflineCameras() {
   try {
     // Scope to cameras-config.json (decision #86) — DB may have stale rows.
-    const cfgCameras = (loadCameraConfig().cameras) || [];
+    let cfgCameras = (loadCameraConfig().cameras) || [];
     const cfgIds = cfgCameras.map(c => c.camera_id || c.id).filter(Boolean);
     if (cfgIds.length === 0) return;
 
     const [camRes, alertRes, lineRes] = await Promise.all([
       pool.query(`
-        SELECT id AS camera_id, last_seen_at AS last_seen, enabled, paused
-        FROM cameras WHERE id = ANY($1::text[])
+        SELECT c.id AS camera_id, c.last_seen_at AS last_seen, c.enabled, c.paused, s.code AS site_code,
+               c.last_mqtt_at
+        FROM cameras c LEFT JOIN sites s ON s.id = c.site_id
+        WHERE c.id = ANY($1::text[])
       `, [cfgIds]),
       pool.query(`
         SELECT * FROM camera_offline_alerts WHERE camera_id = ANY($1::text[])
@@ -1869,28 +1759,58 @@ async function checkOfflineCameras() {
       pool.query(`SELECT * FROM line_config WHERE id = 1`),
     ]);
 
+    // ไซต์ maintenance/archived เงียบทุกแจ้งเตือน (sites.status · migration 285)
+    const quiet = await quietSiteCodes(pool);
+    const quietIds = new Set(camRes.rows.filter(c => quiet.has(c.site_code)).map(c => c.camera_id));
+    camRes.rows = camRes.rows.filter(c => !quietIds.has(c.camera_id));
+    cfgCameras = cfgCameras.filter(c => !quietIds.has(c.camera_id)); // checkMqttSilent ไม่เห็นกล้องไซต์เงียบ
+
     const alertMap = {};
     alertRes.rows.forEach(r => { alertMap[r.camera_id] = r; });
     const lineCfg = lineRes.rows[0];
     const tz = await getDisplayTz();
     const now = Date.now();
     const changes = [];
+    // 🔴 จัดกลุ่มก่อนส่ง (แก้ 2026-09-14) — เจ้าของเจอ C9/C10-KAR-SB-04 กะพริบพร้อมกัน
+    // ทุกชั่วโมงเป๊ะ ๆ (คาดว่า maintenance แต่ระบบไม่รู้แน่ชัด) ได้ข้อความแยก 4 ใบ/รอบ
+    // (offline C9, offline C10, online C9, online C10) ทั้งที่เป็นเหตุการณ์เดียวกัน
+    // ⇒ เก็บรายชื่อกล้องที่ "ควรแจ้ง" ไว้ก่อนระหว่างวนลูป แล้วค่อยส่งรวมทีเดียวหลังจบ
+    // ลูป ไม่เปลี่ยน logic การตัดสินใจ "ควรแจ้งไหม" เลยสักบรรทัด แค่เลื่อนจุดส่งออกไป
+    const wentOffline = [];   // { cam, cfgCam, alertCfg, offlineSince }
+    const cameBack = [];      // { cam, cfgCam, alertCfg, offlineSince }
 
     // ข้อ 7 — MQTT-silent watch: ใช้ heartbeat ชุดเดียวกับ watchdog
     const onlineIds = new Set(camRes.rows
       .filter(c => !c.paused && c.last_seen
         && (now - new Date(c.last_seen).getTime()) / 1000 < OFFLINE_THRESHOLD_SEC)
       .map(c => c.camera_id));
-    checkMqttSilent({ cfgCameras, onlineIds, alertMap, lineCfg, tz })
+    const lastMqttAtById = new Map(camRes.rows.map(c => [c.camera_id, c.last_mqtt_at]));
+    checkMqttSilent({ cfgCameras, onlineIds, lastMqttAtById, alertMap, lineCfg, tz })
       .catch(e => console.warn('[mqtt-silent] check error:', e.message));
 
     for (const cam of camRes.rows) {
-      if (cam.paused) continue; // paused = intentional maintenance; skip watchdog entirely
+      if (cam.paused) { _onlineConfirm.delete(cam.camera_id); continue; } // paused = intentional maintenance; skip watchdog entirely
 
       const ageSec = cam.last_seen
         ? (now - new Date(cam.last_seen).getTime()) / 1000
         : Infinity;
-      const isOnline = ageSec < OFFLINE_THRESHOLD_SEC;
+      const rawOnline = ageSec < OFFLINE_THRESHOLD_SEC;
+      let isOnline;
+      if (!rawOnline) {
+        _onlineConfirm.delete(cam.camera_id);
+        isOnline = false;
+      } else if (cam.enabled) {
+        isOnline = true;   // กล้องที่ online อยู่แล้ว ไม่ต้องรอยืนยันซ้ำ
+      } else {
+        const streak = (_onlineConfirm.get(cam.camera_id) || 0) + 1;
+        _onlineConfirm.set(cam.camera_id, streak);
+        const heartbeatConfirmed = streak >= ONLINE_CONFIRM_POLLS;
+        // ด่านที่สอง: heartbeat ยืนยันครบแล้ว ก่อนประกาศ online จริงต้องยิงไปขอ
+        // snapshot จากกล้องผ่าน edge ของไซต์นั้นก่อน (ดูเหตุผล/กัน lockout ที่
+        // คอมเมนต์ของ _confirmCameraViaSnapshot ด้านบน)
+        isOnline = heartbeatConfirmed
+          && await _confirmCameraViaSnapshot(pool, cam.camera_id, cam.site_code);
+      }
       const computedStatus = isOnline ? 'online' : 'offline';
       const cfgCam = cfgCameras.find(c => (c.camera_id || c.id) === cam.camera_id);
       const alertCfg = alertMap[cam.camera_id];
@@ -1909,11 +1829,7 @@ async function checkOfflineCameras() {
           // Camera came back online — fire recovery alert if one was sent
           const hadAlert = alertCfg && alertCfg.last_alert_at;
           if (hadAlert && alertCfg.enabled) {
-            _sendCameraStatusLine({
-              cameraId: cam.camera_id, status: 'online',
-              offlineSince: alertCfg.offline_since,
-              camCfg: cfgCam, alertCfg, lineCfg, tz,
-            }).catch(() => {});
+            cameBack.push({ cam, cfgCam, alertCfg, offlineSince: alertCfg.offline_since });
           }
           // Clear offline tracking
           await pool.query(
@@ -1956,27 +1872,38 @@ async function checkOfflineCameras() {
         const offlineSec = (now - new Date(offlineSince).getTime()) / 1000;
 
         if (offlineSec >= (alertCfg.notify_after_sec || 300)) {
-          const lastAlertAt    = alertCfg.last_alert_at;
-          const escalateMs     = (alertCfg.escalate_interval_min || 60) * 60 * 1000;
-          const sinceLastAlert = lastAlertAt ? (now - new Date(lastAlertAt).getTime()) : Infinity;
+          const lastAlertAt = alertCfg.last_alert_at;
+          const escalateMs  = (alertCfg.escalate_interval_min || 60) * 60 * 1000;
+          const groupKey    = String(alertCfg.recipient_ids || '').trim();
 
-          if (!lastAlertAt || (!alertCfg.escalate_once && sinceLastAlert >= escalateMs)) {
+          // ครั้งแรกของกล้องตัวนี้ยังเป็นอิสระเสมอ (ตาม notify_after_sec ของตัวเอง
+          // ไม่ต้องรอกลุ่ม) — ตั้งแต่ครั้งที่สองเป็นต้นไปยึดนาฬิกากลุ่มแทน
+          let eligible = false;
+          if (!lastAlertAt) {
+            eligible = true;
+          } else if (!alertCfg.escalate_once) {
+            const groupNextAt = _groupEscalation.get(groupKey);
+            eligible = !groupNextAt || now >= groupNextAt;
+          }
+
+          if (eligible) {
             if (!_camAlertInQuiet(alertCfg, tz)) {
-              _sendCameraStatusLine({
-                cameraId: cam.camera_id, status: 'offline',
-                offlineSince,
-                camCfg: cfgCam, alertCfg, lineCfg, tz,
-              }).then(async () => {
-                await pool.query(
-                  `UPDATE camera_offline_alerts SET last_alert_at=NOW() WHERE camera_id=$1`,
-                  [cam.camera_id]
-                );
-              }).catch(() => {});
+              wentOffline.push({ cam, cfgCam, alertCfg, offlineSince });
+            }
+            // เลื่อนนาฬิกากลุ่มไปข้างหน้าเฉพาะตอนที่เป็นรอบ "แจ้งซ้ำ" จริง (ไม่ใช่
+            // ครั้งแรก) — กันไม่ให้กล้องที่เพิ่งดับใหม่มาเลื่อนนาฬิการอบถัดไปของ
+            // กล้องอื่นที่รออยู่แล้วออกไปเรื่อย ๆ
+            if (lastAlertAt && !alertCfg.escalate_once) {
+              _groupEscalation.set(groupKey, now + escalateMs);
             }
           }
         }
       }
     }
+
+    // ส่งรวมทีเดียวหลังวนครบทุกกล้องแล้ว — ไม่ใช่ทันทีในลูป (ดูเหตุผลด้านบน)
+    await _sendGroupedCameraAlerts({ status: 'offline', items: wentOffline, lineCfg, tz, pool });
+    await _sendGroupedCameraAlerts({ status: 'online',  items: cameBack,    lineCfg, tz, pool });
 
     // WS broadcast for UI (unchanged behaviour)
     if (changes.length > 0 && typeof wss !== 'undefined') {
@@ -1985,6 +1912,260 @@ async function checkOfflineCameras() {
     }
   } catch (e) {
     // ignore (DB อาจ disconnect ชั่วคราว)
+  }
+}
+
+// ── Flex card + ภาพประกอบ สำหรับกล้องที่เปิด send_snapshot (opt-in ต่อกล้อง,
+//    เจ้าของอนุมัติ 2026-09-15) ────────────────────────────────────────────
+// ภาพ: ออฟไลน์ = event จริงล่าสุดก่อนดับ · กลับมาออนไลน์ = event จริงแรกหลังกลับมา
+// (ถ้ายังไม่มี — กล้อง LPR มีรถผ่านถี่ โอกาสมีสูงภายในไม่กี่นาที ถ้าไม่มีก็ตัดรูปออก
+// ไม่ใช่ error) ใช้ตาราง events ตัวเดียวกับที่การ์ด LPR/ใบหน้าใช้อยู่แล้ว
+//
+// 🔴 กล้องใบหน้า: events.snapshot_filename เป็นภาพ**ครอปใบหน้า** ไม่ใช่ scene เต็ม
+// (ยืนยันจากภาพจริงที่เจ้าของส่งมา — หน้าคนเต็มเฟรม) เจ้าของขอภาพ full scene
+// เสมอ (2026-09-15) — hikvision-isapi.js เก็บภาพเต็มไว้แยกที่
+// raw_json._snapshot_full เมื่อดึงได้ (ยืนยันไฟล์จริงมีอยู่จาก preflight)
+// ใช้ COALESCE เอา full scene ก่อนเสมอถ้ามี ไม่มีค่อยตกไปใช้ตัวครอป (LPR ไม่มี
+// ฟิลด์นี้อยู่แล้ว เพราะ snapshot_filename ของ LPR เป็น scene เต็มมาแต่ต้น)
+async function _lastCameraEventSnapshot(pool, cameraId, cutoff, direction) {
+  const cmp = direction === 'after' ? '>' : '<';
+  const ord = direction === 'after' ? 'ASC' : 'DESC';
+  const r = await pool.query(
+    `SELECT received_at, COALESCE(raw_json->>'_snapshot_full', snapshot_filename) AS snapshot_filename
+       FROM events
+      WHERE camera_id = $1 AND snapshot_filename IS NOT NULL AND received_at ${cmp} $2
+      ORDER BY received_at ${ord} LIMIT 1`,
+    [cameraId, cutoff]
+  ).catch(() => ({ rows: [] }));
+  return r.rows[0] || null;
+}
+
+// "ครั้งก่อน" — รอบ offline ก่อนหน้ารอบนี้ (ดู GOTCHAS #209-adjacent HKT hourly-dropout
+// report) ให้เห็นตั้งแต่การ์ดแรกว่ากล้องนี้ดับซ้ำเป็นรอบไหม ไม่มีปูมก่อนหน้า = ไม่ใส่แถวนี้
+// เลย (ห้ามขึ้น "-" ตามกฎห้ามใส่ช่องที่รู้อยู่แล้วว่าจะว่าง)
+async function _prevOfflineCycleLabel(pool, cameraId, cutoff) {
+  // 🔴 คัดข้อความ log ของรอบปัจจุบันเองออก (แก้ 2026-09-15 หลังตรวจกับ C2 จริง):
+  // offline_since (คิวรีนี้ใช้เป็น cutoff) กับ camera_status_log.changed_at ของ
+  // รอบเดียวกันมาจากคนละ NOW() call ห่างกันแค่ระดับ ms ⇒ ถ้าใช้ "< cutoff" ตรง ๆ
+  // จะหยิบปูมของ**รอบปัจจุบัน**มาแสดงเป็น "ครั้งก่อน" ผิด ๆ (เห็นจริง: "ดับเมื่อ
+  // 0 วิก่อนหน้า") ต้องเผื่อช่องว่างขั้นต่ำ — รอบก่อนหน้าจริงห่างกันเป็นนาที/ชม.
+  // เสมอตามรายงาน HKT hourly-dropout ไม่มีทางห่างกัน <10 วิ
+  const r = await pool.query(
+    `SELECT changed_at FROM camera_status_log
+      WHERE camera_id = $1 AND status = 'offline'
+        AND changed_at < $2::timestamptz - INTERVAL '10 seconds'
+      ORDER BY changed_at DESC LIMIT 1`,
+    [cameraId, cutoff]
+  ).catch(() => ({ rows: [] }));
+  const prev = r.rows[0]?.changed_at;
+  if (!prev) return null;
+  const sec = Math.round((new Date(cutoff).getTime() - new Date(prev).getTime()) / 1000);
+  if (sec < 60) return `ดับเมื่อ ${sec} วิก่อนหน้า`;
+  if (sec < 3600) return `ดับเมื่อ ${Math.floor(sec / 60)} นาทีก่อนหน้า`;
+  if (sec < 86400) return `ดับเมื่อ ${Math.floor(sec / 3600)} ชม. ก่อนหน้า`;
+  return `ดับเมื่อ ${Math.floor(sec / 86400)} วันก่อนหน้า`;
+}
+
+function _durPlain(offlineSince) {
+  if (!offlineSince) return null;
+  const sec = Math.round((Date.now() - new Date(offlineSince).getTime()) / 1000);
+  if (sec >= 3600) return `${Math.floor(sec / 3600)} ชม. ${Math.floor((sec % 3600) / 60)} นาที`;
+  if (sec >= 60) return `${Math.floor(sec / 60)} นาที`;
+  return `${sec} วินาที`;
+}
+
+async function _buildCameraSnapshotBubble({ status, it, tz, pool }) {
+  const camName  = it.cfgCam?.camera_name || it.cam.camera_id;
+  const location = it.cfgCam?.location || '—';
+  const timeStr  = new Date().toLocaleString('th-TH', { timeZone: tz || 'Asia/Bangkok', hour12: false });
+  const cutoff   = it.offlineSince || new Date();
+  // 🔴 เจ้าของเจอจริง 2026-09-15: การ์ดแจ้งเตือน**ซ้ำ** (escalation, ไม่ใช่ครั้งแรก)
+  // ขึ้น "เพิ่งดับ" ทั้งที่จริงดับมาเป็นชั่วโมงแล้ว (offlineSince เก่ากว่าตอนแจ้ง
+  // มาก — เห็นภาพประกอบเก่า 9 ชม. แล้วงงว่าทำไม "เพิ่งดับ") เดิม hardcode ข้อความนี้
+  // ไว้ไม่สนว่าเป็นครั้งแรกหรือครั้งที่เท่าไหร่ ⇒ คำนวณระยะเวลาจริงเสมอทั้ง 2 สถานะ
+  // (ครั้งแรกจริง ๆ ตัวเลขก็จะเล็ก ~notify_after_sec เองอยู่แล้ว ไม่ต้องแยก branch)
+  const dur = _durPlain(it.offlineSince);
+
+  const [snap, prevCycle] = await Promise.all([
+    _lastCameraEventSnapshot(pool, it.cam.camera_id, cutoff, status === 'offline' ? 'before' : 'after'),
+    _prevOfflineCycleLabel(pool, it.cam.camera_id, cutoff),
+  ]);
+
+  let heroUrl = null;
+  if (snap?.snapshot_filename) {
+    const ttlH = await getSystemSetting(pool, 'signed_image_expire_hours');
+    const signed = await signedImage.usableSignedUrl(snap.snapshot_filename, signedImage.ttlSecFromHours(ttlH));
+    heroUrl = signed?.url || null;
+  }
+  const snapTimeStr = snap
+    ? new Date(snap.received_at).toLocaleTimeString('th-TH', { timeZone: tz || 'Asia/Bangkok', hour12: false })
+    : null;
+
+  const rows = [['เวลา', timeStr]];
+  rows.push(['ดับมา', dur || 'เพิ่งดับ']);
+  if (prevCycle) rows.push(['ครั้งก่อน', prevCycle]);
+
+  const accent = status === 'offline' ? '#c92a2a' : '#2f9e44';
+  const chipBg = status === 'offline' ? '#fff0f0' : '#ebfbee';
+  const chip = status === 'offline'
+    ? 'กล้องออฟไลน์'
+    : `กลับมาออนไลน์${dur ? ` · ออฟไลน์ ${dur}` : ''}`;
+
+  return lineSender.buildCompareFlexAlert({
+    accent, chipBg, chip,
+    title: camName,
+    subtitle: location,
+    hero: heroUrl ? { url: heroUrl, ratio: '16:9',
+      caption: status === 'offline'
+        ? `ภาพล่าสุดก่อนดับ · ${snapTimeStr}`
+        : `event แรกหลังกลับมา · ${snapTimeStr}` } : null,
+    sections: [{ title: 'รายละเอียด', rows }],
+    altText: `${status === 'offline' ? 'กล้องออฟไลน์' : 'กล้องกลับมาออนไลน์'} · ${camName}`,
+  });
+}
+
+// กล้องที่ควรแจ้งสถานะเดียวกันในรอบตรวจเดียวกัน (offline หรือ online) → รวมเป็น
+// ข้อความเดียวถ้าผู้รับเป็นชุดเดียวกันเป๊ะ ๆ ตาม recipient_ids ของ camera_offline_alerts
+// (คนละกล้องอาจตั้งผู้รับไม่เหมือนกัน — ห้ามยำรวมข้ามผู้รับ) มีกล้องเดียวในกลุ่ม =
+// ข้อความหน้าตาเหมือนเดิมทุกประการ ไม่เปลี่ยนอะไรเลย
+//
+// กล้องที่เปิด send_snapshot (opt-in ต่อกล้อง) แยกไปเป็น Flex card+ภาพต่างหาก
+// จากกล้องที่ยังไม่เปิด (ยังได้ข้อความเปล่าเดิมทุกตัวอักษร) — อาจส่ง 2 ข้อความ
+// ต่อรอบถ้ากลุ่มเดียวกันมีกล้องทั้งสองแบบปนกัน
+async function _sendGroupedCameraAlerts({ status, items, lineCfg, tz, pool }) {
+  if (!items.length || !lineCfg || !lineCfg.enabled || !lineCfg.channel_access_token) return;
+  const roster = Array.isArray(lineCfg.recipients) ? lineCfg.recipients : [];
+
+  const groups = new Map();   // recipient_ids ดิบ (string) → items[]
+  for (const it of items) {
+    const key = String(it.alertCfg?.recipient_ids || '').trim();
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(it);
+  }
+
+  for (const [recipientKey, groupItems] of groups) {
+    const wanted = recipientKey.split(',').map((s) => s.trim()).filter(Boolean);
+    const targetIds = wanted.length > 0
+      ? roster.filter((r) => r.enabled && wanted.includes(r.id)).map((r) => r.id)
+      : roster.filter((r) => r.enabled).map((r) => r.id);
+    if (targetIds.length === 0) continue;
+
+    const timeStr = new Date().toLocaleString('th-TH', { timeZone: tz || 'Asia/Bangkok', hour12: false });
+    // ระยะเวลาออฟไลน์ต่อกล้อง — ก็อปตรรกะจาก _sendCameraStatusLine เดิมเป๊ะ (เคยเขียน
+    // ตกไปรอบแรก ไม่มี dur เลย ตรวจทานก่อนส่งจริงถึงจับได้ว่าขาดของเดิมไปหนึ่งบรรทัด)
+    const durLabel = (offlineSince) => {
+      if (!offlineSince) return '';
+      const sec = Math.round((Date.now() - new Date(offlineSince).getTime()) / 1000);
+      if (sec >= 3600) return ` (ออฟไลน์ ${Math.floor(sec / 3600)}h ${Math.floor((sec % 3600) / 60)}m)`;
+      if (sec >= 60) return ` (ออฟไลน์ ${Math.floor(sec / 60)} นาที)`;
+      return ` (ออฟไลน์ ${sec} วินาที)`;
+    };
+    // บรรทัดกล้อง/ตำแหน่งต่อกล้อง — รูปแบบเดียวกับ _sendCameraStatusLine เดิมเป๊ะ
+    // (กล้องเดียวต้องได้ข้อความหน้าตาเหมือนเดิมทุกตัวอักษร ไม่ใช่แค่ความหมายใกล้เคียง)
+    // ไม่มี emoji (เจ้าของสั่ง 2026-09-15 — เฉพาะการ์ดสถานะกล้อง)
+    const camBlock = (it, dur = '') =>
+      `กล้อง: ${it.cfgCam?.camera_name || it.cam.camera_id}${dur}\nตำแหน่ง: ${it.cfgCam?.location || '—'}`;
+
+    // กล้องที่เปิด send_snapshot (opt-in) แยกไปทาง Flex card+ภาพ — แต่เฉพาะตอนดับ
+    // ทีละตัวเท่านั้น (เจ้าของสั่ง 2026-09-15 หลังเห็น carousel 10 ใบพร้อมภาพหน้าคน
+    // ตอนกล้อง face หลายตัวดับพร้อมกัน: "ดับเยอะแบบนี้ ไม่ต้องส่งรูปก็ได้ สรุปมาเลย
+    // ทีเดียว") ⇒ ถ้ามีมากกว่า 1 ตัวในกลุ่มเดียวกัน ยุบกลับไปใช้ข้อความสรุปเปล่า
+    // เหมือนกล้องที่ไม่เปิด send_snapshot เลย ไม่ส่งรูปเลยสักใบ
+    const snapCandidates = groupItems.filter((it) => it.alertCfg?.send_snapshot);
+    const snapItems  = snapCandidates.length === 1 ? snapCandidates : [];
+    const plainItems = snapCandidates.length === 1
+      ? groupItems.filter((it) => !it.alertCfg?.send_snapshot)
+      : groupItems;
+
+    const _push = async (ids, messages) => {
+      const results = [];
+      for (const id of ids) {
+        const r = await lineSender.pushLineMessage(lineCfg.channel_access_token, id, messages)
+          .catch((e) => ({ success: false, error: e.message }));
+        results.push({ id_tail: id ? String(id).slice(-4) : null, ok: !!r?.success,
+                       error: r?.success ? null : (r?.error || 'unknown') });
+      }
+      return results;
+    };
+    const _markSent = async (camIds) => {
+      if (status !== 'offline' || !camIds.length) return;
+      await pool.query(
+        `UPDATE camera_offline_alerts SET last_alert_at=NOW() WHERE camera_id = ANY($1::text[])`,
+        [camIds]
+      ).catch(() => {});
+    };
+
+    // เจ้าของสั่ง 2026-09-15 หลังเห็นจริง: กล้องดับพร้อมกันหลายตัวที่ตำแหน่งเดียวกัน
+    // (เช่น C49/C50/C48 ที่ "ท้ายซอยบางลา" ทั้งสามตัว) ข้อความเดิมพิมพ์ตำแหน่งซ้ำทุก
+    // กล้อง — "สังเกตุว่าตำแหน่งมันอยู่เดียวกัน 3-4 กล้อง แต่แจ้งตำแหน่งทุกกล้อง
+    // ผมว่าไม่โอเค" — จัดกลุ่มตามตำแหน่งก่อน แสดงตำแหน่งครั้งเดียวต่อกลุ่ม ตามด้วย
+    // รหัสกล้องสั้น ๆ (ตัวหน้าสุดของ camera_id ก่อนขีด — "C49-PT-SB-20" → "C49")
+    const shortCode = (it) => String(it.cam.camera_id).split('-')[0];
+    // เจ้าของสั่ง 2026-09-15 หลังดู mockup แล้วอนุมัติ: หลายกล้องพร้อมกัน = การ์ด Flex
+    // ไม่มีรูป (ตัวเดียวกับการ์ดกล้องเดี่ยว แค่ไม่ส่ง hero/title) จัดกลุ่มตามตำแหน่ง
+    // เป็นคนละ section — ตำแหน่งเดียวกันไม่พิมพ์ซ้ำ (ดูเหตุผลเดิมด้านบน)
+    const multiSections = (items, dur = () => '') => {
+      const groups = new Map();   // ตำแหน่ง → items[]
+      for (const it of items) {
+        const loc = it.cfgCam?.location || '—';
+        if (!groups.has(loc)) groups.set(loc, []);
+        groups.get(loc).push(it);
+      }
+      return [...groups.entries()].map(([loc, its]) => ({
+        title: loc,
+        rows: [['กล้อง', its.map((it) => `${shortCode(it)}${dur(it.offlineSince)}`).join(', ')]],
+      }));
+    };
+
+    if (plainItems.length === 1) {
+      const it0 = plainItems[0];
+      const text = status === 'offline'
+        ? `กล้องออฟไลน์!\n${camBlock(it0)}\nเวลา: ${timeStr}`
+        : `กล้องกลับมาออนไลน์!${durLabel(it0.offlineSince)}\n${camBlock(it0)}\nเวลา: ${timeStr}`;
+      const results = await _push(targetIds, [{ type: 'text', text }]);
+      const okCount = results.filter((r) => r.ok).length;
+      if (okCount < targetIds.length) {
+        console.warn(`[camera-alert] กล้อง ${it0.cam.camera_id} ส่งไม่สำเร็จ `
+          + `${targetIds.length - okCount}/${targetIds.length} (${status}):`, JSON.stringify(results));
+      }
+      // last_alert_at อัปเดตเฉพาะตอนส่งสำเร็จจริงอย่างน้อยหนึ่งคน (กฎเดียวกับที่แก้ไปก่อนหน้า)
+      // — ไม่สำเร็จเลยสักคน รอบตรวจถัดไป (30 วิ) จะลองส่งใหม่ทันที แทนรอ escalate_interval_min
+      if (okCount > 0) await _markSent([it0.cam.camera_id]);
+    } else if (plainItems.length > 1) {
+      const accent = status === 'offline' ? '#c92a2a' : '#2f9e44';
+      const chipBg = status === 'offline' ? '#fff0f0' : '#ebfbee';
+      const chip = status === 'offline'
+        ? `กล้องออฟไลน์พร้อมกัน ${plainItems.length} ตัว`
+        : `กลับมาออนไลน์พร้อมกัน ${plainItems.length} ตัว`;
+      const bubble = lineSender.buildCompareFlexAlert({
+        accent, chipBg, chip,
+        subtitle: `เวลา ${timeStr}`,
+        // เจ้าของเจอจริง 2026-09-15: การ์ดแจ้งเตือนซ้ำ (escalation) ไม่ควรดูเหมือน
+        // "เพิ่งดับ" ทั้งที่ดับมาเป็นชั่วโมงแล้ว — โชว์ระยะเวลาจริงต่อกล้องเสมอทั้ง
+        // สองสถานะ เหมือนที่แก้ไปแล้วในการ์ดกล้องเดี่ยว (_buildCameraSnapshotBubble)
+        sections: multiSections(plainItems, durLabel),
+        altText: chip,
+      });
+      const results = await _push(targetIds, [bubble]);
+      const okCount = results.filter((r) => r.ok).length;
+      if (okCount < targetIds.length) {
+        console.warn(`[camera-alert] กลุ่ม ${plainItems.length} กล้อง ส่งไม่สำเร็จ `
+          + `${targetIds.length - okCount}/${targetIds.length} (${status}):`, JSON.stringify(results));
+      }
+      if (okCount > 0) await _markSent(plainItems.map((it) => it.cam.camera_id));
+    }
+
+    if (snapItems.length) {
+      // snapItems มีได้แค่ 0 หรือ 1 เสมอ (ดูเหตุผลตอนแยก snapCandidates ด้านบน)
+      const bubble = await _buildCameraSnapshotBubble({ status, it: snapItems[0], tz, pool });
+      const results = await _push(targetIds, [bubble]);
+      const okCount = results.filter((r) => r.ok).length;
+      if (okCount < targetIds.length) {
+        console.warn(`[camera-alert] กลุ่ม ${snapItems.length} กล้อง (snapshot) ส่งไม่สำเร็จ `
+          + `${targetIds.length - okCount}/${targetIds.length} (${status}):`, JSON.stringify(results));
+      }
+      if (okCount > 0) await _markSent(snapItems.map((it) => it.cam.camera_id));
+    }
   }
 }
 
@@ -2022,8 +2203,8 @@ async function _sendRecorderStaleLine({ cameraId, kind, staleSec, camCfg, alertC
   const timeStr  = new Date().toLocaleString('th-TH', { timeZone: tz || 'Asia/Bangkok', hour12: false });
   const mins = Math.max(1, Math.round(staleSec / 60));
   const text = kind === 'stale'
-    ? `🟠 การบันทึกวิดีโอหยุดทำงาน!\n📷 ${camName}\n📍 ${location}\n⏱ buffer ไม่อัปเดต ${mins} นาที (กล้องยังออนไลน์)\n🕐 ${timeStr}`
-    : `🟢 การบันทึกวิดีโอกลับมาทำงานแล้ว (หยุดไป ${mins} นาที)\n📷 ${camName}\n📍 ${location}\n🕐 ${timeStr}`;
+    ? `การบันทึกวิดีโอหยุดทำงาน!\nกล้อง: ${camName}\nตำแหน่ง: ${location}\nbuffer ไม่อัปเดต ${mins} นาที (กล้องยังออนไลน์)\nเวลา: ${timeStr}`
+    : `การบันทึกวิดีโอกลับมาทำงานแล้ว (หยุดไป ${mins} นาที)\nกล้อง: ${camName}\nตำแหน่ง: ${location}\nเวลา: ${timeStr}`;
   for (const id of targetIds) {
     await lineSender.pushLineMessage(lineCfg.channel_access_token, id, [{ type: 'text', text }]).catch(() => {});
   }
@@ -2135,10 +2316,7 @@ async function checkMonitorCameras() {
     for (const c of cams) {
       const ok = await probeCameraReachable(c.ip_address, parseInt(c.http_port, 10) || 80);
       if (ok) {
-        await pool.query(
-          `UPDATE cameras SET last_seen_at = NOW() WHERE id = $1`,
-          [c.camera_id]
-        ).catch(() => {});
+        await touchCamera(pool, c.camera_id);
       }
     }
   } catch { /* ignore — DB may blip */ }

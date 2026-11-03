@@ -3,18 +3,161 @@
 > Companion to [CLAUDE.md](CLAUDE.md). Pending work + strategic
 > directions. For shipped work see [CHANGELOG.md](CHANGELOG.md);
 > for design rationale see [DECISIONS.md](DECISIONS.md).
-> Last updated: 2026-07-22
+> Last updated: 2026-09-06
 
 ---
 
 ## 🔜 Pending / Roadmap
+
+### Open items — ย้ายมาจาก PLAN files (2026-09-06)
+
+> ย้ายมาที่นี่เพราะไฟล์ PLAN ปิดงานหลักไปแล้วและไม่มีใครเปิดอีก · ต้นทางยัง back-reference
+> มาที่หัวข้อนี้ ไม่ต้องตามกลับไปอ่านที่นั่น
+
+**จาก [`docs/PLAN_2026-08-04_master.md`](docs/PLAN_2026-08-04_master.md) §7 — งานเก็บกวาด**
+(§7.2 ปิดแล้ว `ea4b64d` + `a0c647d`; ที่เหลือหา commit ไม่เจอทั้งหมด ณ 2026-09-06)
+
+| # | เรื่อง | ที่มา |
+|---|---|---|
+| 7.1 | **edge วนต่อกล้องที่ไม่มีอยู่จริง** — 55 connection ค้าง SYN-SENT ไปยังกล้อง 34 ตัวที่ `enabled=false` | เจอตอนสำรวจ face |
+| 7.3 | `cameras.sd_status` ของ hkt **เป็น null ทั้ง 34 ตัว** — ไม่เคยเก็บสถานะการ์ดของ site นี้ | เจอตอน probe SD |
+| 7.4 | **แจ้งเตือนใบหน้ายังไม่มี scope ไซต์/กลุ่ม** แบบที่ LPR มี — ผู้รับคนเดียวกันได้ทุกไซต์ | งาน LINE |
+| 7.5 | **Events PDF กดแล้วไม่มีอะไรออกมา** — reproduce ฝั่ง server ไม่ได้ ต้องขอ DevTools จากเบราว์เซอร์ | ค้างจากรอบก่อน |
+| 7.6 | เพิ่ม alert เตือนตอน **retention จริงหลุดต่ำกว่าที่ตั้งไว้** — เจ้าของเลือกทาง "ยอมรับ retention สั้นลง" (hdy 6→5 วัน, 2026-08-05) alert ตัวนี้จึงเป็นของคู่กัน · ⚠️ **ไม่ใช่** `fc7c2f7` ซึ่งแก้ว่า `checkEdgeDiskLow` เฝ้า mount ไหน (alert พื้นที่ว่าง คนละตัว) | ผูกกับ Phase 0.1 |
+
+**จาก [`docs/PLAN_perf-and-disk_2026-08-04.md`](docs/PLAN_perf-and-disk_2026-08-04.md) ข้อ 5 —
+`SNAPSHOT_PROXY_URL` ต่อ site**
+
+อาการเดิม (LINE alert ของ hdy/hkt หารูปไม่เจอ → ส่งข้อความล้วน) **แก้แล้ว** ด้วย `79aceca`
+(2026-08-04): `src/line-sender.js` เรียก `edgeProxyBaseUrl(siteCode, domain)` ผ่าน
+`_siteCodeForCamera()` ⇒ URL ถูก **คำนวณ** จาก `sites.code` + `SNAPSHOT_PROXY_DOMAIN`
+
+🔜 **ที่ยังเปิด:** ข้อเสนอเดิมคือ *เก็บ* proxy URL ต่อ site เป็นค่า config — ยังไม่ได้ทำ
+วันนี้ site ที่ URL ไม่ตรงสูตร `<code>.<domain>` จะรองรับไม่ได้ และ `SNAPSHOT_PROXY_URL`
+เหลือเป็น fallback ค่าเดียวสำหรับ deployment ที่ไม่มี site (`src/line-sender.js:213`,
+`src/api-server.js:1054`) · **ยังไม่มี incident รองรับ — ทำเมื่อเจอ site ที่สูตรไม่พอ**
+
+---
+
+### รายงานหมวกนิรภัย (Phase HM) — 📝 DEMO เท่านั้น 2026-08-15 · ยังไม่ต่อข้อมูลจริง
+
+Live demo อยู่ที่ `/others/demo/top-helmet-report/` (mock ล้วน · ชื่อกล้อง/จุดติดตั้ง/
+รูปทรงอัตราฝ่าฝืนถอดจากของจริง) — มี 4 ส่วน: อันดับป้ายทะเบียน (กดป้าย → modal
+รายละเอียดรถแบบเดียวกับหน้าค้นหาป้ายทะเบียน) · กล้องที่พบมากสุด (สลับ จำนวน/อัตรา %) ·
+ช่วงเวลาที่พบมากสุด · ป้ายที่ทำผิดซ้ำ
+
+**🔴 ค้างต้องแก้ก่อนใช้งานจริงเต็มรูปแบบ — ความช้าของช่วงเวลายาว**
+
+วัดผ่าน API จริง (admin, ไม่กรอง site) 2026-08-15:
+
+| ช่วง | เวลาตอบ |
+|---|---|
+| รายวัน | **1.1 วิ** — ใช้งานได้ |
+| รายสัปดาห์ | **14.9 วิ** |
+| รายเดือน | **19.6 วิ** |
+
+ต้นเหตุ: `/api/traffic/helmet-top` สแกน `license_plates` (16 ล้านแถว) ตามช่วงเวลา
+· `idx_plates_detected_at` ใช้ได้ แต่ต้องกรอง `no_helmet` ทีหลังจากแถวจำนวนมาก
+· `idx_plates_no_helmet` ที่มีอยู่คีย์ด้วย `event_id` จึงใช้กับช่วงเวลาไม่ได้
+
+**เสนอ (ยังไม่ทำ รอไฟเขียว):** migration เพิ่ม partial index
+`CREATE INDEX CONCURRENTLY ... ON license_plates (detected_at) WHERE no_helmet`
+— ทำให้ range scan แตะเฉพาะแถวที่ไม่สวมหมวก (~1 ล้าน แทน 16 ล้าน)
+· ⚠️ เป็นการแก้ schema บนตาราง 16 ล้านแถว **ต้องขออนุมัติเจ้าของก่อน**
+· ระหว่างนี้หน้าจอแสดงสถานะ "กำลังโหลดช่วงเวลาใหม่…" ไม่ให้ดูเหมือนปุ่มค้าง
+
+> 🔵 บทเรียน: วัด SQL ตรง ๆ ได้ 1.4 วิ เพราะ cache อุ่นจากการรันซ้ำ —
+> ต้องวัดผ่าน API จริงแบบ cold ถึงจะเห็นเวลาที่ผู้ใช้เจอ
+
+**ที่ยังไม่ทำ — เก็บเป็นไอเดียของแผนถัดไป:**
+
+- **กราฟแนวโน้มรายวัน + วัดผลก่อน-หลังตั้งจุดกวดขัน** — ทำไว้แล้วแต่**เจ้าของสั่งถอดออก
+  จาก demo 2026-08-15** เพราะอยู่ในแผนถัดไป ไม่ใช่รอบนี้ · แนวคิด: เส้นรายวัน 14 วัน
+  + หมุดวันที่เริ่มตั้งด่าน + เทียบค่าเฉลี่ยก่อน/หลัง
+  · ⚠️ ก่อนใช้จริงต้องกันตัวแปรกวน (วันหยุด · ฝนตก · กล้องล่ม) ก่อนจะสรุปว่า
+  การกวดขันเป็นเหตุของตัวเลขที่ลดลง — ไม่งั้นจะอ่านผลผิด
+- ต่อข้อมูลจริง: `illegalCode 151002 Without_Helmet` มีใน `raw_json.rawXml` ย้อนหลังถึง
+  2026-07-29 อยู่แล้ว (16,279 ครั้งใน 20 วัน) ⇒ ดึงเป็นคอลัมน์แล้วใช้ได้ทันที
+  ดู `docs/LOGIC_hikvision-ingester.md` §15.1
+- ภาพจริงใน modal (CROP ป้าย + snapshot เต็ม) ตอนนี้เป็น placeholder
+
+### Security backlog จากการตรวจ 2026-08-12 — 📝 บันทึกไว้ ยังไม่อนุมัติให้ทำ
+
+> เจ้าของถาม 2 คำถามหลัง deploy ลิงก์ภาพเซ็นชื่อ (`cc05d03`) · **ตรวจจริงทั้งคู่แล้ว** ผลอยู่ข้างล่าง
+> เจ้าของสั่ง "ยังๆ ครับ เก็บไว้ remind" → บันทึกไว้ ไม่ต้องลงมือ
+
+**S1 · `/api/lpr` ส่ง `raw_json` ทั้งก้อนให้ทุกคนที่ล็อกอิน** — ยืนยันด้วยบัญชี viewer จริง
+- ในนั้นมี `rawXml` 2,000 ตัวอักษร ซึ่งมี **IP ภายในของกล้อง (`10.11.100.2`) และ MAC address**
+- ตรวจแล้ว **ไม่มี** รหัสผ่าน/token — เป็นผังเครือข่ายภายใน ไม่ใช่ credential
+- หน้าจอใช้จริงแค่ 5 field: `plateColor` `laneNo` `region` `owner_detail` `remark`
+- **วิธีแก้ที่เสนอ:** กรอง `raw_json` เหลือ 5 field นั้นสำหรับคนที่ไม่ใช่ admin — แพทเทิร์นเดียวกับ
+  `_redactCameraResponse()` ที่ปิด `username`/`password` เป็น `***` อยู่แล้ว (~30 นาที + เทสต์หน้า LPR)
+- **สิ่งที่ตรวจแล้วสะอาด:** `/api/faces` (17 field ไม่มี PII/raw) · `/api/cameras` (credential ถูกปิดแล้ว)
+
+**S2 · TTL ของลิงก์ภาพแนบ LINE ยาว 48 ชั่วโมง** — สืบทอดค่ามาจากสมัยใช้ imgbb
+- ความเสี่ยงจริงไม่ใช่การเจาะ แต่คือ **การส่งต่อข้อความ LINE** — ใครถือลิงก์เปิดได้ แม้เป็น user
+  ที่ไม่มีสิทธิ์ดู Site นั้น (พิสูจน์แล้ว: viewer ผูก hkt เปิดภาพ hdy ผ่านลิงก์เซ็นชื่อได้ 200)
+- **เจตนา** — LINE ไม่มี cookie ของเรา และเป็นพฤติกรรมเดียวกับ imgbb ที่ใช้มาตลอด
+- **ข้อเสนอ:** ลดเหลือ 4–6 ชม. · เก็บ log การเข้า `/pub/*` ไว้ตรวจย้อนหลัง ·
+  (หมุน `SNAPSHOT_PROXY_SECRET` เมื่อไหร่ ลิงก์เก่าตายหมดทันทีอยู่แล้ว)
+
+**สิ่งที่ตรวจแล้ว "กันได้จริง" ไม่ต้องทำอะไรเพิ่ม** (ยิงจริงผ่านโดเมนสาธารณะ):
+เอาลายเซ็นภาพ A ไปขอภาพ B → 403 · ยืดวันหมดอายุเอง → 403 · `../` และ `%2e%2e` → 404/403 ·
+ลิงก์ `/pub/ref/` ใช้กับ `/pub/img/` → 403 · มี cookie แต่ไม่มีลายเซ็น → 403 · ลิงก์หมดอายุ → 410
+
+**หมายเหตุเรื่อง F12:** กันไม่ได้ และ HCP ก็กันไม่ได้ — DevTools แสดง "สิ่งที่ server ส่งมา"
+ไม่ใช่ช่องโหว่ · ทางเดียวที่ได้ผลคือไม่ส่งสิ่งที่ผู้ใช้ไม่ควรเห็นตั้งแต่แรก (= S1)
+
+
+### 3rd Party Integration Console (Phase TP) — 📝 PROPOSED 2026-08-06 (demo เท่านั้น ยังไม่อนุมัติ)
+
+> Demo: [`/others/demo/OpenAPI/`](public/others/demo/OpenAPI/) (commits `6038de3` `ea1ad41`) · ต่อยอดจาก [`docs/REF_third-party-integration.md`](docs/REF_third-party-integration.md) ที่มี `v_*_public` 11 view + role `third_party_readonly` อยู่แล้ว
+
+**ปัญหา:** วันนี้ปิดข้อมูลราย partner ได้แค่ระดับ **ทั้ง view** (`REVOKE SELECT ON v_license_plates_public`) — ปิดรายคอลัมน์ไม่ได้ · และทุกอย่างเป็น SQL มือ ไม่มี UI จึงทำได้คนเดียว และไม่มีใครตอบได้ว่า "ตอนนี้ใครเห็นอะไรอยู่"
+
+**หลักการที่ตกผลึกจาก demo (ส่วนสำคัญที่สุดของหัวข้อนี้):**
+- **บังคับใช้ที่ Postgres column GRANT ไม่ใช่ที่ OpenAPI** — `GRANT SELECT (col1, col2) ON v_x TO partner_ro` หลบไม่ได้ต่อให้โค้ดเราบั๊ก · OpenAPI ต้องเป็น**เอกสารที่ generate จาก grant จริง** ไม่ใช่ตัวกำหนดสิทธิ์ (spec ที่คนเขียนเองจะหลุดจากความจริง spec ที่ generate หลุดไม่ได้)
+- **ขาออกอย่างเดียว** — ขาเข้าเป็นปัญหาคนละชนิด (discover + map คอลัมน์ที่ partner เป็นเจ้าของและเราไม่เคยเห็น ซึ่งเป็นเหตุผลที่ `POST /api/blacklist/sources/discover` มีอยู่) หน้าจอเดียวซื่อสัตย์กับทั้งสองเรื่องไม่ได้ · ขาเข้าอยู่กับ source lifecycle ที่หน้า `ฐานข้อมูลใบหน้า`/`ฐานข้อมูลป้ายทะเบียน` ตามเดิม
+- **`passthrough` vs `filtered` เป็นตัวเลือกต่อ partner ที่ต้องตั้งใจเลือก** — CIB ต้องเป็น `passthrough` (ส่งไบต์ดิบ) เพราะเป็นข้อมูลระดับหลักฐาน ถ้าเรากรองฟิลด์ = เรากลายเป็นผู้ผลิตข้อมูล บั๊กของเราจะกลายเป็นหลักฐานที่ผิด
+- **ต้องโชว์ fill rate จริงข้างฟิลด์** — "มีคอลัมน์" กับ "คอลัมน์มีข้อมูล" คนละเรื่อง (`vehicle_brand` 69% · `bag_category` 20% · `no_seatbelt` เคยเป็น 0%) partner ที่วางแผนโดยไม่รู้จะสร้างของที่ดูเหมือนพัง
+- **การส่งกลับ source ที่ป้อนข้อมูลให้เรา ไม่ใช่เรื่องของหน้านี้** — อยู่ที่หน้าฐานข้อมูลที่เดียว (`blacklist.sources.push_enabled` / `push_confirmed_by`) เพื่อไม่ให้มีสวิตช์เดียวกันสองที่
+
+> ⚠️ **ลำดับงานย้ายไปอยู่ที่ [`docs/SPEC_partner-api_2026-08-07.md`](docs/SPEC_partner-api_2026-08-07.md) §7 แล้ว**
+> เดิมที่นี่ไล่ TP1–TP4 จาก UI ก่อน · สเปกไล่จากหลังบ้านก่อนเพราะหน้าจอไม่มีอะไรจะแสดงถ้ายังไม่มี partner จริง
+> เลขในสเปกคือเลขที่ใช้จริง — อย่าเพิ่มรายการซ้ำที่นี่
+
+- [x] **TP0 — ซ่อม role `third_party_readonly`** ✅ 2026-08-07 (migration 118) — role หายไปจาก cluster ทั้งที่ 027 บันทึกว่า apply แล้ว
+- [ ] **TP1–TP6** → ดูสเปก §7 (ตัวตน AK/SK → API → generate spec → ต่อหน้าจอ → แก้ grant → push)
+
+**เจอระหว่างทำ demo (ยังไม่ปิด):**
+- **32 กล้องที่ hkt ตั้ง `face_forward_url` ชี้ CIB ไว้แล้ว แต่ relay ไม่เคยทำงานสักครั้ง** — ไม่มีกล้องไหนมี slot ชี้มาที่เรา (31/32 ไม่มี `face_push_token` ด้วยซ้ำ) · ค่าที่ตั้งไว้จะมีผลทันทีที่ย้าย slot โดยไม่มีขั้นยืนยัน
+- **~~CIB ตอบ `HTTP 403`~~ → ที่จริงคือ FortiGate ของเราเองบล็อกขาออก** (แก้ความเข้าใจ 2026-08-07) · หน้าที่ตอบกลับคือ `FortiGuard Intrusion Prevention — Access Blocked · Category: Unrated` ไม่ใช่คำตอบจาก CIB — **คำขอไม่เคยออกไปถึง CIB เลยสักครั้ง** · หลักฐานเมทริกซ์ 2×2 จากเวลาเดียวกัน: Central→`.105` **200** · Central→`.106` **200** · edge→`.106` **200** · edge→`.105` **403** → ปลายทางไม่ได้ปฏิเสธ ติดเฉพาะช่อง edge→`.105` · **สิ่งที่ต้องทำคือขอทีม Firewall เพิ่ม `202.124.201.105:10001` เข้าข้อยกเว้น แบบเดียวกับที่ทำให้ `.106` เมื่อ 2026-07-29** (เอกสารพร้อมส่ง → [`docs/hkt-firewall-request-3_2026-08-07.html`](docs/hkt-firewall-request-3_2026-08-07.html)) · **ไม่ต้องขออะไรจาก CIB เลย** — UUID ที่มีอยู่ 32 ตัวใช้ได้ทันที · รายละเอียดเต็ม → [`docs/PLAN_hkt-face-cib-forward_2026-08-04.md`](docs/PLAN_hkt-face-cib-forward_2026-08-04.md) §11.7
+
+### Manual Blacklist Entry (Phase BM) — 📝 PROPOSED 2026-08-06 (demo เท่านั้น)
+
+> Demo: [`/others/demo/blacklist-manual/`](public/others/demo/blacklist-manual/) (commit `94e2a02`) · spec เดิม: [`docs/superpowers/specs/2026-07-24-blacklist-central-database-design.md`](docs/superpowers/specs/2026-07-24-blacklist-central-database-design.md)
+
+**ปัญหา:** `lpr_watchlist` **482 แถว เป็น `origin='blacklist_bridge'` ทั้งหมด · manual = 0** ทั้งที่ `POST /api/lpr/watchlist` กับ `_wlAdd()` มีอยู่จริง — ไม่ใช่ฟีเจอร์ที่ขาด แต่เป็นฟีเจอร์ที่**ให้ผลด้อยกว่าทางที่ import มา** จึงไม่มีใครใช้: แถวที่ import ได้ตัวตน + เลขคดี + รูป ส่วน manual เขียนเข้า `lpr_watchlist` ตรง ๆ ได้แค่ป้ายกับ label
+
+**ข้อเสนอ:** manual เข้า **`blacklist.source_records` (`source_id='manual'`) → `blacklist.master` → ให้ bridge สร้างแถว `lpr_watchlist`** เหมือนของที่ import มาทุกประการ
+
+> ลำดับอยู่ที่ [`docs/SPEC_partner-api_2026-08-07.md`](docs/SPEC_partner-api_2026-08-07.md) §7 เช่นกัน — **ทำคู่ขนานกับสาย TP ได้ ไม่ต้องรอกัน**
+
+- [ ] **BM0 — ลงทะเบียน source `manual`** ใน `blacklist.sources` ให้ bridge รู้จัก
+- [ ] **BM1 — endpoint เขียน** manual entry → `source_records` → `master` → `lpr_watchlist` (ฟอร์ม LPR: ป้าย · จังหวัด · เลขคดี · กลุ่ม · LINE · ผูกตัวตนเดิม / ฟอร์มใบหน้า: ชื่อ · รูป · เลขเอกสารเข้ารหัส + `id_hash` · เลขคดี)
+- [ ] **BM2 — ต่อหน้า demo เข้าของจริง**
+- [ ] **BM3 — RBAC + audit** ใครเพิ่ม เมื่อไหร่ ปิดใช้งานได้โดยไม่ลบ
+
+**ตัวขวางที่ต้องเคลียร์ก่อนสร้างจริง (ไม่ใช่รายละเอียดปลีกย่อย):**
+- **ใบหน้าเพิ่มแล้วยังไม่มีอะไรแจ้งเตือน** — ต้อง enroll เข้า FDLib ของกล้องซึ่งระบบยังทำไม่ได้ (spec §6.2) · เก็บเป็นฐานข้อมูลได้ แต่ห้ามให้ UI สื่อว่าใช้งานได้แล้ว
+- **ยังไม่ได้ออกแบบว่า role ไหนเพิ่มได้** — การเพิ่มรายการเฝ้าระวัง = ทำให้เกิดการแจ้งเตือนถึงเจ้าหน้าที่ และฟอร์มถือทั้งเลขคดีและเลขบัตร ไม่ควรเปิดให้ทุก role
 
 ### CODEX Audit 5th (optimization) — ✅ 10/12 shipped, 2 remain (decision #220, 2026-07-22)
 
 > เต็ม: [`CODEX/CODEX_Audit_5th_Audit_part_optimization.md`](CODEX/CODEX_Audit_5th_Audit_part_optimization.md) — 12 finding. **Shipped 10/12** (2026-07-21–22, commits `0b40332` `8f46ca6` `a9c9680` `195d743` `053ebe6` `869cfe6` `1a2c7c2` `530ea78` `b03786e` `5312c9f` `aa3a3da` `afe9e28` `bfe9e9f` `1ac1275` `e30de83`): CEN-001–006, EDGE-001, EDGE-003 (NanoMQ half), EDGE-004, EDGE-005. **CEN-005 closed as measured-not-needed** — real `EXPLAIN ANALYZE` showed OFFSET depth isn't the bottleneck at current scale (join plan / `COUNT(*) OVER()` is); keyset would have cost the jump-to-page UI for zero perf gain, so it wasn't implemented. Full narrative → decision #220.
 
 - [ ] **เหลือ 2 finding — รอดูตัวเลขจริงก่อน ไม่เร่งด่วน (ไม่มี incident บ่งชี้):**
-  - **CEN-007 (ครึ่งหลัง)** — pool wait metrics ✅ มีแล้ว (`health.js` `waiting_peak`); ยังไม่มี query-concurrency limiter จำกัด report/stats หนักๆ พร้อมกัน
+  - **CEN-007 (ครึ่งหลัง)** — pool wait metrics ✅ มีแล้ว (`health.js` `waiting_peak`); ยังไม่มี query-concurrency limiter จำกัด report/stats หนักๆ พร้อมกัน · **ยังไม่ปิด** แม้ performance program 2026-09-06 จะเพิ่มของที่ *ใกล้เคียง* — single-flight ต่อ cache key (`7a2c6a7`) และ serialized page pool ของ report-worker (`bddbcd9`) — สองอย่างนั้นกัน "โหลดซ้ำ/render ซ้อน" ไม่ใช่ limiter ครอบ query หนักทั้งระบบตามที่ finding นี้ขอ
   - **EDGE-002 (ครึ่งหลัง)** — SD-status probe stagger ✅ มีแล้ว (เฉพาะ Bosch onvif poll); ยังไม่มี global concurrency limiter ครอบ `_fetchJpeg`/heartbeat/preview/scan ทั้งหมด + per-camera cooldown + probe/timeout counter ใน heartbeat
 
 ### CODEX Audit 5th (security) + 6th (live pentest) — ✅ triaged + most items closed 2026-07-22
@@ -64,7 +207,17 @@
 - [x] ~~**RF-IMG**~~ — done 2026-06-23 (commit `a96ee28`, live). ย่อ scene ตอน ingest ใน `lpr-core.js` (`resizeScene`: `sharp().rotate().resize(W,H,{fit:inside,withoutEnlargement}).jpeg({quality})`, default **1080p/q80**, cache settings 60s, resize-fail→เก็บต้นฉบับ ไม่ทิ้งรูป; **plate ไม่แตะ**). resize อยู่ใน lpr-core → ทำงานใน **lpr-receiver** (ingest path จริง). settings GET/PUT `/api/lpr/scene-image` (routes/lpr-gates.js) + migration 061 seed `lpr_scene_resolution`/`lpr_scene_quality` + UI Settings›LPR card. self-check 4096×2160→1920×1013 (noise worst-case −94%). 🟡 −% จริง + lock default รอ sample กล้องสด (LPR data ยังไม่ไหล). forward→CIB moot (กล้องชี้ CIB ตรง ISAPI repoint).
 - [x] ~~**RF-ALERT**~~ — done 2026-06-23 (commits `f9252ed` backend + `f2082b8` frontend, main). `GET /api/lpr/alerts` = anprAlarm ⨝ active watchlist + LEFT JOIN `lpr_alert_acks` (migration 060) paginate server-side; `/count` (today+unacked); `POST /:id/ack` (mirror FP5). Frontend: alarm strip overview + tab "การแจ้งเตือน" (badge/period/group/search/pager 15) + alert modal (captured↔reference side-by-side + ack+log). 🟡 เหลือ: browser-check ด้วย data จริง (LPR ยังไม่ไหล) + LINE push (LPR ส่ง `new_event` ไม่ใช่ `alert_event` → ยังไม่เข้า alert-engine) + reference-image upload UI.
 - [ ] **LPR Scale — Search + File Storage** — 📋 **PLANNED 2026-07-01** (do before full deploy, ~10M rec/เดือน = 120M/ปี). ปัจจุบัน: unpartitioned + `OFFSET` + exact `COUNT(*)` (ช้าตาม N) + scene JPG 317KB×ล้าน = disk driver. แผน 3 เฟส: **P0 now** (86k = ยังไหว ไม่ต้องทำ) → **P1 ก่อน cutover**: keyset/cursor pagination แทน OFFSET (เลิก jump-to-page → "โหลดเพิ่ม") + ตัด exact count (ใช้ estimate) + default bounded window + retention prune แบบ drop-dir-by-age → **P2 full scale**: monthly RANGE partition บน `event_time` (retention=DROP PARTITION) + parse fields ที่ filter จริงเป็น indexed column (เลิก LIKE rawXml) + parse used-fields→column (rawXml trim = HOLD, keep-set ยังไม่นิ่ง). **Storage:** prod=Linux → disk เป็น sizing (740GB@7d ลง server ได้, sharding date/cam/4h-slot พอแล้ว—verified worst 10.5k/dir, XFS/ext4 รับได้); Postgres partition host-independent รันบน Linux ปกติ; object-storage = optional ops win ไม่ใช่ prerequisite. แผนเต็ม+projection: [`docs/superpowers/plans/2026-07-01-lpr-scale-search-storage.md`](docs/superpowers/plans/2026-07-01-lpr-scale-search-storage.md)
+  - 🟡 **P1 ได้ไปบางส่วนแล้วจาก performance program 2026-09-06 แต่ยังไม่ครบ scope เดิม** — "ตัด exact count (ใช้ estimate)" + "default bounded window" ทำจริงแล้ว **เฉพาะหน้า Events** (`6bac369` — cap ที่ 10,000 + header `X-Total-Capped` + label "10,000+") และ **แท็บไม่ทราบทะเบียน** (`dfd44ea` — default 24 ชม.) · **ยังไม่ได้ทำกับ list ค้นหาป้ายทะเบียนหลักของหน้า LPR** ซึ่งเป็นตัวที่ finding นี้พูดถึง และ **keyset/cursor pagination ยังไม่ได้ทำเลย** (cf. CEN-005 ที่ปิดไปว่า measured-not-needed)
 - [ ] **Retention Architecture (prod)** — 📋 **PLANNED 2026-07-01**. Retention split by **data class × location** (edge/central) แทน retention เดียว. 6 class (A-edge Bosch scene / A-central LPR / B clips / C biometric / D rawXml / E plate-log slim / F aggregate) + legal-hold mechanism. **✅ DONE:** A-edge pruner+inventory `d87649c` + Health `d4e2ba5` · **P2/2A** seatbelt→column `b2741cc` · **D** rawXml time-retention (strip >90d) `d5fc975` · **E** decouple mechanism (exclude anprAlarm จาก general retention) `39552ee` (⚠️ number คง 30 — **flip เป็นปี gated on P2/2B**). **⏸️ DEFERRED (YAGNI 2026-07-01):** **F** rollup (ไม่มี consumer อ่าน trend) + **legal-hold flag** (ไม่มี trigger set — watchlist/acks ว่าง) — add when consumer/trigger exists. **NEXT = P2/2B partitioning** (draft พร้อม, gate ของ E number-flip). Do-not: split-drop unknown fields ตอน ingest (per-camera/time ไม่นิ่ง). แผนเต็ม: [`docs/superpowers/plans/2026-07-01-retention-architecture.md`](docs/superpowers/plans/2026-07-01-retention-architecture.md)
+- [ ] **ANPR Violation Fields — `illegalCode` / `illegalName`** — 📋 **PLANNED 2026-08-15**. กล้อง
+  `iDS-2CD9396-HIS` เปิด violation detection เองตั้งแต่ **29–30 ก.ค. 2026** ส่ง `Without_Helmet`
+  **16,279 ครั้ง** + `Seatbelt_Unbuckled` **171 ครั้ง** ใน 20 วัน — **ระบบไม่เคยอ่านฟิลด์นี้เลย**
+  ข้อมูลอยู่ใน `raw_json.rawXml` ครบทุก event จึง **ย้อนหลังได้ทันที ไม่ต้องแตะกล้อง** ·
+  ตรวจแล้วว่าเป็นส่วนย่อยของ `helmet=no` ทั้งหมด (1.9%) ⇒ ใช้เป็น **ตัวคัดคุณภาพ** ไม่ใช่ตัวเพิ่มจำนวน ·
+  พ่วง: แยก `vicepilotsafebelt` (ผู้โดยสาร 2,722 ครั้ง) ออกจาก `pilotsafebelt` (คนขับ 11,095 ครั้ง)
+  ซึ่งตอนนี้รวมเป็น `no_seatbelt` ค่าเดียว · รายละเอียด: `docs/LOGIC_hikvision-ingester.md` §15.1 ·
+  รายงานเต็ม: `docs/reports/rawxml-anpr-survey-2026-08-15.*`
+
 - [ ] **Driver Face Capture (Hik Face Picture Matting)** — ⏸️ **DEFERRED 2026-07-01**. Hik ANPR อัปรูปหน้าคนขับเป็น multipart part `pilotPicture.jpg` จริง (verified live HKT-ANPR-02) แต่ ingest **drop ทิ้ง** (`lpr-core.js` `classifyImage()` รู้จักแค่ scene/plate → part อื่น=unknown ไม่ save) = ไม่มีรูปหน้าในระบบ (PDPA-safe by default). จูนกล้อง (Medium/ratio3/contrast50/Face-Close-up✓) → รูปโต 1.5KB→4.5–10.8KB คมขึ้น 3–7× แต่**หน้ายังไม่เห็น** เพราะกระจกเปียกสะท้อนฟ้า (ฝน) + มุมกล้องสูง = optical limit แก้ที่ matting ไม่ได้. **Resume เมื่อ:** อากาศดี + กล้อง/มุมที่เห็นคนขับชัด. **Build (gated on quality+PDPA):** `classifyImage` add `pilotpicture`→face, save `lpr_face_*.jpg` + `face_image` column (migration), modal face box + access-control, retention สั้นกว่า scene. recipe re-probe + แผนเต็ม: [`docs/superpowers/plans/2026-07-01-driver-face-capture-DEFERRED.md`](docs/superpowers/plans/2026-07-01-driver-face-capture-DEFERRED.md)
 - [ ] **Camera Delete — Edge Media Cleanup** — 📋 **PLANNED 2026-07-16**. `DELETE /api/cameras/:id` (แม้เลือก "ลบข้อมูลทั้งหมด") ลบแค่ DB row (cameras/events/appearances/license_plates) — **ไม่เคยลบไฟล์ภาพจริงเลย**, ไม่มี code path ไหนเรียก `unlink`/`fs.rm` ในเส้นนี้. สำหรับกล้อง EDGE_MODE ไฟล์อยู่บน **edge disk** (คนละเครื่องจาก central api-server) และไม่มีช่องทาง command จาก central→edge สำหรับ "ลบไฟล์" เลย (มีแค่ config-push `_config/cameras`, ทางเดียว) — เจอ orphaned files ค้าง 2 ครั้งจริงในสนาม (`hdy-nvr1-ch0/ch1` 112M, `HDY-NVR-04-ch0` + preview 2 ไฟล์) ต้องลบมือทุกครั้ง. **แผน:** reuse pattern `_config/scan-nvr`/`scan-result` (request/reply ผ่าน MQTT ที่มีอยู่แล้ว) เพิ่ม `_config/delete-media` (**retain:false** — ต่างจาก config-push ที่ retain:true เพราะเป็น one-shot action ไม่ใช่ state ถ้า retain แล้ว camera_id ถูกใช้ซ้ำจะโดนลบไฟล์ผิดคน) + `_config/delete-media-result`. Edge (`edge-config-agent.js`) subscribe ใหม่ → sanitize camera_id ด้วย regex เดียวกับ `snapPath()` (กัน path traversal) → ลบ **2 shape** ที่ต้อง handle ทั้งคู่ (เจอจริงตอนสำรวจ): nested `{events,face,lpr}/{date}/{camId}/{slot}/` + flat `preview/{camId}.jpg`. Central (`cameras.js` DELETE) publish command นี้เมื่อ `keep_data` ไม่ใช่ 1 (fire-and-forget แบบ `publishSiteConfig`) + ลบ `SNAPSHOT_DIR` ของตัวเองสำหรับกล้อง Bosch/direct-pull (ไฟล์อยู่ central เครื่องเดียวกัน ไม่ต้องผ่าน MQTT). **Known limitation:** edge offline ตอนสั่ง = คำสั่งหาย (ไม่ retain/queue) — ยอมรับได้ (disk hygiene ไม่ใช่ data integrity). **Test:** pure function คำนวณ path ที่ต้องลบ (เหมือน `snapPath`) + unit test sanitize + เคส exact-match (ห้าม `ch0` ไปโดน `ch01` โดย prefix match ผิด). **ขนาดงาน:** ~ไฟล์ใหม่ 2 + แก้ 2 ไฟล์เดิม + test, พอๆ กับ nvr_channel-fix + delete-modal ที่ทำไปวันเดียวกันรวมกัน. **เกิดจาก:** incident ลบกล้อง `hdy-nvr1`/`HDY-NVR-04` 2026-07-16 (แก้ manual ไปก่อน, ยังไม่ automate)
 - [ ] **Auto Model Detect — Recurring, not One-Time** — 📋 **PLANNED 2026-07-20**. `scripts/fill-model.js` ถูกออกแบบเป็น "one-time" script โดยตั้งใจ (comment ในไฟล์ระบุชัด) — รันครั้งเดียวตอน feature นี้ merge (2026-07-17) fill ได้ 43/58 ตัว ณ ตอนนั้น. **gap ที่พบจริง:** กล้อง 4 ตัว (`hdy-anpr-bangfab1/2`, `hdy-motor-bangfab1/2`) ถูกสร้างใน DB เวลาไล่เลี่ยกับตอน feature merge (`created_at` 2026-07-17 04:30 UTC, ก่อน commit feature 23:55 +07 ในวันเดียวกัน) แต่ไม่ติดในรอบ fill ครั้งนั้น (เพราะ script อ่านจาก `cameras-config.json` ของ **edge ณ ขณะรัน** ไม่ใช่ query DB กลาง — ถ้า edge ยังไม่ sync คอนฟิกที่เพิ่ง publish จาก central มา กล้องใหม่จะหลุดจากรอบนั้นไปเลย) → ต้องรันมือซ้ำ (สังเกตพบ + แก้ 2026-07-20, live-verified 4/4). เพราะเป็น one-time ไม่มี cron/trigger รันซ้ำ **กล้องใหม่ทุกตัวที่เพิ่มหลังจากนี้จะไม่มี model/firmware/serial จนกว่าจะมีคนนึกได้มารันมือ** (`hdy-motor-r52` ก็อยู่ใน batch เดียวกันแต่ probe "no model" — สาเหตุต่างกัน กล้องไม่ตอบสนอง ต้องเช็คแยก). **แผน:** เปลี่ยนจาก one-time เป็น recurring — ตัวเลือก (a) hook เข้า flow ตอนเพิ่มกล้องใหม่ผ่าน UI (`POST /api/cameras`) ยิง `detectModel()` ทันทีถ้ากล้องอยู่ใน network เดียวกับ central (Bosch/direct-pull) หรือ queue ให้ edge รันตอน sync ถัดไป (Dahua/Hik ผ่าน edge) หรือ (b) cron รายสัปดาห์บน edge (เหมือน `fill-model.js` เดิม แต่ auto, ข้ามเฉพาะกล้องที่มี model อยู่แล้ว = idempotent) แล้ว POST ผลกลับ central endpoint ใหม่ (`PATCH /api/cameras/:id/model-detect` หรือคล้ายกัน). **เลือก (b) น่าจะง่ายกว่า** — ไม่ต้องแก้ create-camera flow, ทำงานได้ทั้ง Dahua/Hik/Bosch ผ่าน `detectModel()` เดิม, edge cron เดียวครอบคลุมกล้องใหม่ทุกตัวในไซต์นั้นอัตโนมัติ. **ขนาดงาน:** เล็ก — reuse `detectModel()`/`fill-model.js` เกือบทั้งหมด, เพิ่มแค่ cron scheduler (edge) + endpoint รับผล (central, POST-only เหมือน current manual apply) + skip-if-already-filled guard.
@@ -120,7 +273,7 @@
 - [x] ~~**CS1 — ทาง A: push receiver honor `paused`**~~ done 2026-06-20 (commit `7b642c2`, deployed). `/lpr`: paused → forward + return (ข้าม ingest); `/face-push`: paused → return. verified live (wipe loop: paused LPR → events คง 0). CS0 (revert temp probe) done พร้อมกัน.
 - [x] ~~**CS2 — Forward config-driven (hikvision-scoped) — decision B (opt-in)**~~ code done 2026-06-20 (รอ commit+restart). `forwardToPhuket(body,ct,targetUrl)` parse URL (http/https, port default) + **default-off**: ไม่ forward เว้นแต่กล้องมี `cam.lpr_forward_url` (หรือ admin ตั้ง `system_settings.lpr_forward_default` = optional global, default null). URL พัง → skip+log (ไม่ throw). `cameras.js` persist `lpr_forward_url` hikvision-scoped (body-wins-else-preserve). `HIK-V_LPR01.lpr_forward_url` = CIB ตั้ง explicit ใน config. **decision B (PDPA)**: กล้องใหม่ไม่ auto-forward → ไม่มี sentinel disable (ไม่ตั้ง URL = ไม่ forward). **⚠️ ผลข้างเคียง:** ถ้า HIK-V_LPR01 match mac/ip พลาด (drift) → CIB ขาดฟีดเงียบ (ไม่มี catch-all fallback แล้ว). verified: repro read 4 เคส (no-URL/cam-URL/malformed/unidentified) + write 3 เคส (set/preserve/non-hik). 🟡 SSRF validate + UI → CS6.
 
-**⚠️ Data wipe (re-surface — owner เลือก: ทั้งหมด + backup ก่อน)** — MacBook ใกล้เต็ม: backup DB (pg_dump **นอก repo**) → clear ~38GB (`snapshots/`+`media/`) + truncate events/license_plates/appearances → restructure storage → start ทีละ source. **ตัดสินก่อน CS3–CS6** ว่าต้องมาก่อนไหม (disk วิกฤต = CS1+wipe ก่อน).
+**⚪ Data wipe — ปิดงาน 2026-07-31: MacBook ถูกขายไปแล้ว ปัญหาดิสก์ใกล้เต็มของเครื่องนั้นจบไปพร้อมเครื่อง** (เรื่องพื้นที่ของ central เป็นคนละเรื่อง อยู่ใน `docs/superpowers/plans/2026-07-30-performance-optimization.md` Phase 4–5) · บันทึกเดิมไว้อ้างอิง: MacBook ใกล้เต็ม: backup DB (pg_dump **นอก repo**) → clear ~38GB (`snapshots/`+`media/`) + truncate events/license_plates/appearances → restructure storage → start ทีละ source. **ตัดสินก่อน CS3–CS6** ว่าต้องมาก่อนไหม (disk วิกฤต = CS1+wipe ก่อน).
 
 **UI — list (frontend, `page-camera-settings.js` `renderAdminCameras` + `index.html` toolbar)**
 - [x] ~~**CS3 — Pagination + search + filters**~~ — done 2026-06-20 (commit `719c4ed`). paginate 25/หน้า (client-side) + search + filter vendor/status/location; `_filterPaginate()`/`_camDistinctLocations()` + reuse `renderPagination`/`pgGo`. i18n th+en.
@@ -164,6 +317,45 @@
 - [x] ~~**FP4**~~ — done 2026-06-22 (commit `64f6207`, migration 057 `face_event_notes`). `POST/GET /api/face-matches/:id/note`; operator note free-text in modal.
 - [x] ~~**FP5**~~ — done 2026-06-22 (commit `fea95e8`, migration 058 `face_event_acks`). blacklist ack; unacked badge on เฝ้าระวัง segment; `GET /api/faces/counts` + `unacked_watch`.
 - [x] ~~**FP6**~~ — done 2026-06-22 (commit `0c4ad8a`, migration 059 `face_settings`). `face_similarity_min`(80) + `face_show_expression`(1) seeded; threshold applied query-time (reversible); tab 4→3; Settings›ระบบใบหน้า.
+
+#### Face page review (2026-07-29) — 7 items, perf fix ✅ done, rest designed/deferred
+
+> เจ้าของส่ง 4 screenshot ให้สำรวจ+ออกแบบหน้า "ข้อมูลใบหน้า" อีกรอบ — สรุปเต็มใน memory
+> `project_face_page_review_2026_07_29.md`
+
+- [x] **หน้าค้นหา (Search tab) ค้าง 51.6 วิ ที่ state default** — ✅ done commit `82aec20`
+  (2026-07-29): `/api/faces` default 24h เมื่อไม่มี `from`/`to` (path ที่ไม่ใช่ `group=burst_spatial`)
+  → 51,582ms→2,289ms. เป็น path เดียวกับ [`/api/faces` 37s](project_faces_endpoint_slow.md ใน
+  memory) ที่ fix รอบ 2026-07-26 ครอบไม่ถึง (ครอบแค่ `group=burst_spatial`)
+- [ ] Badge "เฝ้าระวัง N" กับ list ไม่ตรง site scope — `/api/faces/counts` ต้องรับ `cameras=`
+  แบบเดียวกับ `/api/face-matches` — ออกแบบพร้อม รอ execute
+- [ ] ย้ายแท็บ ทั้งหมด/เฝ้าระวัง/ไม่พบในระบบ ขึ้นใกล้ KPI การ์ด — mechanical, รอ execute
+- [ ] แยกหมวดใหม่ "จับภาพเท่านั้น" (capture-only cameras, `cam_role='standard'`) แทนการ merge
+  เข้า "ไม่พบในระบบ" เดิม (เหตุผล: "ไม่พบในระบบ" กรอง `listType IS NULL` บน recognition-type
+  event เท่านั้น, capture-only ส่ง event คนละ type — merge จะกระทบความหมาย tab เดิม) — รอ execute
+- [ ] ตัด `cam_role='lpr'` ออกจาก camera dropdown หน้าค้นหา — probe DB แล้ว: กล้อง lpr
+  ไม่เคยส่ง face event เลย และไม่มีตัวไหน config `capture_categories` มี `'face'` เลย (ตรงกับ
+  decision #117 ที่กันไว้เฉพาะ NVR onboard-AI channel) — ตัดตอนนี้ปลอดภัย ไม่ซ่อนข้อมูลจริง
+- [ ] **DEFERRED — ITC431 driver-face-capture:** เจ้าของสงสัยว่ากล้อง Dahua ITC431 (เช่น
+  `hdy-anpr-mhatyai1`) มี option เปิด Face Capture สำหรับคนขับ (driver) แยกจาก generic
+  onboard face box ที่ decision #117 กันไว้ — DB ยืนยันได้แค่ "ตอนนี้ไม่มีข้อมูล/ไม่มี config"
+  ตอบไม่ได้ว่า hardware รองรับจริงไหม (ต้อง live CGI probe ที่ตัวกล้อง) **รอจนกว่าจะมีการแก้ไข
+  จุดติดตั้งเพื่อจับภาพใบหน้าให้ดีขึ้นก่อน ค่อย probe จริงทีหลัง**
+- [x] **แก้ความเข้าใจผิดเรื่อง HDY FD Library — ยืนยันครบด้วยเอกสารทางการ + probe จริง 2 รอบ**
+  รอบ 1: probe DSS Pro (`172.17.60.121`, site HDY) ผ่าน `POST /api/blacklist/sources/test-connection`
+  พบ face repository 3 กลุ่มจริง (`High Risk Person` 596 คน, `Blacklist Person HDY` 256 คน,
+  `Medium Risk Person` 0 คน — รวม 957 คน) — **2 ใน 3 กลุ่มขึ้น `isFailed: true`**
+  ยืนยัน field นี้จาก `docs/vendor/dahua/Dahua-HTTP-API-For-DSS-V8-7-EN-.pdf` §3.12.1.4 (official):
+  "isFailed — Whether there is a person or channel that fails to watch, 0=No, 1=Yes" — หมายถึง
+  ผลัก (arm/issue) กลุ่มไปยัง channel บางตัวไม่สำเร็จ ไม่ใช่ face-template training ล้มเหลวแบบที่
+  เคยตั้งสมมติฐานผิดไว้
+  รอบ 2: probe endpoint จริง §3.12.2.6 `POST /iams/api/v1.1/face/recognition/record/search-by-
+  feature/page` ช่วง 30 วันล่าสุด — **พบ 7 match จริง (similarity 90-96%) กับกลุ่ม `High Risk
+  Person`** แต่ channelId ที่ match (เช่น 1000068/1000069/1000073/1000076/1000077) **ไม่ใช่
+  channel ที่เราเชื่อม NVR ingest ของเราเลย** (`HDY-NVR-01..04-ch0/ch1`) — ตรงกับที่เจ้าของจำได้ว่า
+  เคยเห็น match จริงจาก Site ปัตตานี ที่เราไม่มี Edge Site เชื่อมอยู่ **DSS Pro/face matching
+  ทำงานได้จริง แค่ไม่ใช่ผ่าน channel ที่เราดึงเข้า events table ของเรา** — ไม่ใช่ software bug
+  ฝั่งเรา เป็นเรื่อง scope การเชื่อมต่อ ไม่ใช่ library ว่างเปล่าหรือ config ผิดอย่างที่เคยเข้าใจ
 
 ### Person Data Redesign (BODY-UI, BP1–BP4) — ✅ BP1-3 VERIFIED DEPLOYED 2026-07-03 (BP4 optional, not started)
 
@@ -344,7 +536,8 @@ endpoint เดิม. LLM ไม่แตะ SQL โดยตรง.
       (+ 2026-06-10: purge log เก่า rotated ที่มี RTSP password plaintext ค้าง —
       ตรวจซ้ำทั้ง `~/.pm2/logs/` แล้วไม่เหลือไฟล์ที่มี creds) /
       `media_buffer[].newest_segment_sec` ใน `/api/health/details` (detect wedge) /
-      `scripts/pm2-lan-safe-restart.command` / GOTCHAS #84 / service_start.md
+      `scripts/pm2-lan-safe-restart-mac.command` (เดิมชื่อไม่มี `-mac`; เปลี่ยน 2026-07-27
+      หลังย้าย central ไป Linux ซึ่งไม่มี LNP) / GOTCHAS #84 / service_start.md
 - [x] **1-A boot path** — `pm2.dojojin.plist` ใหม่ = `open -a Terminal <script>`
       (ทดสอบ end-to-end: launchd → Terminal → resurrect → ffmpeg ได้ grant;
       plist เดิม backup ที่ `/tmp/pm2.dojojin.plist.bak`; **โบนัส:** plist เดิมมี
@@ -680,60 +873,13 @@ retransmission ด้วย window_start) · verified ค่าจริง ente
   - Zero devDependency: ใช้ `node:test` + `node:assert/strict` ที่ built-in ใน Node 22
   - ทุก test value ยืนยันจาก live DB / source code จริง ไม่ใช้ magic number
 
-- [ ] **S2 — `events` table partitioning** *(แผน+script DONE commit `b8f6557`; migration รอ trigger ~500K rows)*
-  - **สถานะปัจจุบัน (2026-06-06):** 63,102 rows (~53K พ.ค. / ~10K มิ.ย.), 42 MB (`pg_total_relation_size`: heap 27 MB + 8 indexes) — ยังปลอดภัย
-  - **Growth rate:** ~50K rows/เดือน (ปัจจุบัน); 1.8M rows/year ที่ 100 cameras
-  - **Trigger point:** วางแผนรัน migration ก่อน table ถึง **~500K rows** (~9 เดือนที่ rate ปัจจุบัน) — ไม่เร่งด่วน แต่ต้องออกแบบไว้ก่อนถึง
-
-  **🔵 Fact — blockers ที่ verify จากจริง PG 16.13 (rolled-back transactions, 2026-06-06):**
-
-  1. **Composite PK บังคับ** — `PARTITION BY RANGE(event_time)` ทำให้ PK ต้องรวม partition key:
-     ```
-     ERROR: unique constraint on partitioned table must include all partitioning columns
-     DETAIL: PRIMARY KEY constraint on table "_test_events" lacks column "event_time"
-     ```
-     → PK จะต้องเปลี่ยนเป็น `PRIMARY KEY (id, event_time)`
-
-  2. **FK บน `id` อย่างเดียว reject** — หลัง PK กลายเป็น composite, FK ที่อ้างแค่ `id` ล้มเลว:
-     ```
-     ERROR: there is no unique constraint matching given keys for referenced table "_pe"
-     ```
-     → ผลกระทบกับ:
-     - `appearances.event_id BIGINT REFERENCES events(id) ON DELETE CASCADE`
-     - `license_plates.event_id BIGINT REFERENCES events(id) ON DELETE CASCADE`
-
-  3. **Retention cascade dependency** — `api-server.js:6155` ใช้ `ON DELETE CASCADE` เพื่อ clean `appearances` และ `license_plates` อัตโนมัติ; ถ้า FK หลุด retention จะต้องแก้ด้วย
-
-  **🟡 Opinion — สองตัวเลือก:**
-
-  **Option A — Drop FK ชั่วคราว แล้ว partition `events` อย่างเดียว**
-  - Drop FK บน appearances + license_plates
-  - แปลง events เป็น partitioned table (pg_partman หรือ manual monthly partitions)
-  - Retention ต้องเพิ่ม explicit `DELETE FROM appearances WHERE event_id = ANY(deleted_ids)` แทน cascade
-  - ✅ ทำได้ใน 1 migration file; ✅ appearances/license_plates ยังเป็น plain heap
-  - ⚠️ สูญ referential integrity; ⚠️ retention code ต้องแก้ด้วย (2 DELETE ก่อน 1 event DELETE)
-
-  **Option B — เก็บ FK ไว้โดยเพิ่ม `event_time` ใน child tables (ไม่ต้อง partition children)**
-  - เพิ่มคอลัมน์ `event_time` ใน appearances + license_plates (denormalize)
-  - เปลี่ยน FK เป็น composite: `FOREIGN KEY (event_id, event_time) REFERENCES events(id, event_time)`
-  - PG 12+ รองรับ FK จาก plain heap table → partitioned parent โดยตรง — ไม่จำเป็นต้อง partition children ด้วย
-  - ✅ referential integrity ยังครบ; ✅ `ON DELETE CASCADE` ยังทำงาน; ✅ retention code ไม่ต้องแก้
-  - ⚠️ INSERT appearances/license_plates ต้องส่ง event_time ด้วยทุกครั้ง; ⚠️ migration ใหญ่กว่า Option A
-
-  **คำแนะนำ:** เริ่มด้วย Option A — appearances + license_plates ยังเล็ก (FK drop = safe); แก้ retention code ไม่ซับซ้อน; Option B เหมาะเมื่อ appearances โตถึงระดับที่ต้องการ partition scan เองด้วย
-
-  **Migration script พร้อมแล้ว:** `db/MANUAL_partition_events_option_a.sql` (Option A, MANUAL_ prefix — ไม่ auto-run; commit `b8f6557`)
-
-  **ขั้นตอนจริงเมื่อถึง trigger point:**
-  1. **PostgreSQL ไม่มี in-place `ALTER TABLE ... PARTITION BY`** — ต้อง:
-     - สร้าง `events_new` เป็น partitioned parent (+ monthly child partitions)
-     - Copy rows: `INSERT INTO events_new SELECT * FROM events`
-     - Swap: rename `events` → `events_old`, rename `events_new` → `events`
-     - Drop `events_old` หลังยืนยัน — นี่คือ data migration ไม่ใช่แค่ DDL
-  2. ~~ถ้าเลือก Option A: แก้ `src/api-server.js` retention ให้ explicit delete appearances/license_plates ก่อน event delete~~ — **✅ แก้แล้วใน commit `b8f6557`** (`enforceRetention()` explicit-deletes appearances + license_plates ก่อน events แล้ว)
-  3. ถ้าเลือก Option B: เพิ่ม `event_time` column ใน appearances + license_plates + เปลี่ยน FK เป็น composite
-  4. ทดสอบ retention flow บน staging + ตรวจ row count ก่อน/หลัง swap
-  5. **ห้ามรัน migration นี้โดยไม่ `pg_dump` ก่อน** — copy-and-swap window = ความเสี่ยงสูงสุด
+- [x] **S2 — `events` table partitioning** — **DONE 2026-07-22** (commits `8f46ca6` `a9c9680` `195d743`; decision #220 CEN-003, CHANGELOG 2026-07-22)
+  - **เดินทาง Option A จริง** (drop FK → monthly RANGE partitions) ตาม `db/MANUAL_partition_events_option_a.sql` — รันบน production หลัง rehearse 2 รอบบน restored backup, downtime วัดจริง **~90.7 วิ** (ไม่ใช่ตัวเลข "3–15s" ที่ script พกมาจากตอนตาราง 63K แถว) · rehearsal รอบแรกจับ FK drift 3 ตัวที่ script ไม่รู้จัก (`face_event_notes`, `face_event_acks`, `lpr_alert_acks`) → แก้ + ใส่ pre-flight schema/FK-drift guard (`8f46ca6`, `a9c9680`) · `195d743` แก้ `enforceRetention()` / camera-delete / `pruneLprRows()` ให้ explicit-delete ครบทั้ง **5** child table ก่อน FK drop จะ live (เดิมเก็บกวาดแค่ 2) — advisor review เจอ ไม่ใช่ rehearsal (rehearsal ไม่เคยยิง delete)
+  - **รูปร่างปัจจุบัน (วัดจริง 2026-09-06):** `PARTITION BY RANGE (event_time)` รายเดือน · PK composite `(id, event_time)` · **21 partition** = `events_y2026m05` … `events_y2027m12` + `events_default` · ~**40.5M แถว** (ประมาณจาก sum `pg_class.reltuples` — คลาด −0.02% เทียบของจริง, `0e32082`) · ตัวเลข partition เป็นค่าที่ขยับได้ตลอด (#256 เคยเห็น 25 ตอน 2026-08-12) — ถ้าจะอ้างต้องวัดใหม่ทุกครั้ง
+  - **partition ในอนาคต + retention:** `src/helpers/partitionRetention.js::enforcePartitionRetention` เป็นเจ้าของทั้ง 2 ขา — DROP partition ที่พ้นอายุ (เก็บตัวที่ **ใหม่กว่าทั้ง** `data_retention_days` **และ** `lpr_retention_days` เพราะ LPR อยู่ใน partition เดียวกันแต่คนละ lifecycle — decision #213 / GOTCHAS #107) และ opt-in ผ่าน `system_settings.partition_drop_enabled` · **สถานะจริงบน central 2026-09-06:** `partition_drop_enabled=true`, `data_retention_days=100`, `lpr_retention_days=100` = drop path เปิดใช้งานอยู่จริง · ประวัติ: routine สร้าง 2026-07-31 (`85a741d`) แต่ **ไม่เคยถูกรันจริงและใช้ไม่ได้** จนแก้ 2026-08-27 (`9e877b9`) — อย่าเชื่อว่า "มีโค้ดแล้ว = ทำงานแล้ว"
+  - **งาน perf ที่ต่อยอดได้เพราะ partition แล้ว:** partial index บน `events` ต้องสร้าง **ทีละ partition** ด้วย `scripts/create-face-blacklist-index.js` (3 ขั้น: สร้างต่อ partition → ATTACH → parent) — migration 167 (`9a9ec3f`, watch-list 11.5s → 239ms) · 168 (`cb92b9f`) · 199 (`548677e`, `idx_events_anpr_noread_time` ครบ 21 partition = 2,302 วิ ได้ดัชนี 30 MB) · ⚠️ **GOTCHAS #191** — `CREATE INDEX CONCURRENTLY` ค้าง phase `waiting for old snapshots` หลัง `pg_dump` กลางคืน (03:04, 45–60 นาที) ให้เริ่มหลัง ~04:05 หรือก่อน 02:00 · ⚠️ **GOTCHAS #134** — หลัง partition แล้ว `DROP INDEX` บน parent ต้อง ACCESS EXCLUSIVE ซึ่งเข้าคิวชน `pg_dump` แล้วลาก INSERT ทั้งระบบค้าง 100 วิ → DDL คลาสนี้ห้ามอยู่ในไฟล์ migration ที่รันตอน boot
+  - **`license_plates` ไม่ partition — ตั้งใจ** ลองแล้ว 2026-08-01 (`b506df3`) และ revert วันเดียวกัน (`bca6488`) เพราะ `/api/lpr/alerts` ช้าลง **430 เท่า** — อย่ารื้อซ้ำโดยไม่มีตัวเลขใหม่
+  - <sub>**history (2026-06-06, commit `b8f6557`)** — ตอนวางแผน `events` มี 63,102 แถว / 42 MB และตั้ง trigger point ไว้ที่ ~500K แถว. blocker 3 ข้อที่ verify จาก PG 16.13 จริง (rolled-back tx) จบตามที่ทำนายไว้ทุกข้อ: (1) `PARTITION BY RANGE(event_time)` บังคับให้ PK รวม partition key → เปลี่ยนเป็น `(id, event_time)` จริง; (2) FK ที่อ้าง `events(id)` อย่างเดียว reject หลัง PK เป็น composite และ (3) retention ที่พึ่ง `ON DELETE CASCADE` พังตาม → Option A ตอบทั้งคู่ด้วยการ drop FK แล้ว explicit-delete child ทั้ง 5 ตาราง (`195d743`). Option B (denormalize `event_time` ลง child + composite FK) ถูกเขียนไว้เป็นทางเลือกแต่**ไม่ได้ใช้**.</sub>
 
 - [x] **S3 — Worker /health HTTP endpoints** — **DONE 2026-06-06** (commit `c7e306f`)
   - alert-worker: `GET /health` บน port 3002 (loopback) — ok, uptime, pid, memory, db.latency, listener.connected
@@ -766,6 +912,35 @@ retransmission ด้วย window_start) · verified ค่าจริง ente
   - `dashboard/page-executive-summary.js` (486 ลบ.) — `b7bbedf`
   - `dashboard/page-nav-bindings.js` (473 ลบ.) — `e90877e`
   - dashboard.js ที่เหลือ = core globals + pagination + WS + group mgmt + bootstrapApp
+
+### Performance program 2026-09-03 → 09-06 — ✅ ปิดแล้ว (deploy central + edge ครบ 5 ไซต์)
+
+> รายละเอียดเต็ม + ตัวเลข before→after ทุกข้อ: [CHANGELOG.md](CHANGELOG.md) รายการ **2026-09-03 → 09-06**
+> · audit ที่จุดชนวน: [`CODEX/CODEX_MODULAR_PERFORMANCE_AUDIT_2026-09-06.md`](CODEX/CODEX_MODULAR_PERFORMANCE_AUDIT_2026-09-06.md) §12
+> · GOTCHAS #187–#191 · migrations 198–199
+
+**ปิดแล้ว**
+
+- [x] ~~**Runtime baseline — ไม่มี log ระยะเวลา request เลย**~~ — ✅ `0199b8b` (`[slow-req]` ≥ `SLOW_REQ_LOG_MS` default 2 s) + `af4b12b` (Postgres `log_min_duration_statement=2s` ผ่าน `ALTER SYSTEM` + recipe), 2026-09-06. **เป็นเครื่องมือถาวร ไม่ใช่ของชั่วคราวสำหรับรอบนี้** — audit รอบก่อนต้องไล่วัดทุก endpoint เองเพราะไม่มีอันนี้
+- [x] ~~**`count(*)` เต็มตาราง 40.5M แถว ใน `/api/health/details`**~~ — ✅ `0e32082` + `a8008a1` + `101c97e`, 2026-09-06. cold 42 s → 1.5 s; total จาก `pg_class.reltuples`, face/lpr จาก rollup; ตอบ `events.totals_approx` และ UI แสดง ≈
+- [x] ~~**query ที่ไม่มีขอบเขตเวลา (unbounded events queries)**~~ — ✅ `ea4b64d` (scene fallback ~38 s → bounded) · `fe9c4bb` (status-current 44–66 s → 0.07 s, image-quality-log timeout → 0.1–0.3 s) · `dfd44ea` (no-read 24 h 12.8 s → 0.55 s) · `6bac369` (Events list 4.4 s cold → 0.3 s) · `a0c647d` (scene fallback 4.2 s → 41 ms), 2026-09-03..06. GOTCHAS #187
+- [x] ~~**endpoint ที่ควรอ่าน rollup แต่ยังสแกน `events`**~~ — ✅ `f43e5d7` (rule suggestions >30 s → 0.09 s, facets 3.6 s → 0.22 s, rule discovery 14 s → 0.13 s) · `5c9c31f` (health image-quality + trigger counts 3.6 s + 0.5 s → 16 ms + 5 ms) · `a0c647d` (`/api/lpr/brands` 5.5 s → 34 ms จาก `lpr_dim_daily`), 2026-09-05..06. GOTCHAS #188 (`SUM() FILTER` คืน NULL ที่ `COUNT(*) FILTER` เคยคืน 0)
+- [x] ~~**cache key ไม่ครอบสิทธิ์รายกล้อง (Codex VMOD-00)**~~ — ✅ `2808e63` + `aa75d5a`, 2026-09-06. **เป็นบั๊ก correctness ไม่ใช่แค่ perf** — cache bleed ข้ามกล้องจริงที่ site 18 และ site 20; `auth.scopeCacheKey()` เป็นทางเดียวที่สร้าง key. GOTCHAS #190
+- [x] ~~**static asset revalidate ทุก repeat load**~~ — ✅ `2ed4289`, 2026-09-06. stamped `?v=` + `private, max-age=31536000, immutable`; repeat load 26/88 → 76/86 ไฟล์จาก browser cache
+- [x] ~~**first load ยิง 47 script tag เรียงกัน**~~ — ✅ `f8f4615`, 2026-09-06. bundle 39 ไฟล์ (1,996 KB) → script requests 47 → 9, total 108–114 → 70; kill switch `DASHBOARD_BUNDLE=0`
+- [x] ~~**WebSocket ส่ง event เต็มให้ทุกแท็บ**~~ — ✅ `9363229`, 2026-09-06. topic subscription + lite variant ~330 B; ต่อ 10 วิ: Summary 219 → 32 KB, Cameras 212 → 33, Events 200 → 32 (หน้า LPR ยังได้ stream เต็ม). GOTCHAS #189 (`broadcast()` มี `.send()` 2 จุด)
+- [x] ~~**index ที่ไม่มีใครใช้ / index ที่ขาด**~~ — ✅ `104e0a9` migration 198 (drop `idx_lpr_plate_type` — 0 scan ใน 19 วัน, 406 MB) · `548677e` migration 199 (partial index `idx_events_anpr_noread_time` — no-read 7 วัน 38 s → 1.7 s cold / 0.03 s warm) + `eec4c4f` (self-check รายสัปดาห์ว่า predicate ยังตรงกับ anti-join), 2026-09-06. GOTCHAS #191 (`CREATE INDEX CONCURRENTLY` ติดคิวหลัง `pg_dump` กลางคืน)
+- [x] ~~**งานหลัง restart กระจุกใน 3 นาทีแรก (Codex VMOD-01/05 บางส่วน)**~~ — ✅ `7a2c6a7` + `585cc3c`, 2026-09-06. stagger first-run (kpi 45 s / category 90 s / traffic 135 s / LPR warm 180 s / retention 300–480 s) + เลิก `execFileSync('pm2')` + `_cached()` single-flight
+- [x] ~~**reconcile รายวันชนกับ `pg_dump`**~~ — ✅ `fc7cb31`, 2026-09-06. ย้ายไป 05:00 + persist marker ใน `system_settings.traffic_stats_reconciled_day` (เดิม 03:00 ทับหน้าต่าง dump 03:04–04:05 ทำให้ INSERT 95.3 s เฉียด statement timeout 120 s)
+- [x] ~~**Chromium ค้างอยู่ใน api-server (Codex VMOD-03)**~~ — ✅ `47d6528` (ปิด browser ที่ idle 5 นาที — เดิมค้างไว้ ~700 MB RSS ตลอดอายุ process) + `bddbcd9` (manual render 8 route ย้ายไป report-worker `POST /render`; kill switch `REPORT_RENDER_VIA_WORKER=0`), 2026-09-06
+- [x] ~~**storage walk บล็อก event loop (Codex VMOD-02)**~~ — ✅ `bddbcd9` (orphan walk async, event-loop lag 289 ms → 19 ms; anti-join bound ด้วยขอบเดือน สแกน partition 21 → 2) + `15fe325` (purge plan/execute async ทั้ง central และ edge-config-agent), 2026-09-06
+
+**ค้าง (open) — ไม่เร่งด่วน ไม่มี incident บ่งชี้**
+
+- [ ] **`_app_stats_filtered` — appearance stats แบบ all-time ยังใช้ ~100 วิ** เมื่อเรียกโดยไม่ระบุช่วงเวลา (`src/routes/appearances.js:272`) · **เกิดน้อย** เพราะ UI ส่งช่วงเวลามาเสมอ · ยังไม่ได้ bound เพราะยังไม่ตัดสินว่า all-time ควรเป็น estimate จาก rollup หรือควรบังคับให้ต้องมีช่วงเวลา
+- [ ] **Codex VMOD-04 / VMOD-06 / VMOD-07 — deferred โดยตั้งใจ** (ไม่ใช่ backlog ที่ลืม) · VMOD-04 stats single-flight: ไม่พบหลักฐาน concurrent-miss thrash จริง รอ baseline จาก `[slow-req]` · VMOD-06 image transform dedup: edge thumb cache TTL 60 s ที่มีอยู่ยังพอ ไม่มีหลักฐาน gallery burst · VMOD-07 edge queue accounting: คิวว่างทุกไซต์ตอนตรวจ เป็นเรื่องเฉพาะช่วง offline ยาว · เหตุผลเต็ม → audit §12
+- [ ] **เฝ้าดู bundle ถึง 2026-09-13** — 11 ไฟล์เสีย top-level `'use strict'` เมื่ออยู่ใน bundle (เจ้าของรับทราบและยอมรับแล้ว) · ครบ 1 สัปดาห์แล้วไม่มีอาการ = ปิดเรื่อง · มีอาการ = `DASHBOARD_BUNDLE=0`
+- [ ] **no-read 7 วัน ยัง cold ~1.7 วิ** จนกว่า autovacuum จะเก็บ index ใหม่จนนิ่ง (warm 0.03 s อยู่แล้ว) — รอดูเฉย ๆ ไม่ต้องแก้อะไร
 
 ---
 
@@ -1080,6 +1255,14 @@ Defer to post-pilot: Layer 5. Don't touch: Layer 6.
 งานที่ต้องทำ: schema design + background job + query routing + stale-data handling
 = effort ไม่คุ้มกับปัญหาที่ยังไม่เกิด
 
+> ✅ **เงื่อนไขถึงแล้วและมี rollup อยู่จริง (อัปเดต 2026-09-06)** — `events` ~40.5M แถว และมี
+> `event_dim_bucket` (30 นาที) · `lpr_dim_daily` (รายวัน) · `event_kpi_hourly` (รายชั่วโมง) ทำหน้าที่
+> เดียวกับ `daily_stats` ที่หัวข้อนี้เสนอ (ตารางเหล่านี้เกิดก่อนหน้านี้ ไม่ใช่ของ program 09-06)
+> · performance program 2026-09-03→09-06 คือรอบที่ **ย้าย endpoint หลักไปอ่าน rollup แทน `events`**
+> จริง: `f43e5d7` (rule suggestions / facets / rule discovery) · `5c9c31f` (health) · `0e32082` +
+> `a8008a1` (event_counts) · `fe9c4bb` (image-quality-log total) · `a0c647d` (`/api/lpr/brands`)
+> · ที่หัวข้อนี้เขียนไว้ว่า "ช้า 1–15s ที่ 73M แถว" ตรงกับของจริงที่วัดได้ (>30 s ถึง statement timeout)
+
 ### CREATE INDEX CONCURRENTLY บน production
 **ปัญหาที่แก้:** `CREATE INDEX` ปกติ lock ตาราง 5–30 นาทีที่ 73M แถว
 → กล้องส่ง event ไม่ได้ระหว่างสร้าง
@@ -1091,6 +1274,14 @@ Defer to post-pilot: Layer 5. Don't touch: Layer 6.
 
 **เหตุที่ defer:** dev DB 57K แถว — index build เสร็จใน ms; ไม่ควร automate
 หรือใส่ Settings UI (DBA operation ไม่ใช่ operator operation)
+
+> ✅ **ทำจริงบน production แล้ว 2026-09-06 ตามที่หัวข้อนี้เขียนไว้ทุกประการ** — `548677e`
+> สร้าง `idx_events_anpr_noread_time` ด้วยสคริปต์ partition 3 ขั้นที่มีอยู่ (21 partition, 30 MB,
+> 2,302 s) แล้วปล่อยให้ migration 199 เป็นรูปแบบสำหรับ fresh install / no-op 7 ms ที่อื่น
+> · `104e0a9` ใช้ `DROP INDEX CONCURRENTLY` ทิ้ง `idx_lpr_plate_type` (406 MB, 0 scan ใน 19 วัน)
+> แล้วให้ migration 198 เป็น `DROP INDEX IF EXISTS` ธรรมดา · **ingest ไม่กระทบทั้งสองครั้ง**
+> · ⚠️ ของใหม่ที่หัวข้อนี้ไม่ได้เตือนไว้: `CONCURRENTLY` **ติดคิวรอ snapshot ของ `pg_dump` กลางคืน**
+> — ~25 นาทีจาก 2,302 s เป็นการรอเฉย ๆ (GOTCHAS #191) → เลี่ยงหน้าต่าง 03:04–04:05
 
 **Command เมื่อถึงเวลา:**
 ```bash

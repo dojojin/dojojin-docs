@@ -1,0 +1,54 @@
+# ============================================================
+# Vigil Platform — Mosquitto config template (Site Edge)
+# ------------------------------------------------------------
+# คัดลอกไปที่ปลายทางจริงตอน E1 (ยังไม่ได้ deploy — M1 เตรียมไฟล์ไว้ล่วงหน้า
+# เท่านั้น, docs/reports/2026-09-27_mosquitto-migration-plan.md E1/E2).
+# แทนที่ edge/nanomq.conf.template — PPA `ppa:mosquitto-dev/mosquitto-ppa`
+# (2.1.x) เหมือน Central (เจ้าของอนุมัติ 2026-09-27 §6.1 ข้อ 5).
+#
+# ⚠️ ห้ามใส่ bridges block ใน file นี้ — bridge ทำผ่าน PM2 process
+#    'edge-bridge' (src/edge/bridge.js) เหมือนของเดิม (GOTCHAS #92)
+#
+# listener_allow_anonymous (2.1+ ต่อ listener) แทน per_listener_settings true +
+# allow_anonymous เดิม — ตัวเก่า deprecated จะหายใน 3.0 และ --test-config เตือน
+# (plan §11.1/11.2). loopback เปิด anonymous เสมอ (service ในเครื่อง: ingesters,
+# edge-config-agent, edge-bridge ไม่มีตัวไหนส่ง username) — LAN listener (กล้อง
+# Bosch) เป็น <LAN_ANON>: scripts/edge-render-mosquitto-conf.sh ใส่ 'true' เสมอ
+# เว้นแต่ EDGE_MQTT_REQUIRE_AUTH=true ใน src/.env (E2 หลัง pilot เก็บข้อมูลจริง
+# และกล้องทุกตัวมี mqtt_username/password แล้ว — plan §11.4 pre-flight)
+#
+# password_file/acl_file เป็น global directive (ไม่ใช้ per_listener_settings) —
+# ใช้ร่วมกันทั้งสอง listener โดย ACL เองเป็นตัวแยก: บรรทัดแรก `topic readwrite #`
+# ก่อน user block ใด ๆ ใช้กับ client ที่ไม่ส่ง username เท่านั้น (คือ loopback) —
+# ดู CMD.MQTT_SETTINGS / src/helpers/mosquittoAuthFiles.js ที่เขียนสองไฟล์นี้และ
+# SIGHUP ให้ reload ทุกครั้งที่ camera config เปลี่ยน (EDGE_BROKER=mosquitto เท่านั้น)
+# ============================================================
+
+# Loopback — service ในเครื่องเอง (ingesters, edge-config-agent, edge-bridge)
+listener 1883 127.0.0.1
+protocol mqtt
+listener_allow_anonymous true
+
+# LAN — กล้อง Bosch เชื่อมเข้ามา. ตั้ง <LAN_IP> เป็น IP จริงของ NIC ฝั่งกล้อง
+listener 1883 <LAN_IP>
+protocol mqtt
+listener_allow_anonymous <LAN_ANON>
+connection_messages true
+
+password_file <HOME>/.config/vigil/mosquitto.passwd
+acl_file <HOME>/.config/vigil/mosquitto.acl
+
+# ── Queue limits (เหตุผลเดียวกับ mosquitto/mosquitto.central.conf — กัน
+# replay คิวของ edge-bridge โดน default ตัดทิ้งตอนเน็ตหลุดสั้น ๆ) ──
+max_queued_messages 10000
+max_inflight_messages 100
+max_queued_bytes 0
+
+persistence true
+persistence_location <HOME>/.local/mosquitto/
+
+log_dest stdout
+log_type error
+log_type warning
+log_type notice
+connection_messages true

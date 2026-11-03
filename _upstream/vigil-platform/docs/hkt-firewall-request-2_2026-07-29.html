@@ -1,0 +1,439 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; }
+  img, svg { max-width: 100%; }
+</style>
+<title>Vigil Edge (hkt) — Firewall Policy Request (เพิ่มเติม #2)</title>
+<style>
+  /* Same committed light theme as the original request doc — kept identical
+     on purpose so the two documents read as one series. */
+  :root,
+  :root[data-theme="dark"],
+  :root[data-theme="light"] {
+    --ground:        #F6F7F9;
+    --surface:       #FFFFFF;
+    --sunken:        #EFF2F6;
+    --ink:           #161B25;
+    --ink-2:         #4A5468;
+    --ink-3:         #798496;
+    --rule:          #DDE2EA;
+    --rule-strong:   #C3CBD8;
+    --navy:          #1E3F63;
+    --navy-soft:     #E9EEF5;
+    --red:           #A81F26;
+    --red-soft:      #FBECED;
+    --green:         #146A45;
+    --green-soft:    #E7F3EC;
+    --amber:         #8A5A00;
+    --amber-soft:    #FBF2E0;
+
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Noto Sans Thai",
+            "Leelawadee UI", Roboto, sans-serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+
+    color-scheme: light;
+  }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.65;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  .wrap {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 40px 24px 80px;
+    display: flex;
+    flex-direction: column;
+    gap: 40px;
+  }
+
+  .head { display: flex; flex-direction: column; gap: 18px; }
+
+  .eyebrow {
+    font-size: .72rem;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--navy);
+  }
+
+  h1 {
+    margin: 0;
+    font-size: clamp(1.6rem, 4.2vw, 2.15rem);
+    line-height: 1.2;
+    letter-spacing: -.02em;
+    font-weight: 700;
+    text-wrap: balance;
+  }
+
+  .lede { margin: 0; max-width: 62ch; color: var(--ink-2); }
+
+  .ref {
+    display: flex; align-items: baseline; gap: 8px;
+    background: var(--navy-soft); border: 1px solid #C7D6E6;
+    border-radius: 6px; padding: 10px 14px; font-size: .88rem; color: var(--navy);
+    max-width: fit-content;
+  }
+  .ref code { font-family: var(--mono); font-size: .85rem; }
+
+  .meta {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .meta div { background: var(--surface); padding: 12px 14px; }
+  .meta dt {
+    font-size: .68rem; font-weight: 700; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--ink-3); margin: 0 0 3px;
+  }
+  .meta dd {
+    margin: 0; font-family: var(--mono); font-size: .85rem;
+    font-variant-numeric: tabular-nums; color: var(--ink);
+  }
+
+  section { display: flex; flex-direction: column; gap: 16px; }
+
+  h2 {
+    margin: 0;
+    font-size: 1.12rem;
+    font-weight: 700;
+    letter-spacing: -.01em;
+    padding-bottom: 10px;
+    border-bottom: 2px solid var(--ink);
+  }
+
+  h2 .count { color: var(--ink-3); font-weight: 500; margin-left: .5em; font-size: .85rem; }
+
+  p { margin: 0; max-width: 70ch; }
+  .muted { color: var(--ink-2); font-size: .92rem; }
+
+  .asks { display: flex; flex-direction: column; gap: 12px; }
+
+  .ask {
+    display: grid;
+    grid-template-columns: 34px 1fr;
+    gap: 16px;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--navy);
+    border-radius: 6px;
+    padding: 16px 18px;
+  }
+  .ask .num {
+    width: 26px; height: 26px; border-radius: 50%;
+    background: var(--navy); color: #fff;
+    display: grid; place-items: center;
+    font-family: var(--mono); font-size: .82rem; font-weight: 600;
+  }
+  .ask h3 { margin: 0 0 6px; font-size: 1rem; font-weight: 650; line-height: 1.4; }
+  .ask .evidence {
+    margin-top: 10px; padding: 9px 12px;
+    background: var(--sunken); border-radius: 5px;
+    font-family: var(--mono); font-size: .8rem; line-height: 1.55;
+    color: var(--ink-2); overflow-x: auto;
+  }
+  .ask .evidence b { color: var(--red); font-weight: 600; }
+  .ask .evidence .ok { color: var(--green); font-weight: 600; }
+
+  .scope {
+    background: var(--amber-soft);
+    border: 1px solid #E8D5A8;
+    border-radius: 6px;
+    padding: 13px 16px;
+    font-size: .92rem;
+    color: #6B4600;
+  }
+  .scope b { color: var(--amber); }
+
+  .scroll { overflow-x: auto; border: 1px solid var(--rule); border-radius: 8px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; min-width: 660px; font-size: .87rem; }
+  thead th {
+    text-align: left; padding: 11px 14px;
+    background: var(--sunken);
+    font-size: .68rem; font-weight: 700; letter-spacing: .07em;
+    text-transform: uppercase; color: var(--ink-2);
+    border-bottom: 1px solid var(--rule-strong);
+    white-space: nowrap;
+  }
+  tbody td { padding: 12px 14px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  tbody tr:last-child td { border-bottom: 0; }
+  td.n { font-family: var(--mono); font-weight: 700; color: var(--navy); width: 1%; }
+  td .addr {
+    font-family: var(--mono); font-size: .82rem;
+    font-variant-numeric: tabular-nums; line-height: 1.5;
+    display: block; color: var(--ink);
+  }
+  td .sub { display: block; color: var(--ink-3); font-size: .78rem; margin-top: 2px; }
+
+  .pill {
+    display: inline-block; white-space: nowrap;
+    padding: 2px 9px; border-radius: 3px;
+    font-size: .72rem; font-weight: 700; letter-spacing: .04em;
+    text-transform: uppercase;
+  }
+  .pill.block { background: var(--red-soft);   color: var(--red);   border: 1px solid #EBC4C6; }
+  .pill.pass  { background: var(--green-soft); color: var(--green); border: 1px solid #BFDECB; }
+  .pill.lan   { background: var(--navy-soft);  color: var(--navy);  border: 1px solid #C7D6E6; }
+
+  figure { margin: 0; display: flex; flex-direction: column; gap: 10px; }
+  .diagram {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    padding: 20px 16px;
+    overflow-x: auto;
+  }
+  .diagram svg { display: block; width: 100%; min-width: 620px; height: auto; }
+  figcaption { font-size: .85rem; color: var(--ink-3); }
+
+  .notes { display: flex; flex-direction: column; gap: 10px; }
+  .note {
+    display: grid; grid-template-columns: auto 1fr; gap: 12px;
+    background: var(--surface); border: 1px solid var(--rule);
+    border-radius: 6px; padding: 14px 16px; font-size: .92rem;
+  }
+  .note .k {
+    font-family: var(--mono); font-size: .74rem; font-weight: 700;
+    letter-spacing: .06em; text-transform: uppercase;
+    color: var(--ink-3); padding-top: 2px; white-space: nowrap;
+  }
+  .note code {
+    font-family: var(--mono); font-size: .84rem;
+    background: var(--sunken); padding: 1px 5px; border-radius: 3px;
+  }
+
+  footer {
+    border-top: 1px solid var(--rule);
+    padding-top: 18px;
+    font-size: .82rem;
+    color: var(--ink-3);
+  }
+
+  @media (max-width: 560px) {
+    .wrap { padding: 28px 16px 60px; gap: 32px; }
+    .ask { grid-template-columns: 1fr; gap: 10px; }
+  }
+
+  @media print {
+    body { background: #fff; font-size: 13px; }
+    .wrap { max-width: none; padding: 0; gap: 26px; }
+
+    .scroll, .diagram { overflow: visible; }
+    table { min-width: 0; font-size: 11.5px; }
+    .diagram svg { min-width: 0; }
+
+    thead th, tbody td { padding: 8px 9px; }
+    td .addr { font-size: 10.5px; }
+    td .sub  { font-size: 9.5px; }
+
+    th:nth-child(1), td:nth-child(1) { width:  4%; }
+    th:nth-child(2), td:nth-child(2) { width: 15%; }
+    th:nth-child(3), td:nth-child(3) { width: 24%; }
+    th:nth-child(4), td:nth-child(4) { width: 16%; }
+    th:nth-child(5), td:nth-child(5) { width: 26%; }
+    th:nth-child(6), td:nth-child(6) { width: 15%; }
+
+    section, figure, .ask, .note, .meta, tr { break-inside: avoid; }
+    h2 { break-after: avoid; }
+  }
+</style>
+
+</head>
+<body>
+<div class="wrap">
+
+  <header class="head">
+    <span class="eyebrow">Firewall Policy Request · Site hkt (Phuket) · เพิ่มเติม #2</span>
+    <h1>Vigil Edge — ขอเพิ่ม Policy สำหรับส่งข้อมูล ANPR ต่อไปยัง CIB</h1>
+    <p class="lede">
+      พบระหว่างตรวจสอบกล้อง ANPR ที่ site นี้ว่า Vigil Edge (<code>10.0.10.50</code>)
+      ยังออกไปหาปลายทาง CIB ไม่ได้ — เป็นคนละปัญหาจาก 2 ข้อที่ขอไปในเอกสารก่อนหน้า
+      แนบหลักฐานการทดสอบและขอเพิ่ม 1 ข้อ
+    </p>
+    <p class="ref">
+      อ้างอิงเอกสารเดิม: <code>hkt-firewall-request_2026-07-29</code> (flow 1–4, 2 ข้อที่ขอไปก่อนหน้า)
+    </p>
+    <dl class="meta">
+      <div><dt>Edge host</dt><dd>10.0.10.50</dd></div>
+      <div><dt>Gateway</dt><dd>10.0.10.254</dd></div>
+      <div><dt>Firewall</dt><dd>FG120GTK25038058</dd></div>
+      <div><dt>ตรวจสอบเมื่อ</dt><dd>2026-07-29</dd></div>
+    </dl>
+  </header>
+
+  <section>
+    <h2>สิ่งที่ขอปรับ<span class="count">1 ข้อ (ต่อจากเดิม)</span></h2>
+
+    <div class="asks">
+      <div class="ask">
+        <span class="num">3</span>
+        <div>
+          <h3>อนุญาต source <code>10.0.10.50</code> ออกไปยัง <code>202.124.201.106:10001</code> (TCP)</h3>
+          <p class="muted">
+            Edge server รับข้อมูล ANPR (ป้ายทะเบียน) จากกล้องในเครือข่ายเดียวกัน แล้วต้องส่งต่อไปยัง
+            CIB — ปลายทางเดียวกับที่กล้องในเครือข่ายนี้ push ข้อมูลอยู่แล้วทุกวัน (มี policy เดิม
+            ให้กล้องอยู่แล้ว) แต่ Edge server เป็นอุปกรณ์คนละ source IP จากกล้อง จึงยังไม่เคยถูก
+            เพิ่มใน policy ให้ออกไปหาปลายทางนี้
+          </p>
+          <div class="evidence">
+            ยิง HTTP POST ว่าง (ไม่มีข้อมูลป้ายทะเบียน) ไปยังปลายทางเดียวกัน จาก 2 เครื่อง:<br>
+            &nbsp;&nbsp;จาก Central (<code>184.22.43.1</code>) &rarr; <span class="ok">HTTP 200</span><br>
+            &nbsp;&nbsp;จากเครื่องนี้ <code>10.0.10.50</code> (ออก WAN เป็น <code>1.10.144.84</code>) &rarr; <b>HTTP 403</b><br>
+            path / method / header เหมือนกันทุกอย่าง ต่างกันแค่ source IP — ปลายทาง (CIB)
+            ไม่ได้ปฏิเสธ ปัญหาอยู่ที่ policy ขาออกของเครือข่ายนี้
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p class="scope">
+      <b>ขอบเขต:</b> ขอเฉพาะ source <code>10.0.10.50</code> ไปยัง <code>202.124.201.106:10001</code>
+      เท่านั้น ไม่กระทบ policy เดิมของกล้อง/อุปกรณ์อื่นในเครือข่าย และไม่ต้องปรับให้ทั้ง subnet
+    </p>
+  </section>
+
+  <section>
+    <h2>Flow ที่เพิ่มจากเอกสารเดิม<span class="count">flow 5</span></h2>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th><th>Source</th><th>Destination</th>
+            <th>Service port</th><th>Purpose</th><th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="n">5</td>
+            <td><span class="addr">10.0.10.50</span></td>
+            <td>
+              <span class="addr">202.124.201.106</span>
+              <span class="sub">CIB — receive_hik_phuget</span>
+            </td>
+            <td><span class="addr">TCP 10001</span><span class="sub">HTTP POST</span></td>
+            <td>ส่งต่อข้อมูล ANPR ที่รับจากกล้อง (flow 4) ไปยัง CIB</td>
+            <td><span class="pill block">Blocked</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Diagram</h2>
+    <figure>
+      <div class="diagram">
+        <svg viewBox="0 0 880 300" role="img"
+             aria-label="แผนภาพเส้นทาง traffic ใหม่ จากกล้องผ่าน Vigil Edge ผ่าน FortiGate ออกไปยัง CIB">
+          <defs>
+            <marker id="aNavy2" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+              <path d="M0,0 L8,4 L0,8 z" fill="#1E3F63"></path>
+            </marker>
+            <marker id="aRed2" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+              <path d="M0,0 L8,4 L0,8 z" fill="#A81F26"></path>
+            </marker>
+            <marker id="aGreenDash" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+              <path d="M0,0 L8,4 L0,8 z" fill="#146A45"></path>
+            </marker>
+          </defs>
+
+          <g font-family="ui-monospace, Menlo, Consolas, monospace">
+
+            <!-- Camera VLAN -->
+            <rect x="8" y="34" width="152" height="72" rx="6" fill="#EFF2F6" stroke="#C3CBD8"></rect>
+            <text x="84" y="60" text-anchor="middle" font-size="13" font-weight="700" fill="#161B25">Camera VLAN</text>
+            <text x="84" y="78" text-anchor="middle" font-size="10.5" fill="#4A5468">ANPR / ITC</text>
+            <text x="84" y="93" text-anchor="middle" font-size="10.5" fill="#4A5468">10.x.100.x</text>
+
+            <!-- camera -> edge -->
+            <line x1="160" y1="70" x2="322" y2="70" stroke="#1E3F63" stroke-width="1.6" marker-end="url(#aNavy2)"></line>
+            <text x="241" y="60" text-anchor="middle" font-size="10" fill="#1E3F63" font-weight="700">TCP 3003</text>
+            <text x="241" y="86" text-anchor="middle" font-size="9.5" fill="#798496">flow 4 — LAN (เดิม)</text>
+
+            <!-- camera -> CIB direct, existing working path, shown for context -->
+            <path d="M84,106 V260 H420" fill="none" stroke="#146A45" stroke-width="1.6" stroke-dasharray="4 3" marker-end="url(#aGreenDash)"></path>
+            <text x="250" y="252" text-anchor="middle" font-size="9.5" fill="#146A45" font-weight="700">กล้อง push ตรงไป CIB อยู่แล้ว (policy เดิม) — PASS</text>
+
+            <!-- Edge -->
+            <rect x="330" y="22" width="220" height="96" rx="6" fill="#FFFFFF" stroke="#1E3F63" stroke-width="1.6"></rect>
+            <text x="440" y="47" text-anchor="middle" font-size="14" font-weight="700" fill="#161B25">Vigil Edge</text>
+            <text x="440" y="68" text-anchor="middle" font-size="12.5" fill="#1E3F63" font-weight="700">10.0.10.50</text>
+            <text x="440" y="88" text-anchor="middle" font-size="10" fill="#4A5468">รับ ANPR จากกล้อง</text>
+            <text x="440" y="103" text-anchor="middle" font-size="10" fill="#4A5468">(flow 4, ทำงานปกติ)</text>
+
+            <line x1="440" y1="118" x2="440" y2="172" stroke="#1E3F63" stroke-width="1.6" marker-end="url(#aNavy2)"></line>
+
+            <!-- FortiGate -->
+            <rect x="330" y="180" width="220" height="54" rx="6" fill="#EFF2F6" stroke="#C3CBD8" stroke-width="1.6"></rect>
+            <text x="440" y="203" text-anchor="middle" font-size="12.5" font-weight="700" fill="#161B25">FortiGate · 10.0.10.254</text>
+            <text x="440" y="221" text-anchor="middle" font-size="10" fill="#4A5468">FG120GTK25038058</text>
+
+            <line x1="440" y1="234" x2="440" y2="260" stroke="#A81F26" stroke-width="2" marker-end="url(#aRed2)"></line>
+
+            <!-- CIB -->
+            <rect x="600" y="216" width="260" height="72" rx="6" fill="#FBECED" stroke="#EBC4C6" stroke-width="2"></rect>
+            <text x="730" y="240" text-anchor="middle" font-size="12.5" font-weight="700" fill="#161B25">CIB</text>
+            <text x="730" y="258" text-anchor="middle" font-size="10" fill="#4A5468">202.124.201.106:10001</text>
+            <text x="730" y="275" text-anchor="middle" font-size="10.5" font-weight="700" fill="#A81F26">flow 5 — BLOCKED</text>
+          </g>
+        </svg>
+      </div>
+      <figcaption>
+        เส้นประเขียวคือ path ที่กล้องใช้ push ตรงไป CIB อยู่แล้ว (คนละ source IP จาก Edge, ผ่านได้ปกติ) —
+        เส้นทึบแดงคือ flow ใหม่ที่ Edge server ต้องการ (ต่อ ANPR ที่รับมาจากกล้อง ส่งต่อ CIB เอง) แต่ยังถูกบล็อก
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2>หมายเหตุประกอบการตรวจสอบ</h2>
+    <div class="notes">
+      <div class="note">
+        <span class="k">ทำไมต้องขอแยก</span>
+        <span>
+          กล้อง (camera VLAN) กับ Edge server (<code>10.0.10.50</code>) อยู่ LAN วงเดียวกัน
+          แต่ FortiGate ที่ site นี้คุม policy แบบ per-source-IP (ดูหมายเหตุ "ขอบเขต" ในเอกสารเดิม) —
+          policy ที่อนุญาตกล้องออกไปหา CIB จึงไม่ครอบคลุม Edge server โดยอัตโนมัติ
+        </span>
+      </div>
+      <div class="note">
+        <span class="k">ไม่กระทบของเดิม</span>
+        <span>
+          กล้องยัง push ตรงไป CIB ตามปกติทุกประการระหว่างที่รอ policy นี้ — คำขอนี้ไม่ได้แตะ
+          หรือย้าย path เดิมของกล้องเลย เป็นแค่การเพิ่มเส้นทางใหม่ให้ Edge server เท่านั้น
+        </span>
+      </div>
+      <div class="note">
+        <span class="k">คำสั่งตรวจซ้ำ</span>
+        <span>
+          <code>curl -o /dev/null -w '%{http_code}' -X POST http://202.124.201.106:10001/receive_hik_phuget</code>
+          รันจากเครื่อง <code>10.0.10.50</code> — ถ้า policy ปรับสำเร็จควรได้ <code>200</code>
+          แทน <code>403</code>
+        </span>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    Vigil Platform · Site hkt (Phuket) · เอกสารเพิ่มเติม #2 · ข้อมูลเก็บจากเครื่อง 10.0.10.50 เมื่อ 2026-07-29
+  </footer>
+
+</div>
+</body>
+</html>

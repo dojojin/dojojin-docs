@@ -1,0 +1,31 @@
+-- ============================================================
+-- Vigil Platform — migration 104: index UPPER(plate_number)
+-- @author Prakasit Rochanavipart (Dojo-mAn)
+-- @copyright (c) 2025-2026 Prakasit Rochanavipart. All Rights Reserved.
+-- @license Proprietary
+-- ------------------------------------------------------------
+-- /api/lpr/alerts joins the watch list with
+--   w.plate_number = UPPER(lp.plate_number)
+-- and UPPER() over the column leaves idx_plates_number unusable, so the planner
+-- had no index path at all: a Parallel Hash Join over 4.86M events x 4.65M
+-- license_plates to find the 172 rows that actually match, reading ~3.7GB from
+-- disk per call. Tuning cannot fix a missing access path — random_page_cost=1.1
+-- and work_mem=64MB were both tried and left the plan unchanged.
+--
+-- Dropping UPPER() instead of indexing it would be wrong, not just different:
+-- 7,927 license_plates rows differ from their uppercase form (Latin-script
+-- plates read in lower case), and those alerts would silently stop firing.
+--
+-- With this index the plan flips to a nested loop driven by the 992-row watch
+-- list: COUNT 1.13s -> 0.046s. Index is 57MB, built in 4.4s.
+--
+-- On central this index was built ahead of time with CREATE INDEX CONCURRENTLY
+-- so the ~4 events/sec of live ingest was never blocked, and IF NOT EXISTS
+-- makes this file a no-op there. CONCURRENTLY cannot be used here because the
+-- migration runner wraps every file in a transaction (src/migrate.js:79-87);
+-- on a fresh volume the table is empty so the plain build is instant, which is
+-- the only situation where this branch does real work today.
+-- ============================================================
+
+CREATE INDEX IF NOT EXISTS idx_plates_number_upper
+  ON license_plates (UPPER(plate_number));

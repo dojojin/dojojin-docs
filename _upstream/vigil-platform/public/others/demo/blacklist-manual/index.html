@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="th" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>เพิ่มรายการเฝ้าระวังด้วยมือ — Live Demo</title>
+
+<!-- MOCKUP DEMO — โครงหน้าเปล่า ไม่ดึงข้อมูลจริงจากระบบ
+     ตามที่เจ้าของสั่ง 2026-08-06: "เอาแค่หัวข้อเฉย ๆ ว่ามันทำอะไรได้บ้าง
+     ทำไว้รองรับข้อมูลจริงเฉย ๆ" — ฟอร์มไม่บันทึกอะไรทั้งสิ้น
+     Served at: /others/demo/blacklist-manual/
+     ที่มา: docs/superpowers/specs/2026-07-24-blacklist-central-database-design.md
+     ชื่อฟิลด์อ้างอิงคอลัมน์จริงของ blacklist.master / source_records / lpr_watchlist
+     data-theme="light" ตายตัว ไม่โหลด /theme-init.js — หน้า demo ใช้ light เสมอ -->
+<link rel="stylesheet" href="/vendor/fonts/fonts.css">
+<link rel="stylesheet" href="/index.css">
+<link rel="stylesheet" href="./manual-demo.css?v=bm1">
+</head>
+<body>
+<div class="demo-wrap">
+
+  <div class="demo-banner">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+    <span><b>MOCKUP — โครงหน้าเปล่า ไม่มีข้อมูลจริง</b> ·
+    หน้านี้แสดงว่า “ถ้ามีหน้าเพิ่มรายการเฝ้าระวังด้วยมือ มันจะทำอะไรได้บ้าง” ·
+    <b>ฟอร์มไม่บันทึกอะไรทั้งสิ้น</b> · ชื่อฟิลด์อ้างอิงคอลัมน์จริงของ
+    <code>blacklist.master</code> / <code>blacklist.source_records</code> / <code>lpr_watchlist</code>
+    เพื่อให้ต่อของจริงได้ทันทีโดยไม่ต้องรื้อ</span>
+  </div>
+
+  <div class="page-head">
+    <h1 class="bm-title">เพิ่มรายการเฝ้าระวังด้วยมือ</h1>
+    <p class="bm-sub">ช่องว่างที่มีอยู่ตอนนี้: รายการเฝ้าระวังทั้งหมดมาจากการ<strong>นำเข้าจากแหล่งภายนอก</strong> —
+      เจ้าหน้าที่เพิ่มเองไม่ได้ และของที่เพิ่มเองได้ก็เก็บได้แค่เลขทะเบียน ไม่มีตัวตน ไม่มีคดี ไม่มีรูป</p>
+  </div>
+
+  <div class="seg bm-mode" id="bmMode" role="tablist">
+    <button data-action="mode" data-mode="face" class="active" role="tab">ใบหน้า</button>
+    <button data-action="mode" data-mode="lpr" role="tab">ป้ายทะเบียน</button>
+  </div>
+
+  <div class="bm-layout">
+
+    <!-- ── ซ้าย: ฟอร์ม ─────────────────────────────────── -->
+    <main class="card bm-card">
+      <h2 class="bm-h2" id="bmFormTitle">—</h2>
+      <div id="bmForm"><!-- js --></div>
+
+      <div class="bm-actions">
+        <button class="btn btn-secondary" disabled>ยกเลิก</button>
+        <button class="btn" disabled>บันทึก</button>
+        <span class="bm-inert">ปุ่มปิดไว้ — หน้านี้เป็น mockup</span>
+      </div>
+    </main>
+
+    <!-- ── ขวา: ข้อมูลนี้ไปไหน + ทำอะไรได้ ─────────────── -->
+    <aside class="bm-side">
+
+      <div class="card bm-card">
+        <h3 class="bm-h3">ข้อมูลที่กรอกจะไปอยู่ที่ไหน</h3>
+        <div class="bm-flow" id="bmFlow"><!-- js --></div>
+        <p class="bm-flownote">เพิ่มเข้า <b>ตัวตนกลาง</b> ก่อนเสมอ ไม่ใช่ยิงเข้าตารางแจ้งเตือนตรง ๆ —
+          ของที่เพิ่มเองจะได้โครงเท่ากับของที่นำเข้ามา ไม่ใช่ของด้อยกว่า</p>
+      </div>
+
+      <div class="card bm-card">
+        <h3 class="bm-h3">ทำอะไรได้บ้าง</h3>
+        <ul class="bm-can" id="bmCan"><!-- js --></ul>
+      </div>
+
+      <div class="card bm-card">
+        <h3 class="bm-h3">ยังทำไม่ได้ (ต้องรู้ก่อนใช้)</h3>
+        <ul class="bm-cant" id="bmCant"><!-- js --></ul>
+      </div>
+
+    </aside>
+  </div>
+
+  <div class="card bm-card bm-listcard">
+    <div class="bm-listhead">
+      <h3 class="bm-h3">รายการที่เพิ่มเอง</h3>
+      <span class="bm-listcnt">0 รายการ</span>
+    </div>
+    <div class="bm-empty">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 7h18M3 12h18M3 17h10"/></svg>
+      <div>ยังไม่มีรายการ — หน้านี้เป็น mockup จึงไม่ดึงข้อมูลจริงมาแสดง</div>
+      <div class="bm-emptysub">ของจริงจะแสดงคอลัมน์: ชื่อ/เลขทะเบียน · เลขคดี · ผู้เพิ่ม · เวลา · สถานะ · ปุ่มปิดใช้งาน</div>
+    </div>
+  </div>
+
+  <footer class="bm-foot">
+    Vision Meta Hub · หน้าเสนอแนวคิด (mockup) · คู่กับ
+    <a href="/others/demo/OpenAPI/">3rd Party Integration</a> ซึ่งดูแลเรื่อง “ใครได้รับอะไรจากเรา”
+  </footer>
+</div>
+
+<script src="./manual-demo.js?v=bm1"></script>
+</body>
+</html>

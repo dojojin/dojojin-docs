@@ -28,7 +28,8 @@ const fs = require('fs');
 const fsp = require('fs').promises;
 const path = require('path');
 const { Pool } = require('pg');
-require('dotenv').config();
+require('dotenv').config({ quiet: true });
+const env = require('./config');
 require('./singleton')('media-recorder');   // refuse to run a second copy
 const { decryptCamCreds } = require('./crypto-creds');
 
@@ -80,12 +81,13 @@ fs.watch(CONFIG_FILE, { persistent: false }, (et) => {
 // DB pool
 // ============================================================
 
-const pool = new Pool({
-  host: process.env.DB_HOST,
-  port: process.env.DB_PORT,
-  database: process.env.DB_NAME,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
+const pool =   // 🔴 ไม่มี statement_timeout = query ค้างได้ไม่จำกัด · เจอจริง 2026-08-27:
+  // query หนึ่งค้าง 34 ชั่วโมง ทำให้ autovacuum เก็บ dead tuple ไม่ได้ ตาราง events
+  // บวมจนทั้งระบบช้า และหน้าสถิติว่างเปล่า · มีแค่ api-server ที่ตั้งค่านี้ไว้
+  // อ่าน/อัปเดตสถานะคลิป ไม่มี query รวมยอด
+new Pool({
+  options: '-c statement_timeout=60000',
+  ...env.db(),
   max: 2,
   application_name: 'media-recorder',
 });
@@ -341,9 +343,14 @@ async function cleanupOldSegments() {
 // Clip capture pipeline
 // ============================================================
 
+const _skipWarned = new Set();
 async function captureClip({ event_id, camera_id, event_time, received_at_ms }) {
   const cam = cameraConfig.get(camera_id);
-  if (!cam) { console.warn(`[recorder] event_id=${event_id} cam ${camera_id} not in recorder config — skip`); return; }
+  // เตือนครั้งเดียวต่อกล้องต่อรอบ process — เดิมเขียนทุก event (~800 บรรทัด/นาที · log 5 GB · 6 ต.ค.)
+  if (!cam) {
+    if (!_skipWarned.has(camera_id)) { _skipWarned.add(camera_id); console.warn(`[recorder] cam ${camera_id} not in recorder config — skipping its events (logged once)`); }
+    return;
+  }
   // The RTSP buffer may be running only to feed snapshot extraction
   // (a Dahua camera with snapshot ON but clip capture OFF) — no .mp4
   // is wanted in that case. Leave clip_status untouched (NULL).
@@ -462,25 +469,13 @@ async function captureClip({ event_id, camera_id, event_time, received_at_ms }) 
 async function listenForEvents() {
   // Use a dedicated client for LISTEN (pool clients can't hold long subs)
   const { Client } = require('pg');
-  const client = new Client({
-    host: process.env.DB_HOST,
-    port: process.env.DB_PORT,
-    database: process.env.DB_NAME,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-  });
-
-  client.on('error', e => {
-    console.error('[recorder] LISTEN client error:', e.message);
-    setTimeout(listenForEvents, 5_000);
-  });
   // Catch subscriber/recorder version skew: a payload missing received_at_ms
   // means the subscriber is running an old build that doesn't provide a
   // host-clock anchor. captureClip falls back to event_time (camera UtcTime),
   // which silently re-opens the pre-Phase-6.1.11 timing bug. Warn loudly so
   // it's caught on first event rather than discovered weeks later.
   let _warnedMissingAnchor = false;
-  client.on('notification', (msg) => {
+  const onNotification = (msg) => {
     if (msg.channel !== 'event_for_clip') return;
     let payload;
     try { payload = JSON.parse(msg.payload); } catch { return; }
@@ -493,11 +488,13 @@ async function listenForEvents() {
       _warnedMissingAnchor = true;
     }
     captureClip(payload).catch(e => console.error('[recorder] captureClip threw:', e.message));
-  });
+  };
 
-  await client.connect();
-  await client.query('LISTEN event_for_clip');
-  console.log('[recorder] 👂 LISTEN event_for_clip');
+  // ต่อกลับเองเมื่อหลุด (helpers/pgListen · GOTCHAS #217) — เดิม reconnect เฉพาะ 'error' ไม่รวม 'end'
+  require('./helpers/pgListen').listenForever({
+    label: 'recorder', channels: ['event_for_clip'], onNotification,
+    makeClient: () => new Client({ ...env.db() }),
+  });
 }
 
 // ============================================================

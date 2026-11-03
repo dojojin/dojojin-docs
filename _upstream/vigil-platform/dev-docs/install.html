@@ -117,8 +117,9 @@ pm2 start ecosystem.config.js
 
 # ตรวจสอบ
 pm2 status
-# ควรเห็น 7 workers: api-server, mqtt-subscriber, hikvision-isapi,
-# dahua-cgi, media-recorder, alert-worker, report-worker</pre>
+# ควรเห็น 9 workers: api-server, mqtt-subscriber, media-recorder,
+# hikvision, dahua, report-worker, alert-worker, face-embed-worker,
+# lpr-receiver</pre>
     <p>ครั้งแรก api-server boot — migrate.js จะ apply schema migrations อัตโนมัติ ดู log ได้ที่:</p>
 <pre>pm2 logs api-server --lines 50</pre>
   </div>

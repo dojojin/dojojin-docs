@@ -2,7 +2,7 @@
 
 > **CCTV Analytics & Management Suite** — Real-time, multi-vendor video analytics platform for Bosch, Hikvision, Dahua, and generic ONVIF cameras.
 
-[![Version](https://img.shields.io/badge/version-1.5.3-blue.svg)]()
+[![Version](https://img.shields.io/badge/version-1.5.4-blue.svg)]()
 [![License](https://img.shields.io/badge/license-Proprietary-red.svg)]()
 [![Status](https://img.shields.io/badge/status-Production-green.svg)]()
 [![Multi--vendor](https://img.shields.io/badge/Multi--vendor-Bosch%20%C2%B7%20Hikvision%20%C2%B7%20Dahua%20%C2%B7%20ONVIF-success.svg)]()
@@ -600,4 +600,4 @@ This repository contains proprietary code and configurations. Access is restrict
 
 ---
 
-<sub>**Vigil Platform** v1.5.3 · by DojoJin Tech · Built with care in Thailand 🇹🇭 · © 2025-2026</sub>
+<sub>**Vigil Platform** v1.5.4 · by DojoJin Tech · Built with care in Thailand 🇹🇭 · © 2025-2026</sub>

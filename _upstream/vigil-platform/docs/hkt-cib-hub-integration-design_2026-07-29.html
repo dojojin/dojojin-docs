@@ -1,0 +1,432 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; }
+  img, svg { max-width: 100%; }
+</style>
+<title>Vigil as CIB Hub — Design Spec</title>
+<style>
+  :root, :root[data-theme="dark"], :root[data-theme="light"] {
+    --ground:        #F6F7F9;
+    --surface:       #FFFFFF;
+    --sunken:        #EFF2F6;
+    --ink:           #161B25;
+    --ink-2:         #4A5468;
+    --ink-3:         #798496;
+    --rule:          #DDE2EA;
+    --rule-strong:   #C3CBD8;
+    --navy:          #1E3F63;
+    --navy-soft:     #E9EEF5;
+    --red:           #A81F26;
+    --red-soft:      #FBECED;
+    --green:         #146A45;
+    --green-soft:    #E7F3EC;
+    --amber:         #8A5A00;
+    --amber-soft:    #FBF2E0;
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Noto Sans Thai",
+            "Leelawadee UI", Roboto, sans-serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+    color-scheme: light;
+  }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font-family: var(--sans); font-size: 15px; line-height: 1.65;
+    -webkit-text-size-adjust: 100%;
+  }
+  .wrap { max-width: 940px; margin: 0 auto; padding: 40px 24px 90px; display: flex; flex-direction: column; gap: 40px; }
+  .head { display: flex; flex-direction: column; gap: 18px; }
+  .eyebrow { font-size: .72rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--navy); }
+  h1 { margin: 0; font-size: clamp(1.6rem, 4.2vw, 2.15rem); line-height: 1.2; letter-spacing: -.02em; font-weight: 700; text-wrap: balance; }
+  .lede { margin: 0; max-width: 68ch; color: var(--ink-2); }
+  .meta {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: 8px; overflow: hidden;
+  }
+  .meta div { background: var(--surface); padding: 12px 14px; }
+  .meta dt { font-size: .68rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 3px; }
+  .meta dd { margin: 0; font-family: var(--mono); font-size: .85rem; font-variant-numeric: tabular-nums; color: var(--ink); }
+
+  section { display: flex; flex-direction: column; gap: 16px; }
+  h2 { margin: 0; font-size: 1.12rem; font-weight: 700; letter-spacing: -.01em; padding-bottom: 10px; border-bottom: 2px solid var(--ink); }
+  h2 .count { color: var(--ink-3); font-weight: 500; margin-left: .5em; font-size: .85rem; }
+  h3 { margin: 0; font-size: .98rem; font-weight: 700; color: var(--ink); }
+  p { margin: 0; max-width: 74ch; }
+  .muted { color: var(--ink-2); font-size: .92rem; }
+
+  /* Gate / open-question callout — the thing that blocks a final verdict */
+  .gate {
+    display: grid; grid-template-columns: 30px 1fr; gap: 14px;
+    background: var(--red-soft); border: 1px solid #EBC4C6; border-left: 4px solid var(--red);
+    border-radius: 6px; padding: 16px 18px;
+  }
+  .gate .mark { font-weight: 700; color: var(--red); font-family: var(--mono); }
+  .gate h3 { color: var(--red); margin-bottom: 4px; }
+
+  .fork {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
+  }
+  @media (max-width: 640px) { .fork { grid-template-columns: 1fr; } }
+  .fork > div {
+    background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 16px 18px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .fork .win { border-color: #BFDECB; background: var(--green-soft); }
+  .fork .tag {
+    font-size: .68rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .fork .win .tag { color: var(--green); }
+
+  .phase {
+    background: var(--surface); border: 1px solid var(--rule); border-left: 4px solid var(--navy);
+    border-radius: 8px; padding: 18px 20px; display: flex; flex-direction: column; gap: 12px;
+  }
+  .phase .ph-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .phase .num {
+    width: 30px; height: 30px; border-radius: 50%; background: var(--navy); color: #fff;
+    display: grid; place-items: center; font-family: var(--mono); font-size: .85rem; font-weight: 700;
+    flex-shrink: 0;
+  }
+  .phase h3 { font-size: 1.05rem; }
+  .phase .goal-tag {
+    font-size: .68rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--navy); background: var(--navy-soft); border-radius: 3px; padding: 2px 8px;
+  }
+  .rollback {
+    margin-top: 4px; padding: 9px 12px; background: var(--amber-soft); border-radius: 5px;
+    font-size: .85rem; color: #6B4600; border: 1px solid #E8D5A8;
+  }
+  .rollback b { color: var(--amber); }
+
+  .scroll { overflow-x: auto; border: 1px solid var(--rule); border-radius: 8px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; min-width: 560px; font-size: .87rem; }
+  thead th {
+    text-align: left; padding: 11px 14px; background: var(--sunken);
+    font-size: .68rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
+    color: var(--ink-2); border-bottom: 1px solid var(--rule-strong); white-space: nowrap;
+  }
+  tbody td { padding: 11px 14px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  tbody tr:last-child td { border-bottom: 0; }
+  td code { font-family: var(--mono); font-size: .82rem; }
+  .pill {
+    display: inline-block; white-space: nowrap; padding: 2px 9px; border-radius: 3px;
+    font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  }
+  .pill.expose  { background: var(--green-soft); color: var(--green); border: 1px solid #BFDECB; }
+  .pill.hold    { background: var(--red-soft);   color: var(--red);   border: 1px solid #EBC4C6; }
+  .pill.unknown { background: var(--amber-soft); color: var(--amber); border: 1px solid #E8D5A8; }
+
+  figure { margin: 0; display: flex; flex-direction: column; gap: 10px; }
+  .diagram { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 18px 16px; overflow-x: auto; }
+  .diagram svg { display: block; width: 100%; min-width: 600px; height: auto; }
+  figcaption { font-size: .85rem; color: var(--ink-3); }
+
+  .notes { display: flex; flex-direction: column; gap: 10px; }
+  .note {
+    display: grid; grid-template-columns: auto 1fr; gap: 12px;
+    background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 14px 16px; font-size: .92rem;
+  }
+  .note .k {
+    font-family: var(--mono); font-size: .74rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--ink-3); padding-top: 2px; white-space: nowrap;
+  }
+  .note code { font-family: var(--mono); font-size: .84rem; background: var(--sunken); padding: 1px 5px; border-radius: 3px; }
+
+  footer { border-top: 1px solid var(--rule); padding-top: 18px; font-size: .82rem; color: var(--ink-3); }
+
+  @media (max-width: 560px) {
+    .wrap { padding: 28px 16px 60px; gap: 32px; }
+    .phase { padding: 14px 16px; }
+  }
+
+  @media print {
+    body { background: #fff; font-size: 12.5px; }
+    .wrap { max-width: none; padding: 0; gap: 24px; }
+    .scroll, .diagram { overflow: visible; }
+    table { min-width: 0; font-size: 11px; }
+    .diagram svg { min-width: 0; }
+    thead th, tbody td { padding: 7px 9px; }
+    section, figure, .phase, .note, .meta, .gate, .fork, tr { break-inside: avoid; }
+    h2 { break-after: avoid; }
+    .phase { break-before: auto; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="head">
+    <span class="eyebrow">Design Spec · Vigil Platform · Draft 2026-07-29</span>
+    <h1>Vigil เป็น Hub ให้ CIB — เลิก forward กล้อง เปลี่ยนเป็นรับ/ส่งข้อมูลแทนกล้อง</h1>
+    <p class="lede">
+      วันนี้กล้อง ANPR ที่ site hkt push ภาพ+metadata ตรงไปยัง CIB โดยตรง (ทุก field รวมถึง
+      helmet/rider/seatbelt ที่กล้องตรวจจับเอง) แผนนี้ออกแบบให้ <b>Vigil เป็นคนกลาง</b> — รับข้อมูล
+      จากกล้องแทน CIB แล้วส่งต่อเฉพาะ field ที่อนุญาต (ป้ายทะเบียน + ภาพ) ให้ CIB เหมือนเดิม
+      พร้อม buffer ให้เมื่อ network ของ CIB ขาดช่วง
+    </p>
+    <dl class="meta">
+      <div><dt>Scope วันนี้</dt><dd>ANPR only</dd></div>
+      <div><dt>CIB endpoint</dt><dd>202.124.201.106:10001</dd></div>
+      <div><dt>Face (แยกเฟส)</dt><dd>HCP · .105</dd></div>
+      <div><dt>กล้องที่เกี่ยวข้อง</dt><dd>4 ตัว site hkt</dd></div>
+    </dl>
+  </header>
+
+  <section>
+    <h2>แก้ความเข้าใจก่อนเริ่ม — ทิศทางคือ Push ไม่ใช่ Pull</h2>
+    <p class="muted">
+      หลักฐาน 3 จุดที่ตรวจสอบมาแล้วยืนยันตรงกัน: กล้อง <b>เป็นฝ่าย push ออก</b> ไปหา CIB (ไม่ใช่ CIB
+      ดึงจากกล้อง) — <code>uploadTimeConsuming</code> บนกล้องแสดง <code>uploadType: ISAPIListen</code>
+      กำลัง <code>Uploading</code> จริง (718,458/722,170 สำเร็จ); httpHosts slot 1 ของกล้องตั้งเป็น
+      push target ไปที่ <code>receive_hik_phuget</code>; และ <code>lpr-forward.js</code> ที่มีอยู่แล้ว
+      ในระบบเขียนไว้ตรงๆ ว่า "the LPR camera has ONE push slot" — คำว่า "ดึง" ที่ใช้คุยกันน่าจะหมายถึง
+      "CIB ได้ข้อมูลจากกล้อง" แบบภาษาพูด ไม่ใช่ pull ทางเทคนิค เอกสารนี้ออกแบบบนฐาน push เป็นหลัก
+      และเก็บ pull-based API ไว้เป็นเป้าหมายปลายทาง (Phase 6)
+    </p>
+  </section>
+
+  <section>
+    <h2>สถานะปัจจุบัน</h2>
+    <figure>
+      <div class="diagram">
+        <svg viewBox="0 0 860 190" role="img" aria-label="สถานะปัจจุบัน — กล้อง push ตรงไป CIB, Vigil ไม่ได้รับข้อมูลเลย">
+          <defs>
+            <marker id="g0" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#146A45"></path></marker>
+            <marker id="r0" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#798496"></path></marker>
+          </defs>
+          <g font-family="ui-monospace, Menlo, Consolas, monospace">
+            <rect x="20" y="60" width="180" height="70" rx="6" fill="#EFF2F6" stroke="#C3CBD8"></rect>
+            <text x="110" y="90" text-anchor="middle" font-size="13" font-weight="700" fill="#161B25">กล้อง ANPR</text>
+            <text x="110" y="108" text-anchor="middle" font-size="10.5" fill="#4A5468">iDS-2CD9396-HIS × 4</text>
+
+            <line x1="200" y1="80" x2="480" y2="80" stroke="#146A45" stroke-width="2" marker-end="url(#g0)"></line>
+            <text x="340" y="70" text-anchor="middle" font-size="10.5" fill="#146A45" font-weight="700">httpHost slot 1 — push ทุก field</text>
+
+            <rect x="490" y="45" width="240" height="70" rx="6" fill="#E7F3EC" stroke="#BFDECB" stroke-width="1.6"></rect>
+            <text x="610" y="72" text-anchor="middle" font-size="13" font-weight="700" fill="#161B25">CIB</text>
+            <text x="610" y="90" text-anchor="middle" font-size="10.5" fill="#4A5468">202.124.201.106:10001</text>
+            <text x="610" y="104" text-anchor="middle" font-size="9.5" fill="#146A45" font-weight="700">ได้ครบทุก field วันนี้</text>
+
+            <line x1="110" y1="130" x2="110" y2="160" stroke="#798496" stroke-width="1.6" stroke-dasharray="4 3" marker-end="url(#r0)"></line>
+            <rect x="20" y="160" width="180" height="0" fill="none"></rect>
+            <text x="110" y="150" text-anchor="middle" font-size="9.5" fill="#798496">ไม่มี path ไป Vigil</text>
+            <text x="220" y="160" font-size="10" fill="#798496">Vigil ไม่เห็นข้อมูล ANPR ชุดนี้เลย (slot ว่างแค่ 1, ถูก CIB ใช้ทั้งหมด)</text>
+          </g>
+        </svg>
+      </div>
+      <figcaption>สถานะวันนี้: กล้องมี slot push เดียว ถูก CIB ใช้ครบ Vigil ไม่ได้รับข้อมูล ANPR จากกล้อง 4 ตัวนี้เลย</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <div class="gate">
+      <span class="mark">GATE</span>
+      <div>
+        <h3>สิ่งที่ต้องได้คำตอบจาก CIB ก่อนฟันธง feasibility — ไม่ใช่สิ่งที่เราตรวจเองได้</h3>
+        <p class="muted">
+          เมื่อ Vigil ตัดฟิลด์ (helmet/rider/seatbelt) ออกจาก payload ก่อนส่งต่อ payload จะไม่ใช่ byte
+          เดิมที่กล้องเคยส่งอีกต่อไป — <b>ต้องถามฝั่ง CIB ว่า parser ของเขา tolerate field ที่หายไปได้ไหม</b>
+          (เช่น XML schema validation เข้มงวดจนพัง หรือรับแบบ loose parsing) และถามคู่กันว่า
+          <b>ฝั่งเขารับได้แค่ inbound POST อย่างเดียว หรือ poll endpoint ที่เราเปิดให้ได้ด้วย</b> —
+          คำตอบข้อหลังเป็นตัวตัดสินว่า Phase 6 (pull API) จะทำได้จริงหรือต้องค้างที่ push-emulation
+          ตลอดไป ทุก phase ด้านล่างออกแบบให้เดินหน้าได้โดยไม่ต้องรอคำตอบนี้ก่อน แต่ต้องรู้คำตอบก่อน
+          "cutover" จริงใน Phase 2 — <b>ข้อนี้สำคัญขึ้นอีกเมื่อ Edge เป็นคน emit เอง (2026-07-29):</b>
+          push (Edge ส่งออก, ต้องการแค่ outbound) กับ pull (CIB มา poll Edge, ต้องการ inbound reachability
+          เข้า Edge) มีข้อกำหนดด้าน network คนละชุดกันโดยสิ้นเชิง — 2nd uplink ที่วางแผนไว้ (ดูหัวข้อถัดไป)
+          แก้ปัญหาแค่ฝั่ง outbound เท่านั้น ถ้าคำตอบจาก CIB คือ pull ต้องออกแบบ inbound path แยกต่างหาก
+          (เช่น เปิดผ่าน Cloudflare Tunnel เดิม) ไม่ใช่ผ่าน uplink ใหม่นี้
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Field Scoping — Allowlist ไม่ใช่ Denylist</h2>
+    <p class="muted">
+      ใช้หลักการเดียวกับ <code>v_*_public</code> views ที่มีอยู่แล้วใน
+      <code>docs/REF_third-party-integration.md</code> (exclude PII/credential column) แต่กลับด้าน:
+      <b>ประกาศเฉพาะ field ที่อนุญาตส่งออก (allowlist)</b> แทนการ list field ที่ห้าม — เหตุผล: ถ้ากล้อง
+      อัป firmware แล้วเพิ่ม field ตรวจจับใหม่ (violation ชนิดใหม่) denylist จะไม่รู้จักและหลุดออกไปเอง
+      โดยไม่มีใครสังเกต ส่วน allowlist จะตัดค่าที่ไม่รู้จักทิ้งเป็นค่าเริ่มต้นเสมอ
+    </p>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Field (ANPR.xml / DB)</th><th>ส่งให้ CIB</th><th>เหตุผล</th></tr></thead>
+        <tbody>
+          <tr><td><code>licensePlate</code> / <code>plate_number</code></td><td><span class="pill expose">ส่ง</span></td><td>วัตถุประสงค์หลักของ CIB</td></tr>
+          <tr><td><code>licensePlatePicture.jpg</code> / <code>plate_image</code></td><td><span class="pill expose">ส่ง</span></td><td>ยืนยันป้ายด้วยสายตา</td></tr>
+          <tr><td><code>dateTime</code>, <code>laneNo</code>, <code>direction</code></td><td><span class="pill expose">ส่ง</span></td><td>metadata ระบุเวลา/ตำแหน่ง ไม่ใช่ violation</td></tr>
+          <tr><td><code>vehicleType</code>, <code>vehicleColor</code>, <code>vehicleBrand</code></td><td><span class="pill expose">ส่ง</span></td><td>ลักษณะรถ ไม่ใช่ PII ของผู้ขับ</td></tr>
+          <tr><td><code>helmet</code> / <code>no_helmet</code></td><td><span class="pill hold">ไม่ส่ง</span></td><td>ที่ผู้ใช้ระบุให้ตัดออกโดยตรง</td></tr>
+          <tr><td><code>uphone</code> (ใช้โทรศัพท์ขณะขับ)</td><td><span class="pill hold">ไม่ส่ง</span></td><td>violation metadata เดียวกลุ่ม</td></tr>
+          <tr><td><code>nonMotorManned</code> (ซ้อนท้าย)</td><td><span class="pill hold">ไม่ส่ง</span></td><td>violation metadata เดียวกลุ่ม</td></tr>
+          <tr><td><code>pilotsafebelt</code> / <code>no_seatbelt</code></td><td><span class="pill hold">ไม่ส่ง</span></td><td>violation metadata เดียวกลุ่ม</td></tr>
+          <tr><td><code>rider_count</code> (DB column)</td><td><span class="pill unknown">ยังไม่ populate</span></td><td>ตรวจโค้ด ingest แล้ว — column มีอยู่แต่ไม่มี path เขียนค่าในปัจจุบัน ต้องตามต่อว่าเป็นแผนค้างหรือ dead column</td></tr>
+          <tr><td><code>macAddress</code>, <code>ipAddress</code></td><td><span class="pill hold">ไม่ส่ง</span></td><td>ใช้แค่ resolve กล้องฝั่งเราเท่านั้น ไม่ใช่ข้อมูลที่ CIB ต้องใช้</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Emitter + Network Path — 2 การตัดสินใจที่แยกจากกัน</h2>
+    <p class="muted">
+      ฉบับร่างก่อนหน้านี้รวม "ใคร emit" กับ "ผ่าน network ทางไหน" เป็นเรื่องเดียวกัน — จริงๆ เป็นคนละแกน
+      <b>Emitter = Edge (เจ้าของตัดสินใจแล้ว 2026-07-29 — ไม่ทบทวนซ้ำ)</b> ส่วน <b>Path</b> ยังมี 2 สถานะ
+      ที่ต้องวางแผนแยกกัน: ผ่าน Fortigate เดิม (วันนี้, ยังบล็อก) กับผ่าน uplink ที่ 2 โดยเฉพาะ (เป้าหมาย
+      ระยะยาว ไม่ผ่าน Fortigate เลย)
+    </p>
+    <div class="fork">
+      <div>
+        <span class="tag">Path วันนี้ — ผ่าน Fortigate เดิม</span>
+        <h3>Edge → CIB ผ่าน <code>enp0s31f6</code> (10.0.10.254)</h3>
+        <p class="muted">
+          egress <code>1.10.144.84</code> ยังโดน 403 — ต้องรอ ask #3 (<code>hkt-firewall-request-2</code>)
+          ผ่านก่อนถึงจะใช้ path นี้ได้จริง ยังไม่ยกเลิกคำขอนี้ (ดูคำแนะนำด้านล่าง)
+        </p>
+      </div>
+      <div class="win">
+        <span class="tag">Path เป้าหมาย — uplink ที่ 2 เฉพาะ</span>
+        <h3>Edge → CIB ผ่าน internet คนละเส้นทาง ไม่ผ่าน Fortigate</h3>
+        <p class="muted">
+          ตัดปัญหา Fortigate/ask ออกทั้งหมดในระยะยาว — ต้องมี phase แยกสำหรับ policy routing
+          (ดู Phase 5 ด้านล่าง) เพราะ box นี้มี NIC เดียวจริงในตอนนี้ (ตรวจแล้วผ่าน <code>ip -br link</code>
+          บน <code>sshhkt</code>: มีแค่ <code>enp0s31f6</code> + <code>tailscale0</code>) — ต้องหา
+          uplink ใหม่ (USB-NIC / LTE modem / เส้นทางอื่น) มาต่อเพิ่มก่อน ไม่ใช่ของที่มีอยู่แล้ว
+        </p>
+      </div>
+    </div>
+    <p class="scope" style="background:var(--navy-soft);border-color:#C7D6E6;color:var(--navy);">
+      <b>คำแนะนำ:</b> อย่าถอน ask #3 — เก็บไว้เป็น path ชั่วคราวให้ Phase 1–4 เดินหน้าได้ระหว่างรอจัดหา
+      uplink ที่ 2 (เป็นเรื่องฮาร์ดแวร์/สัญญาใหม่ ใช้เวลาแน่นอน) ถ้าถอนแปลว่า Phase 2 (cutover) ต้องรอ
+      อุปกรณ์มาก่อน ไม่ใช่แค่รอ policy อนุมัติ — เป็นทางเลือกของเจ้าของ แต่ควรรู้ต้นทุนเวลาที่ต่างกัน
+    </p>
+  </section>
+
+  <section>
+    <h2>Phases</h2>
+
+    <div class="phase">
+      <div class="ph-head"><span class="num">1</span><h3>Shadow / Dual-run</h3><span class="goal-tag">พิสูจน์ parity ก่อน ไม่แตะฟีดจริง</span></div>
+      <p class="muted">
+        กล้องยัง push ไป CIB ตามเดิมทุกอย่าง (slot 1 ไม่แตะ) — ถ้ากล้องมี httpHost slot 2 ว่าง
+        (ต้องตรวจสอบความจุจริงก่อน ยังไม่ยืนยัน) ให้ตั้ง slot 2 push สำเนาเข้า Vigil ด้วย Vigil parse
+        ตัด field ตาม allowlist แล้ว emit ไปยัง <b>staging target เท่านั้น</b> (ไม่ใช่ CIB จริง) แล้ว diff
+        กับสิ่งที่ CIB ได้รับจริง (log ฝั่งกล้องหรือฝั่ง CIB ถ้าขอดูได้) ทีละ record เพื่อยืนยันว่า
+        field allowlist ครบและไม่มีอะไรหลุด
+      </p>
+      <div class="rollback"><b>Rollback:</b> ปิด slot 2 อย่างเดียว — slot 1 (CIB จริง) ไม่ถูกแตะเลยตลอด phase นี้</div>
+    </div>
+
+    <div class="phase">
+      <div class="ph-head"><span class="num">2</span><h3>Cutover — กล้องตัวเดียว</h3><span class="goal-tag">เปลี่ยนจริงครั้งแรก</span></div>
+      <p class="muted">
+        เมื่อ parity ผ่านใน Phase 1 และได้คำตอบจาก CIB เรื่อง gate (tolerate field หายได้) แล้ว —
+        เลือกกล้อง 1 ตัว repoint slot 1 จาก CIB ตรง ให้มาที่ Vigil edge แทน (emitter = Edge เดินผ่าน
+        Fortigate เดิมไปก่อน ตาม ask #3) Edge รับ raw push, ตัด field, ส่งต่อ payload ที่ redact แล้วไปยัง
+        CIB จริง (endpoint เดิม <code>receive_hik_phuget</code>) กล้องมองไม่เห็นความต่าง — จบด้วย Edge
+        เป็นคนกลางจริง (ยังไม่ผ่าน uplink ที่ 2 — ตามหลังใน Phase 5)
+      </p>
+      <div class="rollback"><b>Rollback:</b> บันทึกค่า slot 1 เดิม (IP/port/path) ของกล้องตัวนี้ไว้ก่อนแตะ — ถ้า CIB รายงานว่าข้อมูลขาด/ผิดปกติ ยิง ISAPI PUT คืนค่าเดิมได้ทันที ไม่ต้อง restart อะไรฝั่งกล้อง</div>
+    </div>
+
+    <div class="phase">
+      <div class="ph-head"><span class="num">3</span><h3>Buffering</h3><span class="goal-tag">ประโยชน์หลักที่เจ้าของต้องการ</span></div>
+      <p class="muted">
+        ใช้ <code>lpr-forward.js</code> ที่มีอยู่แล้ว (spool ลงดิสก์เมื่อส่งไม่สำเร็จ, drain timer retry,
+        expiry แบบ log ดัง ไม่เงียบหาย, self-check ในตัว) ไม่ต้องเขียนกลไก spool ใหม่ — แต่ค่า default
+        ปัจจุบัน <code>maxAgeMs = 3,600,000</code> (1 ชั่วโมง) สั้นเกินไปสำหรับ "CIB network ขาดแล้วมา
+        backfill" ตามที่ต้องการ ต้องปรับ (เช่น 24–72 ชม.) และคิดเรื่อง<b>ขอบเขตดิสก์</b> (กี่ record/วัน ×
+        กี่วันสำรอง ก่อน disk เต็ม) ให้ชัดก่อนใช้จริง
+      </p>
+      <div class="rollback"><b>Rollback:</b> ไม่มีการเปลี่ยน topology ใน phase นี้ ปรับแค่ config ตัวเลข — ย้อนกลับคือแก้ค่ากลับ</div>
+    </div>
+
+    <div class="phase">
+      <div class="ph-head"><span class="num">4</span><h3>Fleet rollout</h3><span class="goal-tag">ครบ 4 กล้อง site hkt</span></div>
+      <p class="muted">
+        ทำซ้ำ Phase 2 ทีละกล้องจนครบทั้ง 4 ตัว (<code>C28-KAT-SB-15</code>, 10.5.100.9, 10.9.100.2,
+        10.5.100.17) — ทีละตัว ไม่ทำพร้อมกันทั้งชุด เพื่อให้ยังมี rollback point ทีละจุดถ้าตัวใดตัวหนึ่งมีปัญหา
+        ไม่กระทบตัวอื่นที่ cutover ไปแล้ว
+      </p>
+      <div class="rollback"><b>Rollback:</b> per-camera เหมือน Phase 2 — เก็บ log ว่าตัวไหน cutover แล้วบ้าง</div>
+    </div>
+
+    <div class="phase">
+      <div class="ph-head"><span class="num">5</span><h3>Uplink ที่ 2 + Policy Routing</h3><span class="goal-tag">เลิกพึ่ง Fortigate ระยะยาว</span></div>
+      <p class="muted">
+        จัดหา uplink ใหม่ (USB-NIC ต่อ LTE modem หรือเส้นทาง internet อื่นที่ไม่ผ่าน Fortigate
+        <code>10.0.10.254</code>) ต่อเข้า Edge box (ปัจจุบันมี NIC เดียวจริง — ตรวจแล้ว) จากนั้นตั้ง
+        <b>policy routing แบบ source/destination-specific</b> ให้เฉพาะ traffic ที่ปลายทางเป็น
+        <code>202.124.201.106:10001</code> ออกทาง uplink ใหม่เท่านั้น — <b>ไม่แตะ default route เดิม</b>
+        ที่ยัง carry flow อื่นของ Edge อยู่ (Cloudflare Tunnel UDP 7844 — เอกสาร firewall เดิมเขียนไว้ว่า
+        "ห้ามปิด" เพราะเป็นทางเข้าเดียวจากภายนอก, และ Tailscale ที่เป็นทางสำรอง) เมื่อ uplink พร้อมแล้ว
+        <b>ต้องทดสอบ empty-POST ไปยัง CIB ผ่าน uplink ใหม่ก่อนใช้งานจริง</b> — ผลที่เป็นไปได้ 2 แบบ:
+        <code>200</code> = ผ่านทั้ง 2 ชั้น (Fortigate เดิมไม่เกี่ยวแล้ว), <code>403</code> = แปลว่า CIB
+        เองก็มี IP allowlist แยกต่างหาก ต้องขอเพิ่ม IP ใหม่กับ CIB โดยตรง ไม่ใช่ปัญหา Fortigate อีกต่อไป
+      </p>
+      <div class="rollback"><b>Rollback:</b> ทดสอบ verify flow 2 (Cloudflare Tunnel) และ flow 3 (Tailscale) ว่ายังผ่านปกติ <b>ทั้งก่อนและหลัง</b> ตั้ง policy routing — ถ้าพลาดแล้ว default route ถูกแก้ผิดจุด จะเสียทั้ง tunnel และ Tailscale พร้อมกันบนเครื่องที่อยู่ไกลคนละจังหวัด ต้องมีคนหน้างานช่วยได้ก่อนทำจริง</div>
+    </div>
+
+    <div class="phase">
+      <div class="ph-head"><span class="num">6</span><h3>Pull API (เป้าหมายปลายทาง)</h3><span class="goal-tag">ต้องได้คำตอบจาก gate ก่อน</span></div>
+      <p class="muted">
+        ถ้า CIB ยืนยันว่ารับ poll แทน inbound POST ได้ — เปลี่ยนบทบาท Vigil จาก "ผู้ส่ง" เป็น
+        "ผู้ให้บริการ API ที่ CIB มาดึง" รูปแบบเดียวกับที่ออกแบบไว้แล้วสำหรับฝั่งตรงข้าม (เรา pull จาก HCP)
+        ใน <code>docs/superpowers/specs/2026-06-23-hcp-pull-integration-design.md</code>: auth แบบ
+        AK/SK HMAC-SHA256 (<code>X-Ca-Key/Timestamp/Nonce/Signature</code>), cursor + margin กัน
+        record มาช้า, <code>source_ref</code> unique index กัน insert ซ้ำ — สลับบทบาท client/server
+        จากสเปกเดิมได้เกือบทั้งหมด ข้อดี: buffering กลายเป็นคุณสมบัติในตัว (CIB ขาดการเชื่อมต่อแค่ไหน
+        ก็ poll cursor ไล่ตามทีหลังได้เอง ไม่ต้องพึ่ง spool/retry ของเราเลย) <b>ข้อควรระวัง:</b> ถ้า CIB
+        เป็นฝ่าย poll เรา ต้องมี inbound reachability เข้า Edge — uplink ที่ 2 จาก Phase 5 แก้ปัญหาแค่
+        ทาง outbound เท่านั้น ต้องออกแบบทาง inbound แยก (เช่นผ่าน Cloudflare Tunnel เดิมที่เปิดอยู่แล้ว)
+      </p>
+      <div class="rollback"><b>Rollback:</b> ไม่ตัด push-emulation (Phase 2–5) ทิ้ง — เดินคู่กันได้จนกว่าฝั่ง CIB ย้ายมาใช้ pull API เต็มรูปแบบ</div>
+    </div>
+
+    <div class="phase">
+      <div class="ph-head"><span class="num">7</span><h3>Face — แยกเฟส ไม่ผูกกับแผนนี้</h3><span class="goal-tag">ทีหลัง คนละปลายทาง</span></div>
+      <p class="muted">
+        หลักฐานทั้งหมดในเอกสารนี้เป็น ANPR เท่านั้น ฟีด Face ไปที่ HCP (<code>202.124.201.105</code>)
+        คนละปลายทางจาก CIB ANPR (<code>.106</code>) และมี dedup asymmetry อยู่แล้ว (กล้อง push face
+        ให้ HCP โดยตรง + push ให้ Vigil เองผ่าน <code>/face-push/:token</code> พร้อมกัน — ตาม HCP spec
+        เดิม) ห้ามเอาแผนนี้ไปพันกับ Face โดยไม่แยกวิเคราะห์ก่อน
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>ข้อจำกัดที่ไม่ใช่เรื่องเทคนิค</h2>
+    <div class="notes">
+      <div class="note">
+        <span class="k">DPA</span>
+        <span>
+          นี่คือการเปลี่ยนตัวผู้ส่งข้อมูลป้ายทะเบียนให้หน่วยงานรัฐ จากกล้อง (อุปกรณ์) มาเป็น Vigil
+          (ระบบของบริษัท) — <code>v_license_plates_public</code> ที่มีอยู่แล้วถูก mark ไว้ว่า
+          PDPA-gated/ต้องมี DPA เอกสารนี้ต้องมีข้อสรุปด้าน "สัญญา/ข้อตกลงทางกฎหมาย" คู่กับข้อสรุปด้าน
+          เทคนิค ก่อนจะ cutover จริงใน Phase 2
+        </span>
+      </div>
+      <div class="note">
+        <span class="k">Feed ที่ใช้งานจริงของภาครัฐ</span>
+        <span>
+          กล้องตัวที่ตรวจสอบมี upload สำเร็จแล้ว 718,458+ ครั้ง ให้ CIB ทุก phase ที่แตะ slot 1 ของกล้อง
+          ต้องมี rollback ที่ทดสอบ/เข้าใจแล้วก่อนลงมือเสมอ Phase 1 ต้องไม่แตะ slot 1 เลยตลอดทั้ง phase
+        </span>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    Vigil Platform · Design Spec draft · อ้างอิง lpr-core.js / lpr-forward.js / routes/lpr.js /
+    docs/superpowers/specs/2026-06-23-hcp-pull-integration-design.md · เขียนขึ้น 2026-07-29 — ยังไม่ commit
+  </footer>
+
+</div>
+</body>
+</html>

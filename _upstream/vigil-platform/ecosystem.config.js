@@ -19,6 +19,26 @@ const path = require('path');
 
 const SRC = path.join(__dirname, 'src');
 
+// เส้นทางสำรองของ edge-bridge (เจ้าของเลือก 2026-10-18 · ลำดับอยู่ใน src/edge/bridgePaths.js):
+// central เปิด ssh -R เข้าไปที่ edge ⇒ บน edge เห็น broker ของ central ที่ 127.0.0.1:18830
+// วิ่งเส้นเดียวกับ SSH (tunnel ของ edge ลง bkk06/sin) ไม่ผ่าน anycast ที่ NT พาไปยุโรป
+// -R bind ที่ loopback ของ edge เท่านั้น (sshd default GatewayPorts no) · ไซต์ใหม่ = เพิ่มชื่อ host ที่นี่
+const MQTT_TUNNEL_HOSTS = ['sshhkt', 'sshhdy', 'sshnrw', 'sshvss3', 'sshvss', 'sshbma'];
+const mqttTunnel = (host) => ({
+  name: `mqtt-tunnel-${host.replace(/^ssh/, '')}`,
+  script: '/usr/bin/ssh',
+  interpreter: 'none',
+  args: ['-N', '-T', '-o', 'BatchMode=yes', '-o', 'ExitOnForwardFailure=yes',
+         '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=3',
+         '-R', '127.0.0.1:18830:127.0.0.1:1883', host],
+  autorestart: true,
+  min_uptime: '30s',
+  restart_delay: 10000,
+  // ponytail: ไม่มีเพดาน — Cloudflare/edge ล่มนาน ๆ ต้องกลับมาเองเมื่อทางเปิด ไม่ใช่ค้าง errored
+  max_restarts: 1000000,
+  log_date_format: 'YYYY-MM-DD HH:mm:ss.SSS',
+});
+
 const base = {
   cwd: SRC,
   watch: false,
@@ -33,7 +53,7 @@ const base = {
   // so the runtime can be upgraded without LNP per-binary records.
   // Interpreter changes need `pm2 delete <app> && pm2 start ecosystem.config.js`
   // (restart does not re-read this field) + `pm2 save`.
-  interpreter: '/opt/homebrew/opt/node@24/bin/node',
+  interpreter: '/usr/bin/node',
   env: {
     NODE_NO_WARNINGS: '1',
     NODE_ENV: 'production',
@@ -81,6 +101,14 @@ module.exports = {
       restart_delay: 3000,
     },
     {
+      // Phase 1 (AuraFace-v1, Internal Test Only) — ดึง face_embed_queue ไปเรียก
+      // edge hkt (/face-engine-embed) แล้วเก็บ face_embeddings + เช็ค blacklist
+      ...base,
+      name: 'face-embed-worker',
+      script: 'face-embed-worker.js',
+      restart_delay: 3000,
+    },
+    {
       // CS7 — standalone LPR/face push receiver (127.0.0.1:3003). Stays up across
       // api-server redeploys so the /lpr forward (a downstream gov system's only
       // feed) never drops. Goes LIVE only when the cloudflared ingress is flipped
@@ -90,5 +118,6 @@ module.exports = {
       script: 'lpr-receiver.js',
       restart_delay: 3000,
     },
+    ...MQTT_TUNNEL_HOSTS.map(mqttTunnel),
   ],
 };

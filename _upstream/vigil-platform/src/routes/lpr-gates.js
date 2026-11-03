@@ -26,6 +26,8 @@ function sanitizeRules(rules) {
   return out;
 }
 
+const { scopedCameraIds } = require('../auth');
+
 module.exports = function lprGatesRoutes(app, pool) {
   app.get('/api/lpr/gates', async (req, res) => {
     try {
@@ -153,10 +155,10 @@ module.exports = function lprGatesRoutes(app, pool) {
     if (!id) return res.status(400).json({ error: 'camera_id_required' });
     try {
       if (req.user?.isSiteScoped) {
-        const chk = await pool.query(
-          'SELECT 1 FROM cameras WHERE id = $1 AND site_id = ANY($2)',
-          [id, req.user.allowedSites]);
-        if (!chk.rowCount) return res.status(403).json({ error: 'forbidden' });
+        // เช็คทั้ง 2 แกน — จำกัดรายกล้องแล้วต้องแตะได้เฉพาะกล้องนั้น ไม่ใช่ทั้ง Site
+        // (GOTCHAS #166) `scopedCameraIds()` คืน null เมื่อไม่จำกัด
+        const allowed = await scopedCameraIds(req.user.allowedSites, pool);
+        if (allowed && !allowed.has(id)) return res.status(403).json({ error: 'forbidden' });
       }
       const r = await pool.query(
         'UPDATE cameras SET lpr_direction = $1 WHERE id = $2 RETURNING id, lpr_direction',

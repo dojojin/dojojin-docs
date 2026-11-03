@@ -76,7 +76,7 @@ Use this to decide what to read next:
 | Task type | Read these first |
 |---|---|
 | Debugging | `GOTCHAS.md`, `DECISIONS.md`, relevant source files, logs |
-| UI / CSS / mobile | `DESIGN.md`, `CLAUDE.md`, `GOTCHAS.md`, `dashboard/index.html`, `dashboard/dashboard.js`, `dashboard/i18n.js` |
+| UI / CSS / mobile | `DESIGN.md`, `CLAUDE.md`, `GOTCHAS.md`, `dashboard/index.html`, `dashboard/dashboard.js`, `dashboard/page-*.js` (32 files — one per page; `dashboard.js` is only the shared core), `dashboard/i18n.js` |
 | i18n | `SKILL.md` section Language/i18n, `DECISIONS.md` #128, `GOTCHAS.md` #42 |
 | Database / schema | `ARCHITECTURE.md`, `DECISIONS.md`, `GOTCHAS.md`, `db/`, `src/migrate.js` |
 | LINE / alerts | `docs/LOGIC_line-notifications.md`, `SKILL.md`, `src/alert-engine.js`, `src/line-sender.js`, `api-server.js` routes |
@@ -104,7 +104,7 @@ node --check dashboard/dashboard.js
 cd src && npm run migrate
 
 # Process management — stack runs under PM2 (not npm run start:all)
-./scripts/services.sh status       # check all 5 processes
+./scripts/services.sh status       # check all 9 processes (central, ecosystem.config.js)
 ./scripts/services.sh restart      # restart all
 pm2 restart api-server             # restart one process
 

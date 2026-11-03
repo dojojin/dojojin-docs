@@ -18,3 +18,24 @@ h3 {
 table {
   page-break-inside: auto;
 }
+
+/* หัวข้อต้องไม่ค้างท้ายหน้าโดยที่เนื้อหาไปอยู่หน้าถัดไป (เจ้าของสั่งจัดหน้าให้พอดี A4
+   2026-08-21) · Chromium ไม่รองรับ orphans/widows กับ block จึงใช้ break-after */
+h3 {
+  break-after: avoid-page;
+  page-break-after: avoid;
+}
+/* canvas ของ Chart.js เป็นบิตแมป ตัดครึ่งแล้วอ่านไม่รู้เรื่อง — บล็อกกราฟทั้งก้อน
+   (หัวข้อ + กราฟ + คำอธิบายสี) ถูกห่อด้วย div ที่ประกาศ avoid ไว้ใน report-template.js
+   แล้ว บรรทัดนี้กันชั้นสองเผื่อมีกราฟใหม่ที่ลืมห่อ */
+canvas {
+  page-break-inside: avoid;
+  break-inside: avoid;
+  max-width: 100% !important;
+}
+
+/* footer ในตัวเอกสารใช้เฉพาะภาพ PNG — ใน PDF มี footer ต่อหน้าของ Chromium อยู่แล้ว
+   (แบรนด์ + โลโก้พาร์ตเนอร์ + เลขหน้า) ปล่อยไว้จะซ้อนกันสองชั้นในหน้าสุดท้าย */
+.rpt-doc-footer {
+  display: none !important;
+}

@@ -79,3 +79,38 @@ async function clearBrandLogo() {
     if (prev) prev.removeAttribute('src');
   } catch (e) { alert(I18N.t('common.deleteFailed') + e.message); }
 }
+
+async function uploadBrandFooterLogo(fileInput) {
+  const file = fileInput?.files?.[0];
+  if (!file) return;
+  if (file.size > 5 * 1024 * 1024) { alert(I18N.t('sys.logoTooBig')); fileInput.value = ''; return; }
+  const fd = new FormData();
+  fd.append('footer_logo', file);
+  try {
+    const res = await fetch(`${API}/api/branding/footer-logo`, { method: 'POST', body: fd });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `HTTP ${res.status}`);
+    }
+    const body = await res.json();
+    await loadBrand();
+    // also refresh preview in settings modal
+    const prev = document.getElementById('brandFooterLogoPreview');
+    if (prev) prev.src = body.footer_logo_url;
+  } catch (e) {
+    alert(I18N.t('sys.logoUploadFailed') + e.message);
+  } finally {
+    fileInput.value = '';
+  }
+}
+
+async function clearBrandFooterLogo() {
+  if (!confirm(I18N.t('sys.confirmClearLogo'))) return;
+  try {
+    const res = await fetch(`${API}/api/branding/footer-logo`, { method: 'DELETE' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    await loadBrand();
+    const prev = document.getElementById('brandFooterLogoPreview');
+    if (prev) prev.removeAttribute('src');
+  } catch (e) { alert(I18N.t('common.deleteFailed') + e.message); }
+}

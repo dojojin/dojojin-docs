@@ -21,13 +21,16 @@ let _camGridPage = 1;
 const CAM_GRID_PAGE_SIZE = 10;   // demo-parity: 10 cards/page (pager shows at >10)
 
 // ── Manual grid order ───────────────────────────────────────────
-// Working copy of camera_ids while the "จัดเรียง" panel is open. Full list,
-// unpaginated/unfiltered — Save renumbers everyone 0..N-1 in one PATCH so
-// there's no rank-interpolation to reason about (see PATCH /api/cameras/reorder).
+// Working copy of camera_ids while the "จัดเรียง" panel is open.
+// ⚠️ เดิมเป็น "ทั้งหมดทุก Site ไม่กรอง" ซึ่งตอนมีไซต์เดียวก็ถูก แต่พอมีหลายไซต์แล้ว
+//    เลือก Phuket (86 กล้อง) กลับได้รายการ 144 แถวปนกล้องหาดใหญ่ 58 ตัว
+//    (เจ้าของเจอจริง 2026-08-21) ⇒ กรองตาม Site ที่เลือกอยู่
 let _camReorderOrder = null;
+let _camReorderSiteId = null;   // Site ที่กำลังจัดเรียง (null = ทุก Site)
 
 function camReorderEnter() {
-  _camReorderOrder = cameras.map(c => c.camera_id);
+  _camReorderSiteId = _activeSiteId;
+  _camReorderOrder = _camReorderScope().map(c => c.camera_id);
   document.getElementById('cameraGrid').style.display = 'none';
   document.getElementById('camPager').style.display = 'none';
   document.querySelector('.cam-search-row').style.display = 'none';
@@ -37,10 +40,30 @@ function camReorderEnter() {
 
 function camReorderCancel() {
   _camReorderOrder = null;
+  _camReorderSiteId = null;
   document.getElementById('cameraGrid').style.display = '';
   document.getElementById('camPager').style.display = '';
   document.querySelector('.cam-search-row').style.display = '';
   document.getElementById('camReorderPanel').style.display = 'none';
+}
+
+// กล้องที่อยู่ในขอบเขตการจัดเรียงรอบนี้ — เรียงตามลำดับที่ใช้แสดงจริงอยู่แล้ว
+// (cameras มาจาก API ซึ่ง sort ด้วย sort_order ?? (1e6 + configIdx) ให้แล้ว)
+function _camReorderScope() {
+  return _camReorderSiteId ? cameras.filter(c => c.site_id === _camReorderSiteId) : cameras;
+}
+
+// ประกอบลำดับเต็มทั้งระบบก่อนส่ง — endpoint renumber 0..N-1 ตามอาร์เรย์ที่ได้รับ
+// 🔴 ถ้าส่งเฉพาะกล้องของ Site ที่เลือก (86 ตัว) จะได้ sort_order 0..85 ไปทับของ
+//    หาดใหญ่ที่ใช้ 0..57 อยู่ ⇒ ลำดับหน้าสถานะกล้องพังทั้งระบบ
+//    จึงเอาลำดับใหม่ไปวางแทนที่ "ช่องเดิม" ที่กล้องของ Site นั้นเคยครองอยู่
+//    ตำแหน่งสัมพัทธ์ของ Site อื่นจึงไม่ขยับแม้จะถูก renumber ใหม่ทุกตัว
+function _camReorderFullOrder() {
+  if (!_camReorderSiteId) return _camReorderOrder;
+  const full = cameras.map(c => c.camera_id);
+  const inScope = new Set(_camReorderScope().map(c => c.camera_id));
+  let k = 0;
+  return full.map(id => (inScope.has(id) ? _camReorderOrder[k++] : id));
 }
 
 async function camReorderSave() {
@@ -49,7 +72,7 @@ async function camReorderSave() {
   try {
     const r = await fetch(`${API}/api/cameras/reorder`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ order: _camReorderOrder }),
+      body: JSON.stringify({ order: _camReorderFullOrder() }),
     });
     if (!r.ok) throw new Error('save failed');
     showToast({ icon: '✓', title: I18N.t('cam.reorderSaved') });
@@ -81,7 +104,13 @@ function _renderCamReorderList() {
   const el = document.getElementById('camReorderList');
   if (!el) return;
   const byId = Object.fromEntries(cameras.map(c => [c.camera_id, c]));
-  el.innerHTML = `<p class="cam-status-note" style="margin:0 0 10px">${escapeHtml(I18N.t('cam.reorderHint'))}</p>` +
+  // บอกให้ชัดว่ากำลังจัดเรียงของ Site ไหน — ไม่งั้นผู้ใช้ที่เลือก Site ไว้จะไม่รู้ว่า
+  // รายการนี้สั้นลงเพราะถูกกรอง หรือเพราะกล้องหาย
+  const _site = _camReorderSiteId ? (_sites || []).find(x => x.id === _camReorderSiteId) : null;
+  const scopeNote = _site
+    ? `<p class="cam-status-note" style="margin:0 0 6px">${escapeHtml(I18N.t('cam.reorderScope', 'จัดเรียงเฉพาะ Site'))}: <b>${escapeHtml(_site.name)}</b> · ${_camReorderOrder.length} ${escapeHtml(I18N.t('sys.camerasUnit', 'กล้อง'))}</p>`
+    : '';
+  el.innerHTML = scopeNote + `<p class="cam-status-note" style="margin:0 0 10px">${escapeHtml(I18N.t('cam.reorderHint'))}</p>` +
     _camReorderOrder.map((id, idx) => {
       const c = byId[id] || { camera_name: id };
       const isFirst = idx === 0, isLast = idx === _camReorderOrder.length - 1;
@@ -109,10 +138,15 @@ async function loadCameras() {
     _siteById = Object.fromEntries(_sites.map(s => [s.id, s]));
     document.getElementById('cameraCount').textContent = cameras.length;
     renderGroupBars();
-    renderSiteTabs();
+    renderSiteTabs(); renderCamTypeTabs();
     populateCamGroupFilter();
-    renderCameraGrid();
-    updateKPIs();
+    // การ์ดกล้องมี <img src="/api/snapshot/live/..."> อยู่ในตัว — วาดทีเดียวยิงภาพสด
+    // ทุกกล้อง ผู้ใช้ที่ไม่มีสิทธิ์หน้านี้จึงได้ 403 รัวๆ ตั้งแต่ boot ทั้งที่ไม่เคยเปิดหน้า
+    // (loadCameras ยังต้องรันอยู่ เพราะ dropdown เลือกกล้องของหน้าอื่นใช้ `cameras`)
+    if (typeof ViewsACL === 'undefined' || ViewsACL.allowed('cameras')) {
+      renderCameraGrid();
+      updateKPIs();
+    }
   } catch (e) { console.error(e); }
 }
 
@@ -129,10 +163,51 @@ function renderSiteTabs() {
     + _sites.map(s => tab(s.id, s.name, s.color, _activeSiteId === s.id)).join('');
 }
 
+// Camera-type tabs beside the site tabs. Uses .gtab (this page's button shape) with
+// a per-type active colour matching the type badges, and drives the now-hidden
+// #camTypeFilter select so the existing filter/refilter wiring is unchanged.
+const _CAM_TYPE_TABS = [
+  { v: '',         cls: 't-any',      i18n: 'cam.typeAll',      fb: 'ทุกประเภท',  dot: null },
+  { v: 'standard', cls: 't-standard', i18n: 'cam.typeStandard', fb: 'IVA / Event', dot: null },
+  { v: 'face',     cls: 't-face',     i18n: 'cam.roleFace',     fb: 'ใบหน้า',     dot: 'var(--accent)' },
+  { v: 'lpr',      cls: 't-lpr',      i18n: 'cam.roleLpr',      fb: 'LPR',        dot: 'var(--warn)' },
+];
+function renderCamTypeTabs() {
+  const el = document.getElementById('camTypeTabs');
+  if (!el) return;
+  const cur = document.getElementById('camTypeFilter')?.value || '';
+  // Count within the current site scope — the number has to agree with the grid
+  // the operator is looking at, not with the whole fleet.
+  const scope = _activeSiteId ? cameras.filter(c => c.site_id === _activeSiteId) : cameras;
+  el.innerHTML = _CAM_TYPE_TABS.map(t => {
+    const n = t.v ? scope.filter(c => (c.cam_role || 'standard') === t.v).length : scope.length;
+    const dot = t.dot ? `<span class="type-dot" style="background:${t.dot}"></span>` : '';
+    return `<button class="gtab ${t.cls}${t.v === cur ? ' active' : ''}" data-action="setActiveCamType" data-type="${t.v}">${dot}${escapeHtml(I18N.t(t.i18n, t.fb))} <span class="tc">${n}</span></button>`;
+  }).join('');
+}
+function setActiveCamType(v) {
+  const sel = document.getElementById('camTypeFilter');
+  if (!sel) return;
+  sel.value = v || '';
+  sel.dispatchEvent(new Event('change', { bubbles: true })); // reuses _camRefilter
+  renderCamTypeTabs();
+}
+
 function setActiveSite(sid) {
   _activeSiteId = sid ? Number(sid) : null;
   _camGridPage = 1;
-  renderSiteTabs();
+  renderSiteTabs(); renderCamTypeTabs();
+  // The active group tab may now be hidden (belongs to a different site) —
+  // reset to "ALL" so a foreign-site group filter doesn't keep silently
+  // ANDing with site_id (same fix as Stats'/Events'/Snapshot's own site switch).
+  if (activeGroupId !== 'all' && _activeSiteId) {
+    const g = groups.find(gr => gr.id === activeGroupId);
+    const siteCamIds = new Set(cameras.filter(c => c.site_id === _activeSiteId).map(c => c.camera_id));
+    if (!g || !(g.cameraIds || []).some(id => siteCamIds.has(id))) activeGroupId = 'all';
+  }
+  // grpBar is now site-scoped (renderGroupBars() in dashboard.js) — re-render
+  // so switching site immediately drops group tabs with no camera there.
+  renderGroupBars();
   renderCameraGrid();
   updateKPIs();
 }
@@ -192,7 +267,7 @@ function buildCardPreview(c) {
   const paused = c.status === 'paused';
   const role = c.cam_role || 'standard';
   const inner = (!paused && (c.push_only || (online && c.ip_address)))
-    ? `<img decoding="async" src="${API}/api/snapshot/live/${c.camera_id}?w=400&t=${Date.now()}" alt="" data-err="cam-placeholder"${c.nvr_channel != null ? ' data-nvr="1"' : ''}>`
+    ? `<img decoding="async" src="${API}/api/snapshot/live/${c.camera_id}?w=${SNAP_W.card}&t=${Date.now()}" alt="" data-err="cam-placeholder"${c.nvr_channel != null ? ' data-nvr="1"' : ''}>`
     : (online ? `<div class="placeholder">${escapeHtml(I18N.t('cam.noIp'))}</div>` : '');
   return `<div class="card-preview type-${role}">${inner}<div class="preview-cam-id">${escapeHtml(c.location || c.camera_id)}</div>${buildPreviewDynamic(c)}</div>`;
 }
@@ -777,7 +852,7 @@ function renderCameraDetail(c) {
     isPaused
       ? `<div class="placeholder">${escapeHtml(I18N.t('cam.maintenance'))}</div>`
       : cdHasImg
-        ? `<img src="${API}/api/snapshot/live/${encodeURIComponent(c.camera_id)}?w=640&t=${Date.now()}" alt="" style="cursor:zoom-in" data-err="cam-span" data-action="openUrl" data-url="${escapeHtml(cdLiveFullUrl)}">`
+        ? `<img src="${API}/api/snapshot/live/${encodeURIComponent(c.camera_id)}?w=${SNAP_W.pair}&t=${Date.now()}" alt="" style="cursor:zoom-in" data-err="cam-span" data-action="openUrl" data-url="${escapeHtml(cdLiveFullUrl)}">`
         : `<div class="placeholder">${online ? escapeHtml(I18N.t('cam.noIp')) : 'Offline'}</div>`
   }${cdHasImg && cdTs ? `<div class="preview-ts">${escapeHtml(cdTs)}</div>` : ''}${cdHasImg ? `<div class="preview-cam-id">${escapeHtml(c.camera_id)}</div>` : ''}</div>`;
 
@@ -841,10 +916,29 @@ function renderCameraDetail(c) {
        <div class="cm-box"><span class="cm-cap">${escapeHtml(I18N.t('cd2.vtypeTop'))}</span><div id="cmLprVtype" class="smb-top-list"><div class="smb-empty">…</div></div></div>`
     : '';
 
-  body.innerHTML = breadcrumb + preview
-    + `<div class="cm-box"><span class="cm-cap">${escapeHtml(I18N.t('cd2.activity'))}</span><div class="cm-tiles">${tiles}</div></div>`
+  // Details and storage side by side rather than stacked. Both are label/value
+  // Camera details sit beside the snapshot rather than below it: the snapshot is
+  // 16:9 and leaves a tall empty column at desktop width, and the details are
+  // what identifies the camera you are looking at. The two share a row and the
+  // snapshot's aspect ratio sets its height, so the details box is capped to
+  // match the frame instead of stretching the row.
+  //
+  // The storage panel stays full width — it has the longest values in the modal
+  // (a codec line, a list of push destinations) and half a row is not enough.
+  // At ≤900px the pair stacks and the snapshot goes back on top.
+  // Today's counts ride under the snapshot rather than below the pair. A 16:9
+  // snapshot is shorter than ten rows of details, so the left column had dead
+  // space exactly the height of this box — and "how many today" belongs with
+  // the live picture anyway.
+  body.innerHTML = breadcrumb
+    + `<div class="cm-head">`
+    +   `<div class="cm-head-l">`
+    +     preview
+    +     `<div class="cm-box"><span class="cm-cap">${escapeHtml(I18N.t('cd2.activity'))}</span><div class="cm-tiles">${tiles}</div></div>`
+    +   `</div>`
+    +   `<div class="cm-box"><span class="cm-cap">${escapeHtml(I18N.t('aux.camDetailTitle'))}</span>${details}</div>`
+    + `</div>`
     + lprExtra
-    + `<div class="cm-box"><span class="cm-cap">${escapeHtml(I18N.t('aux.camDetailTitle'))}</span>${details}</div>`
     + recBoxProd(c)
     + viewBtn;
 
@@ -913,6 +1007,229 @@ async function _loadCamLprExtra(camId) {
 // SD-recording box. Uses real /api/cameras fields; recording_data_from is not
 // in the response yet, so retention shows "recorded until <ts>" (Phase B adds
 // the start date). SD telemetry exists for Bosch only (ONVIF).
+// Hikvision on-camera storage panel. Reads cameras.sd_detail_json as produced by
+// helpers/hikStorage.buildSdDetail — see that file for why the three documents
+// have to be read together.
+// The camera keeps ten upload slots and an SDK client that reconnects every few
+// days burns one per session — C10-KAR-SB-04 had eight dead entries for the same
+// 10.5.10.4, which buried the two destinations anyone cares about. Fold a host's
+// finished sessions into one line, and put whatever is still running first, so
+// the list answers "where does this camera send now" before "where did it".
+//
+// Live sessions are never merged: two concurrent destinations on one host are
+// genuinely two destinations. Only the finished ones collapse.
+function groupUploads(uploads) {
+  const out = [];
+  const deadByIp = new Map();
+  for (const u of uploads) {
+    const dead = u.status === 'End';
+    if (!dead) { out.push({ ...u, dead: false, sessions: 1 }); continue; }
+    const g = deadByIp.get(u.ip);
+    if (!g) { deadByIp.set(u.ip, { ...u, dead: true, sessions: 1 }); continue; }
+    g.sessions++;
+    g.total = (g.total || 0) + (u.total || 0);
+    g.ok = (g.ok || 0) + (u.ok || 0);
+    g.rate = g.total ? Math.round((g.ok / g.total) * 10000) / 100 : null;
+    // Worst observed latency across the merged sessions, not an average of
+    // averages — the point of keeping dead entries is to show what went badly.
+    if (u.avg_ms != null) g.avg_ms = Math.max(g.avg_ms ?? 0, u.avg_ms);
+    // One port stops identifying a merged group.
+    if (g.port !== u.port) g.port = null;
+  }
+  const byVolume = (a, b) => (b.total || 0) - (a.total || 0);
+  return out.sort(byVolume).concat([...deadByIp.values()].sort(byVolume));
+}
+
+function recBoxHik(c, box, drow, lastChk) {
+  const d = c.sd_detail || {};
+  const card = d.card || null;
+  const rec = d.recording || null;
+  const con = d.content || null;
+  const t = (k, f) => I18N.t(k, f);
+  const gb = mb => (mb == null ? null : (mb / 1024).toFixed(1));
+
+  // Card health. 'idle' and 'armed_empty' are green on purpose — the card is
+  // fine; whether anyone wants it recording is a separate question, answered two
+  // rows down rather than by colouring a healthy card amber.
+  // 'unsupported' gets a hollow LED, not warn: the camera refused to discuss its
+  // storage, so there is no verdict to colour. Reporting that as a fault would be
+  // the same over-claim as the "no card" it replaced.
+  const LED = { ok: 'ok', idle: 'ok', armed_empty: 'ok', recording: 'ok',
+                unformatted: 'warn', no_card: 'warn', unsupported: 'none' };
+  const led = LED[d.state] || 'bad';
+  const stateLabel = t('cd2.hikState.' + d.state, d.state || '—');
+  const bits = card ? [
+    card.property === 'RW' ? t('cd2.hikRw', 'อ่าน-เขียนได้') : (card.property === 'R' ? t('cd2.hikRo', 'อ่านได้อย่างเดียว') : null),
+    card.format_type,
+    card.encryption === 'unencrypted' ? t('cd2.hikPlain', 'ไม่ได้เข้ารหัส')
+      : (card.encryption ? t('cd2.hikEnc', 'เข้ารหัส') : null),
+  ].filter(Boolean).join(' · ') : '';
+
+  const rows = [];
+  rows.push(drow(t('cd2.sdStatus'),
+    `<span class="sd-led ${led}"></span><span>${escapeHtml(stateLabel)}</span>` +
+    (bits ? `<span style="color:var(--text-secondary);font-weight:500"> · ${escapeHtml(bits)}</span>` : '')));
+
+  if (card && card.capacity_mb) {
+    // "How full" is a separate question from "how big", and some cameras only
+    // answer the second. Bosch BOSCH_3100i rejects STORAGE_LOAD (RCP+ 0x40)
+    // while BSH-HDY-4038 returns it, so used_mb can legitimately be absent on a
+    // healthy card. Printing it anyway rendered the literal string "null / 238.3
+    // GB · 0%" with an empty bar — which reads as a blank card rather than an
+    // unmeasured one. Show the size alone, and no bar, when that is all we know.
+    const known = card.used_mb != null;
+    const pct = known ? Math.min(100, Math.round((card.used_mb / card.capacity_mb) * 100)) : null;
+    // Amber past 90% only. A card set to loop is SUPPOSED to reach 100% — that
+    // is the ring buffer working, not a fault (C56-PKT-SB-17 sits there), so the
+    // bar warns about the number without calling it an error.
+    rows.push(drow(t('cd2.hikCapacity', 'ความจุ'), known
+      ? `<span>${gb(card.used_mb)} / ${gb(card.capacity_mb)} GB</span>` +
+        `<span class="sd-bar"><i style="width:${pct}%;background:${pct >= 90 ? 'var(--warn)' : 'var(--accent)'}"></i></span>` +
+        `<span style="color:var(--text-secondary);font-weight:500">${pct}%</span>`
+      : `<span>${gb(card.capacity_mb)} GB</span>` +
+        `<span style="color:var(--text-secondary);font-weight:500"> · ${escapeHtml(t('cd2.hikUsedUnknown', 'ไม่ทราบว่าใช้ไปเท่าไร'))}</span>`));
+  }
+  if (card && card.installed_at) rows.push(drow(t('cd2.hikInstalled', 'ติดตั้งเมื่อ'), escapeHtml(card.installed_at)));
+
+  // With no card the track rows describe a stream with nowhere to go — a
+  // bitrate and a schedule printed under "no card" reads as a contradiction.
+  if (rec && d.state !== 'no_card') {
+    rows.push(drow(t('cd2.hikSchedule', 'การบันทึก'), rec.schedule_enabled
+      ? `<span style="color:var(--status-ok)">${escapeHtml(t('cd2.hikSchedOn', 'เปิดอยู่'))}</span>`
+      : `<span class="sd-led warn"></span><span style="color:var(--warn)">${escapeHtml(t('cd2.hikSchedOff', 'ปิดอยู่ — ไม่ได้ตั้งตารางบันทึก'))}</span>`));
+    const mode = [rec.mode === 'CMR' ? t('cd2.hikCmr', 'ต่อเนื่อง (CMR)') : rec.mode,
+                  rec.loop ? t('cd2.hikLoop', 'เขียนวนทับ') : null].filter(Boolean).join(' · ');
+    if (mode) rows.push(drow(t('cd2.hikMode', 'โหมด'), escapeHtml(mode)));
+    const q = [rec.codec, rec.resolution, rec.fps ? rec.fps + ' fps' : null,
+               rec.bitrate_kbps ? rec.bitrate_kbps.toLocaleString() + ' kbps' : null].filter(Boolean).join(' · ');
+    if (q) rows.push(drow(t('cd2.hikQuality', 'คุณภาพ'), `<span class="cm-dv-fw">${escapeHtml(q)}</span>`));
+  }
+
+  // What is actually there, kept apart from everything above.
+  if (con) {
+    // A looping card at 4K fills within hours, so "0 วัน" is the ordinary case
+    // and reads like a fault. Below a day, say hours.
+    let span = '';
+    if (con.days != null && con.from && con.to) {
+      span = con.days >= 1
+        ? t('cd2.hikSpanD', ' · {d} วัน').replace('{d}', con.days)
+        : t('cd2.hikSpanH', ' · {h} ชม.').replace('{h}',
+            Math.max(1, Math.round((new Date(con.to) - new Date(con.from)) / 3600000)));
+    }
+    rows.push(drow(t('cd2.hikContent', 'บันทึกจริง'), con.clips > 0
+      ? escapeHtml(t('cd2.hikClipsN', '{n} คลิป').replace('{n}', Number(con.clips).toLocaleString()) + span)
+      : `<span style="color:var(--text-secondary)">${escapeHtml(t('cd2.hikNoClips', 'ไม่มีคลิปในการ์ด (ค้น 30 วันย้อนหลัง)'))}</span>`));
+  } else if (c.recording_count != null || c.recording_data_until) {
+    // Bosch has no on-card clip search, so its detail carries no `content` —
+    // what footage exists comes from the ONVIF summary already on the camera
+    // row. Without this the two rows the old Bosch panel did show (span and
+    // segment count) would vanish the moment it started rendering here.
+    const f = c.recording_data_from ? new Date(c.recording_data_from) : null;
+    const u = c.recording_data_until ? new Date(c.recording_data_until) : null;
+    const tz = { timeZone: 'Asia/Bangkok' };
+    // 2000-01-01 is the "nothing recorded" placeholder, not a real start date.
+    if (f && u && f.getFullYear() > 2015 && u > f) {
+      rows.push(drow(t('cd2.sdRetention', 'ข้อมูลย้อนหลัง'), escapeHtml(
+        I18N.t('cd2.sdRange').replace('{n}', Math.max(0, Math.round((u - f) / 86400000)))
+          .replace('{from}', f.toLocaleDateString('th-TH', tz))
+          .replace('{to}', u.toLocaleDateString('th-TH', tz)))));
+    }
+    if (c.recording_count != null) {
+      rows.push(drow(t('cd2.sdCount', 'จำนวนไฟล์'),
+        escapeHtml(I18N.t('cd2.sdSegments').replace('{n}', Number(c.recording_count).toLocaleString()))));
+    }
+  }
+  // Only worth showing while nothing is recorded — once there is footage the
+  // real span above answers the same question better than an estimate.
+  if (rec && d.state !== 'no_card' && rec.days_if_enabled != null && (!con || con.clips === 0)) {
+    const hrs = Math.round(rec.days_if_enabled * 24);
+    rows.push(drow(t('cd2.hikIfOn', 'ถ้าเปิดบันทึก'), escapeHtml(
+      hrs < 48 ? t('cd2.hikHolds.h', 'จะเก็บได้ ~{n} ชม. ก่อนเขียนทับ').replace('{n}', hrs)
+               : t('cd2.hikHolds.d', 'จะเก็บได้ ~{n} วัน ก่อนเขียนทับ').replace('{n}', rec.days_if_enabled))));
+  }
+
+  // Rewrite count comes from System/status, and only means something once a card
+  // has actually looped — 0 on a card nobody records to says nothing worth a row.
+  // …and only when there is a card to have worn out. A rewrite count printed
+  // under "no card" is the same contradiction the recording rows had.
+  if (card && d.wear && d.wear.video_rewrites > 0) {
+    rows.push(drow(t('cd2.hikWear', 'เขียนวนทับแล้ว'),
+      escapeHtml(t('cd2.hikWearN', '{n} รอบ').replace('{n}', Number(d.wear.video_rewrites).toLocaleString()))));
+  }
+
+  // What the CAMERA says about its own deliveries — the only view of this that
+  // neither we nor the receiving system produced. Ordered by volume so the
+  // destination that matters is first, and dead entries are kept because "this
+  // camera used to push somewhere else" is exactly what an operator wants to see.
+  if (d.uploads && d.uploads.length) {
+    rows.push(drow(t('cd2.hikUploads', 'การเชื่อมต่อ'),
+      `<span class="cm-dv-fw">${groupUploads(d.uploads).map(u => {
+        const bad = u.rate != null && u.rate < 99;
+        return `<span style="display:block${u.dead ? ';opacity:.55' : ''}">` +
+          `<span class="mono">${escapeHtml(u.ip || '?')}${u.port ? ':' + escapeHtml(u.port) : ''}</span> · ` +
+          `<b style="color:${bad ? 'var(--warn)' : 'var(--status-ok)'}">${u.rate != null ? u.rate.toFixed(2) + '%' : '—'}</b> · ` +
+          `${u.avg_ms != null ? u.avg_ms + ' ms' : '—'} · ${Number(u.total || 0).toLocaleString()} ` +
+          escapeHtml(t('cd2.hikTimes', 'ครั้ง')) +
+          (u.sessions > 1 ? ` · ${escapeHtml(t('cd2.hikSessN', '{n} ครั้งที่เชื่อมต่อ').replace('{n}', u.sessions))}` : '') +
+          (u.dead ? ` · ${escapeHtml(t('cd2.hikEnded', 'หยุดแล้ว'))}` : '') + '</span>';
+      }).join('')}</span>`));
+  } else if (d.destinations && d.destinations.length) {
+    // Face models: the configured list, and only that. No rate and no latency
+    // because the camera keeps neither — a row shaped like the measured kind but
+    // with the numbers quietly missing would read as a clean 100%. The label
+    // says "ตั้งไว้ให้ส่งไป" rather than "ส่งไป" for the same reason.
+    rows.push(drow(t('cd2.hikDests', 'การเชื่อมต่อที่ตั้งไว้'),
+      `<span class="cm-dv-fw">${d.destinations.map(x =>
+        `<span style="display:block"><span class="mono">${escapeHtml(x.host)}${x.port ? ':' + escapeHtml(x.port) : ''}</span>` +
+        `${x.path && x.path !== '/' ? `<span style="color:var(--text-secondary)">${escapeHtml(x.path)}</span>` : ''}` +
+        `${x.protocol ? ` · ${escapeHtml(x.protocol)}` : ''}</span>`
+      ).join('')}</span>`));
+  }
+
+  // What the ANR row used to be. /ISAPI/Traffic/ANR configures an SDK arming
+  // server we do not use, so it reported "not usable" while these cameras were
+  // demonstrably buffering and replaying over the httpHost path every day —
+  // C40-THL-SB-18 held 595 plates for 46 minutes on 2026-08-04 and delivered
+  // every one of them. A row that says the opposite of the truth is worse than
+  // no row, so this reports the behaviour we can actually measure: the longest
+  // gap between the camera's own timestamp and ours (migration 116).
+  if (c.max_hold_sec != null) {
+    const s = c.max_hold_sec;
+    const span = s >= 3600 ? t('cd2.holdH', '{n} ชม.').replace('{n}', (s / 3600).toFixed(1))
+               : s >= 60   ? t('cd2.holdM', '{n} นาที').replace('{n}', Math.round(s / 60))
+                           : t('cd2.holdS', '{n} วิ').replace('{n}', s);
+    const when = c.max_hold_at
+      ? new Date(c.max_hold_at).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short' })
+      : null;
+    // Not a storage figure despite sitting in the SD panel: it is the largest
+    // gap ever seen between a camera's own event_time and our received_at
+    // (mqtt-subscriber refreshCameraHold), i.e. how long it once went silent
+    // and then replayed. The old label — "เคยเก็บไว้ให้นานสุด / Longest
+    // buffered for us" — read like card retention and prompted exactly that
+    // question. The date shown is when the backlog ARRIVED, not when the
+    // outage began.
+    // Hover text, because the label alone cannot say WHOSE outage it was. It is
+    // almost never the camera: at vss on 2026-08-05 all seven cameras — three
+    // vendors, with and without an SD card — recorded the same gap within
+    // seconds of each other, and edge-bridge logged "remote offline
+    // queued=50" across it. The link that dropped was edge→central, the
+    // camera kept delivering to the edge throughout, and src/edge/bridgeQueue.js
+    // held the backlog on disk until central came back. A card-less camera
+    // shows a figure here for exactly that reason.
+    rows.push(drow(t('cd2.holdCap', 'เคยหลุดนานสุด (ข้อมูลไม่หาย)'),
+      `<span title="${escapeHtml(t('cd2.holdCapTip', 'ช่วงที่ข้อมูลมาถึงเราช้าที่สุด — มักเกิดจากเน็ตของไซต์หลุด ไม่ใช่ตัวกล้องเสีย ระหว่างนั้น edge เก็บข้อมูลไว้ในคิวบนดิสก์แล้วส่งตามให้ครบเมื่อกลับมา จึงไม่มีข้อมูลสูญหาย · วันที่ที่แสดงคือวันที่ได้รับของที่ค้าง ไม่ใช่วันที่เริ่มหลุด'))}">${escapeHtml(span)}</span>` +
+      (when ? `<span style="color:var(--text-secondary);font-weight:500"> · ${escapeHtml(when)}</span>` : '')));
+  }
+  rows.push(drow(t('cd2.sdLastCheck'), escapeHtml(lastChk)));
+
+  // Not .cm-data's auto-fit columns. That grid suits the Bosch box's four short
+  // rows; this one has up to nine and mixes long values (a codec line, a
+  // sentence about overwriting), and at three columns every label wrapped to two
+  // lines and the order stopped reading top-to-bottom. The grouping — card,
+  // then configuration, then contents — only survives in one column.
+  return box(`<div class="cm-data sd-hik">${rows.join('')}</div>`);
+}
+
 function recBoxProd(c) {
   const cap = escapeHtml(I18N.t('cd2.sdTitle'));
   const vendor = (c.vendor || '').toLowerCase();
@@ -926,6 +1243,17 @@ function recBoxProd(c) {
   const lastChk = c.sd_last_check_at ? new Date(c.sd_last_check_at).toLocaleString('th-TH', tz) : '—';
   const nvrRef = c.recording_nvr_id ? cameras.find(x => x.camera_id === c.recording_nvr_id) : null;
   const nvrName = nvrRef?.camera_name || c.recording_nvr_id || null;
+  // Hikvision reports its own storage over three ISAPI documents (migration 115,
+  // collected hourly by the edge). The panel below is deliberately split into
+  // "how it is configured" and "what is actually on it": every Phuket card
+  // answers the first document like a working camera and has recorded nothing,
+  // and a layout that mixed the two would keep hiding exactly that.
+  // Bosch joins this path once its RCP+ probe has landed a detail (BS1,
+  // 2026-08-06): same renderer, because helpers/boschRcp.js deliberately emits
+  // the same shape. A Bosch camera whose probe has not run yet — or whose model
+  // refuses the registers — has no sd_detail and falls through to the ONVIF-only
+  // panel below, exactly as before.
+  if ((vendor === 'hikvision' || vendor === 'bosch') && c.sd_detail) return recBoxHik(c, box, drow, lastChk);
   if (vendor !== 'bosch') {
     // Non-Bosch storage-health pilot (Dahua NVR, 2026-07-19) — these cameras have no
     // ONVIF recording-summary concept (no dataUntil/count), just a health flag from
@@ -1060,9 +1388,15 @@ async function refreshTodayCounts() {
   } catch {}
 }
 
+// ยิงเฉพาะตอนหน้า Camera Status เปิดอยู่และแท็บไม่ถูกซ่อน — ข้อมูลนี้ใช้ที่หน้านั้นหน้าเดียว และการเข้าหน้า
+// เรียก refreshTodayCounts() เองอยู่แล้ว · เดิมยิงทุก 60 วิทุกแท็บทุกหน้าตลอดเวลา (stop… ไม่มีใครเรียก)
+// จน /api/stats/today-counts เป็น route ช้าที่ถูกเรียกบ่อยสุด 244 ครั้ง/สัปดาห์ (audit 2026-10-02 · O1)
 function startTodayCountsAutoRefresh() {
   if (_todayCountsTimer) return;
-  _todayCountsTimer = setInterval(refreshTodayCounts, 60_000);
+  _todayCountsTimer = setInterval(() => {
+    if (document.hidden || !document.getElementById('page-cameras')?.classList.contains('active')) return;
+    refreshTodayCounts();
+  }, 60_000);
 }
 
 function stopTodayCountsAutoRefresh() {

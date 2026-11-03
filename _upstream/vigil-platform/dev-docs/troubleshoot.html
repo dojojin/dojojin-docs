@@ -145,6 +145,14 @@
 </table>
 
 <h2>Reports / Puppeteer</h2>
+
+<div class="ibox">
+  <h4>Chromium อยู่ที่ report-worker แล้ว (2026-09-06)</h4>
+  <p>ทั้งรายงานตามตาราง และ<strong>ปุ่มดาวน์โหลด PDF/PNG ด้วยมือ</strong> เรนเดอร์ใน <code>report-worker</code> ทั้งคู่ ผ่าน <code>POST http://127.0.0.1:3001/render</code> — api-server เป็นแค่ <strong>fallback</strong> เมื่อ worker ล่ม / ต่อไม่ติด / ตอบไม่ใช่ 2xx / ไม่มี <code>INTERNAL_API_SECRET</code> / ตั้ง <code>REPORT_RENDER_VIA_WORKER=0</code></p>
+  <p>เวลาไล่ปัญหา render ให้ดู log ของ <code>report-worker</code> ก่อนเสมอ: <code>pm2 logs report-worker</code> — บรรทัดที่ขึ้นต้นด้วย <code>[report-worker] /render</code> บอกชื่อ fn ขนาด buffer และเวลาที่ใช้ ส่วนบรรทัด <code>[renderViaWorker] … เรนเดอร์ในโปรเซสแทน</code> ใน log ของ api-server แปลว่าตกลง fallback แล้ว (render ยังสำเร็จ แต่ไปกิน RAM ของ api-server)</p>
+  <p>อาการ "กดดาวน์โหลดแล้วรอนานมากแล้วค่อยได้ไฟล์" มักคือ worker กำลังยุ่งกับรายงานตามตาราง — <code>_withPage</code> บังคับ render ทีละหนึ่ง คำขอจึงรอจนครบ timeout 120 วินาทีก่อนตกเข้า fallback</p>
+</div>
+
 <table>
 <thead><tr><th>อาการ</th><th>ไปที่</th><th>GOTCHAS</th></tr></thead>
 <tbody>
@@ -158,8 +166,41 @@
   <td><a href="md-viewer.html?src=../GOTCHAS.md">GOTCHAS #21, #22</a></td>
   <td>#21, #22</td>
 </tr>
+<tr>
+  <td>ปุ่มดาวน์โหลดช้าผิดปกติ / ไฟล์เสีย</td>
+  <td><code>pm2 logs report-worker</code> → หา <code>[report-worker] /render</code>; ถ้าไม่มีเลย ให้หา <code>[renderViaWorker]</code> ใน log ของ api-server</td>
+  <td>—</td>
+</tr>
 </tbody>
 </table>
+
+<h2>หน้าเว็บช้า / SQL ช้า</h2>
+
+<p>มีสองด่านที่ log ของช้าไว้ให้แล้ว ไม่ต้องเดาว่าช้าที่ชั้นไหน — <strong>เริ่มจากด่านแรกเสมอ</strong> เพราะมันบอกได้ว่าปัญหาอยู่ฝั่ง HTTP หรือฝั่ง DB</p>
+
+<table>
+<thead><tr><th>ด่าน</th><th>คำสั่ง</th><th>อ่านอะไร</th></tr></thead>
+<tbody>
+<tr>
+  <td>HTTP request ช้า<br><small>(api-server)</small></td>
+  <td><code>grep '\[slow-req\]' ~/.pm2/logs/api-server-error.log | tail -50</code></td>
+  <td>ทุก request ที่ใช้เวลาเกิน <code>SLOW_REQ_LOG_MS</code> (ค่าเริ่มต้น 2000 มิลลิวินาที) จะถูก log พร้อม status, เวลาที่ใช้, method, URL, user และ IP — token/sig ใน URL ถูกปิดบังไว้แล้ว</td>
+</tr>
+<tr>
+  <td>SQL query ช้า<br><small>(Postgres)</small></td>
+  <td><code>docker logs vigil-postgres | grep duration:</code></td>
+  <td>Postgres เปิด <code>log_min_duration_statement = 2s</code> ไว้ถาวร (ตั้งผ่าน <code>ALTER SYSTEM</code>) ทุก statement ที่นานเกิน 2 วินาทีจะโผล่พร้อมข้อความ SQL เต็ม เอาไปวาง <code>EXPLAIN (ANALYZE, BUFFERS)</code> ต่อได้ทันที</td>
+</tr>
+</tbody>
+</table>
+
+<div class="ibox">
+  <h4>ตีความ</h4>
+  <p><strong>มี <code>[slow-req]</code> แต่ไม่มี <code>duration:</code> คู่กัน</strong> → ช้าที่ฝั่ง Node ไม่ใช่ query (เช่น loop ประมวลผลแถว, JSON stringify ก้อนใหญ่, รอ HTTP ปลายทาง)</p>
+  <p><strong>มีทั้งคู่</strong> → ช้าที่ query จริง ไปต่อที่ <code>EXPLAIN</code> และดัชนี</p>
+  <p><strong>มี <code>duration:</code> ที่ไม่มี <code>[slow-req]</code></strong> → มาจาก worker หรืองาน background (refresher / warm job) ไม่ใช่คำขอของผู้ใช้</p>
+  <p class="faq-src">ขั้นตอนเต็ม + วิธีปิดชั่วคราวอยู่ใน <a href="md-viewer.html?src=../service_start.md">service_start.md</a></p>
+</div>
 
 <h2>Schema / Migration</h2>
 <table>

@@ -1,0 +1,42 @@
+-- ============================================================
+-- Vigil Platform — migration 121: index appearances for cursor paging
+-- @author Prakasit Rochanavipart (Dojo-mAn)
+-- @copyright (c) 2025-2026 Prakasit Rochanavipart. All Rights Reserved.
+-- @license Proprietary
+-- ------------------------------------------------------------
+-- appearances has nine indexes and not one of them covers detected_at. Nothing
+-- had needed it: the dashboard reaches appearances through events, or by
+-- camera, or by one of the attribute indexes. The partner feed is the first
+-- caller to walk the table in time order.
+--
+-- Measured before writing this, on the live table:
+--
+--   SELECT id, camera_id, detected_at, object_class FROM v_appearances_public
+--    WHERE detected_at >= NOW() - INTERVAL '1 hour'
+--    ORDER BY detected_at, id LIMIT 100;
+--
+--   → parallel Seq Scan + Sort, 30,632 buffers, for one page of 100 rows.
+--
+-- That is the whole 364 MB table read to answer the first page, and a partner
+-- walking a day would repeat it per page.
+--
+-- (detected_at, id) rather than (detected_at) alone because the cursor
+-- compares the pair — the id breaks ties between rows sharing a timestamp, and
+-- having it in the index turns the walk into a plain index scan instead of an
+-- index scan plus a sort.
+--
+-- Built plainly, not CONCURRENTLY: migrate.js wraps every migration in
+-- BEGIN/COMMIT and CONCURRENTLY cannot run inside a transaction block. Safe
+-- here because it was timed first — 457 ms to build against 1.1 M rows, while
+-- appearances takes about 132 inserts a minute, so the write lock delays
+-- roughly one row.
+--
+-- Deliberately NOT doing the same to license_plates. It has
+-- idx_plates_detected_at, and the same query there plans as an Index Scan plus
+-- an Incremental Sort costing 90 buffers, because at most three rows share a
+-- millisecond (measured over an hour of live traffic). A second index on a
+-- 5.4 GB table to remove that is not worth the write cost.
+-- ============================================================
+
+CREATE INDEX IF NOT EXISTS idx_appearances_time_id
+  ON appearances (detected_at, id);

@@ -23,16 +23,39 @@ async function _loadCamSites() {
   return _camSites;
 }
 
+// ช่อง Site ของฟอร์มกล้อง / สแกน NVR — Site Admin เลือกได้เฉพาะ Site ตัวเองที่มี edge (ไม่มี "ไม่ระบุ"
+// และไม่มี main ซึ่งเซิร์ฟเวอร์ปฏิเสธ) · มี Site เดียว = ล็อกไว้ ไม่ให้เลือก (เจ้าของ 2026-10-14)
+function _fillCamSiteSelect(sel, sites, selectedId) {
+  if (!sel) return;
+  const sa = currentUser?.role === 'site_admin';
+  const list = sa ? sites.filter(s => s.code !== 'main') : sites;
+  sel.innerHTML = (sa ? '' : `<option value="">${I18N.t('common.notSpecified','— ไม่ระบุ —')}</option>`)
+    + list.map(s => `<option value="${s.id}"${selectedId === s.id ? ' selected' : ''}>${escapeHtml(s.name)}</option>`).join('');
+  if (sa && selectedId == null && list[0]) sel.value = String(list[0].id);
+  sel.disabled = sa && list.length <= 1;
+}
+
 function _camFormMapCenter() {
   // Best center: first camera with coords, else Bangkok
   const cam = cameras.find(c => c.latitude && c.longitude);
   return cam ? [parseFloat(cam.longitude), parseFloat(cam.latitude)] : _CAM_FORM_DEFAULT_CENTER;
 }
 
-function initCamFormMap(lat, lng) {
+// 🔴 ต้องใช้ CARTO ผ่าน cartoUrl()/cartoKey() — ห้ามใช้ ol.source.OSM() ตรง ๆ
+// (แก้ 2026-09-14) เดิมชี้ไป tile.openstreetmap.org ตรง ๆ ซึ่งเป็นเซิร์ฟเวอร์
+// อาสาสมัครของ OSM ไม่ใช่ผู้ให้บริการเชิงพาณิชย์ที่รองรับแอปโปรดักชัน หลายคน
+// เปิดฟอร์มนี้ซ้ำ ๆ ไม่มี caching ฝั่งเรา ⇒ โดน OSM บล็อกเป็น "Access blocked"
+// (osm.wiki/Blocked) จุดที่ถูกต้องอีกสองจุด (page-map.js, page-executive-
+// summary.js) ใช้ CARTO อยู่แล้ว จุดนี้หลุดรอดเพราะถูกแยกไฟล์มาทั้งดุ้นจาก
+// dashboard.js เดิม (15 มิ.ย.) ก่อนระบบย้ายไป CARTO เลยไม่เคยถูกแตะ
+async function initCamFormMap(lat, lng) {
   if (_camFormMap) destroyCamFormMap();
   const container = document.getElementById('camFormMapContainer');
   if (!container || typeof ol === 'undefined') return;
+  const cartoMapKey = await cartoKey();
+  // ฟอร์มอาจถูกปิด/เปิดใหม่ระหว่างรอ key (fire-and-forget ที่จุดเรียก) —
+  // container หายไปแล้วก็เลิกสร้างแผนที่ทิ้งขว้างไว้เปล่า ๆ
+  if (!document.getElementById('camFormMapContainer')) return;
 
   const hasCoord = lat != null && lng != null && lat !== '' && lng !== '';
   const center = hasCoord
@@ -58,7 +81,12 @@ function initCamFormMap(lat, lng) {
   _camFormMap = new ol.Map({
     target: container,
     layers: [
-      new ol.layer.Tile({ source: new ol.source.OSM() }),
+      new ol.layer.Tile({
+        source: new ol.source.XYZ({
+          url: cartoUrl('streets', cartoMapKey),
+          attributions: '© OpenStreetMap, © CARTO',
+        }),
+      }),
       _camFormMarker,
     ],
     view: new ol.View({ center, zoom }),
@@ -158,11 +186,26 @@ function _showMqttCreds(cam, brokerHost, pending) {
   if (_mqttRegenClearTimer) { clearTimeout(_mqttRegenClearTimer); _mqttRegenClearTimer = null; }
   _resetMqttPassDisplay();
 
-  if (!hasCreds && !showPending) { section.style.display = 'none'; _mqttFormCreds = { username: null, password: null }; return; }
+  const pushSection = document.getElementById('mqttPushSection');
+  if (!hasCreds && !showPending) {
+    section.style.display = 'none'; _mqttFormCreds = { username: null, password: null };
+    if (pushSection) pushSection.style.display = 'none';
+    return;
+  }
   section.style.display = '';
   const pendingMsg = document.getElementById('mqttPendingMsg');
   if (pendingMsg) pendingMsg.style.display = showPending ? '' : 'none';
-  if (!hasCreds) { _mqttFormCreds = { username: null, password: null }; return; }
+  if (!hasCreds) {
+    _mqttFormCreds = { username: null, password: null };
+    // Pending-provision state — no real creds yet, so "push into camera" has
+    // nothing to send. Hide it explicitly rather than let it sit there as a
+    // dead button (the section itself stays visible for the pending message).
+    if (pushSection) pushSection.style.display = 'none';
+    return;
+  }
+  if (pushSection) pushSection.style.display = '';
+  const pushResult = document.getElementById('mqttPushResult');
+  if (pushResult) pushResult.style.display = 'none';
 
   _mqttFormCreds = { username: cam.mqtt_username, password: cam.mqtt_password || null };
   const host = brokerHost || cam.mqtt_broker_host || '?';
@@ -228,6 +271,120 @@ function copyMqttRegenPass() {
   });
 }
 
+// Push the camera's own MQTT broker/username/password into the camera
+// (Mosquitto migration phase B1) — requires a saved camera (existing creds
+// shown means it was already saved). Central resolves whether the camera is
+// central-reachable or behind an edge site server-side; this just calls the
+// one route and renders {ok, before, after, error, reboot, rebooted_at}.
+// Never touches the password — the response never has one (routes/cameras.js
+// / boschRcp.js).
+//
+// A successful push also reboots the camera server-side (boschRcp.js —
+// the camera keeps its OLD session until reboot) so this renders 3 stages in
+// #mqttPushResult: 1) settings applied, 2) reboot commanded (or failed — stop
+// there), 3) poll GET .../mqtt-seen every 10s for up to 5 min waiting for
+// last_mqtt_at to move past rebooted_at. _mqttPushPollToken guards against a
+// stale poll rendering into the DOM after the form closed or another push started.
+let _mqttPushPollTimer = null;
+let _mqttPushPollToken = 0;
+
+function _stopMqttPushPoll() {
+  if (_mqttPushPollTimer) { clearTimeout(_mqttPushPollTimer); _mqttPushPollTimer = null; }
+  _mqttPushPollToken++; // invalidates any in-flight poll from a previous push
+}
+
+async function _pollMqttSeen(camId, rebootedAtIso, token, startedAt) {
+  if (token !== _mqttPushPollToken) return; // superseded by a newer push
+  const stage3 = document.getElementById('mqttPushStage3');
+  const form = document.getElementById('cameraForm');
+  if (!stage3 || !document.body.contains(stage3)) return; // #mqttPushResult left the DOM
+  if (form && form.classList.contains('hidden')) return; // form was closed
+
+  const elapsedSec = Math.round((Date.now() - startedAt) / 1000);
+  if (elapsedSec >= 300) {
+    stage3.innerHTML = `<div style="color:var(--warn)">${escapeHtml(I18N.t('cs.mqttStageTimeout'))}</div>`;
+    return;
+  }
+
+  try {
+    const res = await fetch(`${API}/api/cameras/${encodeURIComponent(camId)}/mqtt-seen`, { credentials: 'include' });
+    if (token !== _mqttPushPollToken) return;
+    if (res.ok) {
+      const data = await res.json();
+      const rebootedAt = new Date(rebootedAtIso).getTime();
+      const lastSeen = data.last_mqtt_at ? new Date(data.last_mqtt_at).getTime() : null;
+      if (lastSeen && lastSeen > rebootedAt + 20_000) {
+        const t = new Date(data.last_mqtt_at).toLocaleTimeString();
+        stage3.innerHTML = `<div style="color:var(--status-ok)">${escapeHtml(I18N.t('cs.mqttStageBack'))} (${escapeHtml(t)})</div>`;
+        return;
+      }
+    }
+  } catch (_e) { /* network hiccup mid-poll — keep waiting, next tick may succeed */ }
+
+  if (token !== _mqttPushPollToken) return;
+  stage3.innerHTML = `<div style="color:var(--text-secondary)">${escapeHtml(I18N.t('cs.mqttStageWaiting').replace('{s}', String(elapsedSec)))}</div>`;
+  _mqttPushPollTimer = setTimeout(() => _pollMqttSeen(camId, rebootedAtIso, token, startedAt), 10_000);
+}
+
+async function pushCameraMqtt() {
+  const camId = document.getElementById('frmCamId')?.value?.trim();
+  if (!camId) return;
+  if (!confirm(I18N.t('cs.mqttPushConfirm'))) return;
+
+  _stopMqttPushPoll(); // cancel any poll left over from a previous push
+  const btn = document.getElementById('mqttPushBtn');
+  const result = document.getElementById('mqttPushResult');
+  if (btn) { btn.disabled = true; btn.textContent = I18N.t('cs.mqttPushWorking'); }
+  if (result) result.style.display = 'none';
+
+  try {
+    const res = await fetch(`${API}/api/cameras/${encodeURIComponent(camId)}/push-mqtt`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+    });
+    const data = await res.json();
+    if (!result) return;
+    result.style.display = '';
+    if (data.ok) {
+      const after = data.after || {};
+      let html =
+        `<div style="color:var(--status-ok)">${escapeHtml(I18N.t('cs.mqttStageApplied'))}</div>` +
+        `<div style="margin-top:4px;color:var(--text-secondary)">${escapeHtml(I18N.t('cs.mqttPushBefore'))}: ${escapeHtml((data.before && data.before.address) || '—')}</div>` +
+        `<div style="color:var(--text-secondary)">${escapeHtml(I18N.t('cs.mqttPushAfter'))}: ${escapeHtml(after.address || '—')} · ${escapeHtml(after.username || '—')} · ${escapeHtml(after.prefix || '—')}</div>`;
+
+      const reboot = data.reboot || null;
+      if (reboot && reboot.ok) {
+        let stage2 = I18N.t('cs.mqttStageRebooting');
+        if (reboot.unconfirmed) stage2 += ` (${I18N.t('cs.mqttRebootUnconfirmed')})`;
+        html += `<div style="margin-top:6px;color:var(--text-secondary)">${escapeHtml(stage2)}</div>`;
+        html += `<div id="mqttPushStage3" style="margin-top:4px;color:var(--text-secondary)"></div>`;
+        result.innerHTML = html;
+        if (btn) { btn.disabled = false; btn.textContent = I18N.t('cs.mqttPushBtn'); }
+        const token = ++_mqttPushPollToken;
+        _pollMqttSeen(camId, data.rebooted_at, token, Date.now());
+      } else {
+        const errText = reboot && reboot.error ? `: ${reboot.error}` : '';
+        html += `<div style="margin-top:6px;color:var(--warn)">${escapeHtml(I18N.t('cs.mqttRebootFailed'))}${escapeHtml(errText)}</div>`;
+        result.innerHTML = html;
+        if (btn) { btn.disabled = false; btn.textContent = I18N.t('cs.mqttPushBtn'); }
+      }
+    } else if (res.status === 504) {
+      // Not a failure — the edge may still be mid round-trip. Rendering this
+      // through the same red "failed" branch as a real error would tell the
+      // operator the opposite of what routes/cameras.js's 504 means.
+      let msg = I18N.t('cs.mqttPushUnknown');
+      if (data.req_id) msg += ` (req_id: ${data.req_id})`;
+      result.innerHTML = `<div style="color:var(--warn)">${escapeHtml(msg)}</div>`;
+      if (btn) { btn.disabled = false; btn.textContent = I18N.t('cs.mqttPushBtn'); }
+    } else {
+      result.innerHTML = `<div style="color:var(--status-bad)">${escapeHtml(I18N.t('cs.mqttPushErr'))}: ${escapeHtml(data.error || `HTTP ${res.status}`)}</div>`;
+      if (btn) { btn.disabled = false; btn.textContent = I18N.t('cs.mqttPushBtn'); }
+    }
+  } catch (err) {
+    if (result) { result.style.display = ''; result.innerHTML = `<div style="color:var(--status-bad)">${escapeHtml(I18N.t('cs.mqttPushErr'))}: ${escapeHtml(err.message)}</div>`; }
+    if (btn) { btn.disabled = false; btn.textContent = I18N.t('cs.mqttPushBtn'); }
+  }
+}
+
 // ── end MQTT creds ────────────────────────────────────────────
 
 // ── Inline field validation ───────────────────────────────────
@@ -284,7 +441,7 @@ async function testCameraConnection() {
   try {
     const res = await fetch(`${API}/api/cameras/test-connection`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ip_address: ip, http_port: port, vendor, username: user, password: pass }),
+      body: JSON.stringify({ ip_address: ip, http_port: port, vendor, username: user, password: pass, camera_id: document.getElementById('frmCamId')?.value?.trim() || undefined, site_id: document.getElementById('frmCamSiteId')?.value || undefined }),
     });
     const r = await res.json();
     if (!res.ok) throw new Error(r.error || `HTTP ${res.status}`);
@@ -321,7 +478,7 @@ async function testForwardConnection() {
   const btn    = document.getElementById('frmFwdTestBtn');
   const result = document.getElementById('frmFwdTestResult');
   const data   = _collectCamData();
-  const url    = (data.lpr_forward_url || '').trim();
+  const url    = (data.face_forward_url || data.lpr_forward_url || '').trim(); // _collectCamData sends only one of the two, by role
   if (!data.camera_id || !data.ip_address) { result.style.color = 'var(--status-bad)'; result.textContent = I18N.t('cs.needIdIp'); return; }
   if (!url) { result.style.color = 'var(--text-secondary)'; result.textContent = I18N.t('cs.fwdTestNoUrl', 'ใส่ URL ก่อน'); return; }
   result.textContent = ''; btn.disabled = true; btn.textContent = I18N.t('cs.saving', 'บันทึก...');
@@ -332,7 +489,7 @@ async function testForwardConnection() {
     });
     if (sres.status === 409) { result.style.color = 'var(--warn)'; result.textContent = I18N.t('cs.fwdTestSaveWarn', 'กรุณากดปุ่ม Save ก่อน (มีคำเตือนให้ยืนยัน)'); return; }
     const sr = await sres.json();
-    if (!sres.ok) { result.style.color = 'var(--status-bad)'; result.textContent = (sr.error === 'lpr_forward_url_invalid' ? I18N.t('cs.fwdUrlInvalid') : (sr.error || `HTTP ${sres.status}`)); return; }
+    if (!sres.ok) { result.style.color = 'var(--status-bad)'; result.textContent = (['lpr_forward_url_invalid', 'face_forward_url_invalid'].includes(sr.error) ? I18N.t('cs.fwdUrlInvalid') : (sr.error || `HTTP ${sres.status}`)); return; }
     await loadCameras(); _populateCamLocations(); renderAdminCameras();
 
     // 2) Probe the now-saved endpoint.
@@ -462,7 +619,7 @@ function _camDistinctLocations(list) {
 // Read the current filter values from the toolbar (safe if not rendered yet).
 function _camFilterValues() {
   const val = id => { const el = document.getElementById(id); return el ? el.value : ''; };
-  return { q: val('camSearch'), vendor: val('camFilterVendor'), status: val('camFilterStatus'), type: val('camFilterType'), loc: val('camFilterLoc'), site: _camActiveSiteId };
+  return { q: val('camSetSearch'), vendor: val('camFilterVendor'), status: val('camFilterStatus'), type: val('camFilterType'), loc: val('camFilterLoc'), site: _camActiveSiteId };
 }
 
 // Site filter pills (admin table) — mirrors the site scoping on the data pages.
@@ -479,32 +636,93 @@ function _renderCamSitePills() {
   el.innerHTML = pill('', I18N.t('cam.allSites'), null, _camActiveSiteId === null)
     + sites.map(s => pill(s.id, s.name, s.color, _camActiveSiteId === s.id)).join('');
 }
+// Probe every camera that has no model yet. The probes run server-side per camera
+// (edge sites over MQTT, central-reachable ones inline) and write their own result,
+// so this only reports what was started — the list is reloaded after a delay to
+// show whatever came back. Cameras on a site with no edge whose LAN central cannot
+// reach will simply record a detect error; that is visible in the DB, not here.
+async function detectCameraModels() {
+  const btn = document.getElementById('detectModelsBtn');
+  const label = btn ? btn.textContent : '';
+  if (!confirm(I18N.t('cs.detectModelsConfirm', 'ตรวจหารุ่นของกล้องที่ยังไม่มีข้อมูลรุ่น?\n\nระบบจะยิงถามตัวกล้องทีละตัว (กล้องที่อยู่หลัง edge จะถามผ่าน edge ให้เอง) — ใช้เวลาสักครู่'))) return;
+  if (btn) { btn.disabled = true; btn.textContent = I18N.t('cs.detectModelsRunning', 'กำลังตรวจ…'); }
+  try {
+    const r = await fetch(`${API}/api/cameras/detect-models`, { method: 'POST', credentials: 'include' });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+    const msg = I18N.t('cs.detectModelsDone', 'เริ่มตรวจ {n} ตัว — รอสักครู่แล้วรายการจะอัปเดตเอง')
+      .replace('{n}', (j.started || []).length)
+      + ((j.skipped || []).length ? ` · ${I18N.t('cs.detectModelsSkipped', 'ข้าม')} ${j.skipped.length} (${I18N.t('cs.detectModelsNoCred', 'ไม่มี user/pass ใน config')})` : '');
+    alert(msg);
+    // Give the probes time to land, then reload so the Vendor/Model column fills in.
+    setTimeout(async () => { await loadCameras(); _populateCamLocations(); renderAdminCameras(); }, 20000);
+  } catch (e) { alert(e.message); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = label; } }
+}
+
+// Camera-type buttons, sharing the row with the site pills. The value still lives
+// in the (now hidden) #camFilterType select and the click just drives it, so every
+// existing reader — _camFilterValues(), the change listener — is untouched.
+const _CAM_TYPES = [
+  { v: '',         cls: 't-any',      i18n: 'cam.typeAll',      fb: 'ทุกประเภท',  dot: null },
+  { v: 'standard', cls: 't-standard', i18n: 'cam.typeStandard', fb: 'IVA / Event', dot: null },
+  { v: 'face',     cls: 't-face',     i18n: 'cam.roleFace',     fb: 'ใบหน้า',     dot: 'var(--accent)' },
+  { v: 'lpr',      cls: 't-lpr',      i18n: 'cam.roleLpr',      fb: 'LPR',        dot: 'var(--warn)' },
+];
+function _renderCamTypePills() {
+  const el = document.getElementById('camTypePills');
+  if (!el) return;
+  const cur = document.getElementById('camFilterType')?.value || '';
+  el.innerHTML = _CAM_TYPES.map(t => {
+    const dot = t.dot ? `<span class="type-dot" style="background:${t.dot}"></span>` : '';
+    return `<button class="site-pill ${t.cls}${t.v === cur ? ' active' : ''}" data-action="setCamActiveType" data-type="${t.v}">${dot}${escapeHtml(I18N.t(t.i18n, t.fb))}</button>`;
+  }).join('');
+}
+function setCamActiveType(v) {
+  const sel = document.getElementById('camFilterType');
+  if (!sel) return;
+  sel.value = v || '';
+  sel.dispatchEvent(new Event('change', { bubbles: true })); // reuses the existing filter wiring
+  _renderCamTypePills();
+}
+
 function setCamActiveSite(sid) {
   _camActiveSiteId = sid ? Number(sid) : null;
   _camPage = 1;
   _renderCamSitePills();
+  _populateCamLocations();   // locations are site-scoped — rebuild before rendering
   renderAdminCameras();
 }
 
 // Rebuild the location <select> options, preserving the current selection.
+//
+// Scoped to the active site pill: offering every site's locations while the
+// table is filtered to one site lists places that cannot appear in the result,
+// and picking one silently empties the table. Selecting a site therefore has to
+// rebuild this list too (see setCamActiveSite) — and if the previously chosen
+// location does not exist in the new site, the selection falls back to "all"
+// rather than leaving a filter that matches nothing.
 function _populateCamLocations() {
   const sel = document.getElementById('camFilterLoc');
   if (!sel) return;
   const cur = sel.value;
-  const locs = _camDistinctLocations(cameras);
+  const inScope = _camActiveSiteId
+    ? (cameras || []).filter(c => c.site_id === _camActiveSiteId)
+    : cameras;
+  const locs = _camDistinctLocations(inScope);
   sel.innerHTML = `<option value="">${escapeHtml(I18N.t('cs.filterLocAll'))}</option>` +
     locs.map(l => `<option value="${escapeHtml(l)}">${escapeHtml(l)}</option>`).join('');
-  if (locs.includes(cur)) sel.value = cur;
+  sel.value = locs.includes(cur) ? cur : '';
 }
 
 // Wire search/filter inputs once. Any change resets to page 1 then re-renders.
 function _wireCamFilters() {
   if (_camFiltersWired) return;
   const onFilter = () => { _camPage = 1; renderAdminCameras(); };
-  ['camSearch', 'camFilterVendor', 'camFilterStatus', 'camFilterType', 'camFilterLoc'].forEach(id => {
+  ['camSetSearch', 'camFilterVendor', 'camFilterStatus', 'camFilterType', 'camFilterLoc'].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
-    el.addEventListener(id === 'camSearch' ? 'input' : 'change', onFilter);
+    el.addEventListener(id === 'camSetSearch' ? 'input' : 'change', onFilter);
   });
   _camFiltersWired = true;
 }
@@ -521,8 +739,16 @@ function renderAdminCameras() {
   // dot + name) in the location cell. Lookup from the sites already loaded for
   // the edit form; absent gracefully if not loaded or the camera has no site.
   const _siteLookup = Object.fromEntries((_camSites || []).map(s => [s.id, s]));
+  // Same fallback the filter uses (_filterPaginate): a camera with no cam_role
+  // is a standard IVA/event camera, so the column never renders a blank.
+  const ROLE_LABEL = {
+    standard: I18N.t('cam.typeStandard', 'IVA / Event'),
+    face:     I18N.t('cam.roleFace', 'ใบหน้า'),
+    lpr:      I18N.t('cam.roleLpr', 'LPR'),
+  };
   host.innerHTML = rows.map(c => {
     const v = String(c.vendor || 'bosch').toLowerCase();
+    const role = ROLE_LABEL[c.cam_role] ? c.cam_role : 'standard';
     const site = _siteLookup[c.site_id];
     const siteCell = site
       ? `<span class="cam-site"><span class="dot" style="background:${site.color || 'var(--accent)'}"></span><span>${escapeHtml(site.name)}</span></span>`
@@ -534,7 +760,11 @@ function renderAdminCameras() {
         <div style="font-weight:600">${escapeHtml(c.camera_name || c.camera_id)}</div>
         <div style="font-size:10px;color:var(--text-secondary)">${escapeHtml(c.camera_id)} · ${escapeHtml(c.ip_address || '—')}</div>
       </div>
-      <div><span class="vendor-badge v-${v}">${escapeHtml(VENDOR_LABEL[v] || v)}</span></div>
+      <div>
+        <span class="vendor-badge v-${v}">${escapeHtml(VENDOR_LABEL[v] || v)}</span>
+        ${c.model ? `<div class="cam-model" title="${escapeHtml(c.model)}">${escapeHtml(c.model)}</div>` : ''}
+      </div>
+      <div><span class="role-badge r-${role}">${escapeHtml(ROLE_LABEL[role])}</span></div>
       <div>${siteCell}</div>
       <div style="font-size:11px">${escapeHtml(c.location || '—')}</div>
       <div>
@@ -555,8 +785,8 @@ function renderAdminCameras() {
 // ── NVR channel scan-and-add (Phase 3) ─────────────────────────────
 // ANPR sub-options — what an LPR-type channel captures (anpr default on).
 const _NVR_ANPR_CATS = [
-  ['anpr', 'ป้ายทะเบียน'], ['vehicle', 'ยานพาหนะ'],
-  ['person', 'บุคคล'], ['nonmotor', 'ไม่ใช่ยานยนต์'], ['rule', 'กฎ (เส้น/โซน)'],
+  ['anpr', 'cs.catAnpr', 'ป้ายทะเบียน'], ['vehicle', 'cs.catVehicle', 'ยานพาหนะ'],
+  ['person', 'cs.catPerson', 'บุคคล'], ['nonmotor', 'cs.catNonmotor', 'ไม่ใช่ยานยนต์'], ['rule', 'cs.catRule', 'กฎ (เส้น/โซน)'],
 ];
 let _nvrScanned = [];   // last scanned channels
 let _nvrPollTimer = null;
@@ -568,7 +798,7 @@ async function openNvrScan() {
   document.getElementById('nvrScanMsg').textContent = '';
   const sites = await _loadCamSites();
   const sel = document.getElementById('nvrSiteId');
-  if (sel) sel.innerHTML = '<option value="">— ไม่ระบุ —</option>' + sites.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('');
+  _fillCamSiteSelect(sel, sites, null);
   m.classList.remove('hidden');
 }
 function closeNvrScan() {
@@ -594,7 +824,7 @@ async function nvrScan() {
     password:   document.getElementById('nvrPass')?.value || '',
     site_id:    document.getElementById('nvrSiteId')?.value || '',
   };
-  if (!body.ip_address) { msg.textContent = 'กรอก IP ก่อน'; return; }
+  if (!body.ip_address) { msg.textContent = I18N.t('cs.ipRequired', 'กรอก IP ก่อน'); return; }
   msg.textContent = I18N.t('cs.nvrScanning', 'กำลังสแกน…');
   document.getElementById('nvrChannelList').innerHTML = '';
   document.getElementById('nvrCreateRow').style.display = 'none';
@@ -603,11 +833,11 @@ async function nvrScan() {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
     });
     const d = await r.json();
-    if (!r.ok) { msg.textContent = d.error || 'สแกนไม่สำเร็จ'; return; }
+    if (!r.ok) { msg.textContent = d.error || I18N.t('cs.scanFailed', 'สแกนไม่สำเร็จ'); return; }
     if (d.mode === 'direct') { _nvrShowChannels(d.channels); msg.textContent = ''; return; }
     // edge mode → poll
     _nvrPoll(d.scan_id, 0);
-  } catch (e) { msg.textContent = 'สแกนไม่สำเร็จ: ' + e.message; }
+  } catch (e) { msg.textContent = I18N.t('cs.scanFailed', 'สแกนไม่สำเร็จ') + ': ' + e.message; }
 }
 
 function _nvrPoll(scanId, tries) {
@@ -618,7 +848,7 @@ function _nvrPoll(scanId, tries) {
       const r = await fetch(`${API}/api/cameras/scan-nvr/${encodeURIComponent(scanId)}`);
       const d = await r.json();
       if (d.status === 'ready') { _nvrShowChannels(d.channels); msg.textContent = ''; }
-      else if (d.status === 'error') { msg.textContent = d.error || 'edge สแกนผิดพลาด'; }
+      else if (d.status === 'error') { msg.textContent = d.error || I18N.t('cs.edgeScanError', 'edge สแกนผิดพลาด'); }
       else { msg.textContent = I18N.t('cs.nvrScanning', 'กำลังสแกน…') + ` (${tries + 1})`; _nvrPoll(scanId, tries + 1); }
     } catch (e) { msg.textContent = 'poll error: ' + e.message; }
   }, 1500);
@@ -651,7 +881,7 @@ function _nvrShowChannels(channels) {
         </div>
         <label style="display:block;margin-bottom:3px;cursor:pointer"><input type="radio" name="nvr-type-${n}" class="nvr-ch-type" data-ch="${n}" value="anpr"> ${t('cs.nvrTypeAnpr', 'กล้องจับภาพป้ายทะเบียน (ANPR)')}</label>
         <div class="nvr-sub" data-type="anpr" data-ch="${n}" style="display:none;margin:2px 0 6px 22px">
-          ${_NVR_ANPR_CATS.map(([k, lbl], i) => `<label style="display:inline-flex;align-items:center;gap:4px;margin-right:12px;cursor:pointer"><input type="checkbox" class="nvr-anpr-cat" data-ch="${n}" value="${k}"${i === 0 ? ' checked' : ''}>${escapeHtml(lbl)}</label>`).join('')}
+          ${_NVR_ANPR_CATS.map(([k, key, fb], i) => `<label style="display:inline-flex;align-items:center;gap:4px;margin-right:12px;cursor:pointer"><input type="checkbox" class="nvr-anpr-cat" data-ch="${n}" value="${k}"${i === 0 ? ' checked' : ''}>${escapeHtml(t(key, fb))}</label>`).join('')}
         </div>
         <label style="display:block;cursor:pointer"><input type="radio" name="nvr-type-${n}" class="nvr-ch-type" data-ch="${n}" value="events"> ${t('cs.nvrTypeEvents', 'กล้อง Events')}</label>
       </div>
@@ -695,7 +925,7 @@ async function nvrCreate() {
       capture_categories: cats,
     });
   });
-  if (!channels.length) { msg.textContent = 'เลือกอย่างน้อย 1 channel'; return; }
+  if (!channels.length) { msg.textContent = I18N.t('cs.selectChannel', 'เลือกอย่างน้อย 1 channel'); return; }
   msg.textContent = I18N.t('cs.nvrCreating', 'กำลังสร้าง…');
   try {
     const r = await fetch(`${API}/api/cameras/bulk-create-channels`, {
@@ -712,12 +942,12 @@ async function nvrCreate() {
       }),
     });
     const d = await r.json();
-    if (!r.ok) { msg.textContent = d.error || 'สร้างไม่สำเร็จ'; return; }
+    if (!r.ok) { msg.textContent = d.error || I18N.t('cs.createFailed', 'สร้างไม่สำเร็จ'); return; }
     msg.textContent = I18N.t('cs.nvrCreated', 'สร้างแล้ว {n} กล้อง').replace('{n}', (d.created || []).length)
-      + ((d.skipped || []).length ? ` · ข้าม ${d.skipped.length}` : '');
+      + ((d.skipped || []).length ? ` · ${I18N.t('cs.csvSkippedN','ข้าม {n}').replace('{n}', d.skipped.length)}` : '');
     await loadCameras(); renderAdminCameras();
     setTimeout(closeNvrScan, 1200);
-  } catch (e) { msg.textContent = 'สร้างไม่สำเร็จ: ' + e.message; }
+  } catch (e) { msg.textContent = I18N.t('cs.createFailed', 'สร้างไม่สำเร็จ') + ': ' + e.message; }
 }
 
 // ============================================================
@@ -894,10 +1124,22 @@ function _resetIngestRec() {
   const rec = document.getElementById('frmIngestRec');
   if (rec) { rec.style.color = 'var(--text-secondary)'; rec.textContent = I18N.t('cs.ingestRecIdle'); }
 }
+function _resetMqttBrokerStatus() {
+  const el = document.getElementById('frmMqttBrokerStatus');
+  if (el) { el.style.color = 'var(--text-secondary)'; el.textContent = I18N.t('cs.mqttBrokerIdle'); }
+  const msg = document.getElementById('frmMqttBrokerMsg');
+  if (msg) msg.textContent = '';
+}
 // Face/LPR push URL sections only make sense for a Hikvision camera that's
 // BOTH tagged with the matching role AND set to Push ingest — otherwise the
 // URL would never actually receive anything. Re-run on every field that
 // feeds this decision (vendor, role, ingest method), not just vendor change.
+// The one field backing two different backend keys (lpr_forward_url vs
+// face_forward_url — see _collectCamData) tracks which role it was last
+// populated for, so a live role switch can be told apart from the initial
+// load. Reset by openCameraForm/editCamera right after they set the field,
+// so this only ever fires on a genuine in-form toggle.
+let _fwdUrlLastRole = null;
 function _updatePushUrlVisibility() {
   const v = (document.getElementById('frmCamVendor')?.value || 'bosch').toLowerCase();
   const role = document.getElementById('frmCamRole')?.value || 'standard';
@@ -905,6 +1147,44 @@ function _updatePushUrlVisibility() {
   const show = (id, on) => { const el = document.getElementById(id); if (el) el.style.display = on ? '' : 'none'; };
   show('frmFacePushSection', v === 'hikvision' && role === 'face' && isPush);
   show('frmLprPushSection',  v === 'hikvision' && role === 'lpr'  && isPush);
+  // Step 5 (verify) is LPR-only markup — face's generate+verify are bundled
+  // into its own step 3 above (that's how the control worked before the move,
+  // not a new split), so showing step 5 for a face camera would point at a
+  // token that role never uses.
+  show('frmFwdVerifyStep', role !== 'face');
+  // Face's step 4 repoints slot 1, which is CIB's live source today — this
+  // button is ahead of the migration plan until Phase 4 lands (advisor catch,
+  // 2026-08-05: nothing in the UI said so before this).
+  show('frmHhFaceSlot1Warn', role === 'face');
+  const fwdUrl = document.getElementById('frmCamFwdUrl');
+  if (fwdUrl) {
+    fwdUrl.placeholder = role === 'face'
+      ? 'http://202.124.201.105:10001/v2/<uuid>'
+      : 'http://202.124.201.106:10001/receive_hik_phuget';
+    // A role switch mid-edit must not leave the OTHER role's URL sitting in
+    // this field: _collectCamData sends whatever is here under the new
+    // role's key, so an untouched LPR (.106, CIB's ANPR endpoint) URL would
+    // get saved as this camera's face_forward_url and relay face events
+    // there. Re-source from the camera being edited for the role just
+    // switched to, or clear on add-new.
+    if (_fwdUrlLastRole !== null && _fwdUrlLastRole !== role) {
+      const camId = document.getElementById('frmCamId')?.value || _editingCamId;
+      const cam = (typeof cameras !== 'undefined' ? cameras : []).find(c => c.camera_id === camId);
+      fwdUrl.value = (cam && (role === 'face' ? cam.face_forward_url : cam.lpr_forward_url)) || '';
+    }
+    _fwdUrlLastRole = role;
+  }
+}
+// Face cameras run both channels at once (pull general events + local push
+// for Face Alarm Server) — "Pull"/"Push" alone undersell that, so relabel
+// just the radio titles for role=face. Standard/LPR keep the generic labels.
+function _updateIngestLabels() {
+  const role = document.getElementById('frmCamRole')?.value || 'standard';
+  const isFace = role === 'face';
+  const pullT = document.getElementById('frmIngestPullT');
+  const pushT = document.getElementById('frmIngestPushT');
+  if (pullT) pullT.textContent = I18N.t(isFace ? 'cs.ingestPullFaceT' : 'cs.ingestPullT');
+  if (pushT) pushT.textContent = I18N.t(isFace ? 'cs.ingestPushFaceT' : 'cs.ingestPushT');
 }
 // Advisory only — sets recommendation text/color, NEVER moves the radio
 // (test-connection is a reachability proxy; a transient blip must not flip
@@ -922,17 +1202,31 @@ function _setIngestRec(reachable) {
 // for the generic-HTTP vendors (Dahua/ONVIF).
 function onVendorChange() {
   const v = (document.getElementById('frmCamVendor').value || 'bosch').toLowerCase();
+  const role = document.getElementById('frmCamRole')?.value || 'standard';
   const show = (id, on) => { const el = document.getElementById(id); if (el) el.style.display = on ? '' : 'none'; };
   show('frmMediaSection',     v !== 'onvif');
   show('frmMonitorNote',      v === 'onvif');
   show('frmVcaOverlayGroup',  v === 'bosch');
+  show('frmSnapshotModeGroup', v === 'bosch');
+  show('frmMetaCropGroup',    v === 'bosch');
+  show('frmMqttBrokerSection', v === 'bosch');
   // client-side overlay (migration 043) — มีผลเฉพาะ vendor ที่ส่งพิกัดใน payload
-  show('frmOverlayBboxGroup', v === 'hikvision' || v === 'dahua');
+  // bosch joined the list once the ONVIF metadata track started supplying
+  // coordinates (migration 164) — before that it had nothing to draw.
+  show('frmOverlayBboxGroup', v === 'hikvision' || v === 'dahua' || v === 'bosch');
+  // เส้นทางมีได้เฉพาะกล้องที่ส่งพิกัดต่อเนื่องมา ซึ่งตอนนี้คือ Bosch ผ่าน metadata track
+  show('frmOverlayTrailGroup', v === 'bosch');
   show('frmOverlayZoneGroup', v === 'hikvision' || v === 'dahua');
   show('frmSnapStreamGroup',  v === 'hikvision' || v === 'dahua');
   show('frmPushOnlyGroup',    false); // CS5: checkbox is now the hidden canonical bridge for the Pull/Push radios
   _updatePushUrlVisibility();
-  show('frmFwdSection',        v === 'hikvision'); // CS6: Data Forwarding section
+  _updateIngestLabels();
+  // CS6: Data Forwarding — LPR and face (2026-08-05, CIB face relay F2). Face
+  // gained its own forwarder in routes/face-push.js the same shape as LPR's, so
+  // the comment this replaced (forwarding "only ever fires on the ANPR ingest
+  // path") is no longer true. Standard cameras still get nothing shown — there
+  // is no forwarder on that path at all.
+  show('frmFwdSection',        v === 'hikvision' && (role === 'lpr' || role === 'face'));
   // CS5: ingest method — Hikvision = Pull/Push choice; Bosch/Dahua = static info; ONVIF = hidden (Media's monitor note covers it)
   const ingBlock = document.getElementById('frmIngestBlock');
   if (ingBlock) {
@@ -946,6 +1240,7 @@ function onVendorChange() {
     _syncIngestRadios();
     _resetIngestRec();
   }
+  if (v === 'bosch') _resetMqttBrokerStatus();
   show('frmCamSnapPathGroup', v === 'dahua' || v === 'onvif');
   // CS4: editor vendor badge + conditional nav links (MQTT link is Bosch-only)
   const badge = document.getElementById('camEditBadge');
@@ -1128,6 +1423,7 @@ async function generateLprPushToken() {
     const j = await r.json();
     if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
     _showLprPush({ lpr_push_token: j.token });
+    _hhSyncButtons();   // the repoint button is gated on this token — unlock it now
     const c = cameras.find(x => x.camera_id === id); // keep in-memory list coherent
     if (c) c.lpr_push_token = j.token;
     if (msg) { msg.style.color = 'var(--status-ok)'; msg.textContent = I18N.t('cs.lprPushDone'); }
@@ -1144,6 +1440,309 @@ function copyLprPushUrl() {
   navigator.clipboard?.writeText(url);
   const msg = document.getElementById('frmLprPushMsg');
   if (msg) { msg.style.color = 'var(--status-ok)'; msg.textContent = I18N.t('cs.lprPushCopied'); }
+}
+
+// ── httpHost backup / repoint / restore ────────────────────────────────────
+// Drives the camera's OWN push target. Repointing moves a live feed away from
+// whoever currently receives it, so the UI enforces the same order the backend
+// does: capture first, change second — Set stays disabled until a backup exists.
+let _hhBackups = [];
+
+function _hhFmtSlot(s) {
+  if (!s) return '—';
+  return `${s.ip}:${s.port}${s.url || ''}`;
+}
+function _hhMsg(text, kind) {
+  const el = document.getElementById('frmHhMsg');
+  if (!el) return;
+  el.style.color = kind === 'ok' ? 'var(--status-ok)' : kind === 'err' ? 'var(--status-bad)' : 'var(--text-secondary)';
+  el.textContent = text;
+}
+// Build the operator-facing message from a failed response. When the camera
+// itself refused, the edge forwards its ISAPI ResponseStatus verbatim — pull the
+// human-readable part out of it, because "camera PUT HTTP 400" alone doesn't say
+// what to do next, while "Invalid XML Content" does.
+function _hhErr(j, status) {
+  if (j?.error === 'no_backup') return I18N.t('cs.hhNeedBackup', 'ต้องสำรองค่าก่อน');
+  // Two different layers say "I don't know this camera", and neither phrasing
+  // helps: "no edge site for this camera" is central failing to resolve a site
+  // (the camera row is gone or has no site), "camera not found" is the edge not
+  // having it in the config it received. Both mean the same thing to an
+  // operator — save it first — and both are reachable right after deleting and
+  // re-adding a camera, which is exactly when a leftover backup tempts you to
+  // press Restore. Without this they read as a hardware fault that isn't there.
+  if (j?.error === 'camera not found' || j?.error === 'no edge site for this camera')
+    return I18N.t('cs.hhNotOnEdge', 'edge ยังไม่รู้จักกล้องนี้ — กด "บันทึก" ให้สำเร็จก่อน แล้วรอสักครู่ให้ config sync ไปถึง edge');
+  // Raw text from the edge (src/lpr-receiver.js httphost-set: "camera has no
+  // {kind}_push_token — generate one first"). _hhSyncButtons already disables
+  // this button without a token, so this is defense in depth, not the normal
+  // path — but if it fires, point at where the token actually lives (step 3
+  // of this same section, 2026-08-05), not a different tab.
+  if (String(j?.error || '').includes('face_push_token'))
+    return I18N.t('cs.hhNeedTokenWhereFace', 'ยังไม่มี Push Token — สร้างที่ขั้น 3 ด้านบน (token ตัวเดียวกันนี้ใช้ทั้ง URL ผ่าน central และปุ่มนี้)');
+  if (String(j?.error || '').includes('lpr_push_token'))
+    return I18N.t('cs.hhNeedTokenWhere', 'ยังไม่มี Push Token — สร้างที่ขั้น 3 ด้านบน (token ตัวเดียวกันนี้ใช้ทั้ง URL ผ่าน central และปุ่มนี้)');
+  let msg = j?.error || `HTTP ${status}`;
+  const cr = j?.camera_response;
+  if (cr) {
+    const s = (cr.match(/<statusString>([^<]*)<\/statusString>/) || [])[1];
+    const sub = (cr.match(/<subStatusCode>([^<]*)<\/subStatusCode>/) || [])[1];
+    const detail = [s, sub && sub !== 'Unknow' ? sub : null].filter(Boolean).join(' / ');
+    if (detail) msg += ` — ${I18N.t('cs.hhCamSaid', 'กล้องตอบกลับ')}: ${detail}`;
+  }
+  return msg;
+}
+
+function _hhSetCurrent(slot) {
+  const el = document.getElementById('frmHhCurrent');
+  if (!el) return;
+  el.textContent = slot
+    ? `${I18N.t('cs.hhCurrentPrefix', 'กล้องกำลัง push ไปที่')} ${_hhFmtSlot(slot)}`
+    : I18N.t('cs.hhUnknown', 'ยังไม่ได้อ่านค่าจากกล้อง');
+}
+// Gate the two destructive buttons on their real preconditions.
+//
+// Set needs a backup AND a push token — the token is what the edge builds the
+// destination path from, so without one the repoint fails at the camera. That
+// used to surface as a raw error only after the operator had already clicked a
+// button that touches a production feed; the precondition belongs here instead.
+// Restore deliberately needs neither beyond the backup: it PUTs stored bytes and
+// must keep working when everything else about the camera is misconfigured.
+function _hhSyncButtons() {
+  const hasBackup = _hhBackups.length > 0;
+  // Role-aware (2026-08-05): face has its own token/section now (step 3, same
+  // flow as LPR's) rather than no Data Forwarding UI at all.
+  const isFace = (document.getElementById('frmCamRole')?.value || 'standard') === 'face';
+  const hasToken = isFace ? !!_facePushToken : !!_lprPushToken;
+  const set = document.getElementById('frmHhSetBtn');
+  const rst = document.getElementById('frmHhRestoreBtn');
+  if (set) {
+    set.disabled = !hasBackup || !hasToken;
+    set.title = !hasBackup ? I18N.t('cs.hhNeedBackup', 'ต้องสำรองค่าก่อน')
+              : !hasToken  ? (isFace ? I18N.t('cs.hhNeedTokenFace', 'ต้องสร้าง Face Push Token ก่อน (ขั้น 3 ด้านบน)')
+                                     : I18N.t('cs.hhNeedToken', 'ต้องสร้าง LPR Push Token ก่อน (ขั้น 3 ด้านบน)'))
+              : '';
+  }
+  if (rst) rst.disabled = !hasBackup;
+  const el = document.getElementById('frmHhCurrent');
+  if (hasBackup && el) {
+    const b = _hhBackups[0]; // oldest = the pre-cutover original
+    el.title = `${I18N.t('cs.hhBackupFrom', 'สำรองไว้เมื่อ')} ${new Date(b.captured_at).toLocaleString('th-TH')}`;
+  }
+  // Say WHY the button is dead, rather than leaving a greyed control with no
+  // explanation — missing token is the likelier of the two once a backup exists.
+  const hint = document.getElementById('frmHhBlockHint');
+  if (hint) {
+    const why = !hasBackup ? I18N.t('cs.hhBlockedNoBackup', 'กด "สำรองค่าปัจจุบัน" ก่อน จึงจะเปลี่ยนปลายทางได้')
+              : !hasToken  ? (isFace ? I18N.t('cs.hhBlockedNoTokenFace', 'ยังไม่มี Face Push Token — สร้างที่ขั้น 3 ด้านบนก่อน')
+                                     : I18N.t('cs.hhBlockedNoToken', 'ยังไม่มี LPR Push Token — สร้างที่ขั้น 3 ด้านบนก่อน'))
+              : '';
+    hint.textContent = why;
+    hint.style.display = why ? '' : 'none';
+  }
+}
+
+async function loadHttpHostState(camId) {
+  _hhBackups = [];
+  _hhSetCurrent(null);
+  _hhMsg('');
+  if (!camId) { _hhSyncButtons(); return; }
+  try {
+    const r = await fetch(`${API}/api/cameras/${encodeURIComponent(camId)}/httphost-backups`, { credentials: 'include' });
+    if (r.ok) _hhBackups = (await r.json()).backups || [];
+  } catch { /* listing is best-effort — the buttons just stay locked */ }
+  _hhSyncButtons();
+  if (_hhBackups.length) {
+    const b = _hhBackups[0];
+    _hhMsg(`${I18N.t('cs.hhBackupFrom', 'สำรองไว้เมื่อ')} ${new Date(b.captured_at).toLocaleString('th-TH')}${b.note ? ' — ' + b.note : ''}`);
+  }
+  _hhReadCurrent(camId);   // fire-and-forget; fills the status line when it lands
+}
+
+// Read where the camera is ACTUALLY pushing right now, on form open.
+//
+// This used to be deferred until a button was pressed, to avoid touching the
+// camera every time the form opened. That was the wrong trade: the one fact this
+// panel exists to convey is where the camera currently points, and leaving it
+// blank sent an operator hunting through logs to answer "is this going to the
+// edge or to central?". One ISAPI read (~125ms per the devices' own stats) is
+// cheap next to that. Reuses the existing alarm-server-status proxy rather than
+// adding another read path.
+async function _hhReadCurrent(camId) {
+  const el = document.getElementById('frmHhCurrent');
+  if (el) el.textContent = I18N.t('cs.hhReading', 'กำลังอ่านค่าจากกล้อง…');
+  try {
+    const r = await fetch(`${API}/api/cameras/${encodeURIComponent(camId)}/alarm-server-status`, { credentials: 'include' });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+    const slot = (j.slots || []).find(s => String(s.id) === '1') || (j.slots || [])[0] || null;
+    if (slot) _hhSetCurrent(slot);
+    else if (el) el.textContent = I18N.t('cs.hhNoSlot', 'กล้องยังไม่ได้ตั้งปลายทาง push ไว้เลย');
+  } catch (e) {
+    // Unreachable is itself worth showing — silence would read as "not set".
+    if (el) el.textContent = `${I18N.t('cs.hhReadFailed', 'อ่านค่าจากกล้องไม่ได้')} — ${e.message}`;
+  }
+}
+
+async function httpHostBackup(force) {
+  const id = document.getElementById('frmCamId')?.value || _editingCamId;
+  if (!id) { _hhMsg(I18N.t('cs.alarmServerSaveFirst'), 'err'); return; }
+  const btn = document.getElementById('frmHhBackupBtn');
+  if (btn) btn.disabled = true;
+  _hhMsg(I18N.t('cs.hhReading', 'กำลังอ่านค่าจากกล้อง…'));
+  try {
+    const r = await fetch(`${API}/api/cameras/${encodeURIComponent(id)}/httphost-backup${force ? '?force=1' : ''}`, {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
+    });
+    const j = await r.json();
+    if (r.status === 409) {
+      // Never silently overwrite: a second capture AFTER a repoint would bury
+      // the original destination and make Restore a no-op. But say WHAT is held
+      // and let the operator add one deliberately — a camera deleted and
+      // re-added under the same id inherits an older capture, and only they can
+      // judge whether it is still the right thing to restore to.
+      const ex = j.existing;
+      const where = ex && ex.slots && ex.slots[0] ? _hhFmtSlot(ex.slots[0]) : '—';
+      const when = ex ? new Date(ex.captured_at).toLocaleString('th-TH') : '';
+      _hhMsg(`${I18N.t('cs.hhAlreadyBacked', 'มีค่าสำรองอยู่แล้ว — ไม่เขียนทับ')} · ${when} → ${where}`, 'err');
+      if (confirm(`${I18N.t('cs.hhForceAsk', 'มีค่าสำรองอยู่แล้ว')}\n\n${when}\n→ ${where}\n\n${I18N.t('cs.hhForceAsk2', 'ต้องการเก็บค่าปัจจุบันเพิ่มอีกชุดหรือไม่? (ค่าสำรองเดิมจะไม่ถูกลบ และ "คืนค่า" จะยังใช้ชุดแรกสุดเสมอ)')}`)) {
+        if (btn) btn.disabled = false;
+        return httpHostBackup(true);
+      }
+      await loadHttpHostState(id);   // refresh, or the stale "back up first" hint lingers
+      return;
+    }
+    if (!r.ok) throw new Error(_hhErr(j, r.status));
+    _hhSetCurrent((j.slots || [])[0]);
+    _hhMsg(I18N.t('cs.hhBackupDone', 'สำรองค่าเรียบร้อย'), 'ok');
+    await loadHttpHostState(id);
+  } catch (e) { _hhMsg(e.message, 'err'); }
+  finally { if (btn) btn.disabled = false; }
+}
+
+async function httpHostSet() {
+  const id = document.getElementById('frmCamId')?.value || _editingCamId;
+  if (!id) return;
+  if (!confirm(I18N.t('cs.hhSetConfirm', 'จะสั่งกล้องให้เปลี่ยนปลายทาง push มาที่ระบบเรา\n\nปลายทางเดิมจะหยุดรับข้อมูลจากกล้องโดยตรงทันที (ระบบเราจะส่งต่อให้แทน)\n\nยืนยันหรือไม่?'))) return;
+  const btn = document.getElementById('frmHhSetBtn');
+  if (btn) btn.disabled = true;
+  _hhMsg(I18N.t('cs.hhWriting', 'กำลังเขียนค่าลงกล้อง…'));
+  try {
+    // kind only — format is left unset deliberately. All 33 face cameras'
+    // slot 1 already carries parameterFormatType=XML for CIB; this button
+    // still only touches slot 1, so there is nothing here that needs to change
+    // it. The pilot's slot-2 XML setup (Phase 3, F3) is a separate, deliberate
+    // action outside this generic button — see docs/PLAN_hkt-face-cib-forward.
+    const isFace = (document.getElementById('frmCamRole')?.value || 'standard') === 'face';
+    const r = await fetch(`${API}/api/cameras/${encodeURIComponent(id)}/httphost-set`, {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ slot: 1, kind: isFace ? 'face' : 'lpr' }),
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(_hhErr(j, r.status));
+    _hhSetCurrent(j.after);
+    _hhMsg(`${I18N.t('cs.hhSetDone', 'เปลี่ยนแล้ว')}: ${_hhFmtSlot(j.before)} → ${_hhFmtSlot(j.after)}`, 'ok');
+  } catch (e) { _hhMsg(e.message, 'err'); }
+  finally { if (btn) btn.disabled = false; _hhSyncButtons(); }
+}
+
+async function httpHostRestore() {
+  const id = document.getElementById('frmCamId')?.value || _editingCamId;
+  if (!id) return;
+  const b = _hhBackups[0];
+  const when = b ? new Date(b.captured_at).toLocaleString('th-TH') : '';
+  if (!confirm(I18N.t('cs.hhRestoreConfirm', 'จะคืนค่าปลายทาง push ของกล้องกลับเป็นค่าที่สำรองไว้') + `\n(${when})\n\n` + I18N.t('cs.hhRestoreConfirm2', 'กล้องจะกลับไป push ตรงไปปลายทางเดิม และระบบเราจะหยุดรับข้อมูลจากกล้องตัวนี้\n\nยืนยันหรือไม่?'))) return;
+  const btn = document.getElementById('frmHhRestoreBtn');
+  if (btn) btn.disabled = true;
+  _hhMsg(I18N.t('cs.hhWriting', 'กำลังเขียนค่าลงกล้อง…'));
+  try {
+    const r = await fetch(`${API}/api/cameras/${encodeURIComponent(id)}/httphost-restore`, {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ slot: 1 }),
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(_hhErr(j, r.status));
+    _hhSetCurrent(j.after);
+    _hhMsg(`${I18N.t('cs.hhRestoreDone', 'คืนค่าแล้ว')}: ${_hhFmtSlot(j.after)}`, 'ok');
+  } catch (e) { _hhMsg(e.message, 'err'); }
+  finally { if (btn) btn.disabled = false; _hhSyncButtons(); }
+}
+
+// ── Alarm Server status check ──────────────────────────────────────────────
+async function checkAlarmServer(type) {
+  const id  = document.getElementById('frmCamId')?.value || _editingCamId;
+  const btn = document.getElementById(type === 'face' ? 'frmFacePushCheckBtn' : 'frmLprPushCheckBtn');
+  const msg = document.getElementById(type === 'face' ? 'frmFacePushMsg' : 'frmLprPushMsg');
+  if (!id) { if (msg) { msg.style.color = 'var(--status-err)'; msg.textContent = I18N.t('cs.alarmServerSaveFirst'); } return; }
+  if (btn) { btn.disabled = true; btn.textContent = I18N.t('cs.alarmServerChecking'); }
+  try {
+    const r = await fetch(`${API}/api/cameras/${encodeURIComponent(id)}/alarm-server-status`);
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || r.status);
+    const entry = type === 'face' ? j.face : j.lpr;
+    if (!entry) throw new Error('no data');
+    if (entry.ok) {
+      if (msg) { msg.style.color = 'var(--status-ok)'; msg.textContent = I18N.t('cs.alarmServerOk').replace('{ip}', entry.current_ip).replace('{port}', entry.current_port); }
+    } else {
+      const cur = entry.current_ip ? `${entry.current_ip}:${entry.current_port}` : I18N.t('cs.alarmServerNotSet');
+      if (msg) { msg.style.color = 'var(--status-err)'; msg.textContent = I18N.t('cs.alarmServerWrong').replace('{cur}', cur).replace('{exp}', entry.expected_ip || '?'); }
+    }
+  } catch (e) {
+    if (msg) { msg.style.color = 'var(--status-err)'; msg.textContent = `${I18N.t('cs.alarmServerErr')}: ${e.message}`; }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = I18N.t('cs.alarmServerCheck'); }
+  }
+}
+
+// Bosch Event Broker (MQTT) — check via ONVIF GetEventBrokers only. The
+// actual AddEventBroker write is NOT triggered from here — it runs
+// automatically server-side when the camera is saved (routes/cameras.js
+// POST /api/cameras), same as Hikvision's configureAlarmServer() running
+// on every ingester sync. This button exists purely to let the operator
+// confirm the camera is reachable before committing the Save.
+// Works pre-save too: id may be a saved camera_id (edit) or just the typed
+// draft id (add-new, not saved yet) — the backend tries the saved lookup
+// first, then falls back to the raw ip/site straight from the form so
+// "test before you commit" reaches the real camera instead of failing.
+async function checkMqttBroker() {
+  const id      = document.getElementById('frmCamId')?.value || _editingCamId || '';
+  const siteId  = document.getElementById('frmCamSiteId')?.value || '';
+  const ip      = (document.getElementById('frmCamIp')?.value || '').trim();
+  const port    = document.getElementById('frmCamHttpPort')?.value || '';
+  const user    = (document.getElementById('frmCamUser')?.value || '').trim();
+  const pass    = document.getElementById('frmCamPass')?.value || '';
+  const btn = document.getElementById('frmMqttBrokerTestBtn');
+  const status = document.getElementById('frmMqttBrokerStatus');
+  const msg = document.getElementById('frmMqttBrokerMsg');
+  if (msg) msg.textContent = '';
+  if (!id && !ip) { if (status) { status.style.color = 'var(--status-bad)'; status.textContent = I18N.t('cs.mqttBrokerSaveFirst'); } return; }
+  if (btn) { btn.disabled = true; btn.textContent = I18N.t('cs.mqttBrokerChecking'); }
+  try {
+    const r = await fetch(`${API}/api/cameras/${encodeURIComponent(id || 'new')}/event-broker-status`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ site_id: siteId || undefined, ip_address: ip, http_port: port, username: user, password: pass }),
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || r.status);
+    if (j.ok) {
+      status.style.color = 'var(--status-ok)';
+      status.textContent = I18N.t('cs.mqttBrokerOk').replace('{addr}', j.current.address);
+    } else if (j.current) {
+      status.style.color = 'var(--status-bad)';
+      status.textContent = I18N.t('cs.mqttBrokerBadStatus').replace('{addr}', j.current.address).replace('{status}', j.current.status);
+    } else {
+      status.style.color = 'var(--status-bad)';
+      status.textContent = I18N.t('cs.mqttBrokerNotSet').replace('{exp}', j.expected_address || '?');
+    }
+    // Reachable camera → the auto-configure-on-save (routes/cameras.js) will
+    // very likely succeed too, since it's the same IP/credentials/network path.
+    if (msg) { msg.style.color = 'var(--status-ok)'; msg.textContent = I18N.t('cs.mqttBrokerReadyNotice'); }
+  } catch (e) {
+    if (status) { status.style.color = 'var(--status-bad)'; status.textContent = `${I18N.t('cs.mqttBrokerErr')}: ${e.message}`; }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = I18N.t('cs.mqttBrokerTest'); }
+  }
 }
 
 // ── CS4: full-page editor — view-swap + sticky horizontal section nav ──
@@ -1211,11 +1810,16 @@ function openCameraForm() {
   ['frmCamId','frmCamName','frmCamIp','frmCamLoc','frmCamSite','frmCamUser','frmCamPass','frmCamLat','frmCamLng','frmCamNotes',
    'frmCamHttpPort','frmCamClipStream','frmCamSnapshotStream','frmCamSnapPath','frmCamFullViewWidth','frmCamFwdUrl']
     .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  { const rel = document.getElementById('frmCamRole'); if (rel) rel.value = 'standard'; }
+  // In sync with the just-cleared field above, so onVendorChange() below does
+  // not mistake a leftover role from the PREVIOUS camera edited as a "role
+  // changed" and try to re-source a value from it.
+  _fwdUrlLastRole = 'standard';
   // Populate SITE dropdown for the NEW-camera form too (previously only editCamera
   // did this, so adding a camera showed just "— ไม่ระบุ —" and no site was pickable).
   _loadCamSites().then(sites => {
     const sel = document.getElementById('frmCamSiteId');
-    if (sel) sel.innerHTML = '<option value="">— ไม่ระบุ —</option>' +
+    if (sel) sel.innerHTML = `<option value="">${I18N.t('common.notSpecified','— ไม่ระบุ —')}</option>` +
       sites.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('');
   });
   document.getElementById('frmCamVendor').value = 'bosch';
@@ -1226,6 +1830,7 @@ function openCameraForm() {
   document.getElementById('frmCamPushOnly').checked          = false;
   _showFacePush({});
   _showLprPush({});
+  loadHttpHostState(null);   // new camera — no backups, buttons stay locked
   document.getElementById('frmCamOverlayBbox').checked       = true;
   document.getElementById('frmCamOverlayZone').checked       = true;
   document.getElementById('frmCamClipPre').value  = 10;
@@ -1259,22 +1864,27 @@ async function editCamera(id) {
   document.getElementById('frmCamPushOnly').checked = !!c.push_only;
   _showFacePush(c);
   _showLprPush(c);
+  loadHttpHostState(c.camera_id);
   document.getElementById('frmCamSnapPath').value = c.snapshot_path || '';
   document.getElementById('frmCamFullViewWidth').value = c.full_view_width || '';
-  { const fw = document.getElementById('frmCamFwdUrl'); if (fw) fw.value = c.lpr_forward_url || ''; } // CS6
+  { const fw = document.getElementById('frmCamFwdUrl'); if (fw) fw.value = (c.cam_role === 'face' ? c.face_forward_url : c.lpr_forward_url) || ''; } // CS6
+  _fwdUrlLastRole = c.cam_role || 'standard'; // in sync with the line above — see _updatePushUrlVisibility
   document.getElementById('frmCamLoc').value = c.location || '';
   document.getElementById('frmCamUser').value = c.username || '';
   document.getElementById('frmCamPass').value = c.password || '';
   document.getElementById('frmCamLat').value = c.latitude || '';
   document.getElementById('frmCamLng').value = c.longitude || '';
   document.getElementById('frmCamNotes').value = c.notes || '';
-  { const sites = await _loadCamSites(); const sel = document.getElementById('frmCamSiteId'); if (sel) { sel.innerHTML = '<option value="">— ไม่ระบุ —</option>' + sites.map(s => `<option value="${s.id}"${c.site_id === s.id ? ' selected' : ''}>${escapeHtml(s.name)}</option>`).join(''); } }
+  { const sites = await _loadCamSites(); _fillCamSiteSelect(document.getElementById('frmCamSiteId'), sites, c.site_id ?? null); }
   { const rel = document.getElementById('frmCamRole'); if (rel) rel.value = c.cam_role || 'standard'; }
   // Phase 6.1 — media capture toggles (default-on for snapshot/overlay, default-off for clip)
   document.getElementById('frmCamEnableSnapshot').checked    = c.enable_snapshot    !== false;
   document.getElementById('frmCamEnableVcaOverlay').checked  = c.enable_vca_overlay !== false;
+  { const el = document.getElementById('frmCamSnapshotMode'); if (el) el.value = c.snapshot_mode || 'both'; }
+  { const el = document.getElementById('frmCamMetaCrop'); if (el) el.checked = c.meta_crop === true; }
   document.getElementById('frmCamEnableClipCapture').checked = c.enable_clip_capture === true;
   document.getElementById('frmCamOverlayBbox').checked       = c.overlay_show_bbox  !== false;
+  { const el = document.getElementById('frmCamOverlayTrail'); if (el) el.checked = c.overlay_show_trail === true; }
   document.getElementById('frmCamOverlayZone').checked       = c.overlay_show_zone  !== false;
   document.getElementById('frmCamClipPre').value  = c.clip_pre_sec  ?? 10;
   document.getElementById('frmCamClipPost').value = c.clip_post_sec ?? 5;
@@ -1322,7 +1932,7 @@ function camerasSubTab(key, el) {
     const panel = document.getElementById('camSubPanelCameras');
     if (panel) panel.style.display = '';
     closeCameraForm();
-    _wireCamFilters(); _populateCamLocations(); renderAdminCameras();
+    _wireCamFilters(); _populateCamLocations(); _renderCamTypePills(); renderAdminCameras();
     // Load sites (cached) then re-render so each row's site indicator shows on
     // first open, not only after the edit form has been touched (2026-07-16).
     _loadCamSites().then(() => { _renderCamSitePills(); renderAdminCameras(); });
@@ -1344,6 +1954,7 @@ async function loadCameraOfflineAlert(cameraId) {
     if (!r.ok) { if (msg) msg.textContent = ''; return; }
     const cfg = await r.json();
     document.getElementById('frmOfflineEnabled').checked   = !!cfg.enabled;
+    document.getElementById('frmOfflineSendSnapshot').checked = !!cfg.send_snapshot;
     document.getElementById('frmOfflineNotifyAfter').value = cfg.notify_after_sec   || 300;
     const once = !!cfg.escalate_once;
     document.getElementById('frmOfflineEscalateOnce').checked = once;
@@ -1379,6 +1990,7 @@ async function saveCameraOfflineAlert() {
   const msg = document.getElementById('frmOfflineAlertMsg');
   const body = {
     enabled:               document.getElementById('frmOfflineEnabled').checked,
+    send_snapshot:         document.getElementById('frmOfflineSendSnapshot').checked,
     notify_after_sec:      parseInt(document.getElementById('frmOfflineNotifyAfter').value, 10) || 300,
     escalate_once:         document.getElementById('frmOfflineEscalateOnce').checked,
     escalate_interval_min: parseInt(document.getElementById('frmOfflineEscalate').value, 10)    || 60,
@@ -1696,7 +2308,13 @@ function _collectCamData() {
     clip_stream: document.getElementById('frmCamClipStream').value || null,
     snapshot_stream: document.getElementById('frmCamSnapshotStream').value || null,
     push_only: document.getElementById('frmCamPushOnly').checked,
-    lpr_forward_url: (document.getElementById('frmCamFwdUrl')?.value || '').trim(), // CS6 (backend gates by vendor=hikvision)
+    // CS6 (backend gates by vendor=hikvision) — one visible field, one role, one
+    // key sent. Sending only the role's own key means the backend's "preserve on
+    // edit-without-field" path (routes/cameras.js) leaves the other role's
+    // forward_url untouched rather than a role switch silently blanking it.
+    ...((document.getElementById('frmCamRole')?.value === 'face')
+      ? { face_forward_url: (document.getElementById('frmCamFwdUrl')?.value || '').trim() }
+      : { lpr_forward_url:  (document.getElementById('frmCamFwdUrl')?.value || '').trim() }),
     snapshot_path: document.getElementById('frmCamSnapPath').value.trim(),
     full_view_width: document.getElementById('frmCamFullViewWidth').value || null,
     location: document.getElementById('frmCamLoc').value.trim(),
@@ -1711,8 +2329,11 @@ function _collectCamData() {
     // Phase 6.1 — media capture toggles
     enable_snapshot:     document.getElementById('frmCamEnableSnapshot').checked,
     enable_vca_overlay:  document.getElementById('frmCamEnableVcaOverlay').checked,
+    snapshot_mode:       document.getElementById('frmCamSnapshotMode')?.value || 'both',
+    meta_crop:           !!document.getElementById('frmCamMetaCrop')?.checked,
     enable_clip_capture: document.getElementById('frmCamEnableClipCapture').checked,
     overlay_show_bbox:   document.getElementById('frmCamOverlayBbox').checked,
+    overlay_show_trail:  !!document.getElementById('frmCamOverlayTrail')?.checked,
     overlay_show_zone:   document.getElementById('frmCamOverlayZone').checked,
     clip_pre_sec:        parseInt(document.getElementById('frmCamClipPre').value, 10) || 10,
     clip_post_sec:       parseInt(document.getElementById('frmCamClipPost').value, 10) || 5,
@@ -1753,7 +2374,7 @@ async function _doSaveCamera(data, btn, force) {
       return;
     }
     const r = await res.json();
-    if (!res.ok) throw new Error(r.error === 'lpr_forward_url_invalid' ? I18N.t('cs.fwdUrlInvalid') : (r.error || `HTTP ${res.status}`)); // CS6
+    if (!res.ok) throw new Error(['lpr_forward_url_invalid', 'face_forward_url_invalid'].includes(r.error) ? I18N.t('cs.fwdUrlInvalid') : (r.error || `HTTP ${res.status}`)); // CS6
     await loadCameras();
     _populateCamLocations(); renderAdminCameras();
 

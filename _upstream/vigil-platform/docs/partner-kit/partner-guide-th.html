@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>คู่มือการเชื่อมต่อ Partner API</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+  /* Light theme เท่านั้น — เอกสารส่งให้คนอ่าน/พิมพ์ ไม่สลับตามธีมเครื่อง */
+  :root {
+    --ink: #1c2430;
+    --ink-soft: #4a5566;
+    --ink-faint: #7a8596;
+    --paper: #ffffff;
+    --wash: #f4f6f9;
+    --rule: #dde3ea;
+    --brand: #1f5fa8;
+    --brand-wash: #e9f1fb;
+    --warn: #9a5b00;
+    --warn-wash: #fff6e6;
+    --bad: #a3271f;
+    --ok: #2f6b2f;
+    --code-bg: #f6f8fa;
+    --font: "Noto Sans Thai", "Garuda", "Loma", system-ui, sans-serif;
+    --mono: "JetBrains Mono", "Noto Sans Thai", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 16px/1.75 var(--font); }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 20px; display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 48px; }
+  header.top { border-bottom: 1px solid var(--rule); background: var(--wash); }
+  header.top .inner { max-width: 1120px; margin: 0 auto; padding: 40px 20px 32px; }
+  .eyebrow { font-size: 13px; font-weight: 600; letter-spacing: .08em; color: var(--brand); text-transform: uppercase; }
+  .nw { white-space: nowrap; }
+  h1 { font-size: 34px; line-height: 1.3; margin: 6px 0 10px; text-wrap: balance; }
+  .lede { color: var(--ink-soft); max-width: 68ch; margin: 0; }
+  .meta { margin-top: 18px; font-size: 13px; color: var(--ink-faint); display: flex; gap: 8px 20px; flex-wrap: wrap; }
+  nav.toc { position: sticky; top: 24px; align-self: start; padding-top: 36px; font-size: 14px; }
+  nav.toc b { display: block; font-size: 12px; letter-spacing: .06em; color: var(--ink-faint); margin-bottom: 8px; }
+  nav.toc ol { list-style: none; margin: 0; padding: 0; counter-reset: s; }
+  nav.toc li { counter-increment: s; }
+  nav.toc a { display: block; padding: 5px 0 5px 12px; border-left: 2px solid var(--rule); color: var(--ink-soft); text-decoration: none; }
+  nav.toc a::before { content: counter(s) ". "; color: var(--ink-faint); }
+  nav.toc a:hover, nav.toc a:focus-visible { color: var(--brand); border-left-color: var(--brand); outline: none; }
+  main { padding: 28px 0 80px; min-width: 0; }
+  section { padding-top: 12px; margin-bottom: 36px; }
+  h2 { font-size: 23px; margin: 0 0 12px; padding-top: 16px; border-top: 1px solid var(--rule); scroll-margin-top: 16px; }
+  h2 .n { color: var(--brand); margin-right: 8px; font-variant-numeric: tabular-nums; }
+  h3 { font-size: 17px; margin: 22px 0 8px; }
+  p, li { max-width: 72ch; }
+  ul, ol { padding-left: 22px; }
+  code { font-family: var(--mono); font-size: .88em; background: var(--code-bg); border: 1px solid var(--rule); border-radius: 4px; padding: 1px 5px; }
+  pre { font-family: var(--mono); font-size: 13.5px; line-height: 1.6; background: var(--code-bg); border: 1px solid var(--rule); border-radius: 8px; padding: 14px 16px; overflow-x: auto; margin: 12px 0 16px; }
+  pre code { background: none; border: 0; padding: 0; font-size: inherit; }
+  .table-scroll { overflow-x: auto; margin: 12px 0 18px; border: 1px solid var(--rule); border-radius: 8px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+  th, td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: 1px solid var(--rule); }
+  th { background: var(--wash); font-weight: 600; white-space: nowrap; }
+  tr:last-child td { border-bottom: 0; }
+  td code { white-space: nowrap; }
+  .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .note, .warn { border-radius: 8px; padding: 12px 16px; margin: 14px 0; font-size: 15px; }
+  .note { background: var(--brand-wash); border: 1px solid #c9dcf3; }
+  .warn { background: var(--warn-wash); border: 1px solid #f1d9a8; color: #5c3a00; }
+  .note b, .warn b { display: block; margin-bottom: 2px; }
+  .steps { list-style: none; padding: 0; margin: 14px 0; display: grid; gap: 10px; counter-reset: st; }
+  .steps li { counter-increment: st; position: relative; padding: 12px 14px 12px 52px; border: 1px solid var(--rule); border-radius: 8px; max-width: none; }
+  .steps li::before { content: counter(st); position: absolute; left: 14px; top: 12px; width: 26px; height: 26px; border-radius: 50%; background: var(--brand); color: #fff; font-size: 13px; font-weight: 700; display: grid; place-items: center; }
+  .s-ok { color: var(--ok); font-weight: 600; }
+  .s-bad { color: var(--bad); font-weight: 600; }
+  footer { border-top: 1px solid var(--rule); color: var(--ink-faint); font-size: 13px; padding: 20px 0 40px; }
+  @media (max-width: 860px) {
+    .wrap { grid-template-columns: 1fr; gap: 0; padding: 0 16px; }
+    header.top .inner { padding: 28px 16px 22px; }
+    nav.toc { position: static; padding-top: 20px; }
+    nav.toc ol { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+    h1 { font-size: 27px; }
+  }
+  @media print {
+    nav.toc { display: none; }
+    .wrap { display: block; }
+    pre, .table-scroll { break-inside: avoid; }
+    a { color: inherit; text-decoration: none; }
+  }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="inner">
+    <div class="eyebrow">Partner API · v1</div>
+    <h1><span class="nw">คู่มือการเชื่อมต่อ</span> <span class="nw">Partner API</span></h1>
+    <p class="lede">คู่มือนี้อธิบายวิธีเชื่อมต่อกับระบบของเราอย่างปลอดภัย ตั้งแต่การยืนยันตัวตน การลงลายเซ็นคำขอ ไปจนถึงการดึงข้อมูลอย่างต่อเนื่องและการจัดการข้อผิดพลาด ส่วนรายละเอียดว่าท่านได้รับข้อมูลชุดใด อยู่ในเอกสาร OpenAPI ที่ระบบสร้างให้เฉพาะท่าน</p>
+    <div class="meta"><span>Vision Meta Hub</span><span>ฉบับ 22 ตุลาคม 2569</span><span>ใช้กับ API เวอร์ชัน <code>/v1</code></span></div>
+  </div>
+</header>
+
+<div class="wrap">
+  <nav class="toc" aria-label="สารบัญ">
+    <b>สารบัญ</b>
+    <ol>
+      <li><a href="#overview">ภาพรวม</a></li>
+      <li><a href="#receive">สิ่งที่ท่านจะได้รับ</a></li>
+      <li><a href="#start">เริ่มต้นใน 5 ขั้น</a></li>
+      <li><a href="#sign">การลงลายเซ็นคำขอ</a></li>
+      <li><a href="#paging">การดึงข้อมูลต่อเนื่อง</a></li>
+      <li><a href="#limits">ข้อจำกัดการใช้งาน</a></li>
+      <li><a href="#errors">ข้อผิดพลาด</a></li>
+      <li><a href="#compat">ความเข้ากันได้</a></li>
+      <li><a href="#security">ความปลอดภัยและข้อมูลส่วนบุคคล</a></li>
+      <li><a href="#more">การขอข้อมูลเพิ่มเติม</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <section id="overview">
+      <h2><span class="n">1</span>ภาพรวม</h2>
+      <ul>
+        <li>เป็น REST API ผ่าน <b>HTTPS</b> รับส่งข้อมูลแบบ <b>JSON</b> ทุกคำขอขึ้นต้นด้วย <code>/v1</code></li>
+        <li><b>ทุกคำขอต้องลงลายเซ็น</b> ด้วย App Key และ App Secret ของท่าน (HMAC-SHA256) ไม่ใช้รหัสผ่านหรือ token ที่หมดอายุเป็นรอบ</li>
+        <li><b>ข้อมูลที่ท่านได้รับกำหนดตามข้อตกลง</b> ระหว่างท่านกับเรา ทั้งชุดข้อมูล ฟิลด์ พื้นที่ และช่วงเวลาย้อนหลัง</li>
+        <li>เวลาในข้อมูลเป็นมาตรฐาน <b>ISO 8601</b> (UTC) เว้นแต่เอกสาร OpenAPI ของท่านระบุว่าเป็นวันตามเวลาประเทศไทย</li>
+      </ul>
+    </section>
+
+    <section id="receive">
+      <h2><span class="n">2</span>สิ่งที่ท่านจะได้รับ</h2>
+      <div class="table-scroll"><table>
+        <thead><tr><th>รายการ</th><th>รายละเอียด</th></tr></thead>
+        <tbody>
+          <tr><td>โดเมนสำหรับเชื่อมต่อ</td><td>ที่อยู่ HTTPS ที่ใช้เรียก API (ระบุในข้อตกลง)</td></tr>
+          <tr><td>App Key</td><td>รหัสประจำตัวของระบบท่าน ส่งไปกับทุกคำขอ</td></tr>
+          <tr><td>App Secret</td><td>กุญแจลับสำหรับลงลายเซ็น <b>ส่งให้แยกช่องทางกับ App Key</b> และแสดงเพียงครั้งเดียว</td></tr>
+          <tr><td>วันหมดอายุของสิทธิ์</td><td>หลังวันนี้คำขอจะถูกปฏิเสธ ต่ออายุได้โดยติดต่อผู้ประสานงาน</td></tr>
+          <tr><td>ชุดตัวอย่าง</td><td>โค้ดตัวอย่างที่ใช้งานได้จริง <code>vigil_client.py</code> (Python 3.8+) และ <code>vigil-client.mjs</code> (Node 18+) ไม่ต้องติดตั้งไลบรารีเพิ่ม</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <section id="start">
+      <h2><span class="n">3</span>เริ่มต้นใน 5 ขั้น</h2>
+      <ol class="steps">
+        <li><b>เก็บ App Secret ให้ปลอดภัย</b> ไว้ในตัวแปรสภาพแวดล้อมหรือระบบเก็บความลับ ห้ามเขียนลงในโค้ด บันทึก log หรือแนบในอีเมล</li>
+        <li><b>ตั้งนาฬิกาเครื่องให้ตรง</b> (NTP) เวลาในคำขอต้องคลาดจากเวลาของเราไม่เกิน 5 นาที</li>
+        <li><b>เรียก <code>GET /v1/healthz</code></b> ถ้าได้ <span class="s-ok">200</span> แปลว่าลายเซ็นถูกต้องและสิทธิ์ของท่านพร้อมใช้งาน</li>
+        <li><b>เรียก <code>GET /v1/openapi.json</code></b> เพื่อดูสัญญาของท่าน ได้แก่ endpoint ฟิลด์ ชนิดข้อมูล และพารามิเตอร์ที่ท่านได้รับจริง</li>
+        <li><b>เริ่มดึงข้อมูล</b> ตามหัวข้อที่ 5 หรือใช้ชุดตัวอย่าง ซึ่งจะอ่านเอกสารของท่านแล้วดึงทุก feed ในช่วงหนึ่งชั่วโมงล่าสุดให้ดู</li>
+      </ol>
+<pre><code>export VIGIL_BASE=https://&lt;โดเมนที่ได้รับ&gt;
+export VIGIL_KEY=&lt;App Key&gt;
+export VIGIL_SECRET=&lt;App Secret&gt;
+python3 vigil_client.py        # หรือ  node vigil-client.mjs</code></pre>
+      <div class="note"><b>เอกสาร OpenAPI ของท่านคือข้อมูลอ้างอิงหลัก</b>ระบบสร้างเอกสารนี้จากสิทธิ์ที่ท่านได้รับจริงทุกครั้งที่เรียก จึงไม่มีวันอธิบายสิ่งที่ท่านเรียกไม่ได้ เมื่อผู้ประสานงานแจ้งการเปลี่ยนแปลงสิทธิ์ ให้อ่านเอกสารนี้ใหม่</div>
+    </section>
+
+    <section id="sign">
+      <h2><span class="n">4</span>การลงลายเซ็นคำขอ</h2>
+      <p>ทุกคำขอต้องมี header ต่อไปนี้</p>
+      <div class="table-scroll"><table>
+        <thead><tr><th>Header</th><th>ค่า</th></tr></thead>
+        <tbody>
+          <tr><td><code>X-Ca-Key</code></td><td>App Key ของท่าน</td></tr>
+          <tr><td><code>X-Ca-Nonce</code></td><td>UUID ใหม่ทุกคำขอ ห้ามใช้ซ้ำ (คำขอที่ใช้ซ้ำจะถูกปฏิเสธ)</td></tr>
+          <tr><td><code>X-Ca-Timestamp</code></td><td>เวลาปัจจุบันเป็นมิลลิวินาทีนับจาก epoch</td></tr>
+          <tr><td><code>X-Ca-Signature</code></td><td><code>base64( HMAC-SHA256( App Secret, ข้อความที่ลงลายเซ็น ) )</code></td></tr>
+          <tr><td><code>X-Ca-Signature-Headers</code></td><td><code>x-ca-key,x-ca-nonce,x-ca-timestamp</code></td></tr>
+          <tr><td><code>Accept</code>, <code>Content-Type</code></td><td><code>application/json</code></td></tr>
+          <tr><td><code>Content-MD5</code></td><td>เฉพาะคำขอที่มี body: <code>base64( MD5( body ตามไบต์ที่ส่งจริง ) )</code></td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>ข้อความที่ลงลายเซ็น (string to sign)</h3>
+      <p>ต่อบรรทัดด้วย <code>\n</code> ตามลำดับนี้ ตัวอย่างคำขอ GET ที่มีพารามิเตอร์</p>
+<pre><code>GET
+application/json
+application/json
+x-ca-key:&lt;App Key&gt;
+x-ca-nonce:3f1c2e6a-8b7d-4c11-9e2f-6a0b5d4c3e21
+x-ca-timestamp:1792638000000
+/v1/&lt;path&gt;?pageSize=500&amp;since=2026-10-22T03:00:00Z</code></pre>
+      <p>สำหรับคำขอ POST ที่มี body ให้ใส่ค่า Content-MD5 เป็นบรรทัดที่สาม ระหว่าง <code>application/json</code> สองบรรทัด</p>
+
+      <div class="warn"><b>4 ข้อที่พลาดบ่อยที่สุด</b>
+        1) path ต้องรวม <code>/v1</code> ด้วย ·
+        2) พารามิเตอร์เรียงตามชื่อ และใส่ค่า<b>แบบไม่ encode</b> ในข้อความที่ลงลายเซ็น (แต่ใน URL จริงต้อง encode ตามปกติ) ·
+        3) ไม่มี body = ไม่มีบรรทัด Content-MD5 เลย ไม่ใช่บรรทัดว่าง ·
+        4) ค่าพารามิเตอร์ใน query ต้องเป็น ASCII เท่านั้น ข้อความภาษาไทยให้ส่งใน body ของคำขอ POST</div>
+
+      <h3>ตัวอย่าง (Python)</h3>
+<pre><code>import base64, hashlib, hmac, time, uuid
+
+def sign(method, path, query, body, key, secret):
+    md5 = base64.b64encode(hashlib.md5(body).digest()).decode() if body else ""
+    nonce, ts = str(uuid.uuid4()), str(int(time.time() * 1000))
+    signed_path = path + ("?" + "&amp;".join(f"{k}={query[k]}" for k in sorted(query)) if query else "")
+    lines = [method, "application/json"] + ([md5] if md5 else []) + ["application/json"]
+    text = "\n".join(lines) + "\n" + \
+           f"x-ca-key:{key}\nx-ca-nonce:{nonce}\nx-ca-timestamp:{ts}\n" + signed_path
+    sig = base64.b64encode(hmac.new(secret.encode(), text.encode(), hashlib.sha256).digest()).decode()
+    headers = {"Accept": "application/json", "Content-Type": "application/json",
+               "X-Ca-Key": key, "X-Ca-Nonce": nonce, "X-Ca-Timestamp": ts, "X-Ca-Signature": sig,
+               "X-Ca-Signature-Headers": "x-ca-key,x-ca-nonce,x-ca-timestamp"}
+    if md5:
+        headers["Content-MD5"] = md5
+    return headers</code></pre>
+      <p>โค้ดฉบับเต็มที่ส่งคำขอ เดินหน้าข้อมูล และจัดการข้อผิดพลาดแล้ว อยู่ในชุดตัวอย่างที่ท่านได้รับ</p>
+    </section>
+
+    <section id="paging">
+      <h2><span class="n">5</span>การดึงข้อมูลต่อเนื่อง</h2>
+      <p>คำตอบของ endpoint ที่เป็นรายการมีรูปแบบเดียวกัน</p>
+<pre><code>{
+  "data": [ ... ],
+  "nextCursor": "eyJ2IjoxLCJ0Ijoi...",
+  "pageSize": 500
+}</code></pre>
+      <ul>
+        <li><b><code>since</code></b> จุดเริ่มต้นของช่วงเวลา (ISO 8601) <b><code>until</code></b> จุดสิ้นสุด (ไม่รวมตัวมันเอง ไม่ระบุก็ได้)</li>
+        <li><b><code>pageSize</code></b> จำนวนแถวต่อหน้า 1–1,000 (ค่าเริ่มต้น 100)</li>
+        <li><b><code>nextCursor</code></b> ส่งกลับมาเป็นพารามิเตอร์ <code>cursor</code> เพื่อขอหน้าถัดไป จนกว่าจะได้ค่า <code>null</code></li>
+      </ul>
+
+      <h3>การติดตามข้อมูลใหม่แบบต่อเนื่อง</h3>
+      <ol>
+        <li>ครั้งแรก เรียกด้วย <code>since</code> ที่ต้องการ แล้วเดินตาม <code>nextCursor</code> จนหมด</li>
+        <li><b>เก็บ <code>nextCursor</code> ตัวสุดท้ายที่ได้รับไว้</b> (ถ้าหน้าสุดท้ายได้ <code>null</code> ให้เก็บตัวก่อนหน้า)</li>
+        <li>รอบถัดไปเรียกต่อจาก cursor ที่เก็บไว้ <b>อย่าคำนวณ <code>since</code> ใหม่เอง</b> เพราะจะได้ข้อมูลซ้ำทุกรอบ</li>
+        <li>ช่วงห่างที่แนะนำคือทุก 10–60 วินาที ตามความต้องการของท่าน</li>
+      </ol>
+
+      <div class="note"><b>ข้อมูลประเภทยอดสรุปอาจถูกปรับภายหลัง</b>ถ้ารายการของท่านมีฟิลด์ <code>updated_at</code> แปลว่าตัวเลขของช่วงเวลาล่าสุดอาจถูกปรับปรุงในภายหลัง (โดยปกติภายในวันถัดไป) ให้ดึงช่วงนั้นซ้ำและแทนที่ข้อมูลเดิมเมื่อ <code>updated_at</code> ใหม่กว่าที่ท่านมี</div>
+      <div class="warn"><b>ค่าศูนย์ไม่ได้แปลว่าไม่มีเหตุการณ์เสมอไป</b>อุปกรณ์บางจุดตรวจจับบางเหตุการณ์ไม่ได้ ก่อนสรุปจากค่าศูนย์หรือค่า <code>false</code> ให้อ่านคำอธิบายของฟิลด์นั้นในเอกสาร OpenAPI ของท่าน</div>
+    </section>
+
+    <section id="limits">
+      <h2><span class="n">6</span>ข้อจำกัดการใช้งาน</h2>
+      <div class="table-scroll"><table>
+        <thead><tr><th>หัวข้อ</th><th>ค่า</th><th>เมื่อเกิน</th></tr></thead>
+        <tbody>
+          <tr><td>จำนวนคำขอ</td><td class="num">ตามข้อตกลง (ค่าเริ่มต้น 60 ครั้ง/นาที)</td><td><span class="s-bad">429</span> พร้อม header <code>Retry-After</code> บอกจำนวนวินาทีที่ต้องรอ</td></tr>
+          <tr><td>เวลาประมวลผลต่อคำขอ</td><td class="num">5 วินาที</td><td><span class="s-bad">503</span> <code>query-too-slow</code> ให้แคบช่วงเวลาลงแล้วขอใหม่</td></tr>
+          <tr><td>ขนาดหน้า</td><td class="num">สูงสุด 1,000 แถว</td><td><span class="s-bad">400</span> <code>invalid-parameter</code></td></tr>
+          <tr><td>ช่วงเวลาย้อนหลัง</td><td>ตามข้อตกลง และตามที่เราจัดเก็บจริง</td><td><span class="s-bad">400</span> <code>since-too-old</code> พร้อมบอกวันเก่าสุดที่มี</td></tr>
+          <tr><td>ความคลาดของเวลา</td><td class="num">±5 นาที</td><td><span class="s-bad">401</span> <code>stale-timestamp</code></td></tr>
+        </tbody>
+      </table></div>
+      <p>ตัวอย่าง: ถ้าดึงหน้าละ 1,000 แถว ที่เพดาน 60 ครั้ง/นาที จะได้สูงสุดราว 60,000 แถวต่อนาที การติดตามข้อมูลตามปกติใช้เพียงส่วนน้อยของเพดาน แต่การดึงย้อนหลังก้อนใหญ่ครั้งแรกอาจต้องรอตาม <code>Retry-After</code> เป็นช่วง ๆ ข้อมูลไม่สูญหาย เพียงใช้เวลานานขึ้น หากต้องดึงย้อนหลังจำนวนมาก แจ้งผู้ประสานงานเพื่อปรับเพดานชั่วคราวได้</p>
+    </section>
+
+    <section id="errors">
+      <h2><span class="n">7</span>ข้อผิดพลาด</h2>
+      <p>ข้อผิดพลาดตอบกลับในรูปแบบ RFC 7807 เช่น</p>
+<pre><code>{ "type": "https://&lt;โดเมน&gt;/v1/errors/bad-signature",
+  "title": "bad-signature", "status": 401,
+  "detail": "Signature did not match. Verify the string-to-sign layout and the secret." }</code></pre>
+      <div class="table-scroll"><table>
+        <thead><tr><th>สถานะ</th><th><code>title</code></th><th>ความหมาย / วิธีแก้</th></tr></thead>
+        <tbody>
+          <tr><td class="num">400</td><td><code>invalid-parameter</code></td><td>พารามิเตอร์ไม่ถูกต้อง อ่านรายละเอียดใน <code>detail</code></td></tr>
+          <tr><td class="num">400</td><td><code>since-too-old</code></td><td>ขอข้อมูลเก่ากว่าที่มี <code>detail</code> บอกวันเก่าสุดที่ดึงได้</td></tr>
+          <tr><td class="num">400</td><td><code>non-ascii-query</code> · <code>repeated-query-param</code></td><td>query มีอักขระที่ไม่ใช่ ASCII หรือพารามิเตอร์ซ้ำ ข้อความภาษาไทยให้ส่งใน body</td></tr>
+          <tr><td class="num">401</td><td><code>missing-headers</code> · <code>bad-signature</code></td><td>ตรวจ header และวิธีลงลายเซ็นตามหัวข้อที่ 4</td></tr>
+          <tr><td class="num">401</td><td><code>stale-timestamp</code> · <code>nonce-replay</code></td><td>ตั้งนาฬิกาเครื่องให้ตรง และใช้ <code>X-Ca-Nonce</code> ใหม่ทุกคำขอ</td></tr>
+          <tr><td class="num">401</td><td><code>unknown-key</code> · <code>inactive</code> · <code>expired</code></td><td>App Key ไม่ถูกต้อง ถูกระงับ หรือหมดอายุ ติดต่อผู้ประสานงาน</td></tr>
+          <tr><td class="num">403</td><td><code>not-permitted</code></td><td>ข้อมูลนั้นไม่อยู่ในข้อตกลงของท่าน</td></tr>
+          <tr><td class="num">404</td><td><code>not-found</code></td><td>ไม่มี endpoint นี้ ตรวจกับเอกสาร OpenAPI ของท่าน</td></tr>
+          <tr><td class="num">429</td><td><code>rate-limited</code></td><td>เกินเพดานจำนวนคำขอ รอตาม <code>Retry-After</code> แล้วขอใหม่</td></tr>
+          <tr><td class="num">503</td><td><code>query-too-slow</code></td><td>คำขอกว้างเกินไป แคบช่วงเวลาลง</td></tr>
+        </tbody>
+      </table></div>
+      <div class="note"><b>คำแนะนำในการเขียนโปรแกรม</b>สถานะ 4xx (ยกเว้น 429) ไม่ควรลองใหม่ซ้ำทันที เพราะผลจะเหมือนเดิมจนกว่าจะแก้ต้นเหตุ ส่วน 429 และ 503 ให้รอแล้วลองใหม่ หรือแคบช่วงเวลาลง</div>
+    </section>
+
+    <section id="compat">
+      <h2><span class="n">8</span>ความเข้ากันได้</h2>
+      <p><b>ภายใน <code>/v1</code> เราอาจ</b> เพิ่มฟิลด์ในคำตอบ เพิ่มพารามิเตอร์ที่ไม่บังคับ และเพิ่ม endpoint ใหม่ <b>โปรแกรมของท่านจึงต้องไม่ล้มเมื่อพบฟิลด์ที่ไม่รู้จัก</b></p>
+      <p><b>ภายใน <code>/v1</code> เราจะไม่</b> ลบหรือเปลี่ยนชื่อฟิลด์ เปลี่ยนชนิดหรือความหมายของฟิลด์ ทำให้พารามิเตอร์ที่ไม่บังคับกลายเป็นบังคับ หรือเปลี่ยนวิธีลงลายเซ็น การเปลี่ยนแปลงเหล่านี้จะมาเป็น <code>/v2</code> โดยเปิด <code>/v1</code> ไว้ใช้ควบคู่ตามระยะเวลาที่แจ้งล่วงหน้า</p>
+      <p>สิ่งเดียวที่อาจเปลี่ยนเฉพาะท่านคือ<b>สิทธิ์ตามข้อตกลง</b> ฟิลด์ที่ไม่อยู่ในสิทธิ์จะไม่ปรากฏในข้อมูล ซึ่งจะสะท้อนในเอกสาร OpenAPI ของท่านทันที</p>
+    </section>
+
+    <section id="security">
+      <h2><span class="n">9</span>ความปลอดภัยและข้อมูลส่วนบุคคล</h2>
+      <ul>
+        <li>ใช้ข้อมูลตาม<b>วัตถุประสงค์ที่ระบุในข้อตกลง</b>เท่านั้น และปฏิบัติตาม พ.ร.บ.คุ้มครองข้อมูลส่วนบุคคล พ.ศ. 2562</li>
+        <li>App Key และ App Secret <b>ใช้ได้เฉพาะระบบของท่าน</b> ห้ามเปิดเผยหรือส่งต่อ</li>
+        <li>หากสงสัยว่า App Secret รั่วไหล <b>แจ้งผู้ประสานงานทันที</b> เพื่อออกกุญแจชุดใหม่ ชุดเดิมจะใช้ไม่ได้ทันที</li>
+        <li>เราบันทึกการเข้าถึงทุกครั้ง (เวลา ระบบที่เรียก ผลลัพธ์ และที่อยู่ IP) เพื่อความปลอดภัยและการตรวจสอบ</li>
+        <li>เก็บข้อมูลที่ได้รับไว้ไม่นานเกินความจำเป็น และลบเมื่อหมดวัตถุประสงค์หรือเมื่อข้อตกลงสิ้นสุด</li>
+      </ul>
+    </section>
+
+    <section id="more">
+      <h2><span class="n">10</span>การขอข้อมูลเพิ่มเติม</h2>
+      <p>หากท่านต้องการข้อมูลเพิ่มจากที่ได้รับ กรุณาติดต่อผู้ประสานงานตามข้อตกลง พร้อมระบุ</p>
+      <ul>
+        <li>วัตถุประสงค์และกรณีใช้งาน (สิ่งที่ต้องการทำ ไม่ใช่รายชื่อฟิลด์)</li>
+        <li>ความถี่และช่วงเวลาที่ต้องการ</li>
+        <li>ฐานทางกฎหมายในการใช้ข้อมูล หากเกี่ยวข้องกับข้อมูลส่วนบุคคล</li>
+      </ul>
+      <p>เราจะพิจารณาและกำหนดชุดข้อมูลขั้นต่ำที่เหมาะกับกรณีใช้งานของท่าน เมื่ออนุมัติแล้ว สิทธิ์ใหม่จะปรากฏในเอกสาร OpenAPI ของท่านโดยอัตโนมัติ</p>
+    </section>
+
+    <footer>Vision Meta Hub · คู่มือการเชื่อมต่อ Partner API v1 · เอกสารนี้ไม่มีข้อมูลลับ ส่วน App Secret ส่งให้แยกต่างหากเสมอ</footer>
+  </main>
+</div>
+</body>
+</html>

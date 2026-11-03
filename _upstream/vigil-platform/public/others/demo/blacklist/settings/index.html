@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Blacklist — ตั้งค่านำเข้าข้อมูล — Live Demo</title>
+
+<!-- LIVE DEMO — 3 of 7 sources below make REAL outbound calls (DSS Pro /
+     GuruSquare / Dahua NVR) through the hdy edge proxy, using credentials
+     typed into the form for that one test only (never stored — the
+     blacklist.* schema in the design spec does not exist yet, so there is
+     nowhere durable to persist them even if we wanted to).
+     Served at: /others/demo/blacklist/settings/ (auth-gated + admin-only —
+     see requireAdminForWrites('/api/blacklist') in src/api-server.js).
+     All returned samples are MASKED by default (national ID / owner fields) —
+     proving connectivity/shape only, per spec §4.2 reveal-on-demand rule.
+     See docs/superpowers/specs/2026-07-24-blacklist-central-database-design.md -->
+<script src="/theme-init.js"></script>
+<link rel="stylesheet" href="/vendor/fonts/fonts.css">
+<link rel="stylesheet" href="/index.css">
+<link rel="stylesheet" href="../blacklist-demo.css">
+</head>
+<body>
+<div class="demo-wrap">
+
+  <div class="demo-banner">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+    <span><b>LIVE DEMO — เชื่อมต่อจริง 3 จาก 8 ประเภท</b> (Dahua DSS Pro-Face / GuruSquare-LPR / Dahua NVR/กล้อง-Face+LPR ผ่าน Edge Site HDY) —
+    credential ที่กรอกใช้ทดสอบครั้งเดียวเท่านั้น <b>ไม่ถูกบันทึกที่ไหนเลย</b> (ยังไม่มี schema ฐานข้อมูล blacklist จริงให้เก็บ) — รายการเชื่อมต่อที่เพิ่ม/แก้ไขในหน้านี้ก็อยู่ในเบราว์เซอร์เซสชันนี้เท่านั้น ·
+    ผลลัพธ์ที่แสดงถูก<b>ปิดบังเลขบัตร/ข้อมูลเจ้าของเสมอ</b> เป็นการพิสูจน์ว่าเชื่อมต่อได้และรูปแบบข้อมูลถูกต้อง ไม่ใช่การดึงข้อมูลเต็มมาโชว์ ·
+    หน้านี้จำกัดเฉพาะ admin · อีก 5 ประเภท (HCP / OpenAPI มาตรฐาน / CSV / กรอกเอง / Hikvision NVR) เป็น UI ที่ออกแบบรอไว้ก่อน ยังไม่เชื่อมจริง</span>
+  </div>
+
+  <div class="page-head">
+    <div>
+      <h1>ตั้งค่านำเข้าข้อมูล Blacklist</h1>
+      <div class="sub">แต่ละ "การเชื่อมต่อ" คือ 1 instance ของแหล่งข้อมูล 1 ประเภท — เพิ่มได้มากกว่า 1 instance ต่อประเภท (เช่น Dahua DSS Pro ที่ Site HDY และ Site Pattani แยกกัน) · ปลายทาง: ถังข้อมูลกลาง (blacklist.source_records — ยังไม่ได้สร้าง schema จริง)</div>
+    </div>
+  </div>
+
+  <div class="conn-toolbar"><button class="btn btn-primary" id="btnAddConn">+ เพิ่มการนำเข้าข้อมูล</button></div>
+  <div class="conn-list" id="connList"></div>
+
+</div>
+
+<!-- ===================== CONFIG MODAL ===================== -->
+<div class="modal-bg hidden" id="cfgModal">
+  <div class="modal lg">
+    <div class="modal-header">
+      <h2 id="cfgModalTitle">ตั้งค่าแหล่งข้อมูล</h2>
+      <button class="modal-close" id="cfgModalX">&times;</button>
+    </div>
+    <div class="modal-body" id="cfgModalBody"></div>
+  </div>
+</div>
+
+<script src="settings-blacklist-demo.js?v=4"></script>
+</body>
+</html>

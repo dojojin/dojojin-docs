@@ -69,18 +69,34 @@ const path   = require('path');
 // cache it, so if dotenv ran later those consts would freeze as undefined→false.
 // (2026-07-16 regression fix: adding require('../lpr-core') above the old
 // dotenv line silently flipped the whole ingester to the non-EDGE DB path.)
-require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+require('dotenv').config({ path: path.join(__dirname, '..', '.env'), quiet: true });
+const env = require('../config');
 const mqtt   = require('mqtt');
 const { spawn } = require('child_process');
 const sharp  = require('sharp');
 const { Pool, Client } = require('pg');
 const alertEngine = require('../alert-engine');
+
+// data.Direction จากกล้อง ITC เป็น **array ของทิศเลี้ยว** เช่น ["Straight"] ไม่ใช่
+// string และไม่ใช่เข้า-ออก (ยืนยัน 2026-09-01 จาก payload ตรง — GOTCHAS #186)
+// เก็บลง DB ต้องเป็น scalar: เอาสมาชิกแรก · ยังไม่เคยมี array หลุดลง DB จริง
+// (สแกน 5.3 ล้านแถว/7 วัน = 0) — ด่านนี้กันอนาคต ไม่ใช่แก้ข้อมูลเก่า
+function scalarDirection(d) {
+  if (Array.isArray(d)) return d.length ? String(d[0]) : null;
+  return d ?? null;
+}
 const { decryptCamCreds } = require('../crypto-creds');
 const { parseChallenge, buildDigestHeader } = require('../helpers/digestAuth');
+const watchdog = require('../helpers/streamWatchdog');
+const { touchCamera } = require('../helpers/touchCamera');
+// ตัดสิน "อ่านป้ายได้ดีพอ" ตอนบันทึกแล้วตรึงไว้ (migration 234)
+const helmet = require('../helpers/helmetCriteria');
+const { edgeOwnedCameras, refreshEdgeOwned, startEdgeOwnedRefresh } = require('../helpers/edgeOwnedCameras');
 const {
   DAHUA_EVENT_MAP, DAHUA_CLASS, DAHUA_CATEGORY_CODES, parseDahuaEventText, parseSnapManagerCode, parseSnapManagerIndex,
-  parsePlateCutout, extractObjectClass, extractFaceAttributes, faceComparisonListType, deviceKey, codesForCategories, channelAllowsCode,
+  parseObjectCutout, extractObjectClass, extractFaceAttributes, faceComparisonListType, deviceKey, codesForCategories, channelAllowsCode,
   parseDahuaTrafficJunction, normalizeDahuaEmotion,
+  pruneDahuaData,
 } = require('./dahua-protocol');
 const { xyzToColorName } = require('../color-utils');
 const { VEHICLE_TYPE_TO_CLASS } = require('../lpr-core');
@@ -91,7 +107,7 @@ const {
   eventBoxEdgeRisk, scoreFrameForObject, scoreFrameMotion, chooseBestSnapshotCandidate,
   selectScanSegments,
 } = require('./dahua-snapshot-selector');
-const { EDGE_MODE, publishEdgeEvent, newCorrId } = require('../edge/publisher');
+const { EDGE_MODE, publishEdgeEvent, publishCameraStatus, newCorrId } = require('../edge/publisher');
 const { fetchStoredFile } = require('./dahua-rpc');
 require('../singleton')('dahua-cgi');   // refuse to run a second copy
 
@@ -99,7 +115,8 @@ const CONFIG_FILE   = path.join(__dirname, '..', '..', 'cameras-config.json');
 // media-recorder's rolling RTSP clip buffer — `media-buffer/<camera>/<unix_ts>.ts`.
 const MEDIA_BUFFER_DIR = path.join(__dirname, '..', '..', 'media-buffer');
 const MEDIA_DIR = path.join(__dirname, '..', '..', 'media');
-const SNAPSHOT_DIR = path.join(__dirname, '..', '..', 'snapshots');
+const { snapshotDir } = require('../helpers/snapshotDir');
+const SNAPSHOT_DIR = snapshotDir();
 const { snapPath } = require('../snapshot-path');
 
 // MQTT client for publishing edge snapshots to central via NanoMQ → bridge.
@@ -110,11 +127,11 @@ const { snapPath } = require('../snapshot-path');
 const _snapMqttOpts = {
   clientId: `dah-snap-${process.pid}`, reconnectPeriod: 5000, clean: true,
 };
-if (process.env.SNAPSHOT_PUBLISHER_USER && process.env.SNAPSHOT_PUBLISHER_PASSWORD) {
-  _snapMqttOpts.username = process.env.SNAPSHOT_PUBLISHER_USER;
-  _snapMqttOpts.password = process.env.SNAPSHOT_PUBLISHER_PASSWORD;
+if (env.str('SNAPSHOT_PUBLISHER_USER') && env.str('SNAPSHOT_PUBLISHER_PASSWORD')) {
+  _snapMqttOpts.username = env.str('SNAPSHOT_PUBLISHER_USER');
+  _snapMqttOpts.password = env.str('SNAPSHOT_PUBLISHER_PASSWORD');
 }
-const _snapMqtt = mqtt.connect(process.env.EDGE_MQTT_BROKER || 'mqtt://localhost:1883', _snapMqttOpts);
+const _snapMqtt = mqtt.connect(env.str('EDGE_MQTT_BROKER'), _snapMqttOpts);
 _snapMqtt.on('error', (e) => console.warn('[dah-snap-mqtt]', e.message));
 const RECONNECT_BASE_MS  = 5_000;   // base reconnect delay
 const RECONNECT_MAX_MS   = 30_000;  // backoff ceiling
@@ -158,8 +175,27 @@ const ANPR_PLATE_CROP_MIN_WIDTH = 2200;
 // an EMPTY stream — 0 images, silently killing plate cutouts (live-confirmed
 // 2026-07-17: bigc/lotus with unset caps got 0 cutouts on 16 codes, 11 on 4).
 // The eventManager subscription keeps the FULL list; this only narrows the
-// snapshot stream. Face crops come via the RPC stored-file path, not snapManager.
+// snapshot stream.
 const SNAP_SAFE_CODES = new Set(['TrafficJunction', 'VehicleDetect', 'SmartMotionVehicle', 'NonMotorDetect']);
+// Face codes stream their own crop too (2026-07-27) — the NVR appends a cropped
+// face JPEG after the scene, addressed by Object.Image {Offset,Length}, exactly
+// like the plate cutout. Measured live over 45 min on HDY-NVR-02/03/04: 7 face
+// events, 7 valid JPEGs at the advertised window, 540 heartbeats per stream with
+// no drop-out.
+//
+// Kept OUT of SNAP_SAFE_CODES and gated per-device below rather than merged into
+// it, because the empty-stream firmware bug that produced that narrow list is
+// specifically about asking ONE device for too many codes at once. Face-only
+// devices (the NVR face channels) never carried an ANPR subscription to break;
+// mixed devices keep exactly the code list they have today.
+//
+// Exactly the two codes that were measured, no more: the 45-minute live run
+// subscribed `Events=[FaceRecognition,FaceAnalysis]` and nothing else. Widening
+// this to the rest of DAHUA_CATEGORY_CODES.face would be re-entering the same
+// too-many-codes territory on untested ground for no gain — the NVR labels these
+// events FaceAnalysis/FaceRecognition and nothing else. FaceComparision is
+// excluded on top of that: it already gets a better crop from the RPC path.
+const SNAP_FACE_CODES = new Set(['FaceRecognition', 'FaceAnalysis']);
 const EVENT_LOOKBACK_MS = 1200;   // fallback: event arrives ~this long after the detection frame
 const RTSP_FRAME_LOOKBACK_MS = 700; // pick the buffer frame just before Dahua reports the event
 const MAX_FUTURE_EVENT_MS = 6000; // Dahua may deliver CGI text before the timestamped frame reaches RTSP
@@ -191,12 +227,13 @@ const CLIP_RESOLVER_STATUS_MAX_RETRIES = 30;
 // ============================================================
 // DAHUA_EVENT_MAP, DAHUA_CLASS — ย้ายไป dahua-protocol.js (pure, testable)
 
-const pool = new Pool({
-  host:     process.env.DB_HOST,
-  port:     process.env.DB_PORT,
-  database: process.env.DB_NAME,
-  user:     process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
+const pool =   // 🔴 ไม่มี statement_timeout = query ค้างได้ไม่จำกัด · เจอจริง 2026-08-27:
+  // query หนึ่งค้าง 34 ชั่วโมง ทำให้ autovacuum เก็บ dead tuple ไม่ได้ ตาราง events
+  // บวมจนทั้งระบบช้า และหน้าสถิติว่างเปล่า · มีแค่ api-server ที่ตั้งค่านี้ไว้
+  // insert event + อัปเดต last_seen
+new Pool({
+  options: '-c statement_timeout=60000',
+  ...env.db(),
   max: 3,
   application_name: 'dahua',
 });
@@ -503,7 +540,7 @@ async function extractBestFrameFromBuffer(cam, data, receivedMs = Date.now()) {
     strategy: 'rtsp-buffer-burst',
     anchor: 'server_received_ms',
     scoring: 'motion-diff-v1',
-    direction: data?.Direction || null,
+    direction: scalarDirection(data?.Direction),
     preferredOffset,
     confidence_threshold: SNAPSHOT_CONFIDENCE_THRESHOLD,
     server_received_ms: receivedMs,
@@ -625,12 +662,21 @@ function shouldRecord(cameraId, code) {
 // wins". Capped/pruned like _eventSnaps so a stalled pairing can't leak.
 const _snapContexts = new Map();
 const _eventSnaps = new Map();    // deviceKey → [{ code, channel, ts, buf, used }]
-const _snapConnected = new Set(); // deviceKey
-const _snapDisabled = new Set();  // deviceKey — unsupported by this model/firmware until config reload
+const _snapConnected = new Set(); // streamKey (see snapStreamKey)
+const _snapDisabled = new Set();  // streamKey — unsupported by this model/firmware until config reload
 
 // Fire-and-forget upsert of live ingester state into DB so health.js can read it.
 function upsertCamStatus(cameraId, patch) {
-  if (EDGE_MODE) return;   // no local DB on edge
+  if (EDGE_MODE) {
+    // edge ไม่มี DB ให้เขียน — ส่งขึ้น central ผ่าน MQTT แทนการทิ้งทั้งดุ้น
+    //
+    // เดิมบรรทัดนี้คือ `return;` เฉย ๆ ⇒ สถานะสายกล้องของทุกไซต์ที่มี edge
+    // **ไม่เคยไปถึงใครเลย** และตารางกลายเป็นความเห็นของ central ล้วน ซึ่งเป็นความเห็น
+    // ของเครื่องที่ไปไม่ถึงกล้องพวกนั้น (incident 2026-08-14: 48 แถวบอก reconnecting
+    // ทั้งที่กล้องส่ง event อยู่ 155 ใบใน 10 นาที)
+    publishCameraStatus(cameraId, patch);
+    return;
+  }
   const keys = Object.keys(patch);
   if (!keys.length) return;
   const cols = ['camera_id', ...keys, 'updated_at'];
@@ -651,12 +697,52 @@ function upsertDeviceStatus(device, patch) {
   for (const cam of device.channels.values()) upsertCamStatus(cam.camera_id, patch);
 }
 
-function clearSnapState(deviceKeyStr) {
-  _snapContexts.delete(deviceKeyStr);
+// ── snapManager stream keys ────────────────────────────────────────────
+// One stream per DEVICE was the whole model until 2026-07-27, when it turned
+// out an attachFileProc subscription without `&channel=` serves channel 1 only
+// (API 3.37 §4.4.3) and the documented `channel=-1` is refused by this
+// firmware. A multi-channel NVR now gets one subscription PER CHANNEL, so
+// everything scoped to a connection is keyed by stream key, not device key.
+//
+// Single-channel devices — every ANPR camera — keep the bare device key AND the
+// unchanged URI, so their request stays byte-for-byte what it has always been.
+function snapStreamKey(deviceKeyStr, chan) {
+  return chan == null ? deviceKeyStr : `${deviceKeyStr}#ch${chan}`;
+}
+// Channels needing their own stream, or [null] for legacy one-stream mode.
+function snapStreamChannels(device) {
+  if (device.channels.size <= 1) return [null];
+  return [...device.channels.keys()].sort((a, b) => a - b);
+}
+// Which stream serves this channel-cam? Consumers ask "is MY stream up", not
+// "is anything on the box up" — on a 2-channel NVR those are different answers.
+function snapStreamKeyFor(cam) {
+  const dk = deviceKey(cam);
+  const dev = _devices.get(dk);
+  if (!dev || dev.channels.size <= 1) return dk;
+  return snapStreamKey(dk, Number.isInteger(cam.nvr_channel) ? cam.nvr_channel : 0);
+}
+
+// Per-stream teardown: connection bookkeeping plus that stream's own pairing
+// queue. Deliberately does NOT touch _eventSnaps — that cache is device-wide
+// and holds already-paired JPEGs another channel may still be waiting on.
+function clearSnapStream(streamKeyStr) {
+  _snapContexts.delete(streamKeyStr);
+  _snapActive.delete(streamKeyStr);
+  _snapConnected.delete(streamKeyStr);
+  _snapLastData.delete(streamKeyStr);
+}
+
+// Whole-device teardown. `device` must be passed by callers that already
+// removed it from _devices, or the channel list is gone and per-channel streams
+// get left behind holding a socket and a reconnect timer each.
+function clearSnapState(deviceKeyStr, device = null) {
+  const dev = device || _devices.get(deviceKeyStr);
+  for (const c of (dev ? snapStreamChannels(dev) : [null])) {
+    clearSnapStream(snapStreamKey(deviceKeyStr, c));
+  }
+  clearSnapStream(deviceKeyStr);   // bare key too, in case the device shrank to one channel
   _eventSnaps.delete(deviceKeyStr);
-  _snapActive.delete(deviceKeyStr);
-  _snapConnected.delete(deviceKeyStr);
-  _snapLastData.delete(deviceKeyStr);
 }
 
 // Cap/window widened 2026-07-19→20 (defect #4 of the burst-mismatch
@@ -687,7 +773,7 @@ function rememberEventSnapshot(deviceKeyStr, code, channel, buf, plateImg, plate
 // via media-recorder's per-camera clip buffer.
 async function waitForEventSnapshot(cam, code, sinceMs) {
   const dKey = deviceKey(cam);
-  if (!_snapConnected.has(dKey)) return null;
+  if (!_snapConnected.has(snapStreamKeyFor(cam))) return null;
   const wantChannel = Number.isInteger(cam.nvr_channel) ? cam.nvr_channel : 0;
   const deadline = Date.now() + SNAP_EVENT_WAIT_MS;
   while (Date.now() <= deadline) {
@@ -731,7 +817,7 @@ async function waitForEventSnapshot(cam, code, sinceMs) {
 // time the live grab completed).
 async function takeEventPlateCutout(cam, code, sinceMs, plate, oid, waitMs = SNAP_EVENT_WAIT_MS) {
   const dk = deviceKey(cam);
-  if (!_snapConnected.has(dk)) return null;
+  if (!_snapConnected.has(snapStreamKeyFor(cam))) return null;
   const wantChannel = Number.isInteger(cam.nvr_channel) ? cam.nvr_channel : 0;
   const deadline = Date.now() + waitMs;
   while (Date.now() <= deadline) {
@@ -823,7 +909,7 @@ function scheduleLateCutoutRecovery(cam, code, sinceMs, plate, oid, filePath, co
 // Kept in place (not deleted) as a single narrow choke point so it's cheap to
 // re-enable for a future investigation — just set DIAG_CUTOUT_ENABLED=1 in
 // .env and restart the ingester, no code change needed.
-const DIAG_CUTOUT_ENABLED = process.env.DIAG_CUTOUT_ENABLED === '1';
+const DIAG_CUTOUT_ENABLED = env.bool('DIAG_CUTOUT_ENABLED');
 function _diagCutoutResult(cam, outcome, detail) {
   if (!DIAG_CUTOUT_ENABLED) return;
   console.log(`  🔬 DIAG-CUTOUT [${cam.camera_id}] ${outcome}`, JSON.stringify(detail));
@@ -841,7 +927,7 @@ function _diagCutoutResult(cam, outcome, detail) {
 // explain why the FIFO queue near _snapContexts can never fully recover —
 // it assumes eventual 1:1 supply, only reorders arrival, doesn't manufacture
 // a missing image). Read-only, no behavior change. OFF by default.
-const DIAG_SNAP_SUPPLY_ENABLED = process.env.DIAG_SNAP_SUPPLY_ENABLED === '1';
+const DIAG_SNAP_SUPPLY_ENABLED = env.bool('DIAG_SNAP_SUPPLY_ENABLED');
 const _snapSupplyCounts = new Map(); // deviceKey → { text, image }
 function _diagSnapSupply(deviceKey, kind) {
   if (!DIAG_SNAP_SUPPLY_ENABLED) return;
@@ -867,7 +953,9 @@ if (DIAG_SNAP_SUPPLY_ENABLED) {
 const _BOUNDARY = Buffer.from('--myboundary');
 const _HDR_END  = Buffer.from('\r\n\r\n');
 
-function processMultipart(device, buf, mode = 'event') {
+// `stream` = { key, channel } for a per-channel snapManager subscription, or
+// null for the eventManager stream and for legacy single-stream devices.
+function processMultipart(device, buf, mode = 'event', stream = null) {
   let offset = 0;
   while (true) {
     const bStart = buf.indexOf(_BOUNDARY, offset);
@@ -887,13 +975,13 @@ function processMultipart(device, buf, mode = 'event') {
       if (next < 0) { offset = bStart; break; }
       bodyEnd = next;
     }
-    handlePart(device, headers, buf.slice(bodyStart, bodyEnd), mode);
+    handlePart(device, headers, buf.slice(bodyStart, bodyEnd), mode, stream);
     offset = bodyEnd;
   }
   return offset > 0 ? buf.slice(offset) : buf;
 }
 
-function handlePart(device, headers, body, mode = 'event') {
+function handlePart(device, headers, body, mode = 'event', stream = null) {
   const ct = (headers.match(/Content-Type:\s*([^\r\n;]+)/i) || [])[1] || '';
   // Confirmed 2026-07-15 (two independent live diagnostics, this NVR/firmware):
   // the eventManager ('event' mode) stream never interleaves a JPEG part for
@@ -912,7 +1000,10 @@ function handlePart(device, headers, body, mode = 'event') {
       _diagSnapSupply(device.key, 'image');
       // FIFO: pair this image with the OLDEST unconsumed text context, not
       // "whatever's there now" — see _snapContexts declaration for why.
-      const q = _snapContexts.get(device.key);
+      // Queue is per STREAM, not per device: on a multi-channel NVR two
+      // subscriptions interleave, and a device-wide FIFO would hand one
+      // channel's JPEG to the other channel's text context.
+      const q = _snapContexts.get(stream ? stream.key : device.key);
       const ctx = (q && q.length) ? q.shift() : {};
       rememberEventSnapshot(device.key, ctx.code, ctx.channel, body, ctx.plateImg, ctx.plate, ctx.oid);
     }
@@ -920,14 +1011,20 @@ function handlePart(device, headers, body, mode = 'event') {
   }
   const text = body.toString('utf8').trim();
   if (!text || /^Heartbeat$/i.test(text)) return;
-  if (mode === 'snap') parseSnapManagerText(device, text);
+  if (mode === 'snap') parseSnapManagerText(device, text, stream);
   else parseDahuaEvent(device, text);
 }
 
-function parseSnapManagerText(device, text) {
+function parseSnapManagerText(device, text, stream = null) {
   const code = parseSnapManagerCode(text);
-  const channel = parseSnapManagerIndex(text);
-  const plateImg = parsePlateCutout(text);   // camera's own plate crop {off,len} into the next image part
+  // A per-channel subscription only ever carries its own channel, so the
+  // subscription is the authority — more reliable than parsing it back out of
+  // the text, which needs a regex per firmware field shape and returns null
+  // (= "any channel may claim this") the moment it meets a new one.
+  const channel = stream && stream.channel != null
+    ? stream.channel
+    : parseSnapManagerIndex(text);
+  const plateImg = parseObjectCutout(text);   // camera's own plate crop {off,len} into the next image part
   // Plate text pairs the cutout to its event deterministically (not just by
   // time) so heavy traffic can't hand one car's crop to another's row. Prefer
   // Object.Text — the same field the eventManager event's lpr.plate comes from
@@ -946,14 +1043,15 @@ function parseSnapManagerText(device, text) {
   // overwriting a single slot — each queued context waits for its own image
   // part, in arrival order. Cap + prune stale entries so a text part whose
   // image never shows up (dropped frame, camera hiccup) can't leak forever.
-  const q = _snapContexts.get(device.key) || [];
+  const qKey = stream ? stream.key : device.key;
+  const q = _snapContexts.get(qKey) || [];
   q.push({ code, channel, plateImg, plate, oid, ts: Date.now() });
   const now = Date.now();
   // Same widened window/cap as _eventSnaps (EVENT_SNAP_WINDOW_MS/MAX_ITEMS) —
   // this queue and that cache are the two halves of the same text/image
   // pairing under burst load; capping them differently would just move the
   // eviction bottleneck from one side to the other.
-  _snapContexts.set(device.key, q.filter(x => now - x.ts < EVENT_SNAP_WINDOW_MS).slice(-EVENT_SNAP_MAX_ITEMS));
+  _snapContexts.set(qKey, q.filter(x => now - x.ts < EVENT_SNAP_WINDOW_MS).slice(-EVENT_SNAP_MAX_ITEMS));
 }
 
 // parseSnapManagerCode, parseSnapManagerIndex — ย้ายไป dahua-protocol.js
@@ -984,8 +1082,7 @@ function parseDahuaEvent(device, text) {
 
   // Touch last_seen on every Code= chunk so the camera stays "online".
   if (!EDGE_MODE) {
-    pool.query(`UPDATE cameras SET last_seen_at=NOW() WHERE id=$1`,
-      [cam.camera_id]).catch(() => {});
+    touchCamera(pool, cam.camera_id);
   }
 
   if (!mapping) {
@@ -1064,8 +1161,11 @@ async function ingestEvent(cam, code, mapping, data) {
   const isBlacklistMatch = code === 'FaceComparision' && faceComparisonListType(data?.Sim) === 'blackList';
   const rawJson = {
     vendor: 'dahua', eventType: code, dahuaCode: code,
-    ruleName: data?.Name || null, direction: data?.Direction || null,
-    eventId: data?.EventID ?? null, data,
+    ruleName: data?.Name || null, direction: scalarDirection(data?.Direction),
+    // pruneDahuaData drops four keys nothing reads — 16.5% of the events
+    // partition. Applied only to what gets STORED; every parser above this line
+    // still sees the untouched payload.
+    eventId: data?.EventID ?? null, data: pruneDahuaData(data),
     ...(faceAttrs ? {
       // lowercase to match Hikvision's raw_json convention (routes/faces.js
       // compares gender==='male'/'female') — faceAttrs.gender is 'Male'/
@@ -1158,6 +1258,40 @@ async function ingestEvent(cam, code, mapping, data) {
     const plateCutoutSinceMs = Date.now();
     const plateCutoutOid = data && data.Object && data.Object.ObjectID;
     const plateCutoutP = isAnpr ? takeEventPlateCutout(cam, code, plateCutoutSinceMs, lpr && lpr.plate, plateCutoutOid) : null;
+    // Face crop, same mechanism (2026-07-27). FaceComparision is excluded — the
+    // RPC stored-file path below is already better for it.
+    //
+    // `code` is deliberately passed as null here. One face event carries TWO code
+    // strings and the two streams read different ones — live text part, 4/4
+    // samples across HDY-NVR-03/04, 2026-07-27:
+    //
+    //   Events[0].Code=FaceAnalysis                   ← parseSnapManagerCode lands here
+    //   Events[0].EventBaseInfo.Code=FaceRecognition  ← what eventManager reports
+    //
+    // (parseSnapManagerCode's direct `Code=` branch needs line-start or `;`, so a
+    // dotted `Events[0].Code=` falls to the array branch and returns FaceAnalysis;
+    // `Events[0].EventBaseInfo.Code=` matches neither.) Filtering on `code` would
+    // therefore compare FaceAnalysis against FaceRecognition and reject every
+    // candidate. Dropping that one predicate costs nothing: the same samples show
+    // `Events[0].Object.ObjectID` present on the snapManager side and equal to the
+    // eventManager's `data.Object.ObjectID`, so pairing still runs on the strong
+    // key, plus channel and time window. The stream is face-only by construction
+    // anyway — connectSnapManager subscribes face codes only on devices with no
+    // other snapManager code.
+    // `oid` is dropped for the same reason. The two streams number faces from
+    // DIFFERENT counters — measured live 2026-07-27 on HDY-NVR-03-ch1, three
+    // consecutive events: eventManager said 281325/281329/281333 while the
+    // snapManager candidate sitting in the cache said 674986. Matching on it is
+    // not merely unhelpful, it rejects every candidate 100% of the time. (It is
+    // a real key for ANPR, where both streams read the same detector id — that
+    // call above is unchanged.) Faces pair on channel + time window instead,
+    // which is why parseSnapManagerIndex had to learn the EventBaseInfo.Index
+    // shape first: without a channel these NVRs tag every crop null, and a
+    // time-only match on a 2-channel face NVR can hand ขาเข้า's face to ขาออก.
+    const isFaceCut = DAHUA_CATEGORY_CODES.face.includes(code) && code !== 'FaceComparision';
+    const faceCutoutP = isFaceCut
+      ? takeEventPlateCutout(cam, null, plateCutoutSinceMs, null, null)
+      : null;
     try {
       // Preferred source (2026-07-15, RPC stored-file breakthrough):
       // FaceComparision events carry the NVR's OWN already-stored images —
@@ -1196,6 +1330,30 @@ async function ingestEvent(cam, code, mapping, data) {
           previewFull = null;
         }
         if (previewRef) previewSource = 'dahua-nvr-stored';
+      }
+      // Face crop from the snapManager stream (2026-07-27). Same output shape as
+      // the FaceComparision block above — crop is _snapshot, scene is
+      // _snapshot_full — because the face page treats the crop as the primary
+      // image (Hikvision convention). Without this the face path fell through to
+      // the live grab below and stored a 1920x1080 scene AS the face: the gallery
+      // then showed a street, and the detail modal showed that same street in both
+      // panes. 18,669 events in the 7 days to 2026-07-27 carried an Object.Image
+      // cutout that nothing read.
+      if (!previewRef && faceCutoutP) {
+        const cut = await faceCutoutP;
+        if (cut && cut.crop && cut.crop.length > 0) {
+          const tsMs = Date.now();
+          const { dir: evDir, relBase: evBase } = snapPath(SNAPSHOT_DIR, 'events', cam.camera_id, tsMs);
+          if (cut.scene && cut.scene.length > 0) {
+            const fn = `${corr}_${tsMs}_full.jpg`;
+            fs.writeFileSync(path.join(evDir, fn), cut.scene);
+            previewFull = `${evBase}/${fn}`;
+          }
+          const fn = `${corr}_${tsMs}.jpg`;
+          fs.writeFileSync(path.join(evDir, fn), cut.crop);
+          previewRef = `${evBase}/${fn}`;
+          previewSource = 'dahua-snap-cutout';
+        }
       }
       // Fallback / non-FaceComparision events: live CGI grab as before.
       if (!previewRef) {
@@ -1337,6 +1495,8 @@ async function ingestEvent(cam, code, mapping, data) {
         vehicle_brand: lpr.vehicleBrand, plate_type: lpr.plateType,
         bbox_x: lpr.bbox?.x ?? null, bbox_y: lpr.bbox?.y ?? null,
         bbox_width: lpr.bbox?.width ?? null, bbox_height: lpr.bbox?.height ?? null,
+        vehicle_bbox_x: lpr.vehicleBbox?.x ?? null, vehicle_bbox_y: lpr.vehicleBbox?.y ?? null,
+        vehicle_bbox_width: lpr.vehicleBbox?.width ?? null, vehicle_bbox_height: lpr.vehicleBbox?.height ?? null,
         plate_image: plateImageRef,
       } : null,
       alert: {
@@ -1392,16 +1552,26 @@ async function ingestEvent(cam, code, mapping, data) {
       `INSERT INTO license_plates
          (event_id, camera_id, plate_number, confidence, country, region,
           vehicle_type, vehicle_color, vehicle_brand, plate_type,
-          bbox_x, bbox_y, bbox_width, bbox_height, plate_image,
-          plate_color, no_helmet, rider_count)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NULL,$15,$16,$17)`,
+          bbox_x, bbox_y, bbox_width, bbox_height,
+          vehicle_bbox_x, vehicle_bbox_y, vehicle_bbox_width, vehicle_bbox_height,
+          plate_image,
+          plate_color, no_helmet, rider_count, detected_at, plate_identified)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,NULL,$19,$20,$21,$22,
+               ${helmet.stampSql('$23', '$24', '$25')})`,
       [eventId, cam.camera_id, lpr.plate, lpr.confidence, lpr.country, lpr.region,
        lpr.vehicleType, lpr.vehicleColor, lpr.vehicleBrand, lpr.plateType,
        lpr.bbox?.x ?? null, lpr.bbox?.y ?? null, lpr.bbox?.width ?? null, lpr.bbox?.height ?? null,
+       // migration 117 — vehicle box, already normalized to the same 0-1000
+       // grid as bbox_x above (see dahua-protocol.js for why)
+       lpr.vehicleBbox?.x ?? null, lpr.vehicleBbox?.y ?? null, lpr.vehicleBbox?.width ?? null, lpr.vehicleBbox?.height ?? null,
        // #085/#090 perf — plateColor/helmet/riderCount feed raw_json here too.
        // helmet/riderCount are NonMotor-only (ITC431 motorcycles) — null on
        // car/Pickup events and on ITC237, not asserted false/0 from silence.
-       lpr.plateColor ?? null, lpr.helmet === 'no', lpr.riderCount ?? null]
+       lpr.plateColor ?? null, lpr.helmet === 'no', lpr.riderCount ?? null,
+       // camera time, not insert time — see the note in mqtt-subscriber.js
+       eventTimeIso,
+       // $23-$25 — ค่าสำหรับตรึงผล "พร้อมข้อมูลทะเบียน" (ดูหมายเหตุที่ stampSql)
+       helmet.plateMatches(lpr.plate), lpr.confidence ?? null, cam.camera_id]
     ).catch(err => console.error(`  🚗 license_plates insert [${cam.camera_id}]:`, err.message));
     // #089 perf — denormalize onto events so stats.js can filter without joining license_plates
     if (lpr.vehicleType) {
@@ -1436,7 +1606,7 @@ async function ingestEvent(cam, code, mapping, data) {
   const snapshotStartMs = Date.now();
   let snapshotDebug = {
     received_ms: snapshotStartMs,
-    event_direction: data?.Direction || null,
+    event_direction: scalarDirection(data?.Direction),
     event_utc: data?.UTC ?? null,
     event_utcms: data?.UTCMS ?? null,
     event_pts: data?.PTS ?? null,
@@ -1578,29 +1748,23 @@ async function resolveDahuaSnapshotFromClip({ event_id, camera_id, clip_file, cl
   console.log(`  🎞️  [${camera_id}] clip snapshot → MQTT (${(best.frame.length / 1024).toFixed(0)}KB, ${status})`);
 }
 
-async function listenForClipDone() {
-  const client = new Client({
-    host: process.env.DB_HOST,
-    port: process.env.DB_PORT,
-    database: process.env.DB_NAME,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
+// ต่อกลับเองเมื่อหลุด (เดิมมีแค่ log — Postgres crash 2026-09-26 แล้วตัวนี้เงียบถาวร · GOTCHAS #217)
+function listenForClipDone() {
+  _clipDoneClient = require('../helpers/pgListen').listenForever({
+    label: 'dahua clip resolver',
+    channels: ['clip_done'],
+    makeClient: () => new Client({ ...env.db() }),
+    onNotification: (msg) => {
+      if (msg.channel !== 'clip_done') return;
+      try {
+        resolveDahuaSnapshotFromClip(JSON.parse(msg.payload)).catch(err =>
+          console.error('  🎞️  clip resolver:', err.message)
+        );
+      } catch {
+        // ignore malformed notifications
+      }
+    },
   });
-  client.on('error', e => console.error('  🎞️  clip resolver listen:', e.message));
-  client.on('notification', (msg) => {
-    if (msg.channel !== 'clip_done') return;
-    try {
-      resolveDahuaSnapshotFromClip(JSON.parse(msg.payload)).catch(err =>
-        console.error('  🎞️  clip resolver:', err.message)
-      );
-    } catch {
-      // ignore malformed notifications
-    }
-  });
-  await client.connect();
-  await client.query('LISTEN clip_done');
-  _clipDoneClient = client;
-  console.log('  🎞️  Dahua clip resolver listening for clip_done');
 }
 
 // ============================================================
@@ -1689,17 +1853,25 @@ function connectDevice(device) {
           + `${device.channels.size} channel(s), ${codes.length} code(s))`);
         upsertDeviceStatus(device, { event_stream: 'connected', retry_count: 0, last_error_code: null });
         _retryCount.delete(device.key);
+        // เฝ้าสายตายเงียบ — เหตุผลเดียวกับฝั่ง Hikvision (GOTCHAS #152)
+        // `timeout: 0` ทำให้ TCP ที่ตายโดยไม่ส่ง FIN/RST ค้างอยู่ตลอดไปโดยไม่มี event ไหนยิง
+        watchdog.watch(`dahua:${device.key}`, device.key, () => {
+          try { req.destroy(new Error('stream stale — no data')); } catch { /* ignore */ }
+        });
         let buffer = Buffer.alloc(0);
         res.on('data', (chunk) => {
+          watchdog.touch(`dahua:${device.key}`);
           buffer = processMultipart(device, Buffer.concat([buffer, chunk]), 'event');
           if (buffer.length > 4 * 1024 * 1024) buffer = buffer.slice(-1024 * 1024);
         });
-        res.on('end',   () => { console.warn(`  ⚠️  [${device.key}] stream ended`); upsertDeviceStatus(device, { event_stream: 'reconnecting' }); scheduleReconnect(device); });
-        res.on('error', (e) => { console.error(`  ❌ [${device.key}] stream:`, e.message); upsertDeviceStatus(device, { event_stream: 'reconnecting', last_error_code: e.code || null }); scheduleReconnect(device); });
+        res.on('end',   () => { watchdog.unwatch(`dahua:${device.key}`); console.warn(`  ⚠️  [${device.key}] stream ended`); upsertDeviceStatus(device, { event_stream: 'reconnecting' }); scheduleReconnect(device); });
+        res.on('error', (e) => { watchdog.unwatch(`dahua:${device.key}`); console.error(`  ❌ [${device.key}] stream:`, e.message); upsertDeviceStatus(device, { event_stream: 'reconnecting', last_error_code: e.code || null }); scheduleReconnect(device); });
       }
     );
     _eventReqs.set(device.key, req);
+    watchdog.enableKeepAlive(req);
     req.on('error', (e) => {
+      watchdog.unwatch(`dahua:${device.key}`);
       if (_eventReqs.get(device.key) === req) _eventReqs.delete(device.key);
       console.error(`  ❌ [${device.key}] request:`, e.message);
       upsertDeviceStatus(device, { event_stream: 'reconnecting', last_error_code: e.code || null });
@@ -1710,28 +1882,64 @@ function connectDevice(device) {
   doRequest(null);
 }
 
+// Opens every subscription this device needs: one for the box on a
+// single-channel camera, one per channel on a multi-channel NVR.
 function connectSnapManager(device) {
   if (_destroyed.has(device.key)) return;
-  // Skip the shared snapshot stream only if EVERY channel opted out —
-  // if even one channel wants event-JPEG snapshots, the device needs it.
-  const wantsSnap = [...device.channels.values()].some(c => c.dahua_event_snapshot !== false);
+  for (const chan of snapStreamChannels(device)) openSnapStream(device, chan);
+}
+
+function openSnapStream(device, chan) {
+  if (_destroyed.has(device.key)) return;
+  const sk = snapStreamKey(device.key, chan);
+  const label = chan == null ? device.key : `${device.key} ch${chan}`;
+  // Skip the snapshot stream only if EVERY channel it serves opted out — for a
+  // per-channel stream that question is about its own channel alone.
+  const served = chan == null
+    ? [...device.channels.values()]
+    : [device.channels.get(chan)].filter(Boolean);
+  const wantsSnap = served.some(c => c.dahua_event_snapshot !== false);
   if (!wantsSnap) return;
-  if (_snapDisabled.has(device.key)) return;
-  if (_snapActive.has(device.key)) return;
-  _snapActive.add(device.key);
+  if (_snapDisabled.has(sk)) return;
+  if (_snapActive.has(sk)) return;
+  _snapActive.add(sk);
   const repCam = device.repCam;
   const port = repCam.http_port || repCam.port || 80;
   // Filter to snapManager-safe codes (see SNAP_SAFE_CODES) — the full set breaks
-  // the stream on some firmware. No safe codes (e.g. a face-only device) → skip;
-  // face capture doesn't use snapManager.
-  const codes = deviceSubscriptionCodes(device).filter(c => SNAP_SAFE_CODES.has(c));
-  if (!codes.length) { _snapActive.delete(device.key); return; }
-  // No `&channel=` filter — subscribes across the whole device; each
-  // channel's JPEG is tagged via parseSnapManagerIndex() on arrival.
+  // the stream on some firmware. A per-channel stream asks for that channel's
+  // codes only; the device-wide union belongs to the shared stream, and handing
+  // a channel codes it never wanted is the same overload that empties a stream.
+  const wanted = chan == null
+    ? deviceSubscriptionCodes(device)
+    : codesForCategories((device.channels.get(chan) || {}).capture_categories);
+  const codes = wanted.filter(c => SNAP_SAFE_CODES.has(c));
+  // Face crops (2026-07-27, see SNAP_FACE_CODES): only when this device has no
+  // snapManager-safe code of its own. That keeps every mixed/ANPR device on the
+  // exact subscription it has today — the empty-stream bug this narrowing exists
+  // for is about overloading one device's code list, so a device already using
+  // the stream is never given more.
+  if (!codes.length) codes.push(...wanted.filter(c => SNAP_FACE_CODES.has(c)));
+  if (!codes.length) { _snapActive.delete(sk); return; }
+  // Channel selection, the short version of a day of measuring (API 3.37 §4.4.3):
+  //   omitted    → channel 1 ONLY, despite an old comment here claiming "all"
+  //   channel=-1 → documented as "all channels"; this firmware answers
+  //                ECONNRESET and takes the working channel down with it
+  //   channel=N  → what we use, 1-based, one subscription each
+  // Single-channel devices send no parameter at all, keeping the exact request
+  // the ANPR fleet is proven on rather than a same-meaning rewrite of it.
+  const chanParam = chan == null ? '' : `&channel=${chan + 1}`;
   const uri = '/cgi-bin/snapManager.cgi?action=attachFileProc&Flags[0]=Event&Events=['
     + codes.join('%2C')
-    + ']&heartbeat=5';
+    + ']' + chanParam + '&heartbeat=5';
   const method = 'GET';
+  // Status is written per channel when the stream is per channel — otherwise
+  // ch0 connecting would report "connected" for a ch1 that is still down, and
+  // the health page would show green for a channel collecting nothing.
+  const putStatus = (patch) => {
+    if (chan == null) return upsertDeviceStatus(device, patch);
+    const c = device.channels.get(chan);
+    if (c) upsertCamStatus(c.camera_id, patch);
+  };
 
   const doRequest = (authHeader) => {
     const headers = { Accept: '*/*' };
@@ -1742,38 +1950,39 @@ function connectSnapManager(device) {
         if (res.statusCode === 401) {
           const wa = res.headers['www-authenticate'];
           if (!wa || !/digest/i.test(wa)) {
-            console.warn(`  ⚠️  [${device.key}] snapManager 401 without Digest challenge`);
+            console.warn(`  ⚠️  [${label}] snapManager 401 without Digest challenge`);
             res.resume();
-            _snapActive.delete(device.key);
-            upsertDeviceStatus(device, { snap_stream: 'reconnecting', last_snap_http_status: 401 });
-            return scheduleSnapReconnect(device);
+            _snapActive.delete(sk);
+            putStatus({ snap_stream: 'reconnecting', last_snap_http_status: 401 });
+            return scheduleSnapReconnect(device, chan);
           }
           res.resume();
           return doRequest(buildDigestHeader(
             repCam.username, repCam.password, method, uri, parseChallenge(wa)));
         }
         if (res.statusCode !== 200) {
-          console.warn(`  ⚠️  [${device.key}] snapManager HTTP ${res.statusCode}`);
+          console.warn(`  ⚠️  [${label}] snapManager HTTP ${res.statusCode}`);
           res.resume();
-          _snapActive.delete(device.key);
+          _snapActive.delete(sk);
           if ([400, 404, 405].includes(res.statusCode)) {
-            _snapDisabled.add(device.key);
-            console.warn(`  ℹ️  [${device.key}] snapManager unsupported — using RTSP/live fallback`);
-            upsertDeviceStatus(device, { snap_stream: 'disabled', last_snap_http_status: res.statusCode });
+            _snapDisabled.add(sk);
+            console.warn(`  ℹ️  [${label}] snapManager unsupported — using RTSP/live fallback`);
+            putStatus({ snap_stream: 'disabled', last_snap_http_status: res.statusCode });
             return;
           }
-          upsertDeviceStatus(device, { snap_stream: 'reconnecting', last_snap_http_status: res.statusCode });
-          return scheduleSnapReconnect(device);
+          putStatus({ snap_stream: 'reconnecting', last_snap_http_status: res.statusCode });
+          return scheduleSnapReconnect(device, chan);
         }
-        _snapConnected.add(device.key);
-        _snapLastData.set(device.key, Date.now());   // seed for the zombie watchdog
-        _snapRetryCount.delete(device.key);
-        console.log(`  📸 [${device.key}] snapManager event snapshot stream connected`);
-        upsertDeviceStatus(device, { snap_stream: 'connected' });
+        _snapConnected.add(sk);
+        _snapLastData.set(sk, Date.now());   // seed for the zombie watchdog
+        _snapRetryCount.delete(sk);
+        console.log(`  📸 [${label}] snapManager event snapshot stream connected`);
+        putStatus({ snap_stream: 'connected' });
+        const stream = { key: sk, channel: chan };
         let buffer = Buffer.alloc(0);
         res.on('data', (chunk) => {
-          _snapLastData.set(device.key, Date.now());   // watchdog: liveness (incl. heartbeats)
-          buffer = processMultipart(device, Buffer.concat([buffer, chunk]), 'snap');
+          _snapLastData.set(sk, Date.now());   // watchdog: liveness (incl. heartbeats)
+          buffer = processMultipart(device, Buffer.concat([buffer, chunk]), 'snap', stream);
           if (buffer.length > 8 * 1024 * 1024) {
             // Diagnostic (2026-07-21) — this silently discarded everything but the
             // last 2MB before, with no trace. Investigating whether this safety
@@ -1784,35 +1993,33 @@ function connectSnapManager(device) {
             // buffer.length crosses 8MB every unparsed part in it (stuck one
             // included) is dropped with zero visibility. Read-only otherwise —
             // same truncation as before, just no longer silent.
-            console.warn(`  ⚠️  [${device.key}] snapManager buffer overflow — dropping ${(buffer.length - 2 * 1024 * 1024)} bytes unparsed (bufLen=${buffer.length})`);
+            console.warn(`  ⚠️  [${label}] snapManager buffer overflow — dropping ${(buffer.length - 2 * 1024 * 1024)} bytes unparsed (bufLen=${buffer.length})`);
             buffer = buffer.slice(-2 * 1024 * 1024);
           }
         });
         const done = (msg) => {
-          if (msg) console.warn(`  ⚠️  [${device.key}] snapManager ${msg}`);
-          _snapConnected.delete(device.key);
-          _snapLastData.delete(device.key);
-          _snapActive.delete(device.key);
-          upsertDeviceStatus(device, { snap_stream: 'reconnecting' });
-          scheduleSnapReconnect(device);
+          if (msg) console.warn(`  ⚠️  [${label}] snapManager ${msg}`);
+          clearSnapStream(sk);
+          putStatus({ snap_stream: 'reconnecting' });
+          scheduleSnapReconnect(device, chan);
         };
         res.on('end', () => done('stream ended'));
         res.on('error', (e) => done(`stream: ${e.message}`));
       }
     );
-    _snapReqs.set(device.key, req);
+    _snapReqs.set(sk, req);
     req.on('error', (e) => {
-      if (_snapReqs.get(device.key) === req) _snapReqs.delete(device.key);
-      console.warn(`  ⚠️  [${device.key}] snapManager request: ${e.message}`);
-      clearSnapState(device.key);
+      if (_snapReqs.get(sk) === req) _snapReqs.delete(sk);
+      console.warn(`  ⚠️  [${label}] snapManager request: ${e.message}`);
+      clearSnapStream(sk);
       if (e.code === 'HPE_INVALID_HEADER_TOKEN' || /Invalid header token|Parse Error/i.test(e.message || '')) {
-        _snapDisabled.add(device.key);
-        console.warn(`  ℹ️  [${device.key}] snapManager parser rejected stream — using RTSP/live fallback`);
-        upsertDeviceStatus(device, { snap_stream: 'disabled', last_error_code: e.code || null });
+        _snapDisabled.add(sk);
+        console.warn(`  ℹ️  [${label}] snapManager parser rejected stream — using RTSP/live fallback`);
+        putStatus({ snap_stream: 'disabled', last_error_code: e.code || null });
         return;
       }
-      upsertDeviceStatus(device, { snap_stream: 'reconnecting', last_error_code: e.code || null });
-      scheduleSnapReconnect(device, e.code);
+      putStatus({ snap_stream: 'reconnecting', last_error_code: e.code || null });
+      scheduleSnapReconnect(device, chan, e.code);
     });
     req.end();
   };
@@ -1820,16 +2027,16 @@ function connectSnapManager(device) {
 }
 
 const _reconnectTimers = new Map();       // deviceKey → timer
-const _snapReconnectTimers = new Map();   // deviceKey → timer
+const _snapReconnectTimers = new Map();   // streamKey → timer
 const _devices          = new Map();      // deviceKey → { key, repCam, channels } — active/connecting devices
 const _activeCams       = new Map();      // camera_id → cam (per-channel; mirrors connected devices' channels)
-const _snapActive       = new Set();      // deviceKey
+const _snapActive       = new Set();      // streamKey
 const _eventReqs        = new Map();      // deviceKey → current eventManager request
-const _snapReqs         = new Map();      // deviceKey → current snapManager request
+const _snapReqs         = new Map();      // streamKey → current snapManager request
 const _destroyed        = new Set();      // deviceKeys that must not reconnect (hot-removed)
 const _retryCount       = new Map();      // deviceKey → consecutive EHOSTUNREACH count (event stream backoff)
-const _snapRetryCount   = new Map();      // deviceKey → consecutive EHOSTUNREACH count (snap stream backoff)
-const _snapLastData     = new Map();      // deviceKey → ts of last byte on the snap stream (zombie watchdog)
+const _snapRetryCount   = new Map();      // streamKey → consecutive EHOSTUNREACH count (snap stream backoff)
+const _snapLastData     = new Map();      // streamKey → ts of last byte on the snap stream (zombie watchdog)
 let _clipDoneClient     = null;
 
 // Zombie-snap watchdog. `heartbeat=5` makes a healthy attachFileProc stream
@@ -1892,21 +2099,25 @@ function stopDeviceConnection(key) {
   }
   clearTimeout(_reconnectTimers.get(key));
   _reconnectTimers.delete(key);
-  clearTimeout(_snapReconnectTimers.get(key));
-  _snapReconnectTimers.delete(key);
   _retryCount.delete(key);
-  _snapRetryCount.delete(key);
+  // Every stream this device may have opened: the bare key for a single-channel
+  // camera, one per channel for an NVR. Missing one leaves a live socket and a
+  // reconnect timer behind that nothing owns any more.
+  const snapKeys = [key, ...(device ? snapStreamChannels(device) : [])
+    .filter(c => c != null).map(c => snapStreamKey(key, c))];
+  for (const sk of snapKeys) {
+    clearTimeout(_snapReconnectTimers.get(sk));
+    _snapReconnectTimers.delete(sk);
+    _snapRetryCount.delete(sk);
+    const r = _snapReqs.get(sk);
+    if (r) { try { r.destroy(); } catch { /* ignore */ } _snapReqs.delete(sk); }
+  }
   const eventReq = _eventReqs.get(key);
   if (eventReq) {
     try { eventReq.destroy(); } catch { /* ignore */ }
     _eventReqs.delete(key);
   }
-  const snapReq = _snapReqs.get(key);
-  if (snapReq) {
-    try { snapReq.destroy(); } catch { /* ignore */ }
-    _snapReqs.delete(key);
-  }
-  clearSnapState(key);
+  clearSnapState(key, device);
 }
 
 function scheduleReconnect(device, errCode = null) {
@@ -1929,23 +2140,38 @@ function scheduleReconnect(device, errCode = null) {
   _reconnectTimers.set(device.key, t);
 }
 
-function scheduleSnapReconnect(device, errCode = null) {
+// A device coming back after a config change must be free to retry EVERY
+// stream — clearing only the bare key would leave a per-channel stream marked
+// unsupported for good.
+function clearSnapDisabled(key, device) {
+  _snapDisabled.delete(key);
+  if (!device) return;
+  for (const c of snapStreamChannels(device)) {
+    if (c != null) _snapDisabled.delete(snapStreamKey(key, c));
+  }
+}
+
+// Backoff is per stream: one channel losing its socket must not delay or cancel
+// another channel's reconnect, and the retry revives only the stream that died
+// instead of cycling every channel on the box.
+function scheduleSnapReconnect(device, chan = null, errCode = null) {
   if (_destroyed.has(device.key)) return;
-  if (_snapReconnectTimers.has(device.key)) return;
+  const sk = snapStreamKey(device.key, chan);
+  if (_snapReconnectTimers.has(sk)) return;
   let delay;
   if (UNREACHABLE_CODES.has(errCode)) {
-    const retries = _snapRetryCount.get(device.key) || 0;
+    const retries = _snapRetryCount.get(sk) || 0;
     delay = Math.min(RECONNECT_BASE_MS * (2 ** retries), RECONNECT_MAX_MS);
-    _snapRetryCount.set(device.key, retries + 1);
+    _snapRetryCount.set(sk, retries + 1);
   } else {
     delay = RECONNECT_BASE_MS;
-    _snapRetryCount.delete(device.key);
+    _snapRetryCount.delete(sk);
   }
   const t = setTimeout(() => {
-    _snapReconnectTimers.delete(device.key);
-    connectSnapManager(device);
+    _snapReconnectTimers.delete(sk);
+    openSnapStream(device, chan);
   }, delay);
-  _snapReconnectTimers.set(device.key, t);
+  _snapReconnectTimers.set(sk, t);
 }
 
 // ============================================================
@@ -1957,6 +2183,10 @@ function loadDahuaCameras() {
     return (cfg.cameras || [])
       .filter(c => String(c.vendor || 'bosch').toLowerCase() === 'dahua')
       .filter(c => !c.paused)
+      // กล้องที่มี edge ดูแลอยู่แล้ว central ไม่ต้อง poll ซ้ำ — มันไปไม่ถึงอยู่ดี
+      // (คนละวง LAN คนละจังหวัด) และ event ก็เดินทางมาทาง MQTT bridge เรียบร้อยแล้ว
+      // ⚠️ บน edge ห้ามกรอง ไม่งั้น edge จะเลิก poll กล้องของตัวเอง = ทั้งไซต์ดับ
+      .filter(c => EDGE_MODE || !edgeOwnedCameras().has(c.camera_id))
       .map(decryptCamCreds)
       // Normalize nvr_channel so every downstream Map/lookup can rely on
       // it being an integer. Entries with no nvr_channel are plain
@@ -1982,7 +2212,7 @@ function syncCameras() {
     if (changed) {
       console.log(`  🔄 [${key}] config changed — reconnecting device (${device.channels.size} channel(s))`);
       stopDeviceConnection(key);
-      _snapDisabled.delete(key);
+      clearSnapDisabled(key, device);
       setTimeout(() => { _destroyed.delete(key); connectDevice(device); }, RECONNECT_BASE_MS);
     } else if (!prev) {
       console.log(`  ➕ [${key}] new device (${device.channels.size} channel(s)) — connecting`);
@@ -1993,8 +2223,11 @@ function syncCameras() {
   for (const [key] of _devices) {
     if (!newDevices.has(key)) {
       console.log(`  ➖ [${key}] removed from config — stopping`);
+      // Read the device BEFORE stopping it — stopDeviceConnection drops it from
+      // _devices, and without it the per-channel stream keys can't be derived.
+      const gone = _devices.get(key);
       stopDeviceConnection(key);
-      _snapDisabled.delete(key);
+      clearSnapDisabled(key, gone);
     }
   }
 }
@@ -2012,13 +2245,19 @@ function watchConfig() {
   } catch (e) { console.warn('Watch failed:', e.message); }
 }
 
-function main() {
+async function main() {
   console.log('');
   console.log('╔══════════════════════════════════════════════════╗');
   console.log('║  📷 Dahua CGI Event Ingester (Multi-vendor MV.5) ║');
   console.log('╚══════════════════════════════════════════════════╝');
 
-  if (!EDGE_MODE) alertEngine.init(pool);
+  if (!EDGE_MODE) {
+    alertEngine.init(pool);
+    // ต้องรู้ก่อนโหลดกล้องรอบแรก ไม่งั้น central จะเปิดสายไปหากล้องของ edge
+    // ทิ้งไว้จนกว่าจะมี config เปลี่ยน (loader ถูกเรียกใหม่เฉพาะตอนนั้น)
+    await refreshEdgeOwned(pool);
+    startEdgeOwnedRefresh(pool);
+  }
   const cams = loadDahuaCameras();
   if (cams.length === 0) {
     console.log('  ℹ️  No vendor:"dahua" cameras in cameras-config.json — waiting.');
@@ -2037,7 +2276,7 @@ function main() {
     connectDevice(device);
   }
   watchConfig();
-  if (!EDGE_MODE) listenForClipDone().catch(err => console.error('  🎞️  clip resolver listen:', err.message));
+  if (!EDGE_MODE) listenForClipDone();
 }
 
 function shutdown() {
@@ -2045,7 +2284,7 @@ function shutdown() {
   for (const t of _reconnectTimers.values()) clearTimeout(t);
   for (const t of _snapReconnectTimers.values()) clearTimeout(t);
   if (_clipDoneClient) {
-    try { _clipDoneClient.end(); } catch { /* ignore */ }
+    _clipDoneClient.stop().catch(() => {});
   }
   try { alertEngine.shutdown(); } catch { /* ignore */ }
   pool.end().finally(() => process.exit(0));
@@ -2053,4 +2292,4 @@ function shutdown() {
 process.on('SIGINT',  shutdown);
 process.on('SIGTERM', shutdown);
 
-main();
+main().catch((e) => { console.error('❌ main:', e.message); process.exit(1); });

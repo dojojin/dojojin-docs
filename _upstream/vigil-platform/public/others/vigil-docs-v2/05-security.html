@@ -15,11 +15,19 @@
 <button id="ham">☰</button>
 
 <div class="main">
-<!-- SOURCE: docs/REF_security-checklist.md (SEC-001–017) | Update: new SEC-xxx finding or fix — always cross-check IDs against REF_security-checklist.md -->
+<!-- SOURCE: docs/REF_security-checklist.md (SEC-001–018) | Update: new SEC-xxx finding or fix — always cross-check IDs against REF_security-checklist.md -->
 <h1 class="ph">05 Audit ความปลอดภัย (Security Audit)</h1>
 
 <h2>เส้นเวลา Audit</h2>
-<p>Vigil Platform ผ่านการตรวจสอบความปลอดภัย (internal security audit) 6 รอบครอบคลุม 46 จุด (SEC-001–017 + SEC-2T-001–008 + SEC5-HIGH/MED/LOW + LIVE-HIGH/MED/LOW/PASS) ส่วนใหญ่ได้รับการแก้ไขแล้วภายใน v1.5.3 มีการตรวจสอบ CVE / Dependency Audit เพิ่มเติมในรอบที่ 4 (2026-06-07) พร้อมอัปเกรด runtime stack ทั้งหมด และรอบที่ 6 (2026-07-21) เป็นการ <strong>ยิงทดสอบระบบจริงที่กำลังรัน</strong> (live low-impact probe) ไม่ใช่แค่อ่านซอร์สโค้ด — จุดที่ยังเปิดอยู่ (deferred) มีเหตุผลบันทึกไว้ชัดเจน ไม่ใช่ถูกมองข้าม</p>
+<p>Vigil Platform ผ่านการตรวจสอบความปลอดภัย (internal security audit) 6 รอบครอบคลุม 47 จุด (SEC-001–018 + SEC-2T-001–008 + SEC5-HIGH/MED/LOW + LIVE-HIGH/MED/LOW/PASS) ส่วนใหญ่ได้รับการแก้ไขแล้วภายใน v1.5.4 มีการตรวจสอบ CVE / Dependency Audit เพิ่มเติมในรอบที่ 4 (2026-06-07) พร้อมอัปเกรด runtime stack ทั้งหมด และรอบที่ 6 (2026-07-21) เป็นการ <strong>ยิงทดสอบระบบจริงที่กำลังรัน</strong> (live low-impact probe) ไม่ใช่แค่อ่านซอร์สโค้ด — จุดที่ยังเปิดอยู่ (deferred) มีเหตุผลบันทึกไว้ชัดเจน ไม่ใช่ถูกมองข้าม</p>
+
+<div class="ibox">
+  <h4>ปิดช่องเพิ่มใน v1.5.4 (SEC-018)</h4>
+  <p><strong>ข้อมูลแผนผังเครือข่ายภายในรั่วถึงผู้ใช้ทุกคนที่ล็อกอินได้</strong> — เหตุการณ์ ANPR ของกล้อง Hikvision เก็บ ISAPI XML ดิบไว้ในฟิลด์ <code>raw_json.rawXml</code> ซึ่งมี <code>&lt;ipAddress&gt;</code> / <code>&lt;ipv6Address&gt;</code> / <code>&lt;macAddress&gt;</code> ของตัวกล้องติดมาด้วย เท่ากับ IP และ MAC ของกล้องทุกตัวใน LAN มองเห็นได้จากบัญชี viewer ธรรมดา (รายการนี้อยู่ใน security backlog ตั้งแต่ 2026-08-12 หัวข้อ S1)</p>
+  <p><strong>วิธีแก้:</strong> ปิดบังเฉพาะ<em>ค่า</em>ในแท็กเหล่านั้นเป็น <code>***</code> ไม่ได้ตัดทั้งฟิลด์ทิ้ง เพราะหน้าจอ LPR ยังต้องอ่านฟิลด์เข็มขัดนิรภัยจาก XML ก้อนเดียวกัน การปิดบังทำครบทั้ง <strong>6 กลุ่ม API</strong> ที่คืนฟิลด์นี้ (events, appearances, LPR query, LPR watchlist, LPR alerts, traffic) <strong>และช่องทาง WebSocket</strong> ด้วย — ไม่งั้นปิดทาง REST แล้วข้อมูลยังไหลออกทาง event สดอยู่ดี ผู้ใช้ระดับ admin ยังเห็นค่าเต็มไว้ใช้ debug ส่วน auditor นับเป็น non-admin</p>
+  <p><strong>แก้พร้อมกันในรอบเดียว:</strong> บั๊ก cache key ข้ามกล้อง (GOTCHAS #190) ซึ่งทำให้ผลลัพธ์ที่ cache ไว้ของกล้องหนึ่งถูกนำไปตอบคำขอของอีกกล้องหนึ่งได้</p>
+  <p>รายละเอียดเชิงเทคนิคดูที่ <code>docs/REF_security-checklist.md</code> รายการ <code>SEC-018</code></p>
+</div>
 
 <table>
 <thead>

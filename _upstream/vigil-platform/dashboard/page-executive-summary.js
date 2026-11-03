@@ -70,7 +70,7 @@ async function loadSummary() {
       throw new Error(`HTTP ${res.status}${body ? ' · ' + body : ''}`);
     }
     const data = await res.json();
-    _summaryApply(data);
+    await _summaryApply(data);
     _summaryHasLoadedOnce = true;
     _summaryHideError();
   } catch (err) {
@@ -79,14 +79,14 @@ async function loadSummary() {
   }
 }
 
-function _summaryApply(d) {
+async function _summaryApply(d) {
   _smbRenderStrip(d.kpis, d.cameras, d.system);
   _smbRenderAttention(d.recent_events, d.cameras);
   _smbRenderActivity(d.events_24h);
   _smbRenderKpis(d.kpis);
   _smbRenderTopCams(d.top_cameras);
   _smbRenderFooter(d.system);
-  _summaryInitMap(d.cameras.locations);
+  await _summaryInitMap(d.cameras.locations);
 }
 
 // 1. Status Strip
@@ -125,7 +125,7 @@ function _smbRenderAttention(recentEvents, cams) {
     } else {
       alertEl.innerHTML = alerts.map(e => {
         const img = e.snapshot_url
-          ? `<img src="${escapeHtml(e.snapshot_url)}?w=120" loading="lazy" alt="">`
+          ? `<img src="${escapeHtml(e.snapshot_url)}?w=${SNAP_W.pin}" loading="lazy" alt="">`
           : `<svg class="smb-thumb-icon" aria-hidden="true" width="20" height="20"><use href="#icon-camera"/></svg>`;
         const evJson = escapeHtml(JSON.stringify({
           id:e.id, event_time:e.event_time, camera_id:e.camera_id,
@@ -143,18 +143,23 @@ function _smbRenderAttention(recentEvents, cams) {
   }
   if (countEl) countEl.textContent = alerts.length > 0 ? String(alerts.length) : '';
 
-  const offline = (cams.locations || []).filter(c => !c.online)
-    .sort((a, b) => new Date(a.last_seen_at||0) - new Date(b.last_seen_at||0));
+  // 🔴 อ่านจาก cams.quiet ไม่ใช่ cams.locations.filter(!online) อีกต่อไป (2026-09-12)
+  // ของเดิมนับจาก TCP probe ที่กะพริบ 677 ครั้งต่อวัน ⇒ การ์ดขึ้นราว 20 ตัวเป็นปกติ
+  // จนไม่มีใครอ่าน และมันกรองเฉพาะกล้องที่มี lat/lon ⇒ กล้องที่ไม่ได้ปักหมุดหายเงียบ ๆ
+  // ตอนนี้ใช้แหล่งเดียวกับป้ายบน topbar — เลขบนจอจึงตรงกันทุกที่ (GOTCHAS #199)
+  // ⚠️ null (ยังตอบไม่ได้ — ยังไม่มีฐานของกล้อง) ต้องไม่ขึ้นข้อความเขียวว่าทุกอย่างปกติ
+  // นั่นคือคำรับรองที่เรายังไม่ได้ตรวจ · แยกจาก [] ที่แปลว่าตรวจแล้วและครบจริง
+  const quiet = Array.isArray(cams.quiet) ? cams.quiet : null;
   const offEl = document.getElementById('smbOffline');
   const offCountEl = document.getElementById('smbOfflineCount');
   if (offEl) {
-    if (!offline.length) {
-      offEl.innerHTML = `<div class="smb-empty" style="color:var(--status-ok)">${escapeHtml(I18N.t('smb.allOnline'))}</div>`;
+    if (quiet === null) {
+      offEl.innerHTML = `<div class="smb-empty">—</div>`;
+    } else if (!quiet.length) {
+      offEl.innerHTML = `<div class="smb-empty" style="color:var(--status-ok)">${escapeHtml(I18N.t('smb.allSending'))}</div>`;
     } else {
-      offEl.innerHTML = offline.slice(0, 5).map(c => {
-        const dur = c.last_seen_at
-          ? _summaryFmt.duration(Math.floor((Date.now() - new Date(c.last_seen_at)) / 1000))
-          : '—';
+      offEl.innerHTML = quiet.slice(0, 5).map(c => {
+        const dur = c.quiet_sec != null ? _summaryFmt.duration(c.quiet_sec) : '—';
         return `<div class="smb-offline-row">
           <div class="smb-offline-dot"></div>
           <div class="smb-offline-name">${escapeHtml(c.camera_name||c.camera_id)}</div>
@@ -163,7 +168,7 @@ function _smbRenderAttention(recentEvents, cams) {
       }).join('');
     }
   }
-  if (offCountEl) offCountEl.textContent = offline.length > 0 ? String(offline.length) : '';
+  if (offCountEl) offCountEl.textContent = quiet && quiet.length ? String(quiet.length) : '';
 }
 
 // Click an alert row → open event in context
@@ -204,13 +209,16 @@ function _smbRenderActivity(events_24h) {
   });
 }
 
-// 3b. Today vs Yesterday KPIs (Events + Alerts only — Traffic/People cut per #172)
+// 3b. Today vs Yesterday KPIs — Events / Plates / Faces / People (alerts
+// swapped out 2026-07-23, owner request: overview leans ANPR/face-heavy).
 function _smbRenderKpis(kpis) {
   const el = document.getElementById('smbKpis');
   if (!el) return;
   const rows = [
     { label: I18N.t('smb.kpiEvents'), kpi: kpis.total_events },
-    { label: I18N.t('smb.kpiAlerts'), kpi: kpis.alerts },
+    { label: I18N.t('smb.kpiPlates'), kpi: kpis.plates },
+    { label: I18N.t('smb.kpiFaces'),  kpi: kpis.faces },
+    { label: I18N.t('smb.kpiPeople'), kpi: kpis.people },
   ];
   el.innerHTML = rows.map(({ label, kpi }) => {
     const pct = kpi.change_pct ?? 0;
@@ -267,7 +275,7 @@ function _smbRenderFooter(sys) {
 // and a heatmap layer with a single ON/OFF toggle. Focuses on the most
 // recently ADDED camera (locations[0]; endpoint orders by created_at DESC)
 // — only on page-enter, not on every 30s background refresh.
-function _summaryInitMap(locations) {
+async function _summaryInitMap(locations) {
   const hasLocations = Array.isArray(locations) && locations.length > 0;
   const features = hasLocations ? locations.map(p => new ol.Feature({
     geometry: new ol.geom.Point(ol.proj.fromLonLat([parseFloat(p.lon), parseFloat(p.lat)])),
@@ -337,6 +345,7 @@ function _summaryInitMap(locations) {
     : ol.proj.fromLonLat([100.5018, 13.7563]);     // Bangkok fallback
   const view = new ol.View({ center, zoom: hasLocations ? 16 : 6 });
 
+  const cartoMapKey = await cartoKey();
   _summaryMapInstance = new ol.Map({
     target: 'smbMap',
     layers: [
@@ -344,7 +353,7 @@ function _summaryInitMap(locations) {
       // page's "STREETS" option. No provider/style toggle here.
       new ol.layer.Tile({
         source: new ol.source.XYZ({
-          url: 'https://{a-c}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',
+          url: cartoUrl('streets', cartoMapKey),
           attributions: '© OpenStreetMap, © CARTO',
         }),
       }),

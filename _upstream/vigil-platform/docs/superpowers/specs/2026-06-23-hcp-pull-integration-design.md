@@ -1,8 +1,10 @@
 # HCP Pull Integration — Design Spec
 
-> Role: `GUIDE_` design spec · Created 2026-06-23 · Owner: Prakasit (Dojo-mAn)
-> Status: **DESIGN APPROVED, BUILD GATED** on HCP access (AppKey/AppSecret + OpenAPI gateway IP:port — both being requested).
-> Source of truth for the API: `docs/manuals/HCP_OpenAPI.pdf` (HikCentral Professional OpenAPI V3.0.1).
+> Role: `GUIDE_` design spec · Created 2026-06-23 · **Amended 2026-08-02 (§8)** · Owner: Prakasit (Dojo-mAn)
+> Status: **DESIGN APPROVED, BUILD GATED** — keys now issued; blocked instead on the
+> Artemis service being down on the HCP host (§8.4).
+> **§8 changes what ships first: blacklist roster before events. Read §8 before §6.**
+> Source of truth for the API: `docs/vendor/hikvision/HCP_OpenAPI.pdf` (HikCentral Professional OpenAPI V3.0.1).
 > Implementation plan (steps) → separate doc in `docs/superpowers/plans/` via writing-plans, after this spec is reviewed.
 
 ---
@@ -147,3 +149,136 @@ Hik docs vs reality drift. Before mapping any field to DB, hit the **real gatewa
 6. `vehicleBrand`/`vehicleType`/`vehicleColor`/`country` codes — map to our existing `_LPR_BRAND`/color/region dictionaries (codes may differ from the ISAPI push values we already store).
 
 **Still pending from owner:** AppKey/AppSecret, gateway IP:port (both being requested).
+
+---
+
+## 8. Amendment 2026-08-02 — roster first, events later
+
+> Sections 1–7 stay valid and unedited: they describe pulling **events**, which is
+> still the plan for the LPR/face feeds. This section records that the owner
+> changed **which piece ships first**, and that the first piece uses a different
+> set of APIs than sections 3–6 name. Read this section before §6 Phases.
+
+### 8.1 What changed
+
+Owner, 2026-08-02: *"โฟกัสเฉพาะ ระบบ blacklist ทั้ง face/lpr ส่วนการนำเข้าอื่นๆ ค่อยว่ากัน"*.
+
+So the row §6 marks `~~roster mirror~~ DEFERRED` is now the **first** thing to
+build, and H1/H2 (event polling) move behind it. This is not a small reordering
+— the two goals land in different tables and share only the signer:
+
+| | §1–7 (events) | this section (roster) |
+|---|---|---|
+| pulls | vehicles that drove past, faces that matched | **who is on the list** |
+| endpoints | `pms/v1/crossRecords`, `aiapplication/v1/face/faceMatchRecord` | see §8.2 — different tree entirely |
+| lands in | `events` + `license_plates` | **`blacklist.source_records`** |
+| resembles | the hikvision/dahua ingesters | **DSS Pro / GuruSquare importers** |
+| new process | `hcp-poller` (PM2) | none — reuses the existing import path |
+
+The roster job needs no poller and no PM2 entry: `blacklistImport.runImport()`
+already owns scheduling, `last_import_note`, photo storage and dedup. HCP joins
+as one more `source_type`, next to `dss_pro` and `gurusquare`.
+
+### 8.2 Endpoints — read from `docs/vendor/hikvision/HCP_OpenAPI.pdf`, not guessed
+
+HCP does not use the word "blacklist" for either roster. Vehicles live under
+*Vehicle Blocklist Management* (p.49); faces live under *Face Picture Library*
+(Table 4-13/4-14) — searching for "blacklist" finds neither.
+
+**LPR roster**
+
+| API | role |
+|---|---|
+| `POST /artemis/api/vehicle/v1/vehicle/blocklist/get` | the vehicle blocklist — primary |
+| `POST /artemis/api/resource/v1/vehicle/vehicleList` | all vehicles; fallback if the blocklist is kept empty and grouping carries the meaning instead |
+| `POST /artemis/api/resource/v1/vehicleGroup/vehicleGroupList` | vehicle lists → maps to `raw_json.group_name`, the field bridge rules filter on |
+
+**Face roster**
+
+| API | role |
+|---|---|
+| `POST /artemis/api/frs/v1/face/groupList` | face picture libraries → `raw_json.group_name` |
+| `POST /artemis/api/frs/v1/face` | faces inside a library — primary (the roster rows) |
+| `POST /artemis/api/frs/v1/application/picture` | download the face image → `blacklist-photos/` |
+
+**Support**
+
+| API | role |
+|---|---|
+| `POST /artemis/api/common/v1/version` | health check / the `discoverSource` probe |
+| `POST /artemis/api/irds/v2/resource/resourcesByParams` | camera list (needed later by the event phases, not by the roster) |
+
+**Write side exists too** — `vehicle/blocklist/{add,delete,modify}` and
+`frs/v1/face/{single/addition,deletion}`. That is the same shape as
+`blacklistPush.js`/`blacklistSourcePush.js`, which already push into DSS Pro,
+so HCP push-back is a later phase and not a rebuild. **Do not authorize the
+write APIs yet** (§8.5).
+
+### 8.3 Mapping into `blacklist.source_records`
+
+Follow `normalizeDssProVehicle()` / `normalizeDssPro()` in
+`src/helpers/blacklistImport.js` — same target columns, so the bridge, the
+duplicate-triage page and the watchlist sync all work with no changes:
+
+- `external_id` — namespaced per stream (`veh:<id>` / `face:<id>`), because HCP
+  numbers vehicles and faces on independent sequences, exactly like DSS Pro.
+- `data_type` — `'lpr'` / `'face'`.
+- `raw_json.group_name` — **the list/library name**. Load-bearing: it is what
+  bridge rules filter on, and a rule that names no group takes new categories
+  automatically (GOTCHAS #136 context).
+- `case_ref` — owning unit, one meaning only (GOTCHAS #121).
+- `photo_path` — via `savePhoto()`, same as the other sources.
+- `plate_numbers` — array, normalised at the write gate, never inside a join.
+
+### 8.4 Connectivity — measured 2026-08-02 from hkt edge (`phuketedge` 10.0.10.50)
+
+| | result |
+|---|---|
+| HCP host | **10.0.10.9**, same LAN as the edge, ping 0.21 ms |
+| open ports | 8443 (HTTPS console), 8080, 554, 7332, 7660, 7661, 8208 |
+| gateway port | **8443, not 443** — §4.2's default is wrong for this install |
+| TLS | self-signed `O=hikvision, CN=127.0.0.1` → the client must not verify the chain |
+| web console | 200, HikCentral Professional confirmed |
+| `POST /artemis/**` | **502 Bad Gateway (nginx)** on every path, including correctly signed requests |
+| HCP's own Test button | `Connecting to OpenAPI failed. {Error code: SYS[68121]}` |
+
+502 rather than 404 means nginx has the `/artemis` location but its upstream is
+down; HCP failing its own self-test from inside the box confirms the Artemis
+service is not running. **Blocked on the HCP server** (Service Manager start /
+OpenAPI licence), not on anything in this repo.
+
+Integration Partner `vigil-platform` exists, Linked User `admin`, Domain LAN
+(ID: 0), Permanent, and **Authorized APIs was empty** — which would reject every
+call even once the gateway is up.
+
+**Green light test** — 502 = still down, 401/403 = up:
+```bash
+ssh sshhkt 'curl -sk -o /dev/null -w "%{http_code}\n" -X POST \
+  -H "Content-Type: application/json" -d "{}" \
+  https://10.0.10.9:8443/artemis/api/common/v1/version'
+```
+
+### 8.5 Security posture
+
+- **Read-only first.** Authorize only the §8.2 read APIs. The Linked User is
+  `admin`, so the key inherits admin's rights — a leaked key that can call
+  `face/deletion` deletes a face library, which is a different order of damage
+  than one that can only read. Open the write APIs when push-back is actually
+  being built.
+- **A dedicated API user beats `admin`.** HCP states under the field that
+  "functions called by OpenAPI will be subject to the permissions of this user".
+  Changing it later means reissuing the key, so it is cheaper to do now.
+- `appSecret` stored `enc:v1:` via `src/crypto-creds.js` in the gitignored
+  `cameras-config.json`, same as every other source credential.
+
+### 8.6 Status
+
+- ✅ `src/helpers/hcpSign.js` — AK/SK HMAC-SHA256 signer per §3.1, self-tested,
+  and exercised against the live gateway (it reaches nginx; the 502 is upstream).
+- ⬜ everything else — gated on the Artemis service coming up. The frontend
+  placeholder needs no work in the meantime: `BL_TYPES` in
+  `dashboard/page-blacklist.js` already carries `hcp` with `wiredTypes: []`, and
+  the "รอเชื่อมจริง" chips plus the not-connected banner are rendered *from* that
+  emptiness. Wiring is moving `'face','lpr'` into `wiredTypes` once a probe
+  exists — adding credential fields before then would produce a form that saves
+  values nothing can verify.

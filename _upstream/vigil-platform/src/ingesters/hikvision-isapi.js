@@ -30,20 +30,26 @@ const { Pool } = require('pg');
 const alertEngine = require('../alert-engine');
 const { decryptCamCreds } = require('../crypto-creds');
 const { parseChallenge, buildDigestHeader } = require('../helpers/digestAuth');
-require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+const { bodyToAppearance, bodyToRawPatch } = require('../helpers/hikBodyAppearance');
+const watchdog = require('../helpers/streamWatchdog');
+const { edgeOwnedCameras, refreshEdgeOwned, startEdgeOwnedRefresh } = require('../helpers/edgeOwnedCameras');
+require('dotenv').config({ path: path.join(__dirname, '..', '.env'), quiet: true });
+const env = require('../config');
 // EDGE_MODE: on a Site Edge box there is no local Postgres — instead of
 // INSERTing rows, publish pre-normalized events to the local NanoMQ broker
 // (which bridges to central EMQX). See docs/LOGIC_edge-ingester-divergence.md.
-const { EDGE_MODE, publishEdgeEvent, newCorrId } = require('../edge/publisher');
+const { EDGE_MODE, publishEdgeEvent, publishCameraStatus, newCorrId } = require('../edge/publisher');
 // Single-instance lock + boot only when run as a real process (PM2 / standalone).
 // Guarded so tests can `require()` this module for _matchPushCam without the lock
 // killing the test (it would see the live PM2 ingester's pid) or booting anything.
 if (require.main === module) require('../singleton')('hikvision');
 
 const CONFIG_FILE  = path.join(__dirname, '..', '..', 'cameras-config.json');
-const SNAPSHOT_DIR = path.join(__dirname, '..', '..', 'snapshots');
+const { snapshotDir } = require('../helpers/snapshotDir');
+const SNAPSHOT_DIR = snapshotDir();
 if (!fs.existsSync(SNAPSHOT_DIR)) fs.mkdirSync(SNAPSHOT_DIR, { recursive: true });
 const { snapPath } = require('../snapshot-path');
+const { touchCamera } = require('../helpers/touchCamera');
 
 // MQTT client for publishing edge snapshots to central via NanoMQ → bridge.
 // Task #23: on central (EDGE_MQTT_BROKER unset), this hits central's own EMQX
@@ -53,12 +59,30 @@ const { snapPath } = require('../snapshot-path');
 const _snapMqttOpts = {
   clientId: `hkv-snap-${process.pid}`, reconnectPeriod: 5000, clean: true,
 };
-if (process.env.SNAPSHOT_PUBLISHER_USER && process.env.SNAPSHOT_PUBLISHER_PASSWORD) {
-  _snapMqttOpts.username = process.env.SNAPSHOT_PUBLISHER_USER;
-  _snapMqttOpts.password = process.env.SNAPSHOT_PUBLISHER_PASSWORD;
+if (env.str('SNAPSHOT_PUBLISHER_USER') && env.str('SNAPSHOT_PUBLISHER_PASSWORD')) {
+  _snapMqttOpts.username = env.str('SNAPSHOT_PUBLISHER_USER');
+  _snapMqttOpts.password = env.str('SNAPSHOT_PUBLISHER_PASSWORD');
 }
-const _snapMqtt = mqtt.connect(process.env.EDGE_MQTT_BROKER || 'mqtt://localhost:1883', _snapMqttOpts);
-_snapMqtt.on('error', (e) => console.warn('[hkv-snap-mqtt]', e.message));
+// Connected on first publish, not at import. As a top-level connect it ran for
+// anyone who merely require()d this file — which is what test/hikvision-push-
+// resolve.test.js does to reach _matchPushCam. The socket and its 5s reconnect
+// timer then held the event loop open forever, so that file never exited and
+// `npm test` (node --test test/*.test.js) hung on it and never reported for the
+// whole suite. The require.main guard further down was written to prevent
+// exactly this; this line sat outside it.
+//
+// A getter rather than moving the call into main(): publishing is reached from
+// the ISAPI event path, which main() starts, so the first publish is still
+// early in the process's life and nothing about production timing changes —
+// but the module stays inert when it is only being read from.
+let _snapMqttClient = null;
+function snapMqtt() {
+  if (!_snapMqttClient) {
+    _snapMqttClient = mqtt.connect(env.str('EDGE_MQTT_BROKER'), _snapMqttOpts);
+    _snapMqttClient.on('error', (e) => console.warn('[hkv-snap-mqtt]', e.message));
+  }
+  return _snapMqttClient;
+}
 const RECONNECT_BASE_MS  = 5_000;   // base reconnect delay
 const RECONNECT_MAX_MS   = 30_000;  // backoff ceiling
 const UNREACHABLE_CODES  = new Set(['EHOSTUNREACH', 'ENETUNREACH']);
@@ -90,12 +114,13 @@ const HIK_EVENT_MAP = {
   defocus:              { event_type: 'TamperDetection', rule_name: 'Camera Tampering (Defocus)' },
 };
 
-const pool = new Pool({
-  host:     process.env.DB_HOST,
-  port:     process.env.DB_PORT,
-  database: process.env.DB_NAME,
-  user:     process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
+const pool =   // 🔴 ไม่มี statement_timeout = query ค้างได้ไม่จำกัด · เจอจริง 2026-08-27:
+  // query หนึ่งค้าง 34 ชั่วโมง ทำให้ autovacuum เก็บ dead tuple ไม่ได้ ตาราง events
+  // บวมจนทั้งระบบช้า และหน้าสถิติว่างเปล่า · มีแค่ api-server ที่ตั้งค่านี้ไว้
+  // insert event + อัปเดต last_seen
+new Pool({
+  options: '-c statement_timeout=60000',
+  ...env.db(),
   max: 3,
   application_name: 'hikvision',
 });
@@ -228,8 +253,7 @@ async function ingestEvent(cam, xml) {
   // walked past for 90s. The heartbeat keeps it genuinely live.
   // EDGE_MODE: no local DB — central touches last_seen when an event arrives.
   if (!EDGE_MODE) {
-    pool.query(`UPDATE cameras SET last_seen_at=NOW() WHERE id=$1`,
-      [cam.camera_id]).catch(() => {});
+    touchCamera(pool, cam.camera_id);
   }
   // People Counting (2026-06-12) — กล้อง push สถิติ enter/exit ทุก 15 นาที
   // (statisticalMethods=timeRange, ยืนยันจาก XML จริง). เก็บเป็น metric event
@@ -377,8 +401,28 @@ async function ingestEvent(cam, xml) {
 
   if (EDGE_MODE) {
     const corr = newCorrId();
+    // Tier 2 — buffer the image on local disk and send only its filename,
+    // the same way the face and alarm paths further down already do.
+    //
+    // 🔴 บรรทัดเดิมคือ `previewRef = await captureSnapshot(cam, corr)` ซึ่งเป็นเหตุ
+    // ที่ทำให้คิวของ vss ตายค้าง 2 สัปดาห์ (incident 2026-08-14):
+    // captureSnapshot() รับพารามิเตอร์เดียวและ resolve เป็น **Buffer** เสมอ
+    // (ดูบรรทัด ~134) ⇒ Buffer ตัวเต็มไปนั่งในช่องที่สัญญาใน src/edge/publisher.js
+    // ระบุว่าเป็น "filename mapping" · พอ JSON.stringify เจอ Buffer มันกลายเป็น
+    // {"type":"Buffer","data":[...]} ⇒ ภาพ ~500KB พองเป็น 4.2MB ⇒ ทะลุเพดาน
+    // max_packet_size 1MB ของ EMQX ⇒ broker **ตัดสายทิ้ง** ทุกครั้งที่ replay
+    // หมุนมาถึงใบนั้น ⇒ คิวไม่มีวันไหลออก และลิงก์ล้มวนซ้ำไม่รู้จบ
     let previewRef = null;
-    try { previewRef = await captureSnapshot(cam, corr); } catch { previewRef = null; }
+    try {
+      const buf = await captureSnapshot(cam);
+      if (buf && buf.length) {
+        const tsMs = Date.now();
+        const { dir, relBase } = snapPath(SNAPSHOT_DIR, 'events', cam.camera_id, tsMs);
+        const fn = `${corr}_${tsMs}.jpg`;
+        fs.writeFileSync(path.join(dir, fn), buf);
+        previewRef = `${relBase}/${fn}`;
+      }
+    } catch { previewRef = null; }
     const eventTimeIso = eventTime.toISOString();
     publishEdgeEvent({
       vendor: 'hikvision',
@@ -469,7 +513,7 @@ async function ingestEvent(cam, xml) {
         event_id: eventId,
         source:   'hikvision-isapi',
       });
-      _snapMqtt.publish(`${cam.camera_id}/onvif-ej/Device/snapshot`, payload, { qos: 0 });
+      snapMqtt().publish(`${cam.camera_id}/onvif-ej/Device/snapshot`, payload, { qos: 0 });
       console.log(`  📸 [${cam.camera_id}] snapshot → MQTT (${(buf.length / 1024).toFixed(0)}KB)`);
     }).catch(() => {});
   } catch (err) {
@@ -477,10 +521,7 @@ async function ingestEvent(cam, xml) {
     return;
   }
   if (!EDGE_MODE) {
-    pool.query(
-      `UPDATE cameras SET last_seen_at=NOW() WHERE id=$1`,
-      [cam.camera_id]
-    ).catch(() => {});
+    touchCamera(pool, cam.camera_id);
   }
 }
 
@@ -531,7 +572,7 @@ function handlePart(cam, headers, body) {
     ingestEvent(cam, body.toString('utf8'));   // Smart Event (videoloss filtered inside)
   } else if (/image\/jpeg/i.test(ct)) {
     const nm = (headers.match(/name="([^"]+)"/i) || [])[1];
-    if (nm) handleImagePart(nm, body);
+    if (nm) handleImagePart(cam, nm, body);
   }
 }
 
@@ -551,8 +592,37 @@ function handlePart(cam, headers, body) {
 const _pendingFaces = new Map();   // facePid → { cam, face, eventTime, bgPid, faceImg, bgImg, timer }
 const _pendingBodyLink = new Map(); // camera_id → { eventId, ts }
 
+// ── What we are throwing away, counted ──────────────────────────
+// A JSON part whose eventType we do not handle is dropped, and so is every
+// image part that arrives for it, because handleImagePart() binds images by
+// pId to an entry handleFaceJson() never created. Both drops are silent, which
+// is how C43-SKU-SB-17 sat at zero events for weeks while pushing 7.7 MB a
+// minute at us (measured 2026-08-02). Summarised once a minute rather than
+// logged per event — this stream runs tens of thousands of events a day.
+const _dropped = new Map();   // `${camera_id} ${eventType}` → count
+const _orphanImg = new Map(); // camera_id → count of image parts with no pending owner
+function _note(map, key) { map.set(key, (map.get(key) || 0) + 1); }
+setInterval(() => {
+  for (const [k, n] of _dropped) {
+    const [camId, et] = k.split(' ');
+    console.warn(`  ⚠️  [${camId}] dropped ${n} JSON event(s) of unhandled type "${et}" in the last minute`);
+  }
+  for (const [camId, n] of _orphanImg) {
+    console.warn(`  ⚠️  [${camId}] dropped ${n} image part(s) with no matching pId`);
+  }
+  _dropped.clear(); _orphanImg.clear();
+  // Body pIds whose image never arrived would otherwise accumulate for the life
+  // of the process. Cleared wholesale rather than per-entry TTL: the images
+  // follow their JSON within the same second, so anything still here is stale.
+  _knownUnusedPids.clear();
+}, 60_000).unref();
+
 function handleFaceJson(cam, json) {
-  if (json.eventType !== 'faceCapture') return;
+  if (json.eventType !== 'faceCapture') {
+    if (json.eventType === 'mixedTargetDetection') return handleMixedTarget(cam, json);
+    _note(_dropped, `${cam.camera_id} ${json.eventType || '(none)'}`);
+    return;
+  }
   const eventTime = json.dateTime ? new Date(json.dateTime) : new Date();
   for (const cap of (json.faceCapture || [])) {
     const bgPid = cap.targetAttrs?.pId || null;
@@ -566,7 +636,88 @@ function handleFaceJson(cam, json) {
   }
 }
 
-function handleImagePart(name, body) {
+// ── Multi-Target-Type Detection (`mixedTargetDetection`) ─────────
+// The second face-bearing shape on this same alertStream, emitted by cameras
+// configured for "Multi-Target-Type Detection" rather than face capture.
+// Measured on C43-SKU-SB-17 (iDS-2CD7A86G0-IZHS) 2026-08-02: it carries the
+// same face crop and the same attributes faceCapture does, and additionally
+// the BODY of the same target inside the same CaptureResult entry, paired by
+// targetID — the pairing _pendingBodyLink can otherwise only approximate with
+// a 10-second same-camera window.
+//
+// The Face block is reshaped into the faceCapture `faces[]` object and handed
+// to the existing _pendingFaces machinery rather than given a parallel ingest
+// path, so EDGE_MODE, the central insert, image handling, alerts and clips all
+// stay one code path. Image binding needs no change: the JPEG parts are named
+// by pId exactly as in faceCapture — verified on the wire, part name equals
+// Face.pId1 then Face.pId2, arriving directly after their JSON.
+//
+// Scope of this change: faces only. A CaptureResult carrying a Human and no
+// Face is counted, not ingested — inventing events for bodies without faces
+// moves event counts, dashboards and retention, which is a product decision
+// rather than a parser detail. Body attributes that accompany a face are kept
+// in raw_json; routing them into `appearances` needs the edge event contract
+// widened past {object_class,confidence,gender,glasses}, so that is its own
+// change rather than a rider on this one.
+const _prop = (arr) => {
+  const m = {};
+  for (const p of (arr || [])) if (p.description) m[p.description] = p.value;
+  return m;
+};
+
+// Body image pIds seen but not consumed yet. Registered so the orphan-image
+// counter stays a signal rather than noise: without this, every body crop
+// would be reported as a dropped part every single minute, and a warning
+// that is always on is a warning nobody reads.
+const _knownUnusedPids = new Set();
+
+// "unknown" is the camera saying it looked and could not tell. faceCapture
+// omits the key entirely in that case, so it maps to null here — otherwise the
+// Face page cannot tell "not reported" from the literal string "unknown".
+const _v = (x) => (x == null || x === 'unknown') ? null : x;
+const _n = (x) => { const k = Number(x); return Number.isFinite(k) ? k : null; };
+
+function _mixedFaceToCapture(targetID, face) {
+  const p = _prop(face.Property);
+  return {
+    faceId:         targetID ?? null,
+    age:            p.age != null ? { value: _n(p.age), ageGroup: _v(p.ageGroup) } : null,
+    gender:         { value: _v(p.gender) },
+    glass:          { value: _v(p.glass) },
+    mask:           { value: _v(p.mask) },
+    hat:            { value: _v(p.hat) },
+    faceExpression: { value: _v(p.faceExpression) },
+    faceScore:      _n(p.score),
+    faceRect:       face.Rect ?? null,
+    pId:            face.pId1 ?? null,
+  };
+}
+
+function handleMixedTarget(cam, json) {
+  const eventTime = json.dateTime ? new Date(json.dateTime) : new Date();
+  for (const cap of (json.CaptureResult || [])) {
+    if (cap.Human?.pId1) _knownUnusedPids.add(cap.Human.pId1);
+    if (cap.Human?.pId2) _knownUnusedPids.add(cap.Human.pId2);
+    if (!cap.Face?.pId1) {
+      if (cap.Human) _note(_dropped, `${cam.camera_id} mixed:human-only`);
+      continue;
+    }
+    const face = _mixedFaceToCapture(cap.targetID, cap.Face);
+    const timer = setTimeout(() => flushPendingFace(face.pId), 8000);
+    _pendingFaces.set(face.pId, {
+      cam, face, eventTime,
+      bgPid: cap.Face.pId2 || null,
+      faceImg: null, bgImg: null, timer,
+      // raw_json only in this change. `uid` is the camera's own identifier for
+      // the target and is the key a later change would join the body row on.
+      srcEventType: 'mixedTargetDetection',
+      body: cap.Human ? _prop(cap.Human.Property) : null,
+      targetUid: cap.uid ?? null,
+    });
+  }
+}
+
+function handleImagePart(cam, name, body) {
   // face crop — name matches a pending face's pId
   const pending = _pendingFaces.get(name);
   if (pending) {
@@ -576,12 +727,22 @@ function handleImagePart(name, body) {
   }
   // full-frame background — name matches targetAttrs.pId; one background
   // is shared by every face from the same capture, so fan it out.
+  let bound = false;
   for (const [pid, p] of _pendingFaces) {
     if (p.bgPid === name) {
       p.bgImg = body;
+      bound = true;
       maybeIngestFace(pid);
     }
   }
+  // Body crops from mixedTargetDetection are expected and deliberately unused
+  // for now — drop them without counting, or the warning below would fire every
+  // minute forever and stop meaning anything.
+  if (!bound && _knownUnusedPids.delete(name)) return;
+  // Unowned: its JSON was dropped, or it arrived after the 8s flush. Counted
+  // rather than logged per part — a dropped event takes its images with it, so
+  // this number moving with _dropped is the confirmation they share a cause.
+  if (!bound) _note(_orphanImg, cam.camera_id);
 }
 
 // Ingest once the crop AND background are both collected (or the face
@@ -605,6 +766,15 @@ function flushPendingFace(pId) {
 
 async function ingestFaceEvent(pending) {
   const { cam, face, eventTime, faceImg, bgImg } = pending;
+  // rawJson.eventType stays 'faceCapture' whatever the wire said: downstream
+  // filters and the Face page key off it, and a mixedTargetDetection face IS a
+  // face capture. `srcEventType` records where it actually came from so the
+  // two are still tellable apart when reading rows back.
+  const srcExtra = pending.srcEventType ? {
+    srcEventType: pending.srcEventType,
+    targetUid:    pending.targetUid ?? null,
+    body:         pending.body ?? null,
+  } : null;
   // Flatten the Hikvision face attributes into raw_json. Everything
   // is stored; the Face gallery page picks which fields to display.
   const rawJson = {
@@ -622,6 +792,7 @@ async function ingestFaceEvent(pending) {
     faceScore:      face.faceScore ?? null,
     faceRect:       face.faceRect ?? null,
     pId:            face.pId ?? null,
+    ...(srcExtra || {}),
   };
 
   if (EDGE_MODE) {
@@ -641,7 +812,17 @@ async function ingestFaceEvent(pending) {
     const gender = g === 'male' ? 'Male' : g === 'female' ? 'Female' : null;
     const glasses = face.glass?.value === 'yes' || face.glass?.value === 'sunglasses';
     const conf = Number(face.faceScore);
-    const appearance = (gender || glasses) ? {
+    // mixedTargetDetection sends the body of the same target alongside the
+    // face, so the appearance row can be filled properly instead of carrying
+    // gender and glasses alone. The face's own score stays the confidence —
+    // it is the face detection this row is attached to — and its gender fills
+    // in where the body model reported none. A face-only event is unchanged.
+    const bodyAppearance = pending.body ? bodyToAppearance(pending.body) : null;
+    const appearance = bodyAppearance ? {
+      ...bodyAppearance,
+      gender:     bodyAppearance.gender ?? gender,
+      confidence: Number.isFinite(conf) ? conf / 100 : bodyAppearance.confidence,
+    } : (gender || glasses) ? {
       object_class: 'Person',
       confidence: Number.isFinite(conf) ? conf / 100 : null,
       gender, glasses,
@@ -710,7 +891,21 @@ async function ingestFaceEvent(pending) {
     const gender = g === 'male' ? 'Male' : g === 'female' ? 'Female' : null;
     const glasses = face.glass?.value === 'yes' || face.glass?.value === 'sunglasses';
     const conf = Number(face.faceScore);
-    if (gender || glasses) {
+    // Same rule as the EDGE_MODE branch above: when the event carried the body
+    // of the same target, fill the whole row rather than gender + glasses.
+    const b = pending.body ? bodyToAppearance(pending.body) : null;
+    if (b) {
+      pool.query(
+        `INSERT INTO appearances
+           (event_id, camera_id, object_class, confidence, gender, glasses,
+            upper_color, lower_color, top_category, bottom_category, bag_category, attributes)
+         VALUES ($1,$2,'Person',$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+        [eventId, cam.camera_id, Number.isFinite(conf) ? conf / 100 : b.confidence,
+         b.gender ?? gender, b.glasses, b.upper_color, b.lower_color,
+         b.top_category, b.bottom_category, b.bag_category,
+         b.attributes ? JSON.stringify(b.attributes) : null]
+      ).catch(err => console.error(`  ❌ appearance insert [${cam.camera_id}]:`, err.message));
+    } else if (gender || glasses) {
       pool.query(
         `INSERT INTO appearances (event_id, camera_id, object_class, confidence, gender, glasses)
          VALUES ($1,$2,'Person',$3,$4,$5)`,
@@ -772,8 +967,7 @@ async function ingestFaceEvent(pending) {
     snapshot_filename: snapFile,
   }).catch(err => console.error(`  🔔 alert [${cam.camera_id}]:`, err.message));
   if (!EDGE_MODE) {
-    pool.query(`UPDATE cameras SET last_seen_at=NOW() WHERE id=$1`,
-      [cam.camera_id]).catch(() => {});
+    touchCamera(pool, cam.camera_id);
   }
   return eventId;
 }
@@ -807,27 +1001,49 @@ function connectCamera(cam) {
         }
         if (res.statusCode !== 200) {
           console.error(`  ❌ [${cam.camera_id}] HTTP ${res.statusCode}`);
+          reportCamStatus(cam.camera_id, { event_stream: 'reconnecting', last_event_http_status: res.statusCode });
           res.resume();
           return scheduleReconnect(cam);
         }
 
         console.log(`  📡 [${cam.camera_id}] Alert Stream connected (${cam.ip_address}:${port})`);
         _retryCount.delete(cam.camera_id);
+        reportCamStatus(cam.camera_id, {
+          event_stream: 'connected', retry_count: 0, last_error_code: null,
+          last_event_http_status: 200,
+        });
+        // เฝ้าว่าสายตายเงียบหรือยัง — `timeout: 0` ข้างบนตั้งใจให้ stream อยู่ยาว
+        // แต่แลกมาด้วยการที่ TCP ตายแบบไม่ส่ง FIN/RST จะไม่มีอะไรจับได้เลย
+        // (incident vss 2026-08-10 หยุดรับ 6 ชม. โดย socket ยัง ESTABLISHED)
+        watchdog.watch(cam.camera_id, cam.camera_id, () => {
+          // สายตายเงียบ — เป็นข้อมูลที่มีค่าที่สุดของทั้งไฟล์นี้ เพราะเป็นกรณีที่
+          // ทุกอย่างอื่นยังดูปกติ (socket ยัง ESTABLISHED, process ยัง online)
+          reportCamStatus(cam.camera_id, { event_stream: 'reconnecting', last_error_code: 'STREAM_STALE' });
+          try { req.destroy(new Error('stream stale — no data')); } catch { /* ignore */ }
+        });
         // Binary-safe Buffer accumulation — JPEG parts ride in this stream.
         let buffer = Buffer.alloc(0);
         res.on('data', (chunk) => {
+          // นับ byte ดิบ ไม่ใช่ event ที่ parse ได้ — heartbeat ของกล้องก็ถือว่ายังมีชีวิต
+          watchdog.touch(cam.camera_id);
           buffer = processMultipart(cam, Buffer.concat([buffer, chunk]));
           // runaway guard — a stuck part shouldn't grow memory unbounded
           if (buffer.length > 4 * 1024 * 1024) buffer = buffer.slice(-1024 * 1024);
         });
-        res.on('end',   () => { console.warn(`  ⚠️  [${cam.camera_id}] stream ended`); scheduleReconnect(cam); });
-        res.on('error', (e) => { console.error(`  ❌ [${cam.camera_id}] stream:`, e.message); scheduleReconnect(cam); });
+        res.on('end',   () => { watchdog.unwatch(cam.camera_id); console.warn(`  ⚠️  [${cam.camera_id}] stream ended`);
+          reportCamStatus(cam.camera_id, { event_stream: 'reconnecting' }); scheduleReconnect(cam); });
+        res.on('error', (e) => { watchdog.unwatch(cam.camera_id); console.error(`  ❌ [${cam.camera_id}] stream:`, e.message);
+          reportCamStatus(cam.camera_id, { event_stream: 'reconnecting', last_error_code: e.code || null }); scheduleReconnect(cam); });
       }
     );
     _eventReqs.set(cam.camera_id, req);
+    // ชั้นที่สอง — ให้ OS ตรวจเองว่าปลายทางยังอยู่ไหม ไม่ต้องรอ watchdog ครบ 5 นาที
+    watchdog.enableKeepAlive(req);
     req.on('error', (e) => {
+      watchdog.unwatch(cam.camera_id);
       if (_eventReqs.get(cam.camera_id) === req) _eventReqs.delete(cam.camera_id);
       console.error(`  ❌ [${cam.camera_id}] request:`, e.message);
+      reportCamStatus(cam.camera_id, { event_stream: 'reconnecting', last_error_code: e.code || null });
       scheduleReconnect(cam, e.code);
     });
     req.end();
@@ -849,6 +1065,15 @@ function cameraConfigSignature(cam) {
     password: cam.password || '',
     http_port: cam.http_port || cam.port || 80,
     snapshot_stream: parseInt(cam.snapshot_stream, 10) || 1,
+    // push_only has to be here or flipping a LIVE camera pull -> push does
+    // nothing: syncCameras() only acts when the signature differs (config
+    // changed) or when there is no prev entry (new camera). A camera already
+    // in _activeCams satisfies neither, so its pull loop kept hammering
+    // alertStream until the ingester was restarted — which meant bouncing
+    // every other camera on the node to apply a one-flag change to one of
+    // them. The reverse flip (push -> pull) already worked, because a
+    // push_only camera is never in _activeCams and lands in the !prev branch.
+    push_only: !!cam.push_only,
   });
 }
 
@@ -887,22 +1112,85 @@ function scheduleReconnect(cam, errCode = null) {
 // ============================================================
 // Bootstrap — config load + hot-reload via fs.watch
 // ============================================================
+// รายงานสถานะสายกล้องขึ้น central — **เฉพาะบน edge**
+//
+// Hikvision ไม่เคยรายงานสถานะเลยตั้งแต่แรก (`upsertCamStatus` = 0 ครั้งทั้งไฟล์)
+// หน้า Health จึงว่างเปล่าสำหรับกล้อง Hik ทุกตัวมาตลอด ทั้งที่ ingester รู้ดีอยู่แล้ว
+// ว่าสายต่อติดหรือหลุด (มี watchdog เฝ้าอยู่)
+//
+// ไม่เขียน DB ฝั่ง central โดยตั้งใจ — central ไม่ได้ poll กล้องของไซต์ที่มี edge
+// อีกแล้ว (6cafb4c) การเพิ่มผู้เขียนใหม่ที่นั่นมีแต่จะสร้างความเห็นที่ใช้ไม่ได้ซ้ำอีกรอบ
+function reportCamStatus(cameraId, patch) {
+  if (!EDGE_MODE) return;
+  publishCameraStatus(cameraId, patch);
+}
+
 function loadHikvisionCameras() {
   try {
     const cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+    // push_only cameras stay in this list (unlike before) — a push_only Face
+    // camera still needs configureAlarmServer() to run so its Alarm Server
+    // destination gets set. Callers must gate connectCamera()/alertStream on
+    // !cam.push_only themselves — the server never needs to pull that stream,
+    // and usually CAN'T (push-only sites are unreachable for inbound).
     return (cfg.cameras || [])
       .filter(c => String(c.vendor || 'bosch').toLowerCase() === 'hikvision')
       .filter(c => !c.paused)
-      // push_only cameras send events to us (FAS/ANPR push receiver), so the server
-      // never needs to pull their alertStream — and usually CAN'T (push-only sites are
-      // unreachable for inbound). Excluding them here stops the connect-ETIMEDOUT retry
-      // spam. syncCameras()'s teardown loop also stops a live pull if the flag is set later.
-      .filter(c => !c.push_only)
+      // กล้องที่มี edge ดูแลอยู่แล้ว central ไม่ต้อง poll ซ้ำ — ไปไม่ถึงอยู่ดี และ
+      // event เดินทางมาทาง MQTT bridge เรียบร้อยแล้ว
+      // ⚠️ บน edge ห้ามกรอง ไม่งั้น edge เลิก poll กล้องของตัวเอง = ทั้งไซต์ดับ
+      .filter(c => EDGE_MODE || !edgeOwnedCameras().has(c.camera_id))
       .map(decryptCamCreds);
   } catch (e) {
     console.error('❌ Cannot read cameras-config.json:', e.message);
     return [];
   }
+}
+
+// PUT /ISAPI/Event/notification/httpHosts/1 on face cameras so the camera
+// pushes face events to this edge node automatically. Idempotent — safe on
+// every startup and config reload. Skipped if FACE_PUSH_HOST is not set.
+function configureAlarmServer(cam) {
+  if (!FACE_PUSH_HOST || !cam.face_push_token) return;
+  const port   = cam.http_port || cam.port || 80;
+  const uri    = '/ISAPI/Event/notification/httpHosts/1';
+  const method = 'PUT';
+  const body   = Buffer.from(
+    '<?xml version="1.0" encoding="UTF-8"?>' +
+    '<HttpHostNotification version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">' +
+    '<id>1</id><url>/</url><protocolType>HTTP</protocolType>' +
+    '<parameterFormatType>XML</parameterFormatType>' +
+    '<addressingFormatType>ipaddress</addressingFormatType>' +
+    `<ipAddress>${FACE_PUSH_HOST}</ipAddress>` +
+    `<portNo>${FACE_PUSH_PORT}</portNo>` +
+    '<userName></userName><httpAuthenticationMethod>none</httpAuthenticationMethod>' +
+    '</HttpHostNotification>'
+  );
+  function doRequest(authHeader) {
+    const headers = { 'Content-Type': 'application/xml', 'Content-Length': body.length };
+    if (authHeader) headers.Authorization = authHeader;
+    const req = http.request(
+      { host: cam.ip_address, port, path: uri, method, headers, timeout: 5000 },
+      (res) => {
+        if (res.statusCode === 401) {
+          const wa = res.headers['www-authenticate'];
+          res.resume();
+          if (wa && /digest/i.test(wa))
+            doRequest(buildDigestHeader(cam.username, cam.password, method, uri, parseChallenge(wa)));
+          return;
+        }
+        res.resume();
+        if (res.statusCode === 200)
+          console.log(`  ✅ [${cam.camera_id}] alarm server → ${FACE_PUSH_HOST}:${FACE_PUSH_PORT}`);
+        else
+          console.warn(`  ⚠️  [${cam.camera_id}] alarm server configure HTTP ${res.statusCode}`);
+      }
+    );
+    req.on('error', (e) => console.warn(`  ⚠️  [${cam.camera_id}] alarm server: ${e.message}`));
+    req.write(body);
+    req.end();
+  }
+  doRequest(null);
 }
 
 // Diff the new camera list against _activeCams: connect new cameras,
@@ -918,14 +1206,20 @@ function syncCameras() {
     if (changed) {
       console.log(`  🔄 [${cam.camera_id}] config changed — reconnecting`);
       stopCameraConnection(cam.camera_id);
-      setTimeout(() => { _destroyed.delete(cam.camera_id); connectCamera(cam); }, RECONNECT_BASE_MS);
+      setTimeout(() => { _destroyed.delete(cam.camera_id); if (!cam.push_only) connectCamera(cam); configureAlarmServer(cam); }, RECONNECT_BASE_MS);
     } else if (!prev) {
       // Clear any stale _destroyed flag: a camera flipped push_only→pull was
       // torn down (stopCameraConnection set _destroyed), so connectCamera would
       // no-op without this. Lets a live pull→push→pull flip reconnect, no restart.
       _destroyed.delete(cam.camera_id);
-      console.log(`  ➕ [${cam.camera_id}] new camera — connecting`);
-      connectCamera(cam);
+      if (cam.push_only) {
+        // Never tracked in _activeCams (no connectCamera call), so this branch
+        // re-fires on every sync — harmless, configureAlarmServer() is idempotent.
+      } else {
+        console.log(`  ➕ [${cam.camera_id}] new camera — connecting`);
+        connectCamera(cam);
+      }
+      configureAlarmServer(cam);
     }
   }
 
@@ -940,7 +1234,12 @@ function syncCameras() {
 function watchConfig() {
   if (!fs.existsSync(CONFIG_FILE)) return;
   try {
-    fs.watch(CONFIG_FILE, { persistent: false }, (eventType) => {
+    // persistent:true — ตัวนี้ต้องเป็นสิ่งที่ทำให้ process อยู่รอดเมื่อมี 0 กล้อง
+    // ไม่ใช่ face-push HTTP server ที่บังเอิญ listen อยู่ · GOTCHAS #100 บันทึกไว้
+    // ตรง ๆ ว่า dahua เคยตายวนลูปด้วยเหตุนี้ และ hikvision รอดมาได้เพราะโชคเท่านั้น
+    // ("ห้ามพึ่ง side-effect ของ feature อื่น") · ตั้งแต่ central กรองกล้องที่ edge
+    // ดูแลออก 0 กล้องกลายเป็น **สภาพปกติ** ของเครื่องนี้ ไม่ใช่กรณีขอบอีกต่อไป
+    fs.watch(CONFIG_FILE, { persistent: true }, (eventType) => {
       if (eventType === 'change') {
         console.log('  🔄 cameras-config.json changed — syncing Hikvision cameras...');
         setTimeout(syncCameras, 500);
@@ -950,7 +1249,7 @@ function watchConfig() {
   } catch (e) { console.warn('Watch failed:', e.message); }
 }
 
-function main() {
+async function main() {
   console.log('');
   console.log('╔══════════════════════════════════════════════════╗');
   console.log('║  📷 Hikvision ISAPI Ingester (Multi-vendor MVP)  ║');
@@ -959,17 +1258,20 @@ function main() {
   // Alert engine — own instance in this process. Cooldown caches don't need
   // sharing across vendors; centralising is a plugin-refactor task (MV.x).
   // EDGE_MODE: alerts run centrally (no local DB) — edge publishes alert info.
-  if (!EDGE_MODE) alertEngine.init(pool);
+  if (!EDGE_MODE) {
+    alertEngine.init(pool);
+    // ต้องรู้ก่อนโหลดกล้องรอบแรก — loader ถูกเรียกใหม่เฉพาะตอน config เปลี่ยน
+    await refreshEdgeOwned(pool);
+    startEdgeOwnedRefresh(pool);
+  }
+  // Open the snapshot MQTT connection here so a running ingester behaves
+  // exactly as it did when this was a top-level connect — same socket at the
+  // same point in the boot. mqtt.js does queue a qos-0 publish issued while
+  // connecting (checked: queue length 1), so a first snapshot would survive a
+  // lazy connect too; this just removes the question.
+  snapMqtt();
   _faceAlarmServer = startFaceAlarmServer();
   const cams = loadHikvisionCameras();
-  // ponytail: observability only — name push-only cameras we intentionally skip pulling,
-  // so an absent camera in the connect log reads as "by design" not "lost".
-  try {
-    const skipped = (JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')).cameras || [])
-      .filter(c => String(c.vendor || 'bosch').toLowerCase() === 'hikvision' && !c.paused && c.push_only)
-      .map(c => c.camera_id);
-    if (skipped.length) console.log(`  ⏭️  push_only (no pull, events via push receiver): ${skipped.join(', ')}`);
-  } catch { /* config already validated above */ }
   if (cams.length === 0) {
     console.log('  ℹ️  No vendor:"hikvision" cameras in cameras-config.json — waiting.');
     console.log('     Add one via the dashboard — no restart needed.');
@@ -979,8 +1281,16 @@ function main() {
       console.error(`  ⚠️  [${cam.camera_id}] missing ip_address/username/password — skipped`);
       continue;
     }
-    console.log(`  → ${cam.camera_id} (${cam.ip_address})`);
-    connectCamera(cam);
+    if (cam.push_only) {
+      // No alertStream pull (server can't reach push-only sites for inbound)
+      // — but a push_only Face camera still needs its Alarm Server destination
+      // configured, since that's a separate outbound-from-camera channel.
+      console.log(`  ⏭️  [${cam.camera_id}] push_only — no pull, events via push receiver`);
+    } else {
+      console.log(`  → ${cam.camera_id} (${cam.ip_address})`);
+      connectCamera(cam);
+    }
+    configureAlarmServer(cam);
   }
   watchConfig();
 }
@@ -993,14 +1303,14 @@ function main() {
 //              FDLib reference photo (contrImg.jpg)
 // Camera sends two POSTs per detection: alarmResult (processed) + mixedTargetDetection (skipped).
 // ponytail: bind to LAN IP only + allowlist source IP (GOTCHAS #57)
-const FACE_PUSH_BIND      = process.env.FACE_PUSH_BIND  || '192.168.10.31';
-const FACE_PUSH_PORT      = parseInt(process.env.FACE_PUSH_PORT  || '3010', 10);
+const FACE_PUSH_BIND      = env.str('FACE_PUSH_BIND');
+const FACE_PUSH_PORT      = env.int('FACE_PUSH_PORT');
 // 1.6: comma-separated allowlist → Set (multi-camera support)
-const FACE_PUSH_ALLOW     = new Set(
-  (process.env.FACE_PUSH_ALLOW || '192.168.10.235').split(',').map(s => s.trim()).filter(Boolean)
-);
+const FACE_PUSH_ALLOW     = new Set(env.list('FACE_PUSH_ALLOW'));
 // 1.3: body size cap — default 10 MB
-const FAS_MAX_BODY_BYTES  = parseInt(process.env.FAS_MAX_BODY_BYTES || String(10 * 1024 * 1024), 10);
+const FAS_MAX_BODY_BYTES  = env.int('FAS_MAX_BODY_BYTES');
+// Auto-configure: if set, PUT /ISAPI/Event/notification/httpHosts/1 on face cameras at startup/add.
+const FACE_PUSH_HOST = env.str('FACE_PUSH_HOST');
 
 let _faceAlarmServer = null; // 1.8: stored for shutdown()
 
@@ -1037,6 +1347,36 @@ function parseBoundary(ct) {
 // Shared with the api-server cross-site receiver (routes/face-push.js, IM3-R)
 // so both parse the Hikvision face-push body identically.
 const { parseFaceAlarmMultipart } = require('../helpers/face-multipart');
+
+// payload แจ้งเตือนของ Face Recognition — ตัวเดียวใช้ทั้ง 2 ทาง
+//
+// เดิมมีสำเนาเดียวอยู่ในสาขา non-edge เท่านั้น ส่วนสาขา EDGE_MODE publish โดย
+// **ไม่ส่ง alert ไปเลย** แล้ว return ทันที · ผลคือ central (mqtt-subscriber ที่
+// เช็ค `if (msg.alert)`) ไม่เคยได้รับอะไร → alert-engine ไม่เคยเห็นเหตุการณ์ →
+// กล้องหน้าที่อยู่บน edge ไม่เคยแจ้งเตือนเลยสักครั้ง (วัดจริง 2026-08-19:
+// Hikvision_FaceReg_C01 มี 932 event ที่เป็น blackList ใน 30 วัน · alert_logs = 0)
+//
+// รวมเป็นฟังก์ชันเดียวเพื่อไม่ให้เกิดซ้ำ: เพิ่มฟิลด์ใหม่ทีหลังแล้วลืมสาขาใดสาขาหนึ่ง
+// คือวิธีที่บั๊กนี้เกิดมาตั้งแต่แรก
+//
+// snapshotFilename: ฝั่ง edge ส่ง null — central เขียนทับด้วย previewRef ตอนรับอยู่แล้ว
+// (mqtt-subscriber.js) และตัวแปร fullFile ที่ฝั่ง non-edge ใช้ ไม่มีอยู่ในสาขา edge
+function _faceAlertPayload(cam, { personName, listType, similarity, eventTime, snapshotFilename = null }) {
+  return {
+    camera_id:         cam.camera_id,
+    camera_name:       cam.camera_name || cam.camera_id,
+    location:          cam.location || null,
+    rule_name:         'Face Recognition Match',
+    event_type:        'FaceRecognition',
+    object_class:      null,
+    likelihood:        null,
+    event_time:        eventTime,
+    snapshot_filename: snapshotFilename,
+    person_name:       personName,
+    match_confidence:  similarity ? `${Math.round(similarity * 100)}%` : null,
+    list_type:         listType,
+  };
+}
 
 async function ingestFaceAlarmEvent(cam, alarmJson, images) {
   const eventTime  = new Date();
@@ -1121,6 +1461,10 @@ async function ingestFaceAlarmEvent(cam, alarmJson, images) {
       previewLib: libFile,
       previewSource: 'hikvision-alarm',
       appearance: recAppearance,
+      // ขาดตรงนี้ = central ไม่ยิง pg_notify('alert_event') → alert-engine ไม่เคย
+      // เห็นเหตุการณ์ → LINE เงียบสนิท (ดูหัวฟังก์ชัน _faceAlertPayload)
+      // snapshot ส่ง null เพราะ central เขียนทับด้วย previewRef ตอนรับอยู่แล้ว
+      alert: _faceAlertPayload(cam, { personName, listType, similarity, eventTime }),
       event: {
         camera_id: cam.camera_id,
         event_category: 'RuleEngine',
@@ -1207,24 +1551,15 @@ async function ingestFaceAlarmEvent(cam, alarmJson, images) {
   console.log(`  🔍 [${cam.camera_id}] Face Recognition →${matchInfo} event ${eventId}`);
 
   alertEngine.onEvent({
-    event_id:          eventId,
-    camera_id:         cam.camera_id,
-    camera_name:       cam.camera_name || cam.camera_id,
-    location:          cam.location || null,
-    rule_name:         'Face Recognition Match',
-    event_type:        'FaceRecognition',
-    object_class:      null,
-    likelihood:        null,
-    event_time:        eventTime,
-    snapshot_filename: fullFile || snapFile,
-    person_name:       personName,
-    match_confidence:  similarity ? `${Math.round(similarity * 100)}%` : null,
-    list_type:         listType,
+    event_id: eventId,
+    ..._faceAlertPayload(cam, {
+      personName, listType, similarity, eventTime,
+      snapshotFilename: fullFile || snapFile,
+    }),
   }).catch(err => console.error(`  alert [${cam.camera_id}]:`, err.message));
 
   if (!EDGE_MODE) {
-    pool.query(`UPDATE cameras SET last_seen_at=NOW() WHERE id=$1`,
-      [cam.camera_id]).catch(() => {});
+    touchCamera(pool, cam.camera_id);
   }
 }
 
@@ -1252,24 +1587,8 @@ async function ingestBodyAppearance(cam, bodyJson, images) {
     catch { bodyFile = null; }
   }
 
-  const patch = {};
-  if (bodyFile)         patch._snapshot_body  = bodyFile;
-  if (pm.jacketColor)   patch.jacketColor      = pm.jacketColor;
-  if (pm.trousersColor) patch.trousersColor    = pm.trousersColor;
-  if (pm.jacketType)    patch.jacketType       = pm.jacketType;
-  if (pm.trousersType)  patch.trousersType     = pm.trousersType;
-  if (pm.direction)     patch.direction        = pm.direction;
-  if (pm.bag)           patch.bag              = pm.bag;
-  if (pm.hairStyle)     patch.hairStyle        = pm.hairStyle;
-  if (pm.things != null)  patch.things         = pm.things;
-  // Capture remaining Hikvision body attributes (e.g. ridingBike, ridingWithPassenger)
-  // that are not individually handled above, so future fields are stored automatically.
-  const _bodyHandled = new Set(['jacketColor','trousersColor','jacketType','trousersType',
-    'direction','bag','hairStyle','things','score','gender','glass','mask','age','ageGroup',
-    'faceExpression','hat']);
-  for (const [k, v] of Object.entries(pm)) {
-    if (!_bodyHandled.has(k) && v != null) patch[k] = v;
-  }
+  const patch = bodyToRawPatch(pm);
+  if (bodyFile) patch._snapshot_body = bodyFile;
 
   if (Object.keys(patch).length) {
     pool.query(
@@ -1278,22 +1597,8 @@ async function ingestBodyAppearance(cam, bodyJson, images) {
     ).catch(err => console.error(`  body patch [${cam.camera_id}]:`, err.message));
   }
 
-  const _cap = s => s ? s[0].toUpperCase() + s.slice(1) : s;
-  // Hikvision bottom category values differ from BOSCH — map to canonical names
-  const _BOT_MAP = { longTrousers: 'Trousers', shortTrousers: 'Shorts', skirt: 'Skirt', dress: 'Dress' };
-  const upper_color     = (pm.jacketColor   && pm.jacketColor.toLowerCase()   !== 'unknown') ? _cap(pm.jacketColor)   : null;
-  const lower_color     = (pm.trousersColor && pm.trousersColor.toLowerCase() !== 'unknown') ? _cap(pm.trousersColor) : null;
-  const top_category    = pm.jacketType    ? _cap(pm.jacketType)                              : null;
-  const bottom_category = pm.trousersType  ? (_BOT_MAP[pm.trousersType] || _cap(pm.trousersType)) : null;
-  const bag_category    = pm.bag === 'yes' ? 'Backpack' : null;
-  const gender          = pm.gender === 'male' ? 'Male' : pm.gender === 'female' ? 'Female' : null;
-  const glasses         = pm.glass === 'yes' || pm.glass === 'sunglasses';
-  const confidence      = pm.score != null ? Number(pm.score) / 100 : null;
-  const attributes      = {};
-  if (pm.direction) attributes.direction = pm.direction;
-  if (pm.hairStyle) attributes.hairStyle = pm.hairStyle;
-  if (pm.things === 'yes') attributes.carrying = true;
-  if (pm.mask && pm.mask !== 'unknown') attributes.mask = pm.mask;
+  const { confidence, gender, glasses, upper_color, lower_color,
+          top_category, bottom_category, bag_category, attributes } = bodyToAppearance(pm);
 
   // The immediate FaceRecognition insert (above, in ingestFaceAlarmEvent) may
   // already have created a minimal appearances row for this event_id — no
@@ -1309,7 +1614,7 @@ async function ingestBodyAppearance(cam, bodyJson, images) {
          WHERE event_id=$1`,
         [eventId, 'Person', confidence, gender, glasses,
          upper_color, lower_color, top_category, bottom_category, bag_category,
-         Object.keys(attributes).length ? JSON.stringify(attributes) : null]
+         attributes ? JSON.stringify(attributes) : null]
       );
       if (upd.rowCount === 0) {
         await pool.query(
@@ -1319,7 +1624,7 @@ async function ingestBodyAppearance(cam, bodyJson, images) {
            VALUES ($1,$2,'Person',$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
           [eventId, cam.camera_id, confidence, gender, glasses,
            upper_color, lower_color, top_category, bottom_category, bag_category,
-           Object.keys(attributes).length ? JSON.stringify(attributes) : null]
+           attributes ? JSON.stringify(attributes) : null]
         );
       }
     } catch (err) { console.error(`  body appearance upsert [${cam.camera_id}]:`, err.message); }
@@ -1410,6 +1715,7 @@ function shutdown() {
   for (const t of _reconnectTimers.values()) clearTimeout(t);
   try { alertEngine.shutdown(); } catch { /* ignore */ }
   _faceAlarmServer?.close(); // 1.8: graceful FAS shutdown
+  _snapMqttClient?.end(true); // null unless something actually published
   pool.end().finally(() => process.exit(0));
 }
 process.on('SIGINT',  shutdown);
@@ -1417,6 +1723,6 @@ process.on('SIGTERM', shutdown);
 
 // Run only when launched directly (PM2). Guarded so tests can require the
 // module for _matchPushCam without booting the ingester / FAS server / DB.
-if (require.main === module) main();
+if (require.main === module) main().catch((e) => { console.error('❌ main:', e.message); process.exit(1); });
 
-module.exports = { _matchPushCam };
+module.exports = { _matchPushCam, _mixedFaceToCapture, _prop };

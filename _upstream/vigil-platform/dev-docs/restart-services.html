@@ -132,7 +132,7 @@ bash scripts/services.sh status</pre>
   </div>
 </div>
 
-<h2>Services ที่ PM2 ควบคุม (7 workers)</h2>
+<h2>Services ที่ PM2 ควบคุม (9 workers)</h2>
 
 <table>
 <thead><tr><th>Process</th><th>ทำอะไร</th></tr></thead>
@@ -144,7 +144,8 @@ bash scripts/services.sh status</pre>
 <tr><td><code>media-recorder</code></td><td>RTSP rolling buffer + clip dump</td></tr>
 <tr><td><code>lpr-receiver</code></td><td>ANPR HTTP push receiver (ITC camera → /lpr, port 3003)</td></tr>
 <tr><td><code>alert-worker</code></td><td>LINE alert rule matching</td></tr>
-<tr><td><code>report-worker</code></td><td>Report scheduler</td></tr>
+<tr><td><code>report-worker</code></td><td>Report scheduler + on-demand render (<code>POST /render</code> — Chromium อยู่ที่โปรเซสนี้แล้ว ปุ่มดาวน์โหลด PDF/PNG ด้วยมือก็เรนเดอร์ที่นี่)</td></tr>
+<tr><td><code>face-embed-worker</code></td><td>Face embedding queue (AuraFace-v1) + blacklist match</td></tr>
 </tbody>
 </table>
 

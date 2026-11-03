@@ -138,28 +138,17 @@ const _ADP_LOCALE_EN = {
   firstDay: 0,
 };
 
+// AirDatepicker ของสองช่องนี้ย้ายไปอยู่กับ initDateTimePickers() ใน dashboard.js แล้ว
+// (2026-08-21) — ไฟล์นั้นมีคอมเมนต์กำกับว่า "ทุกช่องวันที่ต้องอยู่ในรายการนี้" แต่สองช่องนี้
+// เคยผูกเองอยู่นอกรายการ · ถ้าวันหนึ่งมีคนเติม id เข้ารายการกลางโดยไม่ลบตัวนี้ออก
+// จะได้ปฏิทินซ้อนกัน 2 ตัวบนช่องเดียว (ตัวกลางสร้างก่อน แล้วตัวนี้เห็น _appFromPicker
+// ยังเป็น null เลยสร้างซ้ำ) · onSelect ที่เปิดปฏิทิน "ถึง" ต่อให้ ย้ายไปอยู่ _DT_EXTRA_OPTS
 function _initAppDatePickers() {
-  if (typeof AirDatepicker === 'undefined') return;
-  const lang = (typeof I18N !== 'undefined' && I18N.getLang()) || 'th';
-  const locale = lang === 'th' ? _ADP_LOCALE_TH : _ADP_LOCALE_EN;
-  const baseOpts = {
-    ...(locale ? { locale } : {}),
-    timepicker: true,
-    dateFormat: 'dd/MM/yyyy',
-    timeFormat: 'HH:mm',
-    isMobile: window.innerWidth <= 768,
-    position: 'bottom left',
-  };
-  const fromEl = document.getElementById('appFilterFrom');
-  const toEl   = document.getElementById('appFilterTo');
-  if (fromEl && !_appFromPicker) {
-    _appFromPicker = new AirDatepicker(fromEl, { ...baseOpts,
-      onSelect: ({ date }) => { if (date && _appToPicker && !_appToPicker.selectedDates[0]) _appToPicker.show(); }
-    });
-  }
-  if (toEl && !_appToPicker) {
-    _appToPicker = new AirDatepicker(toEl, { ...baseOpts });
-  }
+  if (typeof initDateTimePickers === 'function') initDateTimePickers();
+  // โค้ดส่วนที่เหลือของหน้านี้อ่านค่าจาก _appFromPicker/_appToPicker ตรง ๆ อีกหลายที่
+  // จึงชี้ตัวแปรสองตัวนี้ไปที่ instance เดียวกับที่ตัวกลางสร้างไว้
+  _appFromPicker = document.getElementById('appFilterFrom')?._adp || null;
+  _appToPicker   = document.getElementById('appFilterTo')?._adp   || null;
 }
 
 function _initAppCamDropdown() {
@@ -178,6 +167,7 @@ function _initAppCamDropdown() {
 function _appFilterParams() {
   const params = new URLSearchParams();
   const v = id => document.getElementById(id)?.value || '';
+  if (v('appFilterClass'))       params.set('object_class',    v('appFilterClass'));
   if (v('appFilterCam'))         params.set('camera_id',      v('appFilterCam'));
   else if (_appActiveSiteId) {
     const ids = cameras.filter(c => c.site_id === _appActiveSiteId).map(c => c.camera_id);
@@ -223,9 +213,15 @@ async function loadAppearanceSearch(page = 1) {
     const r = await fetch(`${API}/api/appearances/search?${params}`);
     if (!r.ok) throw new Error(r.statusText);
     _appTotal = parseInt(r.headers.get('X-Total-Count') || '0', 10);
+    // The server stops counting past a ceiling on a broad search, because the
+    // exact figure took 18 seconds and this line is the only reason it was
+    // computed at all. Say "10,000+" — presenting a floor as a total would be
+    // the same lie in smaller print.
+    const _appCapped = r.headers.get('X-Total-Capped') === '1';
     const rows = await r.json();
     _renderAppearanceResults(rows);
-    document.getElementById('appCount').textContent = _appTotal;
+    document.getElementById('appCount').textContent =
+      _appTotal.toLocaleString() + (_appCapped ? '+' : '');
     renderPagination('appPagination', page, _appTotal, PAGE_SIZE, p => loadAppearanceSearch(p));
   } catch (e) {
     if (container) container.innerHTML = `<div style="padding:20px;color:var(--status-bad)">${escapeHtml(e.message)}</div>`;
@@ -280,7 +276,7 @@ function _renderAppearanceTimeline(body, headerHtml = '') {
       ? fmtT(s.start_time)
       : `${fmtT(s.start_time)} – ${fmtT(s.end_time)}`;
     const thumb = s.first_row?.snapshot_file
-      ? `<img src="${API}/snapshots/${escapeHtml(s.first_row.snapshot_file)}?w=160" style="width:84px;height:56px;object-fit:cover;border-radius:4px;background:var(--surface-base);flex-shrink:0" loading="lazy">`
+      ? `<img src="${API}/snapshots/${escapeHtml(s.first_row.snapshot_file)}?w=${SNAP_W.pin}" style="width:84px;height:56px;object-fit:cover;border-radius:4px;background:var(--surface-base);flex-shrink:0" loading="lazy">`
       : '';
     const chips = s.first_row ? _renderAppearanceChips(s.first_row) : '';
     return `${dayHdr}
@@ -532,6 +528,37 @@ function _appModalMedia(ev) {
   return `<div class="app-detail-media">${fallback}<img src="${url(main)}" alt="" data-err="hide">${inset}${dl}</div>`;
 }
 
+// ปุ่มท้ายโมดัลใช้กฎเดียวกับปุ่มใต้การ์ด แต่ต้องละเอียดกว่าอีกขั้น เพราะโมดัลคือที่ที่
+// คนเปิดดูตอนตั้งใจจะ "ตาม" ใครสักคนจริง ๆ
+//
+//   ไม่ใช่คน                → ไม่มีปุ่มเลย  (รถกระบะไม่ควรมีปุ่ม "ตามคนนี้")
+//   เป็นคน แต่ไม่มีอะไรให้เทียบ → เหลือแค่ "ดูในหน้าใบหน้า"
+//   เป็นคน และมีรูปพรรณ      → ครบสามปุ่มตามเดิม
+//
+// เหตุผลของแถวกลาง: ทั้ง "ตามคนนี้" และ "หาคนแบบนี้" เรียก similar-timeline ตัวเดียวกัน
+// ซึ่งให้คะแนนจากสี+เพศ+ประเภทเสื้อ+แว่นตา ถ้ากล้องส่งมาแต่โทนสี (ที่ RMUTR-V เป็นแบบนั้น
+// ทั้ง 12,000 แถว) มันจะเหลือเป็นการค้นด้วยโทนสีล้วน ซึ่งคืนมาราว 1 ใน 3 ของทุกอย่าง
+// — ดูเหมือนใช้งานได้แต่ไม่มีความหมาย ส่วน "ดูในหน้าใบหน้า" ค้นด้วยกล้อง+ช่วงเวลา จึงยังจริง
+function _appModalActions(ev) {
+  const acts = document.getElementById('appModalActions');
+  const note = document.getElementById('appModalNote');
+  if (!acts) return;
+  const isPerson = !ev.object_class || ev.object_class === 'Person';
+  const comparable = !!(ev.gender || ev.top_category || ev.bottom_category
+    || ev.hair_length || ev.upper_color || ev.lower_color);
+  const show = (id, on) => { const b = document.getElementById(id); if (b) b.style.display = on ? '' : 'none'; };
+  acts.style.display = isPerson ? '' : 'none';
+  show('appModalFollow', isPerson && comparable);
+  show('appModalExample', isPerson && comparable);
+  show('appModalFace', isPerson);
+  if (note) {
+    const msg = !isPerson ? I18N.t('app.noteNotPerson')
+      : (!comparable ? I18N.t('app.noteNoAttrs') : '');
+    note.textContent = msg;
+    note.style.display = msg ? '' : 'none';
+  }
+}
+
 function appOpenPerson(idx) {
   const ev = window._appRows?.[idx];
   if (!ev) return;
@@ -546,6 +573,7 @@ function appOpenPerson(idx) {
   const tone = (!ev.top_category && !ev.bottom_category) ? _renderAppearanceSection(ev) : '';
   const clip = (typeof clipBlock === 'function') ? clipBlock(ev) : '';
   body.innerHTML = `<div class="app-detail-grid">${_appModalMedia(ev)}<div class="app-detail-data">${_appPersonValueRows(ev)}</div></div>${tone}${clip}`;
+  _appModalActions(ev);
   modal.style.display = 'flex';
 }
 
@@ -582,14 +610,38 @@ function appOpenFace(idxOrEvent) {
   showPage('face-matches', document.querySelector('.nav-item[data-page="face-matches"]'));
   _switchFaceTab('search');
   _populateFaceFilter2Cameras();
+  // faceFilterCamera2 เป็น MultiPicker ไม่ใช่ select ธรรมดา — query จริงอ่านจาก
+  // MultiPicker.values() (page-face-matches.js:269) การเซ็ต .value ตรง ๆ จึงไม่ถึง
+  // ตัวที่ใช้ค้นหา ผลคือกดปุ่มจากกล้อง RMUTR-V แล้วได้ใบหน้าของทุกไซต์ ขณะที่ป้าย
+  // "กำลังแสดงผลของ" อ่านคนละที่จึงขึ้นชื่อกล้องถูก ดูเหมือนกรองแล้วทั้งที่ไม่ได้กรอง
+  // (รายงาน 2026-08-20) ใช้รูปแบบเดียวกับปุ่มล้างค่าของหน้านั้นเอง (บรรทัด 549)
   const cam = document.getElementById('faceFilterCamera2');
-  if (cam) cam.value = ev.camera_id || '';
+  if (cam) {
+    [...cam.options].forEach((o) => { o.selected = !!ev.camera_id && o.value === ev.camera_id; });
+    if (typeof MultiPicker !== 'undefined') MultiPicker.refresh('faceFilterCamera2');
+  }
   const at = new Date(ev.event_time);
   if (!Number.isNaN(at.getTime())) {
     setDtValue('faceFilterFrom2', new Date(at.getTime() - 2 * 60_000));
     setDtValue('faceFilterTo2', new Date(at.getTime() + 2 * 60_000));
   }
   _loadFaceTab();
+}
+
+// ปุ่มใต้ภาพทั้งสามตั้งอยู่บนสมมติฐานว่าวัตถุนั้นเป็น "คน" ซึ่งที่ไซต์กล้อง Bosch
+// ผิด 95.7% (Person 545 จาก 12,664) — รถกระบะที่มีปุ่ม "ตามคนนี้" อยู่ข้างใต้
+// ไม่ได้แค่ดูแปลก มันชวนให้กดแล้วได้ผลลัพธ์ที่ไม่มีความหมาย (รายงาน 2026-08-20)
+//
+// ตัดสินจาก object_class ของแถวนั้นเอง ไม่ใช่จากไซต์ — กล้องตัวเดียวกันเห็นทั้งคน
+// และรถ  ส่วน "ดูในหน้าใบหน้า" เก็บไว้เฉพาะกับคน: มันค้นด้วยกล้อง+ช่วงเวลา ซึ่งยัง
+// มีประโยชน์แม้กล้องไม่ส่งรูปพรรณ แต่กับรถแล้วไม่มีอะไรให้ดู
+function _appCardActions(ev, idx) {
+  if (ev.object_class && ev.object_class !== 'Person') return '';
+  return `<div class="app-person-actions">
+            <button class="btn btn-secondary" data-action="appFollow" data-event-id="${ev.id}">${escapeHtml(I18N.t('app.followBtn'))}</button>
+            <button class="btn btn-secondary" data-action="appExample" data-idx="${idx}">${escapeHtml(I18N.t('app.exampleBtn'))}</button>
+            <button class="btn btn-secondary" data-action="appFace" data-idx="${idx}">${escapeHtml(I18N.t('app.faceBtn'))}</button>
+          </div>`;
 }
 
 function _renderAppearanceResults(rows) {
@@ -604,7 +656,7 @@ function _renderAppearanceResults(rows) {
     ${rows.map((ev, idx) => {
       const fallback = _appBodyAvatar(ev);
       const thumb = `<div class="app-person-thumb" data-action="appOpen" data-idx="${idx}">${fallback}${ev.snapshot_file
-        ? `<img src="${API}/snapshots/${encodeURIComponent(ev.snapshot_file)}?w=320" alt="" loading="lazy" decoding="async" data-err="hide">`
+        ? `<img src="${API}/snapshots/${encodeURIComponent(ev.snapshot_file)}?w=${SNAP_W.crop}" alt="" loading="lazy" decoding="async" data-err="hide">`
         : ''}${ev.confidence != null ? `<span class="app-person-conf">${escapeHtml(_appConfidenceText(ev.confidence))}</span>` : ''}</div>`;
       const time = new Date(ev.event_time).toLocaleString('th-TH', {hour12:false});
       const chips = _renderAppearanceChips(ev);
@@ -613,11 +665,7 @@ function _renderAppearanceResults(rows) {
         <div class="app-person-body">
           <div class="app-person-meta">${escapeHtml(time)} · ${escapeHtml(_appCameraName(ev.camera_id))}</div>
           ${chips}
-          <div class="app-person-actions">
-            <button class="btn btn-secondary" data-action="appFollow" data-event-id="${ev.id}">${escapeHtml(I18N.t('app.followBtn'))}</button>
-            <button class="btn btn-secondary" data-action="appExample" data-idx="${idx}">${escapeHtml(I18N.t('app.exampleBtn'))}</button>
-            <button class="btn btn-secondary" data-action="appFace" data-idx="${idx}">${escapeHtml(I18N.t('app.faceBtn'))}</button>
-          </div>
+          ${_appCardActions(ev, idx)}
         </div>
       </div>`;
     }).join('')}
@@ -734,11 +782,38 @@ function setAppTab(tab, btn) {
   }
 }
 
+// ── "N ข้อมูลใหม่" pill ─────────────────────────────────────────
+// The page reloaded its whole stats set on every new_face that carried a
+// gender or glasses reading. Measured 2026-08-02: 817 of them in ten minutes,
+// so the charts redrew 1.4 times a second — unreadable, and 84 requests a
+// minute per open tab on top. Counted and announced instead; the operator
+// decides when the numbers move under them.
+let _appNewCount = 0;
+
+function _appClearNew() {
+  _appNewCount = 0;
+  document.getElementById('appNewPill')?.classList.add('hidden');
+}
+
+function appNoteNew() {
+  _appNewCount++;
+  const pill = document.getElementById('appNewPill');
+  const text = document.getElementById('appNewPillText');
+  if (!pill || !text) return;
+  const shown = _appNewCount > 999 ? '999+' : String(_appNewCount);
+  text.textContent = `${shown} ${I18N.t('app.newSince', 'รายการใหม่ — กดเพื่ออัปเดต')}`;
+  pill.classList.remove('hidden');
+}
+
+function appApplyNew() { _loadAppStats(); }
+
 async function _loadAppStats() {
+  _appClearNew();
   const statsCard = document.getElementById('appStatsCard');
   if (!statsCard) return;
   const params = new URLSearchParams();
   const v = id => document.getElementById(id)?.value || '';
+  if (v('appFilterClass')) params.set('object_class', v('appFilterClass'));
   if (v('appFilterCam')) params.set('camera_id', v('appFilterCam'));
   else if (_appActiveSiteId) params.set('site_id', String(_appActiveSiteId));
   const fromDate = _appFromPicker?.selectedDates[0];
@@ -749,11 +824,22 @@ async function _loadAppStats() {
   const emptyEl = document.getElementById('appStatsEmpty');
   try {
     const r = await fetch(`${API}/api/appearances/stats?${params}`);
-    if (!r.ok) return;
+    if (!r.ok) {
+      // เดิม `if (!r.ok) return;` ทิ้งกราฟของช่วงก่อนค้างไว้ — ผู้ใช้เห็นตัวเลขผิดช่วงโดยไม่รู้
+      const err = await r.json().catch(() => ({}));
+      statsCard.style.display = 'none';
+      if (emptyEl) {
+        emptyEl.textContent = err.error === 'range_too_large'
+          ? I18N.t('app.statsRangeTooLarge', 'สถิติดูได้ครั้งละไม่เกิน {n} วัน — เลือกช่วงให้สั้นลง').replace('{n}', err.max_days || 2)
+          : I18N.t('app.statsLoadFailed', 'โหลดสถิติไม่สำเร็จ');
+        emptyEl.style.display = '';
+      }
+      return;
+    }
     const d = await r.json();
     if (!d.accessories?.total) {
       statsCard.style.display = 'none';
-      if (emptyEl) emptyEl.style.display = '';
+      if (emptyEl) { emptyEl.textContent = I18N.t('app.noResults', 'ไม่พบบุคคลที่ตรงกับเงื่อนไข'); emptyEl.style.display = ''; }
       return;
     }
     if (emptyEl) emptyEl.style.display = 'none';
@@ -831,7 +917,12 @@ function _renderAppStatsCharts(d) {
   const kpiEl = document.getElementById('appKpiGrid');
   if (kpiEl) {
     const items = [
-      [accent, I18N.t('app.kpiDetected'), Number(kpi.total || 0).toLocaleString(), I18N.t('app.kpiDetectedSub'), '<circle cx="9" cy="7" r="3"/><path d="M3 19c0-3 2.7-5 6-5s6 2 6 5M16 7a3 3 0 0 1 0 6M21 19c0-2.4-1.6-4.2-4-4.8"/>'],
+      // "วัตถุที่ตรวจพบ" ไม่ใช่ "คนที่ตรวจพบ" — กล้องติดตามทุกอย่างที่ขยับ และที่
+      // RMUTR-V มีคนจริง 545 จาก 12,795 (4.3%) การเรียกทั้งก้อนว่าคนทำให้ตัวเลข
+      // เกินความจริง 23 เท่า บรรทัดย่อยบอกจำนวนคนจริงไว้ข้างกัน
+      [accent, I18N.t('app.kpiDetected'), Number(kpi.total || 0).toLocaleString(),
+       I18N.t('app.kpiDetectedSub').replace('{n}', Number(kpi.person || 0).toLocaleString()),
+       '<path d="M3 7h18M3 12h18M3 17h18"/>'],
       [warn, I18N.t('app.kpiPeak'), peakMax ? peakLabel(peakMax.bucket) : '—', peakMax ? I18N.t('app.kpiPeakSub').replace('{n}', peakMax.n) : I18N.t('app.noResults'), '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'],
       [accent, I18N.t('app.kpiTopCamera'), topCamera?.camera_name || '—', topCamera ? I18N.t('app.kpiPeople').replace('{n}', topCamera.n) : I18N.t('app.noResults'), '<path d="M12 21s-7-5.5-7-11a7 7 0 0 1 14 0c0 5.5-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/>'],
       [ok, I18N.t('app.kpiGender'), known ? `${malePct} / ${femalePct}%` : '—', I18N.t('app.kpiGenderSub').replace('{m}', kpi.male || 0).replace('{f}', kpi.female || 0), '<circle cx="9" cy="7" r="3"/><circle cx="17" cy="9" r="3"/><path d="M3 19c0-3 2.7-5 6-5"/>'],
@@ -859,16 +950,32 @@ function _renderAppStatsCharts(d) {
   _appBotCatChart  = _appCatChart('appBotCatChart',  _appMapLabels(d.bottom_cat, _APP_BOT),  _appBotCatChart);
   _appHairLenChart = _appCatChart('appHairLenChart', _appMapLabels(d.hair_length, _APP_HAIR), _appHairLenChart);
 
-  // Age group, expression, direction charts
-  if (d.age_group && Object.keys(d.age_group).length) {
-    _appAgeGroupChart = _appCatChart('appAgeGroupChart', _appMapLabels(d.age_group, _APP_AGE_GROUP), _appAgeGroupChart);
-  }
-  if (d.expression && Object.keys(d.expression).length) {
-    _appExprChart = _appCatChart('appExprChart', _appMapLabels(d.expression, _APP_EXPR), _appExprChart);
-  }
-  if (d.direction && Object.keys(d.direction).length) {
-    _appDirChart = _appCatChart('appDirChart', _appMapLabels(d.direction, _APP_DIR), _appDirChart);
-  }
+  // ส่วนที่มีเฉพาะ "คน" — ซ่อนทั้งการ์ดเมื่อกล้องไม่ส่งข้อมูลพวกนี้มาเลย แทนที่จะโชว์
+  // กราฟเปล่า 6 ใบกินครึ่งหน้าจอ (BH5100i_RMUTR-V_01 ไม่ส่งอายุ/เพศ/เสื้อผ้าสักค่า)
+  // ตัดสินจากข้อมูลที่ได้จริง ไม่ใช่จากชนิดที่เลือก เพราะเลือก "คน" แล้วกล้องไม่ส่ง
+  // ก็ยังว่างอยู่ดี
+  const _hasPersonData = [d.gender, d.age_group, d.expression, d.top_cat, d.bottom_cat,
+                          d.hair_length, d.hair_color]
+    .some(o => o && Object.keys(o).length);
+  document.querySelectorAll('#page-appearance [data-person-only]').forEach((el) => {
+    el.style.display = _hasPersonData ? '' : 'none';
+  });
+  const noteEl = document.getElementById('appNoPersonNote');
+  if (noteEl) noteEl.style.display = _hasPersonData ? 'none' : '';
+
+  // Age group, expression, direction charts.
+  //
+  // Redrawn unconditionally. These three used to be wrapped in
+  // `if (d.x && Object.keys(d.x).length)`, which reads as "nothing to draw, so
+  // skip" but actually means "leave whatever was drawn last time on screen".
+  // Switching to a site whose cameras send none of these left the previous
+  // site's bars sitting under the new site's heading — reported twice on
+  // 2026-08-20 for RMUTR-V, where the chart showed 85,000 in วัยทำงาน while the
+  // API answered {} for site_id=20 and the KPI beside it correctly read 12,606.
+  // An empty object gives an empty chart, which is the honest picture.
+  _appAgeGroupChart = _appCatChart('appAgeGroupChart', _appMapLabels(d.age_group, _APP_AGE_GROUP), _appAgeGroupChart);
+  _appExprChart = _appCatChart('appExprChart', _appMapLabels(d.expression, _APP_EXPR), _appExprChart);
+  _appDirChart = _appCatChart('appDirChart', _appMapLabels(d.direction, _APP_DIR), _appDirChart);
 
   const peakCtx = document.getElementById('appPeakChart')?.getContext('2d');
   if (peakCtx) {

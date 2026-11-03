@@ -1,0 +1,993 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>คู่มือเจ้าหน้าที่ OpenAPI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+  /* เอกสารภายใน · light theme เท่านั้น (กฎรายงานของโปรเจกต์) */
+  :root {
+    --ink: #1c2430; --ink-soft: #4a5566; --ink-faint: #7a8596;
+    --paper: #ffffff; --wash: #f4f6f9; --rule: #dde3ea;
+    --brand: #1f5fa8; --brand-wash: #e9f1fb;
+    --warn-wash: #fff6e6; --warn-line: #f1d9a8; --warn-ink: #5c3a00;
+    --bad: #a3271f; --bad-wash: #fdeeee; --ok: #2f6b2f; --ok-wash: #edf7ed;
+    --code-bg: #f6f8fa;
+    --font: "Noto Sans Thai", "Garuda", "Loma", system-ui, sans-serif;
+    --mono: "JetBrains Mono", "Noto Sans Thai", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 16px/1.75 var(--font); }
+  .nw { white-space: nowrap; }
+  header.top { background: var(--wash); border-bottom: 1px solid var(--rule); }
+  header.top .inner { max-width: 1160px; margin: 0 auto; padding: 40px 20px 30px; }
+  .eyebrow { font-size: 13px; font-weight: 600; letter-spacing: .08em; color: var(--brand); text-transform: uppercase; }
+  h1 { font-size: 34px; line-height: 1.3; margin: 6px 0 10px; }
+  .lede { color: var(--ink-soft); max-width: 70ch; margin: 0; }
+  .meta { margin-top: 16px; font-size: 13px; color: var(--ink-faint); display: flex; gap: 6px 20px; flex-wrap: wrap; }
+  .badge-int { display: inline-block; background: var(--bad-wash); color: var(--bad); border: 1px solid #f3c7c3; border-radius: 999px; padding: 0 10px; font-weight: 600; }
+  .wrap { max-width: 1160px; margin: 0 auto; padding: 0 20px; display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 48px; }
+  nav.toc { position: sticky; top: 20px; align-self: start; padding-top: 34px; font-size: 14px; max-height: calc(100vh - 20px); overflow-y: auto; }
+  nav.toc b { display: block; font-size: 12px; letter-spacing: .06em; color: var(--ink-faint); margin-bottom: 8px; }
+  nav.toc ol { list-style: none; margin: 0; padding: 0; counter-reset: s; }
+  nav.toc li { counter-increment: s; }
+  nav.toc a { display: block; padding: 4px 0 4px 12px; border-left: 2px solid var(--rule); color: var(--ink-soft); text-decoration: none; }
+  nav.toc a::before { content: counter(s) ". "; color: var(--ink-faint); }
+  nav.toc a:hover, nav.toc a:focus-visible { color: var(--brand); border-left-color: var(--brand); outline: none; }
+  main { padding: 26px 0 80px; min-width: 0; }
+  section { margin-bottom: 34px; }
+  h2 { font-size: 23px; margin: 0 0 12px; padding-top: 16px; border-top: 1px solid var(--rule); scroll-margin-top: 16px; }
+  h2 .n { color: var(--brand); margin-right: 8px; }
+  h3 { font-size: 17px; margin: 22px 0 8px; }
+  p, li { max-width: 74ch; }
+  ul, ol { padding-left: 22px; }
+  code { font-family: var(--mono); font-size: .86em; background: var(--code-bg); border: 1px solid var(--rule); border-radius: 4px; padding: 1px 5px; }
+  pre { font-family: var(--mono); font-size: 13px; line-height: 1.6; background: var(--code-bg); border: 1px solid var(--rule); border-radius: 8px; padding: 14px 16px; overflow-x: auto; margin: 12px 0 16px; }
+  pre code { background: none; border: 0; padding: 0; font-size: inherit; }
+  .table-scroll { overflow-x: auto; margin: 12px 0 18px; border: 1px solid var(--rule); border-radius: 8px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+  th, td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: 1px solid var(--rule); }
+  th { background: var(--wash); font-weight: 600; white-space: nowrap; }
+  tr:last-child td { border-bottom: 0; }
+  td code { white-space: nowrap; }
+  .note, .warn, .ok { border-radius: 8px; padding: 12px 16px; margin: 14px 0; font-size: 15px; }
+  .note { background: var(--brand-wash); border: 1px solid #c9dcf3; }
+  .warn { background: var(--warn-wash); border: 1px solid var(--warn-line); color: var(--warn-ink); }
+  .ok { background: var(--ok-wash); border: 1px solid #c6e2c6; }
+  .note b.h, .warn b.h, .ok b.h { display: block; margin-bottom: 2px; }
+  .steps { list-style: none; padding: 0; margin: 14px 0; display: grid; gap: 10px; counter-reset: st; }
+  .steps > li { counter-increment: st; position: relative; padding: 12px 14px 12px 52px; border: 1px solid var(--rule); border-radius: 8px; max-width: none; }
+  .steps > li::before { content: counter(st); position: absolute; left: 14px; top: 12px; width: 26px; height: 26px; border-radius: 50%; background: var(--brand); color: #fff; font-size: 13px; font-weight: 700; display: grid; place-items: center; }
+  .flow { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin: 16px 0; }
+  .flow div { border: 1px solid var(--rule); border-radius: 8px; padding: 10px; font-size: 13.5px; line-height: 1.5; background: var(--paper); position: relative; }
+  .flow div b { display: block; font-size: 14px; color: var(--brand); }
+  .layers { display: grid; gap: 8px; margin: 14px 0; }
+  .layers > div { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 10px; align-items: start; border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px; font-size: 15px; }
+  .layers span { width: 26px; height: 26px; border-radius: 6px; background: var(--brand-wash); color: var(--brand); font-weight: 700; display: grid; place-items: center; font-size: 13px; }
+  dl.faq dt { font-weight: 600; margin-top: 14px; }
+  dl.faq dd { margin: 4px 0 0; color: var(--ink-soft); max-width: 74ch; }
+  .s-ok { color: var(--ok); font-weight: 600; } .s-bad { color: var(--bad); font-weight: 600; }
+  footer { border-top: 1px solid var(--rule); color: var(--ink-faint); font-size: 13px; padding: 20px 0 40px; }
+  /* ── หน้าจำลอง: token ธีมสว่างของ dashboard จริง (index.css html[data-theme=light]) ── */
+  :root { --surface-base:#f0f4fa; --surface-elevated:#ffffff; --surface-overlay:#e8edf5; --text-primary:#1a2030; --text-secondary:#5a6577;
+          --border-hairline:#d0d7e4; --accent:#3b6fd4; --accent-muted:#2d5ab8; --status-ok:#16a34a; --status-bad:#dc2626; --warn:#b45309;
+          --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px; --space-6:24px; --space-8:32px; }
+  /* ── CSS ของหน้าจอจริง คัดจาก dashboard/index.css (คลาส integ-* / form / btn / seg / tab) ── */
+  .card { background: var(--surface-elevated); border: 1px solid var(--border-hairline); border-radius: 10px; padding: 16px; }
+  .card-title { font-size: 12px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+  .card-title::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+  .card-preview { position: relative; width: 100%; aspect-ratio: 16/9; overflow: hidden; flex-shrink: 0; background: #05080f; display: flex; align-items: center; justify-content: center; }
+  .card-preview img { width: 100%; height: 100%; object-fit: cover; }
+  .card-preview .placeholder { color: var(--text-secondary); font-size: 12px; }
+  .card-info { padding: 11px 13px 12px; display: flex; flex-direction: column; flex: 1; }
+  .card-info-top { display: flex; gap: 9px; align-items: flex-start; }
+  .card-info-left { flex: 1; min-width: 0; }
+  .card-badges { display: flex; flex-direction: column; gap: 4px; align-items: flex-end; flex-shrink: 0; }
+  .tab { padding: 5px 14px; border-radius: 6px; cursor: pointer; font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--text-secondary); background: transparent; border: none; }
+  .tab.active { background: rgba(91,141,239,0.15); color: var(--accent); }
+  .form-group { display: flex; flex-direction: column; gap: 4px; }
+  .form-group.full { grid-column: 1 / -1; }
+  .form-label { font-size: 11px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
+  .form-input { background: var(--surface-overlay); border: 1px solid var(--border-hairline); border-radius: 6px; padding: 8px 10px; color: var(--text-primary); font-size: 13px; font-family: inherit; }
+  .form-input:focus { outline: none; border-color: var(--accent); }
+  .form-input:disabled { opacity: 0.6; }
+  .btn { padding: 8px 16px; border-radius: 6px; border: none; cursor: pointer; font-size: 12px; font-weight: 700; }
+  .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+  .btn-primary { background: var(--accent); color: white; }
+  .btn-primary:hover:not(:disabled) { background: var(--accent-muted); }
+  .btn-danger { background: var(--status-bad); color: white; }
+  .btn-warning { background: var(--warn); color: #000; }
+  .btn-secondary { background: var(--surface-overlay); color: var(--text-primary); border: 1px solid var(--border-hairline); }
+  .card-flush  { padding:0; overflow:hidden; }
+  .seg { display:inline-flex; background:var(--surface-overlay); border:1px solid var(--border-hairline); border-radius:8px; overflow:hidden; flex-wrap:wrap; }
+  .seg button { background:transparent; border:none; color:var(--text-secondary); padding:6px 14px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap; }
+  .seg button.active { background:var(--accent); color:#fff; }
+  .seg button:disabled { opacity:.4; cursor:not-allowed; text-decoration:line-through; }
+  .tab-badge { display:inline-flex; align-items:center; justify-content:center; min-width:16px; height:16px; padding:0 4px; margin-left:6px; border-radius:8px; background:var(--status-bad); color:#fff; font-size:10px; font-weight:700; }
+.btn-sm { padding:5px 11px; font-size:11px; }
+.btn-ghost { background:transparent; color:var(--status-bad); border:1px solid transparent; }
+.btn-ghost:hover { background:rgba(239,68,68,.1); }
+.btn.push-on { border-color:var(--status-ok); color:var(--status-ok); }
+.btn-danger-ghost svg { width:14px; height:14px; }
+.btn-danger-ghost:focus-visible { outline:2px solid var(--status-bad); outline-offset:2px; }
+.btn-mini:hover { border-color: var(--accent); color: var(--accent); }
+.btn-mini.ghost { border-color: transparent; color: var(--text-secondary); }
+.btn-mini.fsvc-armed { background:var(--status-bad); color:var(--surface-base); border-color:var(--status-bad); }
+.integ-lede{color:var(--text-secondary);font-size:13px;margin:0 0 14px;line-height:1.55}
+.integ-layout{display:grid;grid-template-columns:minmax(200px,260px) 1fr;gap:14px;align-items:start}
+.integ-side{background:var(--surface-elevated);border:1px solid var(--border-hairline);border-radius:10px;overflow:hidden}
+.integ-side-head{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;
+  border-bottom:1px solid var(--border-hairline);font-size:12px;font-weight:600;color:var(--text-secondary)}
+.integ-count{background:var(--surface-overlay);border-radius:20px;padding:1px 8px;font-size:11px}
+.integ-list{display:flex;flex-direction:column}
+.integ-item{all:unset;cursor:pointer;padding:10px 12px;border-bottom:1px solid var(--border-hairline);
+  display:flex;flex-direction:column;gap:3px}
+.integ-item:hover{background:var(--surface-overlay)}
+.integ-item.is-on{background:var(--surface-overlay);box-shadow:inset 3px 0 0 var(--accent)}
+.integ-item-top{display:flex;justify-content:space-between;align-items:center;gap:8px;
+  font-size:13px;color:var(--text-primary)}
+.integ-item-sub{font-size:11px;color:var(--text-secondary)}
+.integ-badge{font-size:10px;padding:1px 6px;border-radius:20px;white-space:nowrap}
+.integ-badge--ok{background:color-mix(in srgb,var(--status-ok) 18%,transparent);color:var(--status-ok)}
+.integ-badge--off{background:var(--surface-overlay);color:var(--text-secondary)}
+.integ-badge--bad{background:color-mix(in srgb,var(--status-bad) 18%,transparent);color:var(--status-bad)}
+.integ-main{display:flex;flex-direction:column;gap:12px;min-width:0}
+.integ-card{padding:14px}
+.integ-head{display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap}
+.integ-name{margin:0 0 4px;font-size:15px}
+.integ-meta{font-size:11px;color:var(--text-secondary);overflow-wrap:anywhere}
+.integ-meta code{font-size:11px}
+.integ-label{font-size:10px;color:var(--text-secondary);margin-bottom:3px;text-transform:uppercase;letter-spacing:.4px}
+.integ-chip{display:inline-block;background:var(--surface-overlay);border-radius:4px;padding:1px 7px;
+  font-size:11px;margin-right:4px}
+.integ-chip--all{color:var(--text-secondary)}
+.integ-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;
+  margin-top:12px;padding-top:12px;border-top:1px solid var(--border-hairline)}
+.integ-stats>div{display:flex;flex-direction:column;gap:2px}
+.integ-stats span{font-size:10px;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.4px}
+.integ-stats b{font-size:13px;font-weight:600}
+.integ-err{color:var(--warn)}
+.integ-tabs{margin:0}
+.integ-hint{font-size:12px;color:var(--text-secondary);margin:0 0 12px;line-height:1.55}
+.integ-matrix{display:flex;flex-direction:column;gap:12px}
+.integ-view-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px}
+.integ-view-head code{font-size:12px;color:var(--text-primary)}
+.integ-frac{font-size:11px;color:var(--text-secondary);white-space:nowrap}
+.integ-frac--all{color:var(--status-ok)}
+.integ-frac--none{color:var(--text-secondary);opacity:.6}
+.integ-cols{display:flex;flex-wrap:wrap;gap:4px}
+/* Not granted is the muted state, granted is the marked one — the eye should
+   land on what a partner CAN read, not on what they cannot. */
+.integ-col{font-size:11px;padding:2px 7px;border-radius:4px;background:var(--surface-overlay);
+  color:var(--text-secondary);opacity:.5;text-decoration:line-through}
+.integ-col.is-on{opacity:1;text-decoration:none;color:var(--text-primary);
+  background:color-mix(in srgb,var(--accent) 16%,transparent)}
+.integ-code{background:var(--surface-base);border:1px solid var(--border-hairline);border-radius:8px;
+  padding:11px;font-size:11.5px;line-height:1.6;overflow-x:auto;white-space:pre;margin:10px 0 0;max-height:420px}
+.integ-cmd{display:block;background:var(--surface-base);border:1px solid var(--border-hairline);
+  border-radius:6px;padding:9px 11px;font-size:11.5px;margin-top:10px;overflow-x:auto;white-space:pre}
+.integ-empty{padding:26px 14px;text-align:center;color:var(--text-secondary);font-size:13px;line-height:1.6}
+.integ-probe{display:flex;flex-direction:column;gap:3px;font-size:12px;
+  border-left:3px solid var(--warn)}
+.integ-probe span{color:var(--text-secondary);font-size:11.5px}
+@media (max-width:900px){
+  .integ-layout{grid-template-columns:1fr}
+  /* The partner list becomes a horizontal strip so it does not push the detail
+     below the fold on a phone. */
+  .integ-list{flex-direction:row;overflow-x:auto}
+  .integ-item{border-bottom:0;border-right:1px solid var(--border-hairline);min-width:150px}
+  .integ-item.is-on{box-shadow:inset 0 -3px 0 var(--accent)}
+}
+@media (max-width:768px){
+  .integ-head{flex-direction:column;gap:10px}
+  .integ-stats{grid-template-columns:repeat(2,1fr)}
+  .integ-code{font-size:10.5px}
+}
+/* TP5 — editing. A pending change is marked, not applied: the operator has to
+   confirm before any GRANT is written. */
+.integ-col{border:0;cursor:pointer;font-family:inherit}
+.integ-col.is-changed{outline:1.5px dashed var(--warn);outline-offset:1px}
+.integ-view-right{display:flex;align-items:center;gap:6px}
+.integ-mini{all:unset;cursor:pointer;font-size:10px;padding:1px 6px;border-radius:4px;
+  background:var(--surface-overlay);color:var(--text-secondary)}
+.integ-mini:hover{color:var(--text-primary)}
+.integ-dirty{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;
+  background:color-mix(in srgb,var(--warn) 12%,transparent);border:1px solid var(--warn);
+  border-radius:8px;padding:9px 12px;margin-bottom:12px;font-size:12px;line-height:1.5}
+.integ-dirty-btns{display:flex;gap:6px;flex-shrink:0}
+.integ-badge--warn{background:color-mix(in srgb,var(--warn) 20%,transparent);color:var(--warn)}
+/* หน้าตาแบบ demo /others/demo/OpenAPI/ (2026-10-21) — ฟิลด์จัดเป็นหมวด · ช่องติ๊ก · ป้าย PII · % ข้อมูลที่มีจริง */
+.integ-dom{border:1px solid var(--border-hairline);border-radius:10px;padding:var(--space-3);background:var(--surface-elevated)}
+.integ-dom.is-off{background:var(--surface-base)}
+.integ-dom-head{display:flex;justify-content:space-between;align-items:flex-start;gap:var(--space-3);margin-bottom:var(--space-2);flex-wrap:wrap}
+.integ-dom-name{display:flex;flex-direction:column;gap:2px;min-width:0}
+.integ-dom-name b{font-size:var(--fs-body);color:var(--text-primary)}
+.integ-dom-src{font-size:11px;color:var(--text-secondary);font-family:ui-monospace,monospace;overflow-wrap:anywhere}
+.integ-dom-eps{display:flex;flex-wrap:wrap;gap:4px;font-size:11px}
+.integ-dom-eps code{background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--accent);border-radius:4px;padding:0 5px}
+.integ-dom-noep{color:var(--text-secondary);font-style:italic}
+.integ-dom-right{display:flex;align-items:center;gap:var(--space-2)}
+.integ-seg button{font-size:11px;padding:3px 10px}
+.integ-col{display:inline-flex;align-items:center;gap:5px;font-size:12px;padding:4px 8px;border-radius:6px;
+  border:1px solid var(--border-hairline);background:var(--surface-base);color:var(--text-secondary);
+  opacity:1;text-decoration:none;line-height:1.35}
+.integ-col.is-on{background:color-mix(in srgb,var(--accent) 10%,transparent);border-color:color-mix(in srgb,var(--accent) 45%,transparent);color:var(--text-primary)}
+.integ-col:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.integ-col-box{width:12px;height:12px;border:1.5px solid var(--text-secondary);border-radius:3px;flex-shrink:0;position:relative}
+.integ-col.is-on .integ-col-box{background:var(--accent);border-color:var(--accent)}
+.integ-col.is-on .integ-col-box::after{content:"";position:absolute;left:3px;top:0;width:3px;height:7px;
+  border:solid var(--surface-elevated);border-width:0 2px 2px 0;transform:rotate(45deg)}
+.integ-col-c{font-size:10px;color:var(--text-secondary);opacity:.8}
+.integ-pii{font-size:10px;font-weight:600;color:var(--status-bad);border:1px solid currentColor;border-radius:3px;padding:0 3px}
+.integ-fill{font-size:10px;color:var(--text-secondary);font-variant-numeric:tabular-nums}
+.integ-fill--hi{color:var(--status-ok)}
+.integ-fill--lo{color:var(--warn)}
+.integ-fill--zero{color:var(--status-bad)}
+.integ-hint--warn{color:var(--warn)}
+.integ-pv{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:var(--space-3)}
+.integ-pv-ep{border:1px solid var(--border-hairline);border-radius:10px;padding:var(--space-3);min-width:0}
+.integ-pv-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:var(--space-2);flex-wrap:wrap}
+.integ-pv-head code{font-size:12px;font-weight:600;color:var(--text-primary)}
+.integ-kv{display:grid;grid-template-columns:max-content 1fr;gap:4px 12px;margin:0;font-size:12px}
+.integ-kv dt{color:var(--text-secondary);display:flex;flex-direction:column;line-height:1.25}
+.integ-kv dt code{font-size:10px;opacity:.75}
+.integ-kv dd{margin:0;color:var(--text-primary);overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.integ-null{color:var(--text-secondary);font-style:italic}
+.integ-pv-off{opacity:.55;text-decoration:line-through}
+.integ-agr-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--space-3);margin-top:var(--space-4)}
+.integ-agr-form h4,.integ-agr-form button{grid-column:1/-1;justify-self:start}
+.integ-fld{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--text-secondary);min-width:0}
+.integ-fld input,.integ-fld select,.integ-fld textarea{font:inherit;color:var(--text-primary);background:var(--surface-elevated);border:1px solid var(--border-hairline);border-radius:8px;padding:6px 8px;min-width:0}
+.integ-fld:has(textarea){grid-column:1/-1}
+.integ-agr-hist{margin:0;padding-left:18px;font-size:12px;line-height:1.7}
+@media (max-width:768px){.integ-agr-form{grid-template-columns:1fr}}
+.integ-pv-miss{font-size:12px;color:var(--status-bad);margin:0;line-height:1.6}
+@media (max-width:768px){
+  .integ-dom-head{flex-direction:column}
+  .integ-pv{grid-template-columns:1fr}
+  .integ-kv{grid-template-columns:1fr}
+  .integ-kv dd{margin-bottom:6px}
+}
+.integ-exp-none{color:var(--text-secondary);font-weight:400}
+.integ-exp-soon{color:var(--warn)}
+.integ-exp-bad{color:var(--status-bad)}
+/* Lifecycle controls + credentials (TP5b) */
+.integ-new{width:calc(100% - 20px);margin:10px}
+.integ-head-l{min-width:0}
+.integ-actions{display:flex;gap:6px;flex-wrap:wrap;align-items:flex-start}
+.integ-creds{display:flex;flex-direction:column;gap:6px;margin-top:12px;padding-top:12px;
+  border-top:1px solid var(--border-hairline)}
+.integ-cred{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px}
+.integ-cred-lbl{color:var(--text-secondary);font-size:10px;text-transform:uppercase;
+  letter-spacing:.4px;min-width:74px}
+.integ-cred code{font-size:11.5px;overflow-wrap:anywhere}
+.integ-secret--masked{color:var(--text-secondary);letter-spacing:1px}
+.integ-cred-note{font-size:10.5px;color:var(--text-secondary)}
+.integ-notes{margin-top:10px;padding-top:10px;border-top:1px solid var(--border-hairline);
+  font-size:12px;color:var(--text-secondary)}
+.integ-chip--none{color:var(--status-bad)}
+.integ-fieldnote{font-size:10.5px;color:var(--text-secondary);margin-top:4px;line-height:1.5}
+.integ-sitepick{display:flex;flex-wrap:wrap;gap:8px}
+.integ-siteopt{display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;
+  background:var(--surface-overlay);border-radius:6px;padding:5px 9px}
+.integ-formfoot{display:flex;justify-content:flex-end;gap:8px;margin-top:16px;
+  padding-top:14px;border-top:1px solid var(--border-hairline)}
+@media (max-width:768px){
+  .integ-actions{width:100%}
+  .integ-actions .btn{flex:1}
+  .integ-cred-lbl{min-width:100%}
+}
+
+/* ── CP2 · Warning modal ────────────────────────────────────────────────── */
+.integ-warn-msg{display:flex;flex-direction:column;gap:12px}
+.integ-warn-msg p{margin:0;font-size:13px;line-height:1.5;color:var(--text-primary)}
+.integ-warn-note{font-size:12px;color:var(--text-secondary);font-style:italic}
+.integ-warn-endpoints{display:flex;flex-direction:column;gap:8px;padding:10px;
+  border-radius:6px;background:color-mix(in srgb,var(--status-bad) 5%,transparent);
+  border:1px solid color-mix(in srgb,var(--status-bad) 20%,transparent)}
+.integ-warn-endpoint{display:flex;justify-content:space-between;align-items:center;
+  padding:6px 8px;font-size:12px}
+.integ-warn-endpoint code{flex:1;color:var(--text-primary);font-weight:500}
+.integ-warn-count{color:var(--text-secondary);font-size:11px;white-space:nowrap}
+
+  /* ── โครงของหน้าจำลอง ── */
+  .sim-steps { display: flex; flex-wrap: wrap; gap: 6px; margin: 14px 0; }
+  .sim-step { font: 600 14px var(--font); padding: 7px 14px; border-radius: 999px; border: 1px solid var(--rule); background: var(--paper); color: var(--ink-soft); cursor: pointer; }
+  .sim-step.is-on { background: var(--brand); border-color: var(--brand); color: #fff; }
+  .sim-step:focus-visible, .sim-screen button:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+  .sim-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+  .sim-grid--wide { grid-template-columns: 1fr; }
+  .sim-screen { background: var(--surface-base); border: 1px solid var(--border-hairline); border-radius: 10px; padding: 14px; font: 13px/1.55 'Noto Sans Thai', system-ui, sans-serif; color: var(--text-primary); min-width: 0; }
+  .sim-screen input, .sim-screen select, .sim-screen textarea, .sim-screen button { font-family: inherit; }
+  .sim-screen .form-group { margin-bottom: 10px; }
+  .sim-screen code { font-size: 11px; }
+  .sim-bar { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--text-secondary); margin-bottom: 10px; flex-wrap: wrap; }
+  .sim-tag { background: #fde9cf; color: #8a4b00; border-radius: 999px; padding: 0 8px; font-weight: 700; font-size: 11px; }
+  .sim-modal { background: var(--surface-elevated); border: 1px solid var(--border-hairline); border-radius: 10px; padding: 16px; max-width: 460px; }
+  .sim-modal-t { margin: 0 0 12px; font-size: 15px; }
+  .sim-tabs { display: flex; gap: 2px; flex-wrap: wrap; margin-bottom: 10px; }
+  .sim-tabs .tab { cursor: default; }
+  .sim-pin { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: #e8590c; color: #fff; font: 700 11px/1 var(--font); vertical-align: middle; margin-left: 4px; text-transform: none; letter-spacing: 0; }
+  .sim-pin--on { background: #fff; color: #e8590c; }
+  .integ-cols > .sim-pin { align-self: center; }
+  ol.sim-notes { margin: 0; padding: 0; list-style: none; counter-reset: pin; display: grid; gap: 8px; }
+  ol.sim-notes li { counter-increment: pin; position: relative; padding: 9px 12px 9px 40px; border: 1px solid var(--rule); border-radius: 8px; font-size: 14.5px; line-height: 1.65; max-width: none; }
+  ol.sim-notes li::before { content: counter(pin); position: absolute; left: 11px; top: 11px; width: 20px; height: 20px; border-radius: 50%; background: #e8590c; color: #fff; font: 700 11px/20px var(--font); text-align: center; }
+  .sim-err { margin: 8px 0; padding: 8px 10px; border-radius: 6px; background: #fdecec; color: #a3271f; font-size: 12.5px; }
+  .sim-ok { margin: 10px 0; padding: 9px 12px; border-radius: 8px; background: #e9f6ec; border: 1px solid #bfe3c7; color: #1f5a2c; font-size: 12.5px; }
+  .sim-result { margin-top: 12px; }
+  .sim-result .integ-cred { display: grid; gap: 8px; background: var(--surface-elevated); border: 1px solid var(--border-hairline); border-radius: 8px; padding: 12px; }
+  .sim-result .integ-cred code { word-break: break-all; white-space: normal; }
+  .sim-small { font-size: 12px; color: var(--text-secondary); margin: 6px 0; max-width: none; }
+  @media (max-width: 900px) { .sim-grid { grid-template-columns: 1fr; } .sim-modal { max-width: none; } }
+  .steps ul { margin: 6px 0 0; }
+  .ex dt { font-weight: 600; } .ex dd { margin: 0 0 8px; color: var(--ink-soft); }
+  @media (max-width: 900px) {
+    .wrap { grid-template-columns: 1fr; gap: 0; padding: 0 16px; }
+    header.top .inner { padding: 28px 16px 22px; }
+    nav.toc { position: static; padding-top: 18px; max-height: none; }
+    nav.toc ol { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+    h1 { font-size: 27px; }
+    .flow { grid-template-columns: 1fr; }
+  }
+  @media print { nav.toc { display: none; } .wrap { display: block; } pre, .table-scroll, .steps > li { break-inside: avoid; } }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="inner">
+    <div class="eyebrow">Vision Meta Hub · คู่มือภายใน</div>
+    <h1><span class="nw">คู่มือเจ้าหน้าที่</span> <span class="nw">OpenAPI</span></h1>
+    <p class="lede">อธิบายตั้งแต่ศูนย์ว่า OpenAPI ของเราคืออะไร ทำงานอย่างไร ให้ข้อมูลอะไรได้บ้าง และเจ้าหน้าที่ต้องทำอะไรเมื่อมีหน่วยงานภายนอกขอเชื่อมต่อ อ่านจบแล้วควรเปิดสิทธิ์ ตรวจ และดูแล partner ได้เองโดยไม่ต้องเขียนโค้ด</p>
+    <div class="meta"><span class="badge-int">ห้ามส่งให้ partner</span><span>ฉบับ 22 ตุลาคม 2569</span><span>API เวอร์ชัน <code>/v1</code></span><span>คู่มือสำหรับ partner แยกไว้ที่ <code>docs/partner-kit/</code></span></div>
+  </div>
+</header>
+
+<div class="wrap">
+  <nav class="toc" aria-label="สารบัญ">
+    <b>สารบัญ</b>
+    <ol>
+      <li><a href="#what">OpenAPI คืออะไร</a></li>
+      <li><a href="#words">คำศัพท์ที่ต้องรู้</a></li>
+      <li><a href="#principle">หลัก "ให้ตามความจำเป็น"</a></li>
+      <li><a href="#flow">คำขอหนึ่งครั้งเดินทางอย่างไร</a></li>
+      <li><a href="#catalog">ข้อมูลที่ให้ได้ทั้งหมด</a></li>
+      <li><a href="#screen">หน้าจอที่ใช้ทำงาน</a></li>
+      <li><a href="#onboard">ขั้นตอนรับ partner ใหม่</a></li>
+      <li><a href="#example">ตัวอย่างจริง: TEST</a></li>
+      <li><a href="#sim">ทดลองใช้หน้าจอ (จำลอง)</a></li>
+      <li><a href="#ops">งานดูแลประจำ</a></li>
+      <li><a href="#alerts">เมื่อได้รับ LINE แจ้งเตือน</a></li>
+      <li><a href="#trouble">เมื่อ partner แจ้งปัญหา</a></li>
+      <li><a href="#rules">สิ่งที่ตัดสินแล้วว่าไม่ให้</a></li>
+      <li><a href="#security">ความปลอดภัย 7 ชั้น</a></li>
+      <li><a href="#faq">คำถามที่พบบ่อย</a></li>
+      <li><a href="#tech">ภาคผนวกเทคนิค</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <section id="what">
+      <h2><span class="n">1</span>OpenAPI คืออะไร</h2>
+      <p><b>API</b> คือ "ประตูให้โปรแกรมคุยกับโปรแกรม" แทนที่หน่วยงานภายนอกจะต้องล็อกอินเข้าหน้าเว็บแล้วนั่งดูทีละหน้า โปรแกรมของเขาส่งคำขอมาที่ประตูนี้ แล้วได้ข้อมูลกลับไปเป็นตัวเลขและข้อความที่เอาไปใช้ต่อได้ทันที เช่น นำไปทำแดชบอร์ดของตัวเอง หรือรวมกับระบบของหน่วยงาน</p>
+      <p><b>OpenAPI</b> คือรูปแบบมาตรฐานของ "เอกสารอธิบายประตู" ว่ามีช่องอะไร ต้องส่งอะไร และจะได้อะไรกลับไป ของเราสร้างเอกสารนี้<b>อัตโนมัติแยกให้แต่ละ partner</b> โดยแสดงเฉพาะสิ่งที่ partner รายนั้นได้รับ</p>
+      <div class="note"><b class="h">เปรียบเทียบง่าย ๆ</b>หน้าเว็บของเราเหมือน "หน้าร้าน" ที่คนเดินเข้ามาดู ส่วน OpenAPI เหมือน "ช่องส่งของหลังร้าน" ให้คู่ค้าที่มีบัตรผ่าน รับเฉพาะของที่ตกลงกันไว้ ตามเวลาและปริมาณที่กำหนด โดยทุกครั้งที่มารับมีการลงบันทึก</div>
+      <p>ใครคือ partner: หน่วยงานหรือบริษัทที่ได้รับอนุมัติให้ดึงข้อมูลจากระบบ เช่น หน่วยงานรัฐที่ต้องการสถิติการจราจร บริษัทที่ทำรายงานให้ลูกค้า ตอนนี้มีรายเดียวคือ <code>TEST</code> ซึ่งใช้ทดสอบ</p>
+    </section>
+
+    <section id="words">
+      <h2><span class="n">2</span>คำศัพท์ที่ต้องรู้</h2>
+      <div class="table-scroll"><table>
+        <thead><tr><th>คำ</th><th>ความหมายแบบง่าย</th></tr></thead>
+        <tbody>
+          <tr><td>Partner</td><td>หน่วยงานภายนอกที่ได้สิทธิ์ดึงข้อมูล หนึ่งหน่วยงาน = หนึ่งรายการในระบบ</td></tr>
+          <tr><td>App Key</td><td>"เลขบัตรผ่าน" ของ partner บอกว่าใครกำลังขอ เปิดเผยได้ระดับหนึ่ง</td></tr>
+          <tr><td>App Secret</td><td>"รหัสลับ" ใช้พิสูจน์ว่าคำขอมาจาก partner ตัวจริง <b>ห้ามหลุด</b> ส่งให้แยกช่องทางกับ App Key</td></tr>
+          <tr><td>ลายเซ็น (Signature)</td><td>ตัวเลขที่โปรแกรมของ partner คำนวณจาก App Secret แนบไปทุกคำขอ ระบบเราคำนวณซ้ำเพื่อเทียบ ตรงกัน = ของจริง</td></tr>
+          <tr><td>Endpoint</td><td>"ช่อง" แต่ละช่องของประตู เช่น ช่องสถิติรถรายชั่วโมง ช่องค้นหาป้ายทะเบียน</td></tr>
+          <tr><td>ฟิลด์ / คอลัมน์</td><td>ข้อมูลแต่ละช่องในหนึ่งแถว เช่น เลขทะเบียน จังหวัด เวลา</td></tr>
+          <tr><td>สิทธิ์ (Grant)</td><td>การ "ติ๊ก" อนุญาตทีละฟิลด์ว่า partner อ่านอะไรได้ บังคับใช้ที่ฐานข้อมูลโดยตรง</td></tr>
+          <tr><td>Cursor</td><td>"ที่คั่นหนังสือ" บอกว่าอ่านถึงไหนแล้ว ครั้งหน้าขอต่อจากตรงนั้น ไม่ต้องอ่านซ้ำ</td></tr>
+          <tr><td>ข้อตกลงข้อมูล</td><td>บันทึกว่าให้ข้อมูลเพราะอะไร ฐานกฎหมายอะไร ใครอนุมัติ ใช้ได้ถึงเมื่อไร เก็บเป็นเวอร์ชัน</td></tr>
+          <tr><td>ยอดสรุป (Rollup)</td><td>ตัวเลขที่ระบบรวมไว้ล่วงหน้า เช่น จำนวนรถต่อกล้องต่อชั่วโมง ดึงได้เร็วและไม่มีข้อมูลรายบุคคล</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <section id="principle">
+      <h2><span class="n">3</span>หลัก "ให้ตามความจำเป็น"</h2>
+      <p>เจ้าของโปรเจกต์ตัดสินไว้ (21 ต.ค. 2569) ว่า <b>partner ต้องไม่รู้ว่าระบบเรามีข้อมูลอะไรบ้าง</b> เราเป็นผู้กำหนดชุดข้อมูลให้เอง เหตุผลคือ</p>
+      <ul>
+        <li>ถ้า partner เห็นรายการทั้งหมด จะขอเกินความจำเป็น และเราปฏิเสธได้ยาก</li>
+        <li>ข้อมูลที่ให้ออกไปยิ่งมาก ภาระต่อระบบและความเสี่ยงด้านข้อมูลส่วนบุคคลยิ่งสูง</li>
+      </ul>
+      <p>ผลในทางปฏิบัติ</p>
+      <ul>
+        <li><b>partner ใหม่เริ่มที่ศูนย์</b> ไม่ได้อะไรเลยจนกว่าเจ้าหน้าที่จะติ๊กให้</li>
+        <li>เอกสาร OpenAPI ของแต่ละรายแสดง<b>เฉพาะสิ่งที่รายนั้นได้</b> ไม่มีแคตตาล็อก ไม่มีปุ่มให้ partner ขอสิทธิ์เอง</li>
+        <li>partner ขอเพิ่มโดยบอก<b>วัตถุประสงค์</b> (อยากทำอะไร) ไม่ใช่รายชื่อฟิลด์ เราออกแบบชุดขั้นต่ำให้</li>
+        <li>เอกสารที่ส่งให้ partner (<code>docs/partner-kit/</code>) ไม่มีชื่อชุดข้อมูลหรือฟิลด์ <b>คู่มือฉบับนี้ห้ามส่งออกไป</b></li>
+      </ul>
+    </section>
+
+    <section id="flow">
+      <h2><span class="n">4</span>คำขอหนึ่งครั้งเดินทางอย่างไร</h2>
+      <div class="flow">
+        <div><b>1. โปรแกรม partner</b>สร้างคำขอ ลงลายเซ็นด้วย App Secret</div>
+        <div><b>2. ด่านตรวจตัวตน</b>รู้จัก App Key ไหม · ยังไม่หมดอายุ · ลายเซ็นตรง · เวลาไม่เก่าเกิน 5 นาที · ไม่ใช่คำขอซ้ำ</div>
+        <div><b>3. ด่านโควตา</b>เกิน 60 ครั้ง/นาที (ค่าเริ่มต้น) = รอก่อน</div>
+        <div><b>4. ฐานข้อมูล</b>สวม "บัตรสิทธิ์" ของ partner · เลือกเฉพาะฟิลด์ที่ได้ · กรองเฉพาะไซต์ที่ผูก · จำกัด 5 วินาที</div>
+        <div><b>5. ส่งกลับ + บันทึก</b>ตอบเป็น JSON · บันทึกเวลา ผล IP ทุกครั้ง</div>
+      </div>
+      <p>จุดสำคัญคือขั้นที่ 4: แม้โปรแกรมฝั่งเราจะเขียนผิด ฐานข้อมูลก็<b>ไม่ยอมคืนฟิลด์ที่ partner ไม่ได้รับสิทธิ์</b> เพราะสิทธิ์ผูกอยู่กับบัญชีของ partner ในฐานข้อมูลเอง ไม่ได้อยู่แค่ในโค้ด</p>
+    </section>
+
+    <section id="catalog">
+      <h2><span class="n">5</span>ข้อมูลที่ให้ได้ทั้งหมด (ข้อมูลภายใน)</h2>
+      <p>ระบบมีช่องให้ข้อมูล 11 ช่อง แบ่งเป็น 3 แบบ ในหน้าติ๊กสิทธิ์ ข้อมูลเหล่านี้จัดเป็น "หมวด" เปิดปิดทั้งหมวดได้</p>
+
+      <h3>ก. ข้อมูลรายแถว (เหตุการณ์ทีละครั้ง) — มีข้อมูลส่วนบุคคลได้ ต้องระวัง</h3>
+      <div class="table-scroll"><table>
+        <thead><tr><th>ช่อง</th><th>หมวดในหน้าจอ</th><th>ได้อะไร</th><th>ฟิลด์ที่ขาดไม่ได้</th></tr></thead>
+        <tbody>
+          <tr><td><code>GET /v1/cameras</code></td><td>กล้องและกลุ่มกล้อง</td><td>รายชื่อกล้อง ตำแหน่ง สถานะล่าสุด</td><td>id</td></tr>
+          <tr><td><code>GET /v1/lpr/events</code></td><td>ป้ายทะเบียน</td><td>การอ่านป้ายทีละครั้ง: ทะเบียน จังหวัด เวลา กล้อง ประเภทรถ สีรถ ยี่ห้อ ชนิดป้าย สีป้าย ไม่สวมหมวก จำนวนผู้ซ้อน ไม่คาดเข็มขัด เลน</td><td>id · camera_id · detected_at</td></tr>
+          <tr><td><code>POST /v1/lpr/search</code></td><td>ป้ายทะเบียน</td><td>ค้นหาป้ายเฉพาะ (ตรงตัว หรือบางส่วนอย่างน้อย 3 ตัว)</td><td>เหมือนข้างบน + plate_number</td></tr>
+          <tr><td><code>GET /v1/face/events</code></td><td>บุคคลและยานพาหนะ</td><td>การตรวจพบคน/รถทีละครั้ง: เพศ ช่วงอายุ สีเสื้อ ประเภทเสื้อผ้า แว่น หมวก หน้ากาก สีหน้า กระเป๋า สีโดยรวม สีผม</td><td>id · camera_id · detected_at</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>ข. สถิติ (ยอดรวม) — ไม่มีข้อมูลรายบุคคล เหมาะเป็นค่าเริ่มต้น</h3>
+      <div class="table-scroll"><table>
+        <thead><tr><th>ช่อง</th><th>ได้อะไร</th><th>เก็บย้อนหลัง</th></tr></thead>
+        <tbody>
+          <tr><td><code>GET /v1/stats/vehicles/hourly</code></td><td>จำนวนรถต่อกล้องต่อชั่วโมง แยกประเภทรถ</td><td>120 วัน</td></tr>
+          <tr><td><code>GET /v1/stats/lpr/hourly</code></td><td>จำนวนการตรวจจับของกล้องป้าย และจำนวนที่อ่านป้ายไม่ได้ ต่อชั่วโมง</td><td>ตั้งแต่ ก.ค. 2569</td></tr>
+          <tr><td><code>GET /v1/stats/lpr/daily</code></td><td>ต่อกล้องต่อวัน: จังหวัด ประเภทรถ ยี่ห้อ สีป้าย สีรถ (แต่ละอย่างให้สิทธิ์แยกกันได้)</td><td>ตั้งแต่ ก.ค. 2569</td></tr>
+          <tr><td><code>GET /v1/stats/person/daily</code></td><td>ต่อกล้องต่อวัน: ประเภทวัตถุ เพศ อายุ สีเสื้อ/กางเกง ประเภทเสื้อผ้า แว่น หมวก หน้ากาก สีหน้า กระเป๋า</td><td>365 วัน</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>ค. บังคับใช้กฎจราจร</h3>
+      <div class="table-scroll"><table>
+        <thead><tr><th>ช่อง</th><th>ได้อะไร</th></tr></thead>
+        <tbody>
+          <tr><td><code>GET /v1/enforcement/hourly</code></td><td>ต่อกล้องต่อชั่วโมง: ไม่สวมหมวก · ไม่สวมหมวกที่อ่านป้ายได้ · ไม่คาดเข็มขัด · ซ้อนสาม · พร้อมจำนวนรถแต่ละประเภทไว้เป็นตัวหาร</td></tr>
+          <tr><td><code>GET /v1/enforcement/daily</code></td><td>เหมือนข้างบน แต่รายวัน (วันตามเวลาไทย)</td></tr>
+          <tr><td><code>GET /v1/enforcement/cameras</code></td><td>กล้องตัวไหน "เคยรายงาน" ความผิดแต่ละแบบ ใช้ดูว่าค่าศูนย์เชื่อได้ไหม</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>เรื่องที่ต้องเข้าใจเกี่ยวกับตัวเลข</h3>
+      <ul>
+        <li><b>ส่งตัวนับดิบเท่านั้น ไม่ส่งเปอร์เซ็นต์</b> partner หารเองได้จากตัวหารที่ให้ไป เพราะสูตร % บนหน้าจอเรายังอาจเปลี่ยน</li>
+        <li><b>"ไม่สวมหมวก · พร้อมข้อมูลทะเบียน" บนหน้าจอเรา</b> ตรงกับ <code>by_type.twoWheelVehicle.no_helmet_with_plate</code> ส่วนยอดรวมของแถวนับรถสามล้อด้วย</li>
+        <li><b>ค่าศูนย์ / false ไม่ใช่หลักฐานว่าไม่มีคนผิด</b> กล้องที่ตรวจไม่ได้ก็ส่ง false (ตรวจหมวกได้ 23 จาก 83 กล้อง ณ ต.ค. 2569)</li>
+        <li><b>คำที่ใช้มาจากกล้องเอง</b> ต่างยี่ห้อต่างคำ เช่น อายุ <code>prime</code> กับ <code>middleAged</code> · หน้ากาก <code>yes</code> กับ <code>1</code></li>
+        <li><b>ยอดของชั่วโมง/วันล่าสุดอาจเปลี่ยน</b> ระบบรวมใหม่ทุก 15 นาที และเก็บตกตอนตี 5 ทุกวัน</li>
+      </ul>
+    </section>
+
+    <section id="screen">
+      <h2><span class="n">6</span>หน้าจอที่ใช้ทำงาน</h2>
+      <p>ทั้งหมดอยู่ที่ <b>ตั้งค่า › เชื่อมต่อภายนอก</b> (ต้องเป็นแอดมิน) ด้านซ้ายคือรายชื่อ partner ด้านขวาคือรายละเอียดของรายที่เลือก มี 5 แท็บ</p>
+      <div class="table-scroll"><table>
+        <thead><tr><th>แท็บ</th><th>ใช้ทำอะไร</th></tr></thead>
+        <tbody>
+          <tr><td><b>สิ่งที่เขาได้รับ</b></td><td>ตัวอย่างแถวจริงที่ partner จะได้ตอนนี้ ทีละช่อง ระบบสวมสิทธิ์ของ partner ดึงให้ดู จึงเป็นของจริง ไม่ใช่การเดา ฟิลด์ที่ไม่ได้รับจะขึ้นขีดฆ่า "ไม่ส่ง"</td></tr>
+          <tr><td><b>ฟิลด์ที่เห็นได้</b></td><td>หน้าติ๊กสิทธิ์ แบ่งตามหมวด มีสวิตช์เปิดปิดทั้งหมวด และติ๊กทีละฟิลด์ได้ ตัวเลข % ข้างฟิลด์บอกว่าข้อมูลจริงมีค่ากี่เปอร์เซ็นต์ ป้ายแดง "ข้อมูลส่วนบุคคล" เตือนฟิลด์อ่อนไหว <b>แก้แล้วต้องกด "ใช้สิทธิ์นี้" ถึงจะมีผล</b></td></tr>
+          <tr><td><b>OpenAPI</b></td><td>เอกสารที่ partner รายนี้จะได้รับจริง กด "ดูเอกสารที่เขาได้รับ"</td></tr>
+          <tr><td><b>GRANT ที่บังคับใช้จริง</b></td><td>คำสั่งฐานข้อมูลที่ตรงกับสิทธิ์ปัจจุบัน (สำหรับฝ่ายเทคนิคตรวจสอบ)</td></tr>
+          <tr><td><b>ข้อตกลงข้อมูล</b></td><td>บันทึก/ดูข้อตกลงแต่ละเวอร์ชัน ระบบเตือนเมื่อไม่มีข้อตกลง ถึงกำหนดทบทวน หรือสิทธิ์ปัจจุบันไม่ตรงกับที่บันทึก</td></tr>
+        </tbody>
+      </table></div>
+      <p>ปุ่มบนหัว partner: <b>แก้ไข</b> · <b>ต่ออายุ</b> · <b>ออก key ใหม่</b> · <b>ถอนสิทธิ์ / เปิดใช้อีกครั้ง</b> · <b>ลบถาวร</b> และช่อง Secret ที่กด "แสดง" ได้ (ระบบบันทึกว่าใครดู และซ่อนเองใน 30 วินาที)</p>
+    </section>
+
+    <section id="onboard">
+      <h2><span class="n">7</span>ขั้นตอนรับ partner ใหม่</h2>
+      <ol class="steps">
+        <li><b>รับคำขอเป็นลายลักษณ์อักษร</b> ให้ partner ระบุวัตถุประสงค์ (อยากทำอะไร) ความถี่ พื้นที่ ระยะเวลา และฐานทางกฎหมายถ้ามีข้อมูลส่วนบุคคล <b>อย่าส่งรายการฟิลด์ให้เลือก</b></li>
+        <li><b>ออกแบบชุดขั้นต่ำ</b> เริ่มจากสถิติก่อนเสมอ ให้ข้อมูลรายแถวเฉพาะเมื่อจำเป็นจริง และให้ข้อมูลที่มีทะเบียน/ใบหน้าเมื่อมีฐานกฎหมายชัดเจนเท่านั้น ขออนุมัติตามสายงาน</li>
+        <li><b>สร้าง partner</b> กด "สร้าง partner" กรอก
+          <ul>
+            <li><b>ชื่อย่อ (slug)</b> ตัวพิมพ์เล็ก a-z 0-9 _ <b>แก้ไม่ได้ภายหลัง</b> เช่น <code>police_hkt</code></li>
+            <li><b>ชื่อที่แสดง</b> · <b>ขอบเขตไซต์</b> (เลือกเฉพาะไซต์ที่ตกลง) · <b>ย้อนหลังได้ (วัน)</b></li>
+            <li><b>โควตา</b> (ค่าเริ่มต้น 60 ครั้ง/นาที) · <b>อายุ credential</b> 30 / 60 / 90 / 120 / 180 / 365 วัน</li>
+            <li><b>บันทึก</b> อ้างอิงสัญญา ผู้ติดต่อ</li>
+          </ul></li>
+        <li><b>คัดลอก App Key และ App Secret ทันที</b> Secret แสดงครั้งเดียวตอนสร้าง (ดูอีกได้ผ่านปุ่ม "แสดง" ซึ่งถูกบันทึกทุกครั้ง)</li>
+        <li><b>บันทึกข้อตกลงข้อมูล</b> แท็บ "ข้อตกลงข้อมูล": วัตถุประสงค์ · ฐานทางกฎหมาย · อ้างอิง DPA/สัญญา · ผู้อนุมัติ · ใช้ได้ถึง · ทบทวนภายใน (ค่าเริ่มต้น 90 วัน) <b>ตั้ง "ใช้ได้ถึง" ให้ตรงกับอายุ credential</b></li>
+        <li><b>ติ๊กสิทธิ์</b> แท็บ "ฟิลด์ที่เห็นได้" เปิดเฉพาะหมวดและฟิลด์ที่อนุมัติ แล้วกด "ใช้สิทธิ์นี้" (มีผลทันที และบันทึกลง audit ว่าเพิ่ม/ถอนอะไร)</li>
+        <li><b>ตรวจผล</b> แท็บ "สิ่งที่เขาได้รับ" ต้องเห็นเฉพาะสิ่งที่ตั้งใจ และแท็บ "OpenAPI" ต้องมีเฉพาะช่องที่ตั้งใจ</li>
+        <li><b>ส่งของให้ partner</b> แยกสองช่องทาง:
+          <ul>
+            <li>ช่องทางที่ 1: โดเมน + App Key + คู่มือ <code>partner-guide-th.html</code> + ชุดตัวอย่างในโฟลเดอร์ <code>docs/partner-kit/</code></li>
+            <li>ช่องทางที่ 2 (เช่น โทรศัพท์ หรือข้อความเข้ารหัส): App Secret</li>
+          </ul></li>
+        <li><b>ยืนยันว่าเชื่อมต่อได้</b> ให้ partner เรียก <code>/v1/healthz</code> แล้วดู "เรียกล่าสุด" ในหน้าจอเปลี่ยนเป็นเวลาปัจจุบัน</li>
+      </ol>
+      <div class="warn"><b class="h">ข้อควรระวังตอนถอนสิทธิ์</b>ถ้าถอนฟิลด์ทั่วไป ฟิลด์นั้นแค่หายจากข้อมูล แต่ถ้าถอน<b>ฟิลด์ที่ขาดไม่ได้</b> (เช่น id, เวลา, camera_id ตามตารางในหัวข้อ 5) ช่องนั้นทั้งช่องจะตอบ 403 แจ้ง partner ก่อนถอนเสมอ<br><small>ในหน้าจอจริง เมื่อเลิกติ๊กฟิลด์ที่ขาดไม่ได้ จะมีหน้าต่างยืนยันพร้อมจำนวนครั้งที่ partner เรียก endpoint นั้นใน 7 วันที่ผ่านมา ฟิลด์ทั่วไปเลิกติ๊กได้ทันที</small></div>
+          <h3 id="basis">เลือกฐานทางกฎหมายอย่างไร (6 ตัวเลือกในข้อตกลง)</h3>
+      <p>ฐานทางกฎหมาย คือเหตุผลตาม <b>พ.ร.บ.คุ้มครองข้อมูลส่วนบุคคล พ.ศ. 2562</b> ที่ทำให้เราส่งข้อมูลส่วนบุคคลให้ partner ได้ ข้อมูลที่เป็นยอดสถิติล้วนไม่มีข้อมูลส่วนบุคคล แต่ควรบันทึกฐานไว้ทุกครั้งเพื่อการตรวจสอบ</p>
+      <div class="table-scroll"><table>
+        <thead><tr><th>ตัวเลือก</th><th>อ้างอิง</th><th>ใช้เมื่อ</th><th>ตัวอย่างในงานของเรา</th></tr></thead>
+        <tbody>
+          <tr><td><b>ความยินยอม</b></td><td>มาตรา 19</td><td>เจ้าของข้อมูลแต่ละคนยินยอมเองเป็นหนังสือ ถอนเมื่อไรก็ได้</td><td>ใช้ยากกับกล้อง CCTV เพราะขอความยินยอมจากทุกคนที่เดินผ่านไม่ได้ จึง<b>เหมาะกับการทดสอบภายในเท่านั้น</b> (TEST ใช้ตัวนี้)</td></tr>
+          <tr><td><b>สัญญา</b></td><td>มาตรา 24(3)</td><td>จำเป็นต่อการทำตามสัญญาที่เจ้าของข้อมูลเป็นคู่สัญญาเอง</td><td>อาคารให้บริการที่จอดรถตามสัญญาเช่า แล้วผู้ให้บริการระบบจอดต้องรู้ทะเบียนของผู้เช่า</td></tr>
+          <tr><td><b>หน้าที่ตามกฎหมาย</b></td><td>มาตรา 24(6)</td><td>มีกฎหมายบังคับให้ต้องเปิดเผย</td><td>หนังสือขอข้อมูลจากพนักงานสอบสวนที่อ้างอำนาจตามกฎหมาย</td></tr>
+          <tr><td><b>ประโยชน์โดยชอบด้วยกฎหมาย</b></td><td>มาตรา 24(5)</td><td>มีประโยชน์ที่ชอบธรรม และไม่ละเมิดสิทธิเจ้าของข้อมูลเกินสมควร ต้องชั่งน้ำหนักและบันทึกเหตุผลไว้</td><td>บริษัทรักษาความปลอดภัยของอาคารขอข้อมูลป้ายในพื้นที่ของลูกค้าเพื่อดูแลความปลอดภัย</td></tr>
+          <tr><td><b>ภารกิจของรัฐ</b></td><td>มาตรา 24(4)</td><td>จำเป็นต่อภารกิจเพื่อประโยชน์สาธารณะ หรือการใช้อำนาจรัฐที่ได้รับมอบ</td><td>หน่วยงานรัฐขอสถิติการจราจรหรือข้อมูลการกวดขันวินัยจราจร</td></tr>
+          <tr><td><b>ประโยชน์สำคัญต่อชีวิต</b></td><td>มาตรา 24(2)</td><td>เพื่อป้องกันอันตรายต่อชีวิต ร่างกาย หรือสุขภาพของบุคคล</td><td>กรณีฉุกเฉิน เช่น ติดตามคนหายหรือเหตุร้ายแรงที่เสี่ยงต่อชีวิต (ใช้เป็นกรณีไป ไม่ใช่ข้อตกลงระยะยาว)</td></tr>
+        </tbody>
+      </table></div>
+      <div class="warn"><b class="h">ข้อควรระวัง</b>ข้อมูลใบหน้าที่ใช้ระบุตัวบุคคลเป็น<b>ข้อมูลอ่อนไหว</b> (มาตรา 26) มีเงื่อนไขเข้มกว่าตารางนี้ · ตารางนี้เป็นแนวทางเบื้องต้น ไม่ใช่ความเห็นทางกฎหมาย ก่อนให้ข้อมูลที่มีทะเบียนหรือใบหน้า ให้ผู้รับผิดชอบด้านกฎหมาย/DPO ยืนยันฐานทุกครั้ง</div>
+    </section>
+
+    <section id="example">
+      <h2><span class="n">8</span>ตัวอย่างจริง: partner TEST</h2>
+      <p>TEST เป็นบัญชีทดสอบของเรา ใช้ดูภาพรวมว่า partner หนึ่งรายประกอบด้วยอะไรบ้าง ค่าด้านล่างเป็นค่าจริง ณ 22 ต.ค. 2569</p>
+      <div class="table-scroll"><table>
+        <thead><tr><th>ขั้นตอน (หัวข้อ 7)</th><th>ค่าของ TEST</th><th>อ่านว่า</th></tr></thead>
+        <tbody>
+          <tr><td>ชื่อย่อ / ชื่อที่แสดง</td><td><code>test</code> / TEST</td><td>ระบบสร้างบัญชีฐานข้อมูลชื่อ <code>test_ro</code> ให้อัตโนมัติ</td></tr>
+          <tr><td>ขอบเขตไซต์</td><td>hkt</td><td>ได้ข้อมูลเฉพาะกล้องของไซต์ภูเก็ต ไม่ว่าจะขอช่องไหน</td></tr>
+          <tr><td>ย้อนหลังได้</td><td>ตามระบบ (ไม่ได้จำกัด)</td><td>ขอย้อนหลังได้เท่าที่เราเก็บไว้</td></tr>
+          <tr><td>โควตา</td><td>60 ครั้ง/นาที</td><td>ค่าเริ่มต้น</td></tr>
+          <tr><td>อายุ credential</td><td>สร้าง 20 ต.ค. 2569 · หมด 18 ม.ค. 2570</td><td>90 วัน</td></tr>
+          <tr><td>ข้อตกลงข้อมูล</td><td>v1 · วัตถุประสงค์ "เพื่อการทดสอบ" · ฐาน: ความยินยอม · ผู้อนุมัติ Prakasit · ใช้ได้ถึง 12 ธ.ค. 2569 · ทบทวนภายใน 11 ธ.ค. 2569</td><td>ข้อตกลงหมดก่อน credential ราว 5 สัปดาห์ ยามเฝ้าจะเตือนวันที่ 13 ธ.ค. ว่า "ข้อตกลงหมดอายุแต่ยังดึงข้อมูลได้" <b>partner จริงควรตั้งสองวันนี้ให้ตรงกัน</b></td></tr>
+          <tr><td>สิทธิ์</td><td>ครบทุกหมวด ทุกฟิลด์ (18 view)</td><td>เพราะเป็นบัญชีทดสอบ partner จริงต้องได้เฉพาะชุดที่จำเป็น · แท็บข้อตกลงจะเตือน "สิทธิ์ไม่ตรงกับเวอร์ชันล่าสุด" เพราะ v1 บันทึกตอนมี 11 view แล้วเพิ่มเป็น 18 ภายหลัง (ระบบทำงานถูกต้อง แก้ได้ด้วยการบันทึก v2)</td></tr>
+          <tr><td>ผลในแท็บ "สิ่งที่เขาได้รับ"</td><td>11 ช่อง ได้รับข้อมูลทุกช่อง ไม่มีฟิลด์ถูกตัด</td><td>ตรวจแล้วด้วยการสวมสิทธิ์ของ TEST จริง</td></tr>
+          <tr><td>เอกสาร OpenAPI ของ TEST</td><td>12 path (11 ช่องข้อมูล + healthz)</td><td>ถ้าถอนหมวดไหน path ของหมวดนั้นจะหายจากเอกสารทันที</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>ตัวอย่างข้อมูลที่ TEST ได้รับ: ความผิดรายชั่วโมง</h3>
+      <p>คำขอ <code>GET /v1/enforcement/hourly?since=…</code> ได้แถวแบบนี้ (กล้องหนึ่งตัวของไซต์ hkt ชั่วโมง 13:00–14:00 วันที่ 22 ต.ค. ตัดบางประเภทรถออกให้อ่านง่าย)</p>
+<pre><code>{
+  "hour_start": "2026-10-22T06:00:00.000Z",
+  "camera_id": "C20-CHL-SB-05",
+  "no_helmet": 321,
+  "no_helmet_with_plate": 276,
+  "no_seatbelt": 0,
+  "riders3": 0,
+  "by_type": {
+    "twoWheelVehicle":   { "vehicles": 972, "no_helmet": 315, "no_helmet_with_plate": 274 },
+    "threeWheelVehicle": { "vehicles": 12,  "no_helmet": 6,   "no_helmet_with_plate": 2 },
+    "vehicle":           { "vehicles": 319 },
+    "SUVMPV":            { "vehicles": 240 },
+    "pickupTruck":       { "vehicles": 215 }
+  },
+  "updated_at": "…"
+}</code></pre>
+      <dl class="ex">
+        <dt>เวลา <code>06:00:00Z</code> คือกี่โมง</dt><dd>เวลาในข้อมูลเป็น UTC บวก 7 ชั่วโมงเป็นเวลาไทย = 13:00 น.</dd>
+        <dt>มอเตอร์ไซค์ไม่สวมหมวกกี่เปอร์เซ็นต์</dt><dd>partner คำนวณเอง: 315 ÷ 972 ≈ 32.4% (เราไม่ส่งเปอร์เซ็นต์ให้ ตามหลักในหัวข้อ 13)</dd>
+        <dt>ตัวเลขที่ตรงกับหน้าจอ "ไม่สวมหมวก · พร้อมข้อมูลทะเบียน" ของเรา</dt><dd><code>by_type.twoWheelVehicle.no_helmet_with_plate</code> = 274 ส่วนยอดรวม 276 นับรถสามล้อ 2 คันเข้าไปด้วย</dd>
+        <dt>ทำไมรถยนต์ไม่มี <code>no_helmet</code></dt><dd>ระบบไม่ใส่ค่าศูนย์ใน <code>by_type</code> ช่องที่ไม่มีแปลว่าเป็น 0</dd>
+        <dt>ไม่คาดเข็มขัด 0 แปลว่าทุกคนคาดหรือไม่</dt><dd>ไม่แน่ กล้องตัวนี้อาจตรวจเข็มขัดไม่ได้ ให้ดูช่อง <code>/v1/enforcement/cameras</code> ว่ากล้องนี้ <code>reports_no_seatbelt</code> เป็น true หรือไม่</dd>
+      </dl>
+    </section>
+
+    <section id="sim">
+      <h2><span class="n">9</span>ทดลองใช้หน้าจอ (จำลอง)</h2>
+      <p>ส่วนนี้จำลองหน้าจอ <b>ตั้งค่า › เชื่อมต่อภายนอก</b> ด้วยช่อง ลำดับ ข้อความ และกติกาตรวจค่าแบบเดียวกับของจริง (ใช้ CSS ชุดเดียวกับ dashboard) ลองกรอก กด และยืนยันได้ทุกปุ่ม <b>ทุกอย่างเกิดในหน้านี้เท่านั้น ไม่มีอะไรส่งเข้าระบบจริง</b> ค่า App Key / Secret ที่ขึ้นเป็นค่าสุ่มที่ใช้ไม่ได้</p>
+      <div class="sim-steps" role="tablist" aria-label="ขั้นของการจำลอง">
+        <button type="button" role="tab" class="sim-step is-on" data-sim-go="create" aria-selected="true">ก. สร้าง partner</button>
+        <button type="button" role="tab" class="sim-step" data-sim-go="agr" aria-selected="false">ข. ข้อตกลงข้อมูล</button>
+        <button type="button" role="tab" class="sim-step" data-sim-go="grants" aria-selected="false">ค. ติ๊กสิทธิ์</button>
+        <button type="button" role="tab" class="sim-step" data-sim-go="result" aria-selected="false">ง. สิ่งที่เขาได้รับ</button>
+      </div>
+
+      <!-- ก. สร้าง partner -->
+      <div class="sim-pane" data-sim-pane="create">
+        <div class="sim-grid">
+          <div class="sim-screen">
+            <div class="sim-bar"><span>ตั้งค่า › เชื่อมต่อภายนอก</span><span class="sim-tag">จำลอง</span></div>
+            <div class="sim-modal">
+              <h3 class="sim-modal-t">สร้าง partner ใหม่</h3>
+              <div class="form-group"><label class="form-label" for="simSlug">ชื่อย่อ (slug) <span class="sim-pin">1</span></label>
+                <input class="form-input" id="simSlug" placeholder="cib" autocomplete="off">
+                <div class="integ-fieldnote">a-z 0-9 _ · จะกลายเป็นชื่อ database role และแก้ไม่ได้อีก</div></div>
+              <div class="form-group"><label class="form-label" for="simLabel">ชื่อที่แสดง <span class="sim-pin">2</span></label>
+                <input class="form-input" id="simLabel" placeholder="CIB"></div>
+              <div class="form-group"><span class="form-label">ขอบเขตไซต์ <span class="sim-pin">3</span></span>
+                <div class="integ-sitepick" id="simSites"></div></div>
+              <div class="form-group"><label class="form-label" for="simLookback">ย้อนหลังได้ (วัน) <span class="sim-pin">4</span></label>
+                <input class="form-input" id="simLookback" type="number" min="1" max="3650" placeholder="ตามระบบ"></div>
+              <div class="form-group"><label class="form-label" for="simRate">โควตา (ครั้ง/นาที) <span class="sim-pin">5</span></label>
+                <input class="form-input" id="simRate" type="number" min="1" max="6000" value="60"></div>
+              <div class="form-group"><label class="form-label" for="simDays">อายุ credential <span class="sim-pin">6</span></label>
+                <select class="form-input" id="simDays"><option value="">ไม่มีวันหมดอายุ</option><option value="30">30 วัน</option><option value="60">60 วัน</option><option value="90" selected>90 วัน</option><option value="120">120 วัน</option><option value="180">180 วัน</option><option value="365">365 วัน</option></select></div>
+              <div class="form-group"><label class="form-label" for="simNotes">บันทึก <span class="sim-pin">7</span></label>
+                <input class="form-input" id="simNotes" placeholder="อ้างอิงสัญญา / ผู้ติดต่อ / เหตุผล"></div>
+              <div class="sim-err" id="simCreateErr" role="alert" hidden></div>
+              <div class="integ-formfoot"><button type="button" class="btn btn-secondary" id="simCreateReset">ยกเลิก</button> <button type="button" class="btn btn-primary" id="simCreate">สร้าง <span class="sim-pin sim-pin--on">8</span></button></div>
+            </div>
+            <div class="sim-result" id="simCreated" hidden></div>
+          </div>
+          <ol class="sim-notes">
+            <li><b>ชื่อย่อ</b> ระบบใช้เป็นชื่อบัญชีฐานข้อมูล (<code>&lt;slug&gt;_ro</code>) จึงแก้ทีหลังไม่ได้ กติกา: ขึ้นต้น a-z ตามด้วย a-z 0-9 _ ยาว 2–31 ตัว ห้ามใช้ชื่อสงวน (postgres, public, vigil_sql ฯลฯ) และห้ามซ้ำ ตั้งให้สื่อหน่วยงาน เช่น <code>police_hkt</code></li>
+            <li><b>ชื่อที่แสดง</b> ชื่อที่เจ้าหน้าที่เห็นในรายการ และอยู่บนหัวเอกสาร OpenAPI ของ partner ต้องไม่ว่าง</li>
+            <li><b>ขอบเขตไซต์</b> "ทุกไซต์" กับการเลือกไซต์เฉพาะ เลือกพร้อมกันไม่ได้ (ติ๊กอันหนึ่ง อีกอันหลุดเอง) ข้อมูลทุกช่องจะถูกกรองเหลือเฉพาะกล้องของไซต์ที่เลือก <b>ควรเลือกเฉพาะไซต์ที่ตกลงเสมอ</b></li>
+            <li><b>ย้อนหลังได้</b> ว่าง = ย้อนได้เท่าที่ระบบเก็บ ถ้าใส่ 30 partner จะขอข้อมูลเก่ากว่า 30 วันไม่ได้ (ได้ 400)</li>
+            <li><b>โควตา</b> จำนวนคำขอสูงสุดต่อนาที ค่าเริ่มต้น 60 พอสำหรับการดึงต่อเนื่องปกติ ถ้าเกิน partner ได้ 429 และต้องรอ (ข้อมูลไม่หาย แค่ช้า) รับค่า 1–6,000</li>
+            <li><b>อายุ credential</b> หลังวันหมดอายุคำขอถูกปฏิเสธทันที ค่าเริ่มต้น 90 วัน <b>ตั้งให้ตรงกับ "ใช้ได้ถึง" ในข้อตกลง</b></li>
+            <li><b>บันทึก</b> เลขสัญญา ผู้ติดต่อ เหตุผล สำหรับเจ้าหน้าที่ด้วยกัน partner ไม่เห็น</li>
+            <li><b>สร้าง</b> ระบบสร้างบัญชีฐานข้อมูล <b>ที่ยังไม่มีสิทธิ์อะไรเลย</b> แล้วแสดง App Key และ App Secret ลองกดดูผลด้านล่าง</li>
+          </ol>
+        </div>
+      </div>
+
+      <!-- ข. ข้อตกลงข้อมูล -->
+      <div class="sim-pane" data-sim-pane="agr" hidden>
+        <div class="sim-grid">
+          <div class="sim-screen">
+            <div class="sim-bar"><span>ตั้งค่า › เชื่อมต่อภายนอก › <b id="simAgrWho">(ยังไม่ได้สร้าง partner)</b></span><span class="sim-tag">จำลอง</span></div>
+            <div class="tab-bar integ-tabs sim-tabs"><span class="tab">สิ่งที่เขาได้รับ</span><span class="tab">ฟิลด์ที่เห็นได้</span><span class="tab">OpenAPI</span><span class="tab">GRANT ที่บังคับใช้จริง</span><span class="tab active">ข้อตกลงข้อมูล</span></div>
+            <div id="simAgrWarn"></div>
+            <dl class="integ-kv" id="simAgrCur" hidden></dl>
+            <form class="integ-agr-form" id="simAgrForm" novalidate>
+              <h4 id="simAgrHead">บันทึกข้อตกลง</h4>
+              <label class="integ-fld" for="simPurpose"><span>วัตถุประสงค์การใช้ข้อมูล <span class="sim-pin">1</span></span><textarea id="simPurpose" rows="3" maxlength="2000"></textarea></label>
+              <label class="integ-fld" for="simBasis"><span>ฐานทางกฎหมาย <span class="sim-pin">2</span></span><select id="simBasis">
+                <option value="consent">ความยินยอม</option><option value="contract">สัญญา</option><option value="legal_obligation">หน้าที่ตามกฎหมาย</option><option value="legitimate_interest">ประโยชน์โดยชอบด้วยกฎหมาย</option><option value="public_task">ภารกิจของรัฐ</option><option value="vital_interest">ประโยชน์สำคัญต่อชีวิต</option></select></label>
+              <label class="integ-fld" for="simDpa"><span>อ้างอิง DPA / สัญญา <span class="sim-pin">3</span></span><input id="simDpa" maxlength="200"></label>
+              <label class="integ-fld" for="simBy"><span>ผู้อนุมัติ <span class="sim-pin">4</span></span><input id="simBy" maxlength="200"></label>
+              <label class="integ-fld" for="simUntil"><span>ใช้ได้ถึง <span class="sim-pin">5</span></span><input id="simUntil" type="date"></label>
+              <label class="integ-fld" for="simReview"><span>ทบทวนภายใน <span class="sim-pin">6</span></span><input id="simReview" type="date"></label>
+              <div class="sim-err" id="simAgrErr" role="alert" hidden></div>
+              <button class="btn btn-sm btn-primary" type="submit">บันทึก <span class="sim-pin sim-pin--on">7</span></button>
+            </form>
+            <div id="simAgrHist"></div>
+          </div>
+          <ol class="sim-notes">
+            <li><b>วัตถุประสงค์</b> เขียนสิ่งที่ partner จะเอาข้อมูลไปทำ เป็นภาษาคน เช่น "วิเคราะห์ปริมาณจราจรรายชั่วโมงเพื่อวางแผนจัดการจราจรถนนสาย X" ห้ามว่าง</li>
+            <li><b>ฐานทางกฎหมาย</b> เหตุผลตาม พ.ร.บ.คุ้มครองข้อมูลส่วนบุคคล ที่ทำให้ส่งข้อมูลได้ ดูความหมายทั้ง 6 แบบในตารางท้ายหัวข้อ 7</li>
+            <li><b>อ้างอิง DPA / สัญญา</b> เลขที่สัญญาประมวลผลข้อมูล (Data Processing Agreement) หรือหนังสือขอข้อมูล ไม่บังคับ แต่ควรมีเสมอเมื่อมีข้อมูลส่วนบุคคล</li>
+            <li><b>ผู้อนุมัติ</b> ชื่อผู้มีอำนาจที่อนุมัติการให้ข้อมูลนี้ ห้ามว่าง</li>
+            <li><b>ใช้ได้ถึง</b> วันสิ้นสุดข้อตกลง ว่างได้ ถ้าเลยวันนี้แล้ว partner ยังดึงได้ ยามเฝ้าจะแจ้งเตือนทุกเช้า</li>
+            <li><b>ทบทวนภายใน</b> วันที่ต้องกลับมาดูว่ายังจำเป็นไหม ว่าง = 90 วันนับจากวันบันทึก ยามเฝ้าเตือนล่วงหน้า 14 วัน</li>
+            <li><b>บันทึก</b> สร้าง<b>เวอร์ชันใหม่</b>ทุกครั้ง ไม่แก้ทับของเดิม และถ่ายภาพสิทธิ์ ณ ตอนนั้นเก็บไว้ ถ้าภายหลังสิทธิ์เปลี่ยนแต่ไม่ได้บันทึกเวอร์ชันใหม่ จะขึ้นเตือนว่า "สิทธิ์ไม่ตรง" (ลองบันทึกแล้วไปติ๊กสิทธิ์ แล้วกลับมาดู)</li>
+          </ol>
+        </div>
+      </div>
+
+      <!-- ค. ติ๊กสิทธิ์ -->
+      <div class="sim-pane" data-sim-pane="grants" hidden>
+        <div class="sim-grid sim-grid--wide">
+          <div class="sim-screen">
+            <div class="sim-bar"><span>ตั้งค่า › เชื่อมต่อภายนอก › <b class="simWho">(ยังไม่ได้สร้าง partner)</b></span><span class="sim-tag">จำลอง</span></div>
+            <div class="tab-bar integ-tabs sim-tabs"><span class="tab">สิ่งที่เขาได้รับ</span><span class="tab active">ฟิลด์ที่เห็นได้</span><span class="tab">OpenAPI</span><span class="tab">GRANT ที่บังคับใช้จริง</span><span class="tab">ข้อตกลงข้อมูล</span></div>
+            <p class="integ-hint">อ่านจาก Postgres สด ๆ ตอนเปิดหน้านี้ · ติ๊กแล้วกดบันทึกถึงจะมีผล · ฟิลด์ที่ไม่ติ๊กจะไม่ถูกส่ง · ปลดฟิลด์หลักของ endpoint (รหัส เวลา กล้อง) = endpoint นั้นตอบ 403 ทั้งเส้น <span class="sim-pin">1</span></p>
+            <div id="simDirty"></div>
+            <div class="integ-matrix" id="simMatrix"></div>
+          </div>
+          <ol class="sim-notes">
+            <li><b>ข้อความบนหน้าจอ</b> สรุปกติกา: ติ๊กแล้วต้องกดบันทึก · ฟิลด์ที่ไม่ติ๊กไม่ถูกส่ง · ปลด<b>ฟิลด์หลัก</b> (รหัส เวลา กล้อง) ทำให้ endpoint นั้นตอบ 403 ในหน้าจอจริง ถ้าเลิกติ๊กฟิลด์หลัก จะมีหน้าต่างยืนยันพร้อมจำนวนครั้งที่ partner เรียก endpoint นั้นใน 7 วัน (หน้าจำลองไม่มีหน้าต่างนี้)</li>
+            <li><b>หมวด</b> แต่ละกล่องคือหนึ่งหมวด บรรทัดเล็กใต้ชื่อบอก view ต้นทาง และช่อง (endpoint) ที่หมวดนี้ป้อนข้อมูลให้ หมวดที่ยังไม่มีช่องส่งออกจะเขียนว่า "ยังไม่มี endpoint ส่งออก"</li>
+            <li><b>ตัวนับ n/รวม</b> และปุ่ม <b>ส่งออก / ปิด</b> เปิดหรือปิดทั้งหมวดในคลิกเดียว</li>
+            <li><b>ปุ่มฟิลด์</b> กดเพื่อติ๊ก/เลิกติ๊ก ป้ายแดง "ข้อมูลส่วนบุคคล" คือฟิลด์อ่อนไหว ขอบสีบอกว่าเปลี่ยนจากค่าที่บันทึกไว้ (ในหน้าจอจริงมี % ความครบของข้อมูลจริงต่อท้ายด้วย หน้าจำลองไม่แสดง)</li>
+            <li><b>แถบ "ยังไม่ได้บันทึก"</b> ขึ้นเมื่อมีการแก้ <b>ยังไม่มีผลกับ partner จนกว่าจะกด "ใช้สิทธิ์นี้"</b> ซึ่งในระบบจริงจะเขียน GRANT/REVOKE ลงฐานข้อมูลและบันทึก audit ว่าเพิ่ม/ถอนอะไร</li>
+            <li>ลองติ๊กเฉพาะหมวด "สถิติ" แล้วกด "ใช้สิทธิ์นี้" จากนั้นไปดูขั้น <b>ง.</b> หรือลองปลด <code>camera_id</code> ออกจากหมวดใดหมวดหนึ่ง แล้วดูว่าช่องไหนกลายเป็น 403</li>
+          </ol>
+        </div>
+      </div>
+
+      <!-- ง. ผล -->
+      <div class="sim-pane" data-sim-pane="result" hidden>
+        <div class="sim-grid sim-grid--wide">
+          <div class="sim-screen">
+            <div class="sim-bar"><span>ตั้งค่า › เชื่อมต่อภายนอก › <b class="simWho">(ยังไม่ได้สร้าง partner)</b></span><span class="sim-tag">จำลอง</span></div>
+            <div class="tab-bar integ-tabs sim-tabs"><span class="tab active">สิ่งที่เขาได้รับ</span><span class="tab">ฟิลด์ที่เห็นได้</span><span class="tab">OpenAPI</span><span class="tab">GRANT ที่บังคับใช้จริง</span><span class="tab">ข้อตกลงข้อมูล</span></div>
+            <div id="simResult"></div>
+          </div>
+          <ol class="sim-notes">
+            <li><b>หนึ่งกล่อง = หนึ่งช่อง (endpoint)</b> ป้าย <span class="integ-badge integ-badge--ok">ได้รับข้อมูล</span> แปลว่าเรียกได้ <span class="integ-badge integ-badge--bad">ตอบ 403 ทั้ง endpoint</span> แปลว่าขาดฟิลด์ที่ขาดไม่ได้ (บอกชื่อไว้)</li>
+            <li><b>"ในเอกสาร OpenAPI"</b> บอกว่า partner จะเห็นช่องนี้ในเอกสารของเขาไหม ช่องที่ขาดฟิลด์ที่ขาดไม่ได้จะ<b>ไม่ปรากฏ</b>ในเอกสารเลย partner จึงไม่รู้ว่ามีช่องนี้</li>
+            <li><b>ฟิลด์ขีดฆ่า "ไม่ส่ง"</b> คือฟิลด์ของช่องนั้นที่ไม่ได้ติ๊ก partner ได้แถวที่ไม่มีฟิลด์นี้</li>
+            <li>ในหน้าจอจริง แท็บนี้แสดง<b>แถวข้อมูลจริง</b>หนึ่งแถวต่อช่อง (ระบบสวมสิทธิ์ของ partner ดึงให้ดู) หน้าจำลองแสดงเฉพาะรายชื่อฟิลด์</li>
+          </ol>
+        </div>
+      </div>
+    </section>
+
+    <section id="ops">
+      <h2><span class="n">10</span>งานดูแลประจำ</h2>
+      <div class="table-scroll"><table>
+        <thead><tr><th>สถานการณ์</th><th>ทำอย่างไร</th><th>ผลกับ partner</th></tr></thead>
+        <tbody>
+          <tr><td>Secret รั่ว / สงสัยว่ารั่ว</td><td>"ออก key ใหม่" แล้วส่งค่าใหม่ให้ partner ทางช่องทางลับ</td><td>key เดิมใช้ไม่ได้ทันที · อายุ credential ไม่เปลี่ยน</td></tr>
+          <tr><td>ใกล้หมดอายุ</td><td>"ต่ออายุ" เลือกจำนวนวันนับจากวันนี้ และบันทึกข้อตกลงเวอร์ชันใหม่ถ้าต่อสัญญา</td><td>ใช้งานต่อได้ ไม่ต้องตั้งค่าใหม่</td></tr>
+          <tr><td>หยุดชั่วคราว</td><td>"ถอนสิทธิ์" · กลับมาใช้ด้วย "เปิดใช้อีกครั้ง"</td><td>ถูกปฏิเสธทันที (401 inactive) · เปิดคืนแล้ว key และสิทธิ์เดิมกลับมา</td></tr>
+          <tr><td>เลิกสัญญาถาวร</td><td>"ลบถาวร" ต้องพิมพ์ <code>Confirm</code></td><td>ลบรายการและสิทธิ์ทั้งหมด กู้ไม่ได้ · ประวัติการเรียกยังเก็บไว้</td></tr>
+          <tr><td>ขอเพิ่ม/ลดข้อมูล</td><td>ตามขั้นตอนหัวข้อ 7 ข้อ 1–2 แล้วติ๊ก · บันทึกข้อตกลงเวอร์ชันใหม่</td><td>ฟิลด์ใหม่ปรากฏในข้อมูลและเอกสาร OpenAPI ภายใน ~10 วินาที</td></tr>
+          <tr><td>ต้องดึงย้อนหลังก้อนใหญ่</td><td>"แก้ไข" เพิ่มโควตาชั่วคราว แล้วลดกลับ</td><td>ดึงได้เร็วขึ้น</td></tr>
+          <tr><td>ถึงกำหนดทบทวน</td><td>ทบทวนว่ายังจำเป็นไหม แล้วบันทึกข้อตกลงเวอร์ชันใหม่</td><td>ไม่มีผลถ้ายังให้ตามเดิม</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <section id="alerts">
+      <h2><span class="n">11</span>เมื่อได้รับ LINE แจ้งเตือน</h2>
+      <p>"ยามเฝ้า partner" ตรวจทุกวัน 08:30 แล้วส่ง LINE ถึงผู้รับแจ้งเตือนประสิทธิภาพ (ตอนนี้คือเจ้าของโปรเจกต์) <b>ระบบแค่แจ้ง ไม่ตัดสิทธิ์ใครเอง</b> ข้อความขึ้นต้นว่า "Partner API (วันที่) — N เรื่อง"</p>
+      <div class="table-scroll"><table>
+        <thead><tr><th>ข้อความเตือน</th><th>แปลว่า</th><th>ควรทำ</th></tr></thead>
+        <tbody>
+          <tr><td>ยังไม่มีข้อตกลงข้อมูล</td><td>สร้าง partner เกิน 7 วันแล้วยังไม่บันทึกข้อตกลง</td><td>บันทึกข้อตกลง</td></tr>
+          <tr><td>ข้อตกลงหมดอายุแต่ยังดึงข้อมูลได้</td><td>วัน "ใช้ได้ถึง" ผ่านแล้ว แต่ credential ยังไม่หมด</td><td>ต่อข้อตกลง หรือถอนสิทธิ์</td></tr>
+          <tr><td>ครบกำหนด / เลยกำหนดทบทวน</td><td>ถึงวันทบทวนภายใน 14 วัน หรือเลยแล้ว</td><td>ทบทวน แล้วบันทึกเวอร์ชันใหม่</td></tr>
+          <tr><td>credential จะหมดอายุ</td><td>เหลือไม่เกิน 14 วัน</td><td>ต่ออายุ หรือปล่อยหมดถ้าเลิกใช้</td></tr>
+          <tr><td>คำขอ 24 ชม. N ครั้ง (ปกติวันละ ~X)</td><td>ปริมาณพุ่งเกิน 5 เท่าของปกติ และเกิน 500 ครั้ง</td><td>ถาม partner ว่าตั้งใจไหม (เช่น ดึงย้อนหลัง) หรือโปรแกรมวนลูปผิด</td></tr>
+          <tr><td>ขอข้อมูลที่ไม่ได้รับสิทธิ์ (403)</td><td>เรียกช่องที่ไม่ได้รับ ≥ 20 ครั้ง/วัน</td><td>อาจเป็นโปรแกรมตั้งค่าผิด หรือพยายามเกินสิทธิ์ ติดต่อ partner</td></tr>
+          <tr><td>ถูกปฏิเสธยืนยันตัวตน (401)</td><td>ลายเซ็นผิด / key ถูกปิด ≥ 20 ครั้ง/วัน</td><td>ถ้า partner ยังใช้งานอยู่ ช่วยตรวจวิธีลงลายเซ็น · ถ้าเป็นรายที่ถูกถอนแล้ว ระวังการพยายามเข้าถึง</td></tr>
+          <tr><td>ชนเพดานอัตรา (429)</td><td>เกินโควตา ≥ 10 ครั้ง/วัน</td><td>ดูว่าโควตาต่ำไป หรือโปรแกรมไม่รอตาม Retry-After</td></tr>
+          <tr><td>เรียกจาก IP ใหม่</td><td>IP ที่ไม่เคยเห็นใน 30 วัน</td><td>ส่วนใหญ่ปกติ (ย้ายเซิร์ฟเวอร์) ถ้าไม่คาดคิด ถาม partner · สงสัยรั่วให้ออก key ใหม่</td></tr>
+        </tbody>
+      </table></div>
+      <p>นอกจากนี้หน้าจอยังแสดงกล่อง "มีการใช้ key ที่ไม่รู้จัก" เมื่อมีคนลองใช้ App Key ที่ไม่มีในระบบ</p>
+    </section>
+
+    <section id="trouble">
+      <h2><span class="n">12</span>เมื่อ partner แจ้งปัญหา</h2>
+      <p>ขอให้ partner ส่ง<b>สถานะ (ตัวเลข) และค่า <code>title</code></b> ในคำตอบมา แล้วดูตาราง</p>
+      <div class="table-scroll"><table>
+        <thead><tr><th>partner เห็น</th><th>สาเหตุที่พบบ่อย</th><th>เจ้าหน้าที่ช่วยอย่างไร</th></tr></thead>
+        <tbody>
+          <tr><td><span class="s-bad">401</span> <code>bad-signature</code></td><td>ลงลายเซ็นผิดรูปแบบ (ลืม /v1 ใน path, ไม่เรียงพารามิเตอร์, ใส่บรรทัด Content-MD5 ว่าง)</td><td>ชี้ให้ดูหัวข้อ 4 ในคู่มือ partner และให้ลองรันชุดตัวอย่างก่อน</td></tr>
+          <tr><td><span class="s-bad">401</span> <code>stale-timestamp</code></td><td>นาฬิกาเครื่อง partner คลาดเกิน 5 นาที</td><td>ให้ตั้ง NTP</td></tr>
+          <tr><td><span class="s-bad">401</span> <code>expired</code> / <code>inactive</code> / <code>unknown-key</code></td><td>หมดอายุ / ถูกถอน / key ผิด หรือใช้ key เก่าหลังออก key ใหม่</td><td>ดูสถานะในหน้าจอ ต่ออายุหรือส่ง key ที่ถูกต้อง</td></tr>
+          <tr><td><span class="s-bad">403</span> <code>not-permitted</code></td><td>เรียกช่องที่ไม่ได้รับ หรือถูกถอนฟิลด์ที่ขาดไม่ได้</td><td>ดูแท็บ "สิ่งที่เขาได้รับ" ถ้าควรได้ ติ๊กเพิ่ม ถ้าไม่ควร อธิบายว่าอยู่นอกข้อตกลง</td></tr>
+          <tr><td><span class="s-bad">400</span> <code>since-too-old</code></td><td>ขอข้อมูลเก่ากว่าที่เก็บ หรือเกินช่วงย้อนหลังที่ตั้งให้</td><td>แจ้งวันเก่าสุดที่มี (อยู่ในข้อความตอบกลับ)</td></tr>
+          <tr><td><span class="s-bad">400</span> <code>non-ascii-query</code></td><td>ส่งภาษาไทยใน URL</td><td>ค้นป้ายภาษาไทยต้องใช้ POST ส่งใน body</td></tr>
+          <tr><td><span class="s-bad">429</span> <code>rate-limited</code></td><td>เกินโควตา</td><td>ให้รอตาม Retry-After หรือเพิ่มโควตาชั่วคราว</td></tr>
+          <tr><td><span class="s-bad">503</span> <code>query-too-slow</code></td><td>ขอช่วงกว้างเกิน ใช้เกิน 5 วินาที</td><td>ให้แคบช่วงเวลา หรือค้นป้ายแบบตรงตัวแทนบางส่วน</td></tr>
+          <tr><td>ได้ข้อมูลว่าง (200 แต่ data = [])</td><td>ช่วงเวลานั้นไม่มีข้อมูล หรือไซต์ที่ผูกไม่มีกล้องประเภทนั้น</td><td>ดูแท็บ "สิ่งที่เขาได้รับ" ว่าขึ้น "ไม่มีข้อมูลใน 1 ชม. ล่าสุด" หรือ "ไซต์ที่ผูกไว้ไม่มีกล้อง"</td></tr>
+          <tr><td>ตัวเลขไม่ตรงหน้าจอเรา</td><td>ส่วนใหญ่ต่างเพราะ: หน้าจอนับเฉพาะรถสองล้อ, ช่วงเวลาหรือเขตเวลาต่างกัน, หรือข้อมูลล่าสุดยังไม่นิ่ง</td><td>เทียบช่วงเดียวกันและรายการเดียวกันตามหัวข้อ 5 · ถ้ายังต่าง แจ้งฝ่ายเทคนิค</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <section id="rules">
+      <h2><span class="n">13</span>สิ่งที่ตัดสินแล้วว่าไม่ให้</h2>
+      <ul>
+        <li><b>เปอร์เซ็นต์หรืออัตราที่เราคำนวณ</b> ให้แค่ตัวนับดิบกับตัวหาร</li>
+        <li><b>รายชื่อ "ผู้ทำผิดซ้ำ" รายป้าย</b> เพราะมักเกิดจากกล้องอ่านป้ายผิด ถ้าถูกนำไปใช้ลงโทษ เราจะต้องรับผิดชอบความผิดพลาดนั้น</li>
+        <li><b>แคตตาล็อกหรือระบบให้ partner ขอสิทธิ์เอง</b> ตามหลักให้ตามความจำเป็น</li>
+        <li><b>รูปภาพ</b> (crop ป้าย / ใบหน้า) ยังไม่มีช่องทางส่ง</li>
+        <li><b>ความผิดรายครั้งพร้อมทะเบียน</b> ยังไม่เปิด จะทำเมื่อมีหน่วยงานที่มีฐานกฎหมายชัดเจนขอจริง</li>
+      </ul>
+    </section>
+
+    <section id="security">
+      <h2><span class="n">14</span>ความปลอดภัย 7 ชั้น</h2>
+      <div class="layers">
+        <div><span>1</span><div><b>ลายเซ็นทุกคำขอ</b> ใช้ App Secret คำนวณ ไม่เคยส่งตัว Secret ไปในคำขอ · ใช้คำขอซ้ำไม่ได้ (nonce) · เวลาเกิน 5 นาทีไม่รับ</div></div>
+        <div><span>2</span><div><b>อายุ credential</b> หมดแล้วปฏิเสธทันทีที่ด่านแรก · ถอน/ลบได้ทันที</div></div>
+        <div><span>3</span><div><b>โควตาต่อ partner</b> กันโปรแกรมวนลูปทำระบบเราช้า</div></div>
+        <div><span>4</span><div><b>สิทธิ์รายฟิลด์ในฐานข้อมูล</b> partner แต่ละรายมีบัญชีฐานข้อมูลของตัวเอง ฐานข้อมูลปฏิเสธฟิลด์ที่ไม่ได้รับเอง แม้โค้ดฝั่งเราจะผิด · ฟิลด์ใหม่ที่เราเพิ่มทีหลังไม่หลุดไปถึงใครจนกว่าจะติ๊ก</div></div>
+        <div><span>5</span><div><b>ขอบเขตไซต์และช่วงย้อนหลัง</b> กรองให้อัตโนมัติทุกคำขอ</div></div>
+        <div><span>6</span><div><b>เพดาน 5 วินาทีต่อคำขอ</b> คำขอที่หนักเกินถูกหยุด ไม่ลากระบบ</div></div>
+        <div><span>7</span><div><b>บันทึกทุกอย่าง</b> ทุกคำขอ (เวลา ผล IP) · ทุกการแก้สิทธิ์ (เพิ่ม/ถอนฟิลด์ไหน ใครทำ) · ทุกครั้งที่มีคนกดดู Secret · ยามเฝ้าตรวจทุกเช้า</div></div>
+      </div>
+      <div class="warn"><b class="h">สิ่งที่เจ้าหน้าที่ต้องไม่ทำ</b>ห้ามส่ง App Secret ทางอีเมลหรือแชตเดียวกับ App Key · ห้ามแคปหน้าจอที่เห็น Secret · ห้ามส่งคู่มือฉบับนี้หรือรายการข้อมูลในหัวข้อ 5 ให้ partner · ห้ามให้สิทธิ์ก่อนมีข้อตกลงที่อนุมัติแล้ว</div>
+    </section>
+
+    <section id="faq">
+      <h2><span class="n">15</span>คำถามที่พบบ่อย</h2>
+      <dl class="faq">
+        <dt>ติ๊กสิทธิ์แล้วนานแค่ไหนถึงมีผล</dt>
+        <dd>มีผลในฐานข้อมูลทันทีที่กด "ใช้สิทธิ์นี้" ส่วนรูปร่างของข้อมูลที่ partner เห็นปรับตามภายในประมาณ 10 วินาที</dd>
+        <dt>partner รายหนึ่งดูข้อมูลของอีกรายได้ไหม</dt>
+        <dd>ไม่ได้ แต่ละรายมีบัญชีและสิทธิ์ของตัวเอง และไม่มีช่องไหนให้ดูข้อมูลของ partner อื่น</dd>
+        <dt>ถ้าเราเพิ่มข้อมูลใหม่ในระบบ partner ที่มีอยู่จะได้เองไหม</dt>
+        <dd>ไม่ได้ ต้องติ๊กให้ทีละราย นี่คือเหตุผลที่ระบบให้สิทธิ์แบบรายฟิลด์เสมอ</dd>
+        <dt>ทำไม TEST ได้ทุกอย่าง</dt>
+        <dd>เป็นบัญชีทดสอบของเรา partner จริงต้องได้เฉพาะชุดที่จำเป็นตามข้อตกลง</dd>
+        <dt>ข้อมูลดิบถูกลบตามอายุแล้ว สถิติหายด้วยไหม</dt>
+        <dd>ไม่หาย สถิติเก็บแยก (เช่น สถิติคนเก็บ 365 วัน ทั้งที่ข้อมูลดิบเก็บ 40 วัน)</dd>
+        <dt>หมดอายุข้อตกลงแล้วระบบตัดสิทธิ์เองไหม</dt>
+        <dd>ไม่ตัด ระบบแค่แจ้งเตือน ผู้ดูแลต้องตัดสินใจ จึงควรตั้งอายุ credential ให้ตรงกับข้อตกลง</dd>
+      </dl>
+    </section>
+
+    <section id="tech">
+      <h2><span class="n">16</span>ภาคผนวกเทคนิค (สำหรับฝ่ายระบบ)</h2>
+      <div class="table-scroll"><table>
+        <thead><tr><th>ส่วน</th><th>ไฟล์ / ตาราง</th></tr></thead>
+        <tbody>
+          <tr><td>route ของ partner</td><td><code>src/routes/partner-api.js</code> (ตรวจลายเซ็น โควตา feed cursor)</td></tr>
+          <tr><td>นิยาม endpoint / ฟิลด์บังคับ</td><td><code>src/helpers/partnerSchema.js</code> (แหล่งเดียวของทั้ง SQL และเอกสาร OpenAPI)</td></tr>
+          <tr><td>สวมสิทธิ์ partner</td><td><code>src/helpers/asPartnerRole.js</code> ทางเดียวที่ partner เข้าถึงฐานข้อมูล</td></tr>
+          <tr><td>สร้างเอกสาร OpenAPI</td><td><code>src/openapi-gen.js</code></td></tr>
+          <tr><td>หน้าจอแอดมิน / API แอดมิน</td><td><code>dashboard/page-integrations.js</code> · <code>src/routes/integrations.js</code></td></tr>
+          <tr><td>ยามเฝ้า partner</td><td><code>src/helpers/partnerWatch.js</code> · เกณฑ์ใน <code>line_config.perf_alert.partner_watch</code></td></tr>
+          <tr><td>ตารางหลัก</td><td><code>api_consumers</code> · <code>api_request_log</code> · <code>api_consumer_agreements</code></td></tr>
+          <tr><td>view ที่ให้สิทธิ์ได้</td><td><code>v_*_public</code> 18 ตัว (migration 027, 268–277)</td></tr>
+          <tr><td>ตารางสรุปเบื้องหลังสถิติ</td><td><code>traffic_hourly_stats</code> · <code>traffic_daily_stats</code> · <code>lpr_hourly_stats</code> · <code>lpr_dim_daily</code> · <code>appearance_dim_daily</code> (ตัวสรุป <code>src/traffic-stats-refresher.js</code>)</td></tr>
+          <tr><td>เอกสารอ้างอิงเพิ่ม</td><td><code>docs/REF_third-party-integration.md</code> · <code>docs/REF_api-reference.md</code> · GOTCHAS #145, #233</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <footer>Vision Meta Hub · คู่มือเจ้าหน้าที่ OpenAPI · เอกสารภายใน ห้ามส่งให้ partner · ไม่มี App Secret หรือรหัสผ่านใด ๆ ในเอกสารนี้</footer>
+  </main>
+</div>
+<script type="application/json" id="simdata">{"views":["v_cameras_public","v_license_plates_public","v_appearances_public","v_events_public","v_camera_groups_public","v_event_categories_public","v_event_category_rules_public","v_alert_rules_public","v_alert_logs_public","v_system_settings_public","v_report_history_public","v_vehicle_stats_hourly_public","v_lpr_stats_hourly_public","v_lpr_stats_daily_public","v_person_stats_daily_public","v_enforcement_hourly_public","v_enforcement_cameras_public","v_enforcement_daily_public"],"cols":{"v_alert_logs_public":[["id","bigint"],["rule_id","integer"],["rule_name","character varying"],["event_id","bigint"],["camera_id","character varying"],["triggered_rule","character varying"],["event_time","timestamp with time zone"],["status","character varying"],["recipient_count","integer"],["duration_ms","integer"],["sent_at","timestamp with time zone"]],"v_alert_rules_public":[["id","integer"],["name","character varying"],["enabled","boolean"],["camera_ids","ARRAY"],["rule_names","ARRAY"],["cooldown_seconds","integer"],["send_snapshot","boolean"],["active_from","time without time zone"],["active_to","time without time zone"],["last_triggered_at","timestamp with time zone"],["trigger_count","integer"],["created_at","timestamp with time zone"],["updated_at","timestamp with time zone"]],"v_appearances_public":[["id","bigint"],["event_id","bigint"],["camera_id","character varying"],["object_id","character varying"],["object_class","character varying"],["gender","character varying"],["age_group","character varying"],["upper_color","character varying"],["lower_color","character varying"],["vehicle_type","character varying"],["vehicle_color","character varying"],["confidence","real"],["attributes","jsonb"],["detected_at","timestamp with time zone"],["top_category","character varying"],["bottom_category","character varying"],["hair_length","character varying"],["glasses","boolean"],["helmet_wear","boolean"],["mask","text"],["hat","text"],["expression","text"],["bag_category","character varying"],["overall_color","character varying"],["hair_color","character varying"]],"v_camera_groups_public":[["id","integer"],["name","character varying"],["color","character varying"],["description","text"],["sort_order","integer"],["created_at","timestamp with time zone"],["updated_at","timestamp with time zone"]],"v_cameras_public":[["id","character varying"],["name","character varying"],["description","text"],["site_id","integer"],["latitude","double precision"],["longitude","double precision"],["location_label","character varying"],["group_id","integer"],["model","character varying"],["enabled","boolean"],["last_seen_at","timestamp with time zone"],["last_event_at","timestamp with time zone"],["created_at","timestamp with time zone"],["updated_at","timestamp with time zone"]],"v_enforcement_cameras_public":[["camera_id","character varying"],["reports_no_helmet","boolean"],["reports_no_seatbelt","boolean"],["reports_riders3","boolean"],["first_hour","timestamp with time zone"],["last_hour","timestamp with time zone"]],"v_enforcement_daily_public":[["day","date"],["camera_id","character varying"],["no_helmet","integer"],["no_helmet_with_plate","integer"],["no_seatbelt","integer"],["riders3","integer"],["by_type","jsonb"],["updated_at","timestamp with time zone"]],"v_enforcement_hourly_public":[["hour_start","timestamp with time zone"],["camera_id","character varying"],["no_helmet","integer"],["no_helmet_with_plate","integer"],["no_seatbelt","integer"],["riders3","integer"],["by_type","jsonb"],["updated_at","timestamp with time zone"]],"v_event_categories_public":[["id","integer"],["name","character varying"],["icon","character varying"],["color","character varying"],["kind","character varying"],["is_locked","boolean"],["sort_order","integer"],["created_at","timestamp with time zone"],["updated_at","timestamp with time zone"]],"v_event_category_rules_public":[["id","integer"],["category_id","integer"],["camera_id","character varying"],["rule_name","character varying"],["event_type","character varying"],["object_class","character varying"],["match_state","character varying"],["priority","integer"],["created_at","timestamp with time zone"]],"v_events_public":[["id","bigint"],["camera_id","character varying"],["event_time","timestamp with time zone"],["received_at","timestamp with time zone"],["event_type","character varying"],["event_category","character varying"],["event_state","character varying"],["rule_name","character varying"],["object_id","character varying"],["object_class","character varying"],["likelihood","real"],["snapshot_filename","character varying"],["has_snapshot","boolean"],["clip_file","text"],["clip_status","character varying"],["clip_duration_sec","real"]],"v_license_plates_public":[["id","bigint"],["event_id","bigint"],["camera_id","character varying"],["plate_number","character varying"],["confidence","real"],["country","character varying"],["region","character varying"],["bbox_x","integer"],["bbox_y","integer"],["bbox_width","integer"],["bbox_height","integer"],["detected_at","timestamp with time zone"],["vehicle_type","character varying"],["vehicle_color","character varying"],["vehicle_brand","character varying"],["plate_type","character varying"],["plate_color","character varying"],["no_helmet","boolean"],["rider_count","smallint"],["no_seatbelt","boolean"],["lane","character varying"]],"v_lpr_stats_daily_public":[["day","date"],["camera_id","character varying"],["region","jsonb"],["vehicle_type","jsonb"],["vehicle_brand","jsonb"],["plate_color","jsonb"],["updated_at","timestamp with time zone"],["vehicle_color","jsonb"]],"v_lpr_stats_hourly_public":[["hour_start","timestamp with time zone"],["camera_id","character varying"],["detections","integer"],["no_plate","integer"],["updated_at","timestamp with time zone"]],"v_person_stats_daily_public":[["day","date"],["camera_id","character varying"],["object_class","jsonb"],["gender","jsonb"],["age_group","jsonb"],["upper_color","jsonb"],["lower_color","jsonb"],["top_category","jsonb"],["bottom_category","jsonb"],["glasses","jsonb"],["hat","jsonb"],["mask","jsonb"],["expression","jsonb"],["bag_category","jsonb"],["updated_at","timestamp with time zone"]],"v_report_history_public":[["id","integer"],["schedule_id","integer"],["report_type","character varying"],["range_from","timestamp with time zone"],["range_to","timestamp with time zone"],["image_layout","character varying"],["sent_count","integer"],["total_recipients","integer"],["status","character varying"],["created_at","timestamp with time zone"]],"v_system_settings_public":[["key","character varying"],["value","text"],["description","text"],["updated_at","timestamp with time zone"]],"v_vehicle_stats_hourly_public":[["hour_start","timestamp with time zone"],["camera_id","character varying"],["vehicles","integer"],["by_type","jsonb"],["updated_at","timestamp with time zone"]]},"domains":[{"key":"lpr","label":"integ.dom.lpr","views":["v_license_plates_public"]},{"key":"person","label":"integ.dom.person","views":["v_appearances_public"]},{"key":"camera","label":"integ.dom.camera","views":["v_cameras_public","v_camera_groups_public"]},{"key":"event","label":"integ.dom.event","views":["v_events_public"]},{"key":"rules","label":"integ.dom.rules","views":["v_event_categories_public","v_event_category_rules_public","v_alert_rules_public"]},{"key":"alert","label":"integ.dom.alert","views":["v_alert_logs_public"]},{"key":"system","label":"integ.dom.system","views":["v_system_settings_public","v_report_history_public"]},{"key":"stats","label":"integ.dom.stats","views":["v_vehicle_stats_hourly_public","v_lpr_stats_hourly_public","v_lpr_stats_daily_public","v_person_stats_daily_public"]},{"key":"enforce","label":"integ.dom.enforce","views":["v_enforcement_hourly_public","v_enforcement_daily_public","v_enforcement_cameras_public"]}],"labels":{"f.active_from":"เริ่มใช้งาน","f.active_to":"สิ้นสุดการใช้งาน","f.age_group":"ช่วงอายุ","f.attributes":"ลักษณะอื่น ๆ","f.bbox_height":"ความสูงกรอบ","f.bbox_width":"ความกว้างกรอบ","f.bbox_x":"ตำแหน่งกรอบ X","f.bbox_y":"ตำแหน่งกรอบ Y","f.bottom_category":"ประเภทกางเกง/กระโปรง","f.camera_id":"รหัสกล้อง","f.camera_ids":"กล้องที่ใช้กฎ","f.category_id":"รหัสหมวด","f.clip_duration_sec":"ความยาวคลิป (วิ)","f.clip_file":"ไฟล์คลิป","f.clip_status":"สถานะคลิป","f.color":"สี","f.confidence":"ความมั่นใจ","f.cooldown_seconds":"เว้นระยะแจ้งซ้ำ (วิ)","f.country":"ประเทศ","f.created_at":"สร้างเมื่อ","f.description":"คำอธิบาย","f.detected_at":"เวลาที่ตรวจพบ","f.duration_ms":"เวลาที่ใช้ส่ง (ms)","f.enabled":"เปิดใช้งาน","f.event_category":"หมวดเหตุการณ์","f.event_id":"รหัสเหตุการณ์","f.event_state":"สถานะเหตุการณ์","f.event_time":"เวลาเกิดเหตุ","f.event_type":"ประเภทเหตุการณ์","f.gender":"เพศ","f.glasses":"สวมแว่น","f.group_id":"กลุ่มกล้อง","f.hair_length":"ความยาวผม","f.has_snapshot":"มีภาพ","f.helmet_wear":"สวมหมวกนิรภัย","f.icon":"ไอคอน","f.id":"รหัส","f.image_layout":"รูปแบบภาพรายงาน","f.is_locked":"ล็อกไว้","f.key":"ชื่อค่าตั้ง","f.kind":"ชนิด","f.last_event_at":"เหตุการณ์ล่าสุด","f.last_seen_at":"เห็นล่าสุด","f.last_triggered_at":"แจ้งเตือนล่าสุด","f.latitude":"ละติจูด","f.likelihood":"ความมั่นใจของคลาส","f.location_label":"ชื่อจุดติดตั้ง","f.longitude":"ลองจิจูด","f.lower_color":"สีกางเกง/กระโปรง","f.match_state":"สถานะที่จับคู่","f.model":"รุ่น","f.name":"ชื่อ","f.object_class":"ประเภทวัตถุ","f.object_id":"รหัสวัตถุ","f.plate_number":"เลขทะเบียน","f.priority":"ลำดับความสำคัญ","f.range_from":"ช่วงเริ่ม","f.range_to":"ช่วงสิ้นสุด","f.received_at":"เวลาที่ระบบได้รับ","f.recipient_count":"จำนวนผู้รับ","f.region":"จังหวัด","f.report_type":"ประเภทรายงาน","f.rule_id":"รหัสกฎ","f.rule_name":"ชื่อกฎ","f.rule_names":"ชื่อกฎที่ใช้","f.schedule_id":"รหัสตารางส่ง","f.send_snapshot":"แนบภาพ","f.sent_at":"ส่งเมื่อ","f.sent_count":"ส่งแล้ว","f.site_id":"ไซต์","f.snapshot_filename":"ไฟล์ภาพ","f.sort_order":"ลำดับ","f.status":"สถานะ","f.top_category":"ประเภทเสื้อ","f.total_recipients":"ผู้รับทั้งหมด","f.trigger_count":"จำนวนครั้งที่แจ้ง","f.triggered_rule":"กฎที่ทำให้แจ้ง","f.updated_at":"แก้ไขเมื่อ","f.upper_color":"สีเสื้อ","f.value":"ค่าที่ตั้ง","f.vehicle_color":"สีรถ","f.vehicle_type":"ประเภทรถ","dom.lpr":"ป้ายทะเบียน","dom.person":"บุคคลและยานพาหนะ","dom.camera":"กล้องและกลุ่มกล้อง","dom.event":"เหตุการณ์","dom.rules":"หมวดและกฎ","dom.alert":"ประวัติการแจ้งเตือน","dom.system":"ระบบและรายงาน","dom.other":"อื่น ๆ","f.plate_type":"ชนิดป้าย","f.rider_count":"จำนวนผู้ซ้อน","f.lane":"เลน","f.mask":"สวมหน้ากาก","f.hat":"สวมหมวก","f.expression":"สีหน้า","f.bag_category":"สัมภาระที่ถือ","f.overall_color":"สีโดยรวม","f.hair_color":"สีผม","dom.enforce":"บังคับใช้กฎจราจร","f.no_helmet":"ไม่สวมหมวก","f.no_helmet_with_plate":"ไม่สวมหมวก · พร้อมข้อมูลทะเบียน","f.no_seatbelt":"ไม่คาดเข็มขัด","f.riders3":"ซ้อนสาม","f.reports_no_helmet":"กล้องรายงานไม่สวมหมวก","f.reports_no_seatbelt":"กล้องรายงานไม่คาดเข็มขัด","f.reports_riders3":"กล้องรายงานซ้อนสาม","f.first_hour":"มีข้อมูลตั้งแต่","f.last_hour":"มีข้อมูลล่าสุด","dom.stats":"สถิติ","f.hour_start":"ต้นชั่วโมง","f.vehicles":"จำนวนยานพาหนะ","f.by_type":"จำนวนแยกประเภทรถ","f.detections":"จำนวนการตรวจจับ","f.no_plate":"อ่านทะเบียนไม่ได้","f.day":"วันที่","f.vehicle_brand":"ยี่ห้อรถ","f.plate_color":"สีป้าย"},"eps":[{"path":"/v1/cameras","method":"get","view":"v_cameras_public","columns":["id","name","description","site_id","latitude","longitude","location_label","group_id","model","enabled","last_seen_at","last_event_at"],"required":["id"]},{"path":"/v1/lpr/events","method":"get","view":"v_license_plates_public","columns":["id","event_id","camera_id","plate_number","confidence","country","region","bbox_x","bbox_y","bbox_width","bbox_height","detected_at","vehicle_type","vehicle_color","vehicle_brand","plate_type","plate_color","no_helmet","rider_count","no_seatbelt","lane"],"required":["id","camera_id","detected_at"]},{"path":"/v1/face/events","method":"get","view":"v_appearances_public","columns":["id","event_id","camera_id","object_id","object_class","gender","age_group","upper_color","lower_color","top_category","bottom_category","hair_length","glasses","helmet_wear","vehicle_type","vehicle_color","confidence","detected_at","mask","hat","expression","bag_category","overall_color","hair_color"],"required":["id","camera_id","detected_at"]},{"path":"/v1/lpr/search","method":"post","view":"v_license_plates_public","columns":["id","event_id","camera_id","plate_number","confidence","country","region","bbox_x","bbox_y","bbox_width","bbox_height","detected_at","vehicle_type","vehicle_color","vehicle_brand","plate_type","plate_color","no_helmet","rider_count","no_seatbelt","lane"],"required":["id","camera_id","detected_at","plate_number"]},{"path":"/v1/stats/vehicles/hourly","method":"get","view":"v_vehicle_stats_hourly_public","columns":["hour_start","camera_id","vehicles","by_type","updated_at"],"required":["hour_start","camera_id"]},{"path":"/v1/stats/lpr/hourly","method":"get","view":"v_lpr_stats_hourly_public","columns":["hour_start","camera_id","detections","no_plate","updated_at"],"required":["hour_start","camera_id"]},{"path":"/v1/stats/lpr/daily","method":"get","view":"v_lpr_stats_daily_public","columns":["day","camera_id","region","vehicle_type","vehicle_brand","plate_color","vehicle_color","updated_at"],"required":["day","camera_id"]},{"path":"/v1/stats/person/daily","method":"get","view":"v_person_stats_daily_public","columns":["day","camera_id","object_class","gender","age_group","upper_color","lower_color","top_category","bottom_category","glasses","hat","mask","expression","bag_category","updated_at"],"required":["day","camera_id"]},{"path":"/v1/enforcement/hourly","method":"get","view":"v_enforcement_hourly_public","columns":["hour_start","camera_id","no_helmet","no_helmet_with_plate","no_seatbelt","riders3","by_type","updated_at"],"required":["hour_start","camera_id"]},{"path":"/v1/enforcement/daily","method":"get","view":"v_enforcement_daily_public","columns":["day","camera_id","no_helmet","no_helmet_with_plate","no_seatbelt","riders3","by_type","updated_at"],"required":["day","camera_id"]},{"path":"/v1/enforcement/cameras","method":"get","view":"v_enforcement_cameras_public","columns":["camera_id","reports_no_helmet","reports_no_seatbelt","reports_riders3","first_hour","last_hour"],"required":["camera_id"]}],"sites":["main","vss","hdy","nrw","hkt","rmutr-v","bma-edge"]}</script>
+<script>
+(function () {
+  'use strict';
+  // หน้าจำลอง — ไม่มี fetch / ไม่มีการส่งข้อมูลออกนอกหน้านี้
+  var D = JSON.parse(document.getElementById('simdata').textContent);
+  var PII = { plate_number: 1, snapshot_filename: 1, clip_file: 1 };
+  var RESERVED = { postgres: 1, public: 1, vigil_sql: 1, third_party_readonly: 1, pg_monitor: 1 };
+  var LB = { consent: 'ความยินยอม', contract: 'สัญญา', legal_obligation: 'หน้าที่ตามกฎหมาย', legitimate_interest: 'ประโยชน์โดยชอบด้วยกฎหมาย', public_task: 'ภารกิจของรัฐ', vital_interest: 'ประโยชน์สำคัญต่อชีวิต' };
+  var S = { partner: null, saved: {}, draft: null, agreements: [] };
+  var $ = function (id) { return document.getElementById(id); };
+  var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
+  var lab = function (c) { return D.labels['f.' + c] || c; };
+  var thDate = function (d) { return d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' }); };
+  var iso = function (d) { return d.toISOString().slice(0, 10); };
+  var rnd = function (n, set) { var a = new Uint8Array(n), o = ''; crypto.getRandomValues(a); for (var i = 0; i < n; i++) o += set[a[i] % set.length]; return o; };
+
+  // ── ขั้น ──
+  function go(k) {
+    document.querySelectorAll('[data-sim-go]').forEach(function (b) { var on = b.dataset.simGo === k; b.classList.toggle('is-on', on); b.setAttribute('aria-selected', on); });
+    document.querySelectorAll('[data-sim-pane]').forEach(function (p) { p.hidden = p.dataset.simPane !== k; });
+    if (k === 'agr') renderAgr(); if (k === 'grants') renderMatrix(); if (k === 'result') renderResult();
+  }
+  document.querySelectorAll('[data-sim-go]').forEach(function (b) { b.addEventListener('click', function () { go(b.dataset.simGo); }); });
+  function who() { var t = S.partner ? S.partner.label + ' (' + S.partner.slug + ')' : '(ยังไม่ได้สร้าง partner)'; $('simAgrWho').textContent = t; document.querySelectorAll('.simWho').forEach(function (e) { e.textContent = t; }); }
+
+  // ── ก. สร้าง partner (กติกาเดียวกับ partnerAdmin.validateSlug / ฟอร์มจริง) ──
+  var sp = $('simSites');
+  sp.innerHTML = '<label class="integ-siteopt"><input type="checkbox" data-site="__all" checked> ทุกไซต์</label>' +
+    D.sites.map(function (s) { return '<label class="integ-siteopt"><input type="checkbox" data-site="' + esc(s) + '"> ' + esc(s) + '</label>'; }).join('');
+  var boxes = sp.querySelectorAll('input');
+  boxes.forEach(function (b) { b.addEventListener('change', function () {
+    if (b.dataset.site === '__all' && b.checked) boxes.forEach(function (o) { if (o !== b) o.checked = false; });
+    else if (b.checked) sp.querySelector('[data-site="__all"]').checked = false;
+  }); });
+  function err(id, msg) { var e = $(id); e.textContent = msg || ''; e.hidden = !msg; }
+  $('simCreateReset').addEventListener('click', function () { ['simSlug', 'simLabel', 'simLookback', 'simNotes'].forEach(function (i) { $(i).value = ''; }); $('simRate').value = 60; $('simDays').value = '90'; err('simCreateErr'); });
+  $('simCreate').addEventListener('click', function () {
+    var slug = $('simSlug').value.trim(), label = $('simLabel').value.trim();
+    if (!/^[a-z][a-z0-9_]{1,30}$/.test(slug)) return err('simCreateErr', 'slug ต้องขึ้นต้นด้วย a-z แล้วตามด้วย a-z 0-9 _ ยาว 2–31 ตัว (จะกลายเป็นชื่อ database role)');
+    if (RESERVED[slug]) return err('simCreateErr', 'slug "' + slug + '" สงวนไว้ ใช้ไม่ได้');
+    if (slug === 'test') return err('simCreateErr', 'มี partner ชื่อ "test" อยู่แล้ว');
+    if (!label) return err('simCreateErr', 'ต้องระบุชื่อที่แสดง');
+    var picked = [].filter.call(boxes, function (b) { return b.checked; }).map(function (b) { return b.dataset.site; });
+    if (!picked.length) return err('simCreateErr', 'เลือกขอบเขตไซต์อย่างน้อยหนึ่งอย่าง (หรือ "ทุกไซต์")');
+    var lb = $('simLookback').value, rate = +$('simRate').value;
+    if (lb && (+lb < 1 || +lb > 3650)) return err('simCreateErr', 'ย้อนหลังได้ต้องเป็น 1–3650 วัน หรือเว้นว่าง');
+    if (!(rate >= 1 && rate <= 6000)) return err('simCreateErr', 'โควตาต้องเป็น 1–6000 ครั้ง/นาที');
+    err('simCreateErr');
+    var days = $('simDays').value, exp = days ? new Date(Date.now() + days * 864e5) : null;
+    S.partner = { slug: slug, label: label, sites: picked.indexOf('__all') >= 0 ? null : picked, lookback: lb || null, rate: rate, expires: exp };
+    S.saved = {}; S.draft = null; S.agreements = [];
+    var key = 'vk_' + rnd(24, '0123456789abcdef'), sec = rnd(43, 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_');
+    $('simCreated').hidden = false;
+    $('simCreated').innerHTML = '<div class="sim-ok"><b>สร้างแล้ว (จำลอง)</b> partner <b>' + esc(label) + '</b> · บัญชีฐานข้อมูล <code>' + esc(slug) + '_ro</code> ยังไม่มีสิทธิ์อะไรเลย</div>' +
+      '<div class="integ-cred"><div><span class="form-label">App Key</span><code>' + key + '</code></div>' +
+      '<div><span class="form-label">App Secret · แสดงครั้งเดียว</span><code>' + sec + '</code></div>' +
+      '<div><span class="form-label">หมดอายุ</span>' + (exp ? thDate(exp) : 'ไม่มีวันหมดอายุ') + ' · ขอบเขต ' + esc(S.partner.sites ? S.partner.sites.join(', ') : 'ทุกไซต์') + ' · โควตา ' + rate + ' ครั้ง/นาที</div></div>' +
+      '<p class="sim-small">ค่าข้างบนสุ่มขึ้นในหน้านี้ ใช้เรียก API ไม่ได้ · ในระบบจริงต้องคัดลอก Secret ทันที แล้วส่งให้ partner แยกช่องทางกับ App Key · ขั้นถัดไป: <a href="#sim" data-sim-jump="agr">ข. ข้อตกลงข้อมูล</a></p>';
+    $('simCreated').querySelector('[data-sim-jump]').addEventListener('click', function (e) { e.preventDefault(); go('agr'); });
+    who();
+  });
+
+  // ── ข. ข้อตกลงข้อมูล (กติกาเดียวกับ POST /api/integrations/:slug/agreements) ──
+  function snapshot(g) { var o = {}; Object.keys(g).forEach(function (v) { var c = Object.keys(g[v]).filter(function (k) { return g[v][k]; }); if (c.length) o[v] = c.sort(); }); return JSON.stringify(o); }
+  function renderAgr() {
+    who();
+    var cur = S.agreements[S.agreements.length - 1], today = iso(new Date()), w = '';
+    if (!S.partner) w += '<p class="integ-hint integ-hint--warn">สร้าง partner ในขั้น ก. ก่อน</p>';
+    else if (!cur) w += '<p class="integ-hint integ-hint--warn">ยังไม่มีบันทึกข้อตกลงของ partner รายนี้</p>';
+    if (cur && cur.grants !== snapshot(S.saved)) w += '<p class="integ-hint integ-hint--warn">สิทธิ์คอลัมน์ปัจจุบันไม่ตรงกับที่บันทึกในเวอร์ชันล่าสุด</p>';
+    if (cur && cur.review <= today) w += '<p class="integ-hint integ-hint--warn">ถึงกำหนดทบทวนข้อตกลงแล้ว</p>';
+    $('simAgrWarn').innerHTML = w;
+    $('simAgrHead').textContent = cur ? 'บันทึกเวอร์ชันใหม่' : 'บันทึกข้อตกลง';
+    var kv = $('simAgrCur');
+    kv.hidden = !cur;
+    if (cur) {
+      var row = function (k, v) { return '<dt>' + k + '</dt><dd>' + (v ? esc(v) : '<span class="integ-null">-</span>') + '</dd>'; };
+      kv.innerHTML = row('เวอร์ชัน', 'v' + cur.v) + row('วัตถุประสงค์การใช้ข้อมูล', cur.purpose) + row('ฐานทางกฎหมาย', LB[cur.basis]) + row('อ้างอิง DPA / สัญญา', cur.dpa) +
+        row('ผู้อนุมัติ', cur.by) + row('ใช้ได้ถึง', cur.until) + row('ทบทวนภายใน', cur.review) + row('บันทึกเมื่อ', cur.at);
+    }
+    $('simAgrHist').innerHTML = S.agreements.length > 1 ? '<h4>ประวัติเวอร์ชัน</h4><ul class="integ-agr-hist">' + S.agreements.slice(0, -1).reverse().map(function (a) {
+      return '<li><b>v' + a.v + '</b> ' + esc(a.at) + ' · ' + esc(a.by) + ' · ' + esc(a.purpose.slice(0, 120)) + '</li>'; }).join('') + '</ul>' : '';
+  }
+  $('simAgrForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    if (!S.partner) return err('simAgrErr', 'สร้าง partner ในขั้น ก. ก่อน');
+    var purpose = $('simPurpose').value.trim(), by = $('simBy').value.trim();
+    if (!purpose) return err('simAgrErr', 'ต้องระบุวัตถุประสงค์การใช้ข้อมูล');
+    if (!by) return err('simAgrErr', 'ต้องระบุผู้อนุมัติ');
+    err('simAgrErr');
+    var review = $('simReview').value || iso(new Date(Date.now() + 90 * 864e5));
+    S.agreements.push({ v: S.agreements.length + 1, purpose: purpose, basis: $('simBasis').value, dpa: $('simDpa').value.trim(), by: by,
+      until: $('simUntil').value, review: review, grants: snapshot(S.saved), at: new Date().toLocaleString('th-TH') });
+    renderAgr();
+  });
+
+  // ── ค. ติ๊กสิทธิ์ (หน้าตา/พฤติกรรมเดียวกับ _integMatrix) ──
+  function clone(g) { return JSON.parse(JSON.stringify(g)); }
+  function eff() { return S.draft || S.saved; }
+  function on(g, v, c) { return !!(g[v] && g[v][c]); }
+  function renderMatrix() {
+    who();
+    var g = eff();
+    if (!S.partner) { $('simMatrix').innerHTML = '<div class="integ-empty">สร้าง partner ในขั้น ก. ก่อน</div>'; $('simDirty').innerHTML = ''; return; }
+    $('simDirty').innerHTML = S.draft ? '<div class="integ-dirty"><span>ยังไม่ได้บันทึก — กด "ใช้สิทธิ์นี้" แล้วจะเขียน GRANT/REVOKE ลง Postgres จริง มีผลกับ partner ทันที</span>' +
+      '<span class="integ-dirty-btns"><button type="button" class="btn btn-sm btn-ghost" data-sim-cancel>ยกเลิก</button> <button type="button" class="btn btn-sm btn-primary" data-sim-apply>ใช้สิทธิ์นี้</button></span></div>' : '';
+    $('simMatrix').innerHTML = D.domains.map(function (d, i) {
+      var cells = []; d.views.forEach(function (v) { (D.cols[v] || []).forEach(function (c) { cells.push([v, c[0], c[1]]); }); });
+      var n = cells.filter(function (x) { return on(g, x[0], x[1]); }).length;
+      var paths = []; D.eps.forEach(function (e) { if (d.views.indexOf(e.view) >= 0 && paths.indexOf(e.path) < 0) paths.push(e.path); });
+      var seg = function (want, t) { return '<button type="button" class="' + ((want ? n === cells.length : n === 0) ? 'active' : '') + '" data-sim-dom="' + i + '" data-on="' + (want ? 1 : 0) + '">' + t + '</button>'; };
+      return '<section class="integ-dom' + (n ? '' : ' is-off') + '"><header class="integ-dom-head"><div class="integ-dom-name"><b>' + esc(D.labels['dom.' + d.key] || d.key) + '</b>' +
+        (i === 0 ? ' <span class="sim-pin">2</span>' : '') +
+        '<span class="integ-dom-src">' + d.views.map(esc).join(' · ') + '</span><span class="integ-dom-eps">' +
+        (paths.length ? paths.map(function (p) { return '<code>' + esc(p) + '</code>'; }).join(' ') : '<span class="integ-dom-noep">ยังไม่มี endpoint ส่งออก</span>') + '</span></div>' +
+        '<div class="integ-dom-right">' + (i === 0 ? '<span class="sim-pin">3</span>' : '') + '<span class="integ-frac' + (n === 0 ? ' integ-frac--none' : n === cells.length ? ' integ-frac--all' : '') + '">' + n + '/' + cells.length + '</span>' +
+        '<div class="seg integ-seg">' + seg(true, 'ส่งออก') + seg(false, 'ปิด') + '</div></div></header>' +
+        '<div class="integ-cols">' + (i === 0 ? '<span class="sim-pin">4</span>' : '') + cells.map(function (x) {
+          var isOn = on(g, x[0], x[1]), was = on(S.saved, x[0], x[1]);
+          return '<button type="button" class="integ-col' + (isOn ? ' is-on' : '') + (isOn !== was ? ' is-changed' : '') + '" data-sim-v="' + x[0] + '" data-sim-c="' + x[1] + '" title="' + x[0] + '.' + x[1] + ' · ' + x[2] + '" aria-pressed="' + isOn + '">' +
+            '<span class="integ-col-box" aria-hidden="true"></span><span class="integ-col-l">' + esc(lab(x[1])) + '</span>' +
+            (D.labels['f.' + x[1]] ? '<code class="integ-col-c">' + esc(x[1]) + '</code>' : '') +
+            (PII[x[1]] ? '<span class="integ-pii">ข้อมูลส่วนบุคคล</span>' : '') + '</button>';
+        }).join('') + '</div></section>';
+    }).join('');
+    if (S.draft) { var dp = $('simDirty').querySelector('.integ-dirty span'); dp.insertAdjacentHTML('beforeend', ' <span class="sim-pin">5</span>'); }
+  }
+  $('simMatrix').addEventListener('click', function (e) {
+    var b = e.target.closest('button'); if (!b) return;
+    if (!S.draft) S.draft = clone(S.saved);
+    if (b.dataset.simV) { var v = b.dataset.simV, c = b.dataset.simC; S.draft[v] = S.draft[v] || {}; S.draft[v][c] = !S.draft[v][c]; }
+    else if (b.dataset.simDom) { var d = D.domains[+b.dataset.simDom], want = b.dataset.on === '1';
+      d.views.forEach(function (v) { S.draft[v] = S.draft[v] || {}; (D.cols[v] || []).forEach(function (c) { S.draft[v][c[0]] = want; }); }); }
+    if (snapshot(S.draft) === snapshot(S.saved)) S.draft = null;
+    renderMatrix();
+  });
+  $('simDirty').addEventListener('click', function (e) {
+    var b = e.target.closest('button'); if (!b) return;
+    if (b.hasAttribute('data-sim-cancel')) { S.draft = null; renderMatrix(); return; }
+    if (b.hasAttribute('data-sim-apply')) {
+      var add = 0, rem = 0; D.views.forEach(function (v) { (D.cols[v] || []).forEach(function (c) { var a = on(S.draft, v, c[0]), w = on(S.saved, v, c[0]); if (a && !w) add++; if (!a && w) rem++; }); });
+      S.saved = S.draft; S.draft = null; renderMatrix();
+      $('simDirty').innerHTML = '<div class="sim-ok"><b>บันทึกแล้ว (จำลอง)</b> เพิ่ม ' + add + ' ฟิลด์ · ถอน ' + rem + ' ฟิลด์ · ในระบบจริงมีผลทันที และบันทึก audit ว่าเพิ่ม/ถอนฟิลด์ไหน · <a href="#sim" data-sim-jump="result">ดูผลที่ partner ได้รับ</a></div>';
+      $('simDirty').querySelector('[data-sim-jump]').addEventListener('click', function (ev) { ev.preventDefault(); go('result'); });
+    }
+  });
+
+  // ── ง. สิ่งที่เขาได้รับ (ตรรกะเดียวกับ resolveColumns + openapi-gen) ──
+  function renderResult() {
+    who();
+    if (!S.partner) { $('simResult').innerHTML = '<div class="integ-empty">สร้าง partner ในขั้น ก. ก่อน</div>'; return; }
+    var g = S.saved, inSpec = 0;
+    var html = D.eps.map(function (e) {
+      var have = e.columns.filter(function (c) { return on(g, e.view, c); });
+      var miss = e.required.filter(function (c) { return have.indexOf(c) < 0; });
+      var dropped = e.columns.filter(function (c) { return have.indexOf(c) < 0; });
+      var ok = !miss.length; if (ok) inSpec++;
+      var head = '<header class="integ-pv-head"><code>' + e.method.toUpperCase() + ' ' + esc(e.path) + '</code>' +
+        (ok ? '<span class="integ-badge integ-badge--ok">ได้รับข้อมูล</span>' : '<span class="integ-badge integ-badge--bad">ตอบ 403 ทั้ง endpoint</span>') + '</header>';
+      var spec = '<p class="sim-small">ในเอกสาร OpenAPI: ' + (ok ? '<b class="s-ok">มี</b>' : '<b class="s-bad">ไม่มี</b> (partner ไม่รู้ว่าช่องนี้มีอยู่)') + '</p>';
+      var body = ok ? '<dl class="integ-kv">' + have.map(function (c) { return '<dt>' + esc(lab(c)) + '<code>' + esc(c) + '</code></dt><dd>✓</dd>'; }).join('') +
+          dropped.map(function (c) { return '<dt class="integ-pv-off">' + esc(lab(c)) + '<code>' + esc(c) + '</code></dt><dd class="integ-pv-off">ไม่ส่ง</dd>'; }).join('') + '</dl>'
+        : '<p class="integ-pv-miss">ขาดสิทธิ์คอลัมน์: ' + miss.map(function (m) { return '<b>' + esc(lab(m)) + '</b> <code>' + esc(m) + '</code>'; }).join(', ') + '</p>';
+      return '<section class="integ-pv-ep">' + head + spec + body + '</section>';
+    }).join('');
+    $('simResult').innerHTML = (S.partner.sites ? '<p class="integ-hint">กรองตามไซต์ที่ผูกไว้</p>' : '') +
+      '<p class="sim-small">เอกสาร OpenAPI ของ <b>' + esc(S.partner.label) + '</b> จะมี ' + inSpec + ' ช่อง + <code>/v1/healthz</code></p><div class="integ-pv">' + html + '</div>';
+  }
+  who();
+})();
+</script>
+</body>
+</html>

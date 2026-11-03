@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Demo — Emission Rate (RMUTR-V)</title>
+<!-- ============================================================
+  Vigil Platform — DEMO: อัตราการปล่อย CO2 จากการจราจรในพื้นที่ (RMUTR-V)
+  @author Prakasit Rochanavipart (Dojo-mAn)
+  @copyright (c) 2025-2026 Prakasit Rochanavipart. All Rights Reserved.
+  @license Proprietary
+  ------------------------------------------------------------
+  ข้อมูลจริงทั้งหมด — นับจากหมวด Event ของ RMUTR-V ผ่าน /api/stats/categories
+  สูตรตามไฟล์ Traffic_CO2_Emission_Calculator.xlsx ของเจ้าของ:
+      Trips/Day = (In + Out) / 2
+      gCO2/Day  = Trips × EF(gCO2/km) × ระยะทางเฉลี่ย(km/trip)
+  สิ่งที่เพิ่มจากไฟล์ต้นฉบับ (เหตุผลอยู่ในหน้า "สมมติฐานและข้อจำกัด"):
+   · สัดส่วน EV ปรับได้จริง (ไฟล์ต้นฉบับมีหัวคอลัมน์ "ไม่รวม EV" แต่สูตรไม่ได้หัก)
+   · ตัวเลือกนับ Bicycle เป็นจักรยานยนต์ ตามผล RCA ของ Bosch 5100i
+   · ค่าเทียบเท่า (ต้นไม้ / ระยะทาง / น้ำมัน) พร้อมตัวคูณกำกับทุกตัว
+============================================================ -->
+<link rel="stylesheet" href="emission.css?v=1">
+<script src="/vendor/chartjs/chart-4.4.1.umd.min.js"></script>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div>
+      <h1>อัตราการปล่อย CO<sub>2</sub> จากการจราจร <span class="tag">DEMO</span></h1>
+      <div class="sub">
+        ไซต์ <b>RMUTR-V</b> · นับจากกล้อง Bosch 5100i (Vehicle Count IN/OUT) ข้อมูลจริงจากระบบ
+        · สูตรตามตารางคำนวณของเจ้าของโครงการ
+        · <a href="../dashboard/index.html">← กลับหน้า Statistics demo</a>
+      </div>
+    </div>
+    <div class="seg" id="periodBar"></div>
+  </header>
+
+  <!-- ── ตัวแปรที่ผู้ใช้กำหนดเอง ── -->
+  <section class="card">
+    <div class="card-head">
+      <div>
+        <div class="card-title">ตัวแปรของการคำนวณ</div>
+        <div class="card-sub">ทุกค่าที่นี่คือ "สมมติฐาน" ไม่ใช่ค่าที่วัดได้จากกล้อง — ปรับแล้วตัวเลขทั้งหน้าคำนวณใหม่ทันที</div>
+      </div>
+      <div class="hint" id="rangeNote"></div>
+    </div>
+    <div class="ctl">
+      <div class="ctl-item">
+        <span class="ctl-lbl">ระยะทางเฉลี่ยในพื้นที่ (km/trip)</span>
+        <input class="num-in" type="number" id="inpDist" value="1.26" min="0.01" step="0.01">
+        <span class="hint">ค่าตั้งต้นจากตารางต้นฉบับ</span>
+      </div>
+      <div class="ctl-item">
+        <span class="ctl-lbl">สัดส่วนรถยนต์ไฟฟ้า EV (%)</span>
+        <input class="num-in" type="number" id="inpEv" value="0" min="0" max="100" step="0.5">
+        <span class="hint">กล้องแยก EV ไม่ได้ — เป็นค่าที่คนกรอก</span>
+      </div>
+      <div class="ctl-item">
+        <span class="ctl-lbl">การจำแนกจักรยาน</span>
+        <label class="chk"><input type="checkbox" id="chkBike" checked> นับ Bicycle เป็นจักรยานยนต์ (ตามผล RCA)</label>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── ตัวเลขหลัก ── -->
+  <section class="kpis" id="kpis"></section>
+
+  <!-- ── ตารางหลัก ── -->
+  <section class="card">
+    <div class="card-head">
+      <div>
+        <div class="card-title">ตารางคำนวณการปล่อย CO<sub>2</sub> รวมรายวันภายในพื้นที่</div>
+        <div class="card-sub">คลิก "รายละเอียด" เพื่อดูสูตรที่แทนค่าจริงและข้อจำกัดของแต่ละประเภท</div>
+      </div>
+      <button class="info-btn" id="btnCsv">ดาวน์โหลด CSV</button>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr>
+          <th>ประเภทยานพาหนะ</th>
+          <th>Fleet Emission Factor
+(gCO2/km)</th>
+          <th>ขาเข้า
+(In)</th>
+          <th>ขาออก
+(Out)</th>
+          <th>รถสุทธิ
+(Trips/Day)</th>
+          <th>ระยะทาง
+(km/Trip)</th>
+          <th>ปล่อย CO2
+(gCO2/Day)</th>
+          <th>สัดส่วน</th>
+          <th></th>
+        </tr></thead>
+        <tbody id="tblBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── กราฟ ── -->
+  <div class="cols">
+    <section class="card">
+      <div class="card-head"><div>
+        <div class="card-title">การปล่อย CO<sub>2</sub> รายชั่วโมง</div>
+        <div class="card-sub" id="hrSub">แบ่งตามประเภทยานพาหนะ · หน่วย kgCO2</div>
+      </div></div>
+      <div class="chart-box"><canvas id="hrChart"></canvas></div>
+    </section>
+    <section class="card">
+      <div class="card-head"><div>
+        <div class="card-title">สัดส่วนการปล่อยตามประเภท</div>
+        <div class="card-sub">รถน้อยคันแต่ค่า EF สูง อาจปล่อยมากกว่ารถจำนวนมากที่ EF ต่ำ</div>
+      </div></div>
+      <div class="chart-box"><canvas id="pieChart"></canvas></div>
+    </section>
+  </div>
+
+  <!-- ── เทียบเท่า ── -->
+  <section class="card">
+    <div class="card-head"><div>
+      <div class="card-title">เทียบเท่ากับอะไร</div>
+      <div class="card-sub">แปลงจากยอดต่อวันด้วยตัวคูณที่แสดงกำกับไว้ทุกตัว — ไม่ใช่ค่าที่ระบบวัดเอง</div>
+    </div></div>
+    <div class="eq" id="eqBox"></div>
+  </section>
+
+  <!-- ── สมมติฐาน ── -->
+  <section class="card">
+    <div class="card-head"><div>
+      <div class="card-title">สมมติฐานและข้อจำกัด</div>
+      <div class="card-sub">อ่านก่อนนำตัวเลขไปอ้างอิงในเอกสารวิจัย</div>
+    </div></div>
+    <div class="note-list" id="assumeBox"></div>
+  </section>
+
+</div>
+
+<!-- ── modal รายละเอียดต่อประเภท ── -->
+<div class="mask" id="mask"><div class="modal" id="modal"></div></div>
+
+<script src="emission.js?v=1"></script>
+</body>
+</html>

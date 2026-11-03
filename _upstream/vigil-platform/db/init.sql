@@ -100,9 +100,16 @@ CREATE TABLE IF NOT EXISTS cameras (
   updated_at      TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_cameras_group ON cameras(group_id);
 CREATE INDEX IF NOT EXISTS idx_cameras_enabled ON cameras(enabled);
-CREATE INDEX IF NOT EXISTS idx_cameras_lastseen ON cameras(last_seen_at DESC);
+-- ไม่มี index บน group_id และ last_seen_at โดยตั้งใจ (migration 182, 2026-08-27)
+--   group_id    — ตลอดอายุฐานเดิมถูกใช้ 1 ครั้ง
+--   last_seen_at — ถูกใช้จริง แต่ตารางมีหลักร้อยแถว การไล่อ่านทั้งตารางเร็วกว่า
+--     และการมี index บนคอลัมน์ที่ถูกเขียนทุก heartbeat ทำให้ UPDATE เป็น non-HOT
+--     ทุกครั้ง จนตารางบวมเป็น 2.7 GB จาก 144 แถว (วัดจริงก่อนแก้)
+-- ⚠️ ถ้าจะเพิ่มกลับ ต้องแก้ migration 182 ด้วย ไม่งั้นสร้างแล้วโดนลบทันทีตอนบูต
+--
+-- fillfactor 70 = เหลือที่ว่างในหน้าให้ HOT update ทำงานได้ตั้งแต่ติดตั้งใหม่
+ALTER TABLE cameras SET (fillfactor = 70);
 
 
 -- ============================================================
@@ -148,8 +155,14 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE INDEX IF NOT EXISTS idx_events_camera ON events(camera_id);
 CREATE INDEX IF NOT EXISTS idx_events_time ON events(event_time DESC);
 CREATE INDEX IF NOT EXISTS idx_events_type ON events(event_type);
-CREATE INDEX IF NOT EXISTS idx_events_rule ON events(rule_name);
-CREATE INDEX IF NOT EXISTS idx_events_class ON events(object_class);
+-- idx_events_rule / idx_events_class removed 2026-07-31 (migration 105): both
+-- measured 0 scans on the only partition holding data, while being written on
+-- every one of ~370k daily inserts. The rule_name and object_class filters in
+-- /api/events are served by the event_time index plus a filter step — which is
+-- what the planner already chose on real data, and every query carries a 24h
+-- default since 1A, so the time index is the selective one.
+--   CREATE INDEX IF NOT EXISTS idx_events_rule  ON events(rule_name);
+--   CREATE INDEX IF NOT EXISTS idx_events_class ON events(object_class);
 CREATE INDEX IF NOT EXISTS idx_events_camera_time ON events(camera_id, event_time DESC);
 CREATE INDEX IF NOT EXISTS idx_events_has_snapshot_time ON events(event_time DESC) WHERE has_snapshot = TRUE;
 CREATE INDEX IF NOT EXISTS idx_events_camera_snapshot_time ON events(camera_id, event_time DESC) WHERE has_snapshot = TRUE;
@@ -231,6 +244,12 @@ CREATE TABLE IF NOT EXISTS license_plates (
   bbox_width      INT,
   bbox_height     INT,
 
+  -- Vehicle-level bounding box (optional, <vehicelRect> — migration 117)
+  vehicle_bbox_x      INT,
+  vehicle_bbox_y      INT,
+  vehicle_bbox_width  INT,
+  vehicle_bbox_height INT,
+
   detected_at     TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -253,6 +272,10 @@ CREATE TABLE IF NOT EXISTS line_config (
   enabled               BOOLEAN DEFAULT false,
   recipients            JSONB DEFAULT '[]'::jsonb,
   -- recipients format: [{type:'user'|'group', id:'Uxxx', name:'แอดมิน', enabled:true}]
+  edge_alert            JSONB NOT NULL DEFAULT '{"enabled":true,"threshold_sec":180,"cooldown_hours":4,"disabled_sites":[],"recipient_ids":null}'::jsonb,
+  -- edge_alert: settings for the "Edge ขาดการติดต่อ" offline alert (checkEdgeStale).
+  --   disabled_sites: site_ids explicitly muted (empty = all edges alert).
+  --   recipient_ids: null = all enabled recipients; array = restrict to those ids.
   updated_at            TIMESTAMPTZ DEFAULT NOW(),
   CHECK (id = 1)  -- enforce single row
 );
@@ -341,7 +364,7 @@ CREATE TABLE IF NOT EXISTS users (
   email           VARCHAR(100) UNIQUE,
   full_name       VARCHAR(150),
   password_hash   TEXT NOT NULL,
-  role            VARCHAR(20) NOT NULL DEFAULT 'viewer',  -- 'admin' | 'viewer' | 'auditor'
+  role            VARCHAR(20) NOT NULL DEFAULT 'viewer',  -- 'admin' | 'viewer' | 'auditor' | 'site_admin'
   enabled         BOOLEAN DEFAULT true,
   must_change_password BOOLEAN DEFAULT false,
 
@@ -356,7 +379,7 @@ CREATE TABLE IF NOT EXISTS users (
   updated_at      TIMESTAMPTZ DEFAULT NOW(),
   created_by      INT REFERENCES users(id) ON DELETE SET NULL,
 
-  CHECK (role IN ('admin', 'viewer', 'auditor'))
+  CHECK (role IN ('admin', 'viewer', 'auditor', 'site_admin'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
@@ -436,6 +459,44 @@ CREATE TRIGGER trg_users_updated
   BEFORE UPDATE ON users
   FOR EACH ROW EXECUTE FUNCTION trigger_set_updated_at();
 
+-- Audit visibility for direct password_hash writes that bypass the app
+-- (e.g. a UPDATE run straight against postgres). See db_migration_140 and
+-- GOTCHAS.md #150 for why this exists. Log-only — never blocks a write.
+CREATE OR REPLACE FUNCTION audit_users_password_hash_change() RETURNS trigger AS $$
+BEGIN
+  BEGIN
+    INSERT INTO audit_log (user_id, username, action, target_user_id, target_username, details)
+    VALUES (
+      NULL,
+      '(db-trigger)',
+      'password_hash_changed_db',
+      NEW.id,
+      NEW.username,
+      jsonb_build_object(
+        'old_hash_fp', left(md5(coalesce(OLD.password_hash, '')), 8),
+        'new_hash_fp', left(md5(coalesce(NEW.password_hash, '')), 8),
+        'db_user', current_user,
+        'application_name', current_setting('application_name', true),
+        'client_addr', host(inet_client_addr()),
+        'backend_pid', pg_backend_pid(),
+        'query', left(regexp_replace(coalesce(current_query(), ''),
+                       '\$2[aby]\$[0-9]{2}\$[A-Za-z0-9./]{53}', '[REDACTED]', 'g'), 300)
+      )
+    );
+  EXCEPTION WHEN OTHERS THEN
+    RAISE WARNING 'audit_users_password_hash_change: %', SQLERRM;
+  END;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_users_password_hash_audit ON users;
+CREATE TRIGGER trg_users_password_hash_audit
+  AFTER UPDATE OF password_hash ON users
+  FOR EACH ROW
+  WHEN (OLD.password_hash IS DISTINCT FROM NEW.password_hash)
+  EXECUTE FUNCTION audit_users_password_hash_change();
+
 DROP TRIGGER IF EXISTS trg_line_config_updated ON line_config;
 CREATE TRIGGER trg_line_config_updated
   BEFORE UPDATE ON line_config
@@ -495,6 +556,8 @@ CREATE TABLE IF NOT EXISTS event_categories (
   icon        VARCHAR(20)  DEFAULT '🚨',
   color       VARCHAR(20)  DEFAULT '#5b8def',
   kind        VARCHAR(20)  NOT NULL DEFAULT 'event',
+  -- migration 183: กลุ่มบนหน้าสถิติ (NULL = อัตโนมัติ · standalone = แยกนับ)
+  stat_group  TEXT,
   is_builtin  BOOLEAN      NOT NULL DEFAULT false,
   sort_order  INT          NOT NULL DEFAULT 0,
   created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
@@ -554,6 +617,8 @@ INSERT INTO system_settings (key, value, description) VALUES
   ('counter_dedup_mode',      'state',         'state | object_window | none'),
   ('comparison_mode',         'rolling',       'rolling | calendar.'),
   ('custom_range_max_days',   '365',           'Max span for custom date range picker.'),
+  -- ชื่อหัวข้อรายงานที่ตั้งเอง (migration 224) — {} = ใช้ชื่อเริ่มต้นตามภาษา
+  ('report_section_titles',   '{}',            'JSON object: report section key -> custom heading.'),
   -- Branding (white-label)
   ('brand_name',              'Vigil Platform', 'Product name shown in sidebar, login, disclaimer and PDF report header.'),
   ('brand_tagline',           'CCTV Analytics Suite',   'Short subtitle under the brand name.'),

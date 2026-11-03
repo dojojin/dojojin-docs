@@ -11,7 +11,7 @@
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { matchRule, isInCooldown } = require('../src/alert-engine');
+const { matchRule, isInCooldown, _edgeAlertSettings } = require('../src/alert-engine');
 
 describe('matchRule', () => {
   describe('camera_ids filter', () => {
@@ -98,5 +98,40 @@ describe('isInCooldown', () => {
       cooldown_seconds: 0,
     };
     assert.equal(isInCooldown(rule), false);
+  });
+});
+
+describe('_edgeAlertSettings (edge-offline alert config)', () => {
+  it('null/missing config → safe defaults (enabled, 180s, 4h)', () => {
+    const s = _edgeAlertSettings(null);
+    assert.equal(s.enabled, true);
+    assert.equal(s.threshold_sec, 180);
+    assert.equal(s.cooldown_ms, 4 * 60 * 60 * 1000);
+    assert.deepEqual(s.disabled_sites, []);
+    assert.equal(s.recipient_ids, null);
+  });
+
+  it('enabled=false is honoured', () => {
+    assert.equal(_edgeAlertSettings({ enabled: false }).enabled, false);
+  });
+
+  it('threshold below floor is clamped to 60s (no spam loop)', () => {
+    assert.equal(_edgeAlertSettings({ threshold_sec: 0 }).threshold_sec, 60);
+    assert.equal(_edgeAlertSettings({ threshold_sec: 5 }).threshold_sec, 60);
+    assert.equal(_edgeAlertSettings({ threshold_sec: 300 }).threshold_sec, 300);
+  });
+
+  it('non-positive / NaN cooldown falls back to 4h default', () => {
+    assert.equal(_edgeAlertSettings({ cooldown_hours: 0 }).cooldown_ms, 4 * 60 * 60 * 1000);
+    assert.equal(_edgeAlertSettings({ cooldown_hours: -1 }).cooldown_ms, 4 * 60 * 60 * 1000);
+    assert.equal(_edgeAlertSettings({ cooldown_hours: 'x' }).cooldown_ms, 4 * 60 * 60 * 1000);
+    assert.equal(_edgeAlertSettings({ cooldown_hours: 2 }).cooldown_ms, 2 * 60 * 60 * 1000);
+  });
+
+  it('disabled_sites / recipient_ids pass through only when arrays', () => {
+    assert.deepEqual(_edgeAlertSettings({ disabled_sites: ['hkt'] }).disabled_sites, ['hkt']);
+    assert.deepEqual(_edgeAlertSettings({ disabled_sites: 'nope' }).disabled_sites, []);
+    assert.deepEqual(_edgeAlertSettings({ recipient_ids: ['Uabc'] }).recipient_ids, ['Uabc']);
+    assert.equal(_edgeAlertSettings({ recipient_ids: 'nope' }).recipient_ids, null);
   });
 });

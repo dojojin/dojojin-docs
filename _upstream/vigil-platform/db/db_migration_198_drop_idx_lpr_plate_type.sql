@@ -1,0 +1,17 @@
+-- ============================================================
+-- Vigil Platform — Migration 198: drop unused index idx_lpr_plate_type
+-- @author Prakasit Rochanavipart (Dojo-mAn)
+-- @copyright (c) 2025-2026 Prakasit Rochanavipart. All Rights Reserved.
+-- @license Proprietary
+-- ============================================================
+-- 2026-09-06 (perf audit): idx_lpr_plate_type (migration 084) sat at 406 MB on
+-- license_plates with 0 index scans in 19 days of pg_stat_user_indexes, and no
+-- query in src/ filters or orders by plate_type. Every INSERT into
+-- license_plates (~10/s) still had to maintain it. Dropped on central with
+-- DROP INDEX CONCURRENTLY (2026-09-06, ~seconds); this migration makes the
+-- drop reach every other volume. Idempotent and instant — a plain DROP INDEX
+-- on an index that no longer exists is a no-op, and on one that does exist it
+-- takes a brief exclusive lock only (no table rewrite), which is acceptable
+-- at boot time. Do NOT add CONCURRENTLY here: the migration runner wraps each
+-- file in a transaction and CONCURRENTLY cannot run inside one.
+DROP INDEX IF EXISTS idx_lpr_plate_type;

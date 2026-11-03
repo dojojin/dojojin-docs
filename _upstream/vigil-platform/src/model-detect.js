@@ -89,7 +89,19 @@ async function detectModel(cam, pass) {
       const r = await digestGet(host, user, pass, '/cgi-bin/magicBox.cgi?action=getSystemInfo');
       if (r.code !== 200) return null;
       const kv = k => (r.body.match(new RegExp(k + '=([^\\r\\n]+)')) || [])[1];
-      const model = kv('deviceType'); if (!model) return null;
+      let model = kv('deviceType');
+      // On Dahua CAMERAS getSystemInfo's deviceType IS the model
+      // ("DHI-ITC237-PW6M-IRLZF1050-B"). On their NVRs it is a numeric device
+      // CLASS instead ("31"), which once got written into the model column for
+      // every NVR channel. getDeviceType returns the real string on both
+      // (verified against an ITC237 camera and an NVR5216 recorder), so fall
+      // back to it whenever deviceType is not a plausible model name.
+      if (!model || /^\d+$/.test(model.trim())) {
+        const dt = await digestGet(host, user, pass, '/cgi-bin/magicBox.cgi?action=getDeviceType');
+        const t = dt.code === 200 ? (dt.body.match(/type=([^\r\n]+)/) || [])[1] : null;
+        model = (t && t.trim()) || null;
+      }
+      if (!model) return null;
       // getSystemInfo's own "hardwareVersion" is the BOARD revision (e.g. "1.00"
       // for every unit of a model) — not the flashed firmware. The real
       // software/firmware string (API doc 4.6.14, matches the camera's own

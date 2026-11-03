@@ -82,6 +82,61 @@ LINE onboarding behavior after verification is owned by `docs/LOGIC_line-notific
 **#130 — Heatmap `?hours` parameter clamped to minimum 1**
 `Math.max(1, parseInt(hours, 10) || 24)` — prevents `INTERVAL '-0 hours'` Postgres error.
 
+**#266 — Any cache keyed by user scope MUST use `scopeCacheKey()`** *(2026-09-06, GOTCHAS #190)*
+
+`auth.scopeCacheKey(allowedSites)` (`src/auth.js:637`) is the **only** correct way to derive a
+cache key from a caller's scope. Never hand-roll `allowedSites.join(',')`.
+
+Why it is a security rule and not a style rule: `siteWhere()` builds its SQL from **two** axes —
+the site list *and* the per-user camera list (`allowedSites.cameras`, decision #253). A key made
+from sites alone collapses two users with the same site but different cameras onto **one cache
+entry**, so the user restricted to 4 cameras gets back the 84-camera answer. Real sites 18/20.
+It leaks across a permission boundary silently — no error, no log, correct-looking data.
+
+```
+scopeCacheKey(null)              → 'all'
+scopeCacheKey([1,2])             → '1,2|*'      // no .cameras ⇒ unrestricted, matches siteWhere()
+scopeCacheKey(sitesWithCameras)  → '1,2|c7,c9'
+scopeCacheKey([])                → 'none|*'
+```
+
+Pure, never throws, sorts both lists so key order cannot vary. Current callers:
+`stats-summary-route.js:123` · `routes/events.js:400` · `routes/appearances.js:230` ·
+`routes/lpr-query.js:1023/1057` · `routes/hcp.js:490`.
+
+**#S1 — `raw_json.rawXml` must be scrubbed for non-admin** *(security backlog 2026-08-12, owner-ordered; shipped 2026-09-06)*
+
+Hikvision `anprAlarm` events carry the raw ISAPI XML in `raw_json.rawXml`, and that XML includes
+the camera's `<ipAddress>`, `<ipv6Address>` and `<macAddress>` — i.e. the internal network map,
+exposed to *everyone who can log in*. **Auditor counts as non-admin.**
+
+`src/helpers/scrubRawJson.js` exports the pair that must stay in agreement:
+- `scrubRawJson(rj)` — JS, pure, shallow copy, never throws. Use where rows are already objects.
+- `scrubRawJsonSql(col)` — the SQL equivalent, for routes whose SELECT list is explicit.
+
+**It masks the values, it does not drop the key** — `page-lpr.js` reads the seat-belt fields
+(`pilotsafebelt` / `vicepilotsafebelt`) out of that same blob. Tag names are case-sensitive,
+exactly as ISAPI sends them. Admins still get the unmasked payload for debugging.
+
+Applied at 6 REST routes plus the WebSocket:
+
+| Where | Call |
+|---|---|
+| `routes/events.js:79` | `scrubRawJson` per row |
+| `routes/appearances.js:481` | `scrubRawJson` per row |
+| `routes/lpr-query.js:367` | `scrubRawJsonSql` in the SELECT |
+| `routes/lpr-alerts.js:83` | `scrubRawJsonSql` |
+| `routes/lpr-watchlist.js:372` | `scrubRawJsonSql` |
+| `routes/traffic.js:1067` | `scrubRawJsonSql` |
+| `api-server.js:1802` (WS `broadcast`) | `scrubRawJson`, gated on `ws._isAdmin` |
+
+The WS flag is **fail-closed**: `ws._isAdmin = req?._isAdmin === true`, so a missing flag means
+non-admin. The `lite` broadcast variant needs no scrub — it only ever carries
+`plate/region/gender/glass`.
+
+> STUBBORN_FACT: a new route that returns `events.raw_json` to a non-admin needs one of these two
+> helpers. Adding the route without it re-opens SEC-018.
+
 ---
 
 ## Compliance & Legal (#54, #55, #106)
@@ -107,7 +162,9 @@ Audit Log UI supports filtering by action and camera. Filter-aware CSV export is
 ---
 
 ## Related files
-- `src/auth.js` — implementation
+- `src/auth.js` — implementation (incl. `siteWhere()` / `scopeCacheKey()`)
+- `src/helpers/scrubRawJson.js` — `rawXml` network-field scrub (JS + SQL forms)
+- `src/view-registry.js` — `WS_TYPE_ROUTE`, the view axis of the WS filter
 - `db/db_migration_auth.sql` — users + sessions + audit_log schema
 - `db/db_migration_024_camera_audit_log.sql` — camera-targeted audit column/index
 - `db/db_migration_016_license.sql` — EULA fields

@@ -1,0 +1,52 @@
+-- ============================================================
+-- Vigil Platform — migration 124: the "manual" blacklist source
+-- @author Prakasit Rochanavipart (Dojo-mAn)
+-- @copyright (c) 2025-2026 Prakasit Rochanavipart. All Rights Reserved.
+-- @license Proprietary
+-- ------------------------------------------------------------
+-- Phase BM0 of docs/SPEC_partner-api_2026-08-07.md §7.
+--
+-- WHY THIS ROW EXISTS
+-- lpr_watchlist holds 481 rows and every one of them is origin =
+-- 'blacklist_bridge'. Manual is zero — not because nobody can add a plate
+-- (POST /api/lpr/watchlist has always existed) but because adding one by hand
+-- produces a worse row than importing does: a hand-typed plate carries a label
+-- and nothing else, while an imported one carries an identity, a case
+-- reference, a province and a photo, because it travelled through
+-- blacklist.source_records -> master -> the bridge.
+--
+-- So manual entries get the same road rather than a second one. This row is
+-- the on-ramp: blacklist.source_records.source_id has to point at a source, and
+-- helpers/blacklistVisibility.js will not consider a record live unless its
+-- data_type appears in that source's data_types.
+--
+-- WHY pull_interval_hours = 0 IS LOAD-BEARING
+-- The auto-pull scheduler selects `active AND pull_interval_hours > 0`
+-- (routes/blacklist-sources.js), and runImport() throws
+-- "import not implemented for source type 'manual'" — there is no server to
+-- pull from, which is the entire point of this source. 0 is the column
+-- default, and it is written out here anyway so that the reason is visible at
+-- the place the value is set. Never raise it.
+--
+-- data_types carries face as well as lpr even though BM1b has not been built.
+-- The column is what visibility checks, not what any importer reads, so
+-- including it now costs nothing and saves a migration later. Nothing bridges
+-- face records — helpers/blacklistBridge.js filters data_type = 'lpr' — so a
+-- face row added later sits in the reservoir and fires no alerts, which is
+-- exactly the state BM1b requires it to be in until camera FDLib enrollment
+-- exists (spec §6.2).
+--
+-- site_code stays NULL deliberately. Every other source belongs to one site
+-- because it is one site's server; a plate an officer types by hand is not
+-- bound to where it was typed.
+--
+-- No ON CONFLICT target is available — blacklist.sources has a primary key on
+-- id and nothing else — so idempotency is WHERE NOT EXISTS on source_type.
+-- That also means there can only ever be one manual source, which is intended:
+-- a second one would split the manual roster in two with no way to tell which
+-- half an operator was looking at.
+-- ============================================================
+
+INSERT INTO blacklist.sources (source_type, label, site_code, data_types, config, active, pull_interval_hours)
+SELECT 'manual', 'เพิ่มด้วยตนเอง', NULL, '{lpr,face}', '{}'::jsonb, TRUE, 0
+ WHERE NOT EXISTS (SELECT 1 FROM blacklist.sources WHERE source_type = 'manual');

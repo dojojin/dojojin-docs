@@ -18,13 +18,42 @@ const QRCode     = require('qrcode');
 // LINE Config + Webhook (12 routes)
 // factory: lineRoutes(app, pool, { auth, getIP, routeError })
 // ============================================================
+const { handleLineText, loadOperator } = require('../helpers/lineCommandRun');
+const env = require('../config');   // config export ฟังก์ชันตรง ๆ ไม่ได้ห่อใน { env }
+const {
+  monthStartBkkUtc, readAlertSettings, findLimitHit,
+} = require('../helpers/lineQuotaWatch');
+
+// T3: นับแถวใน recipients_json ที่มี fallback:true และ ok:true ตั้งแต่ต้นเดือน (Bangkok)
+// — jsonb_array_elements ใช้ได้เฉพาะแถวที่ recipients_json ไม่ใช่ NULL (implicit join)
+async function _countFallbackThisMonth(pool, monthStart) {
+  try {
+    const { rows } = await pool.query(
+      `SELECT COUNT(*) AS n
+         FROM alert_logs al, jsonb_array_elements(al.recipients_json) AS elem
+        WHERE al.sent_at >= $1
+          AND jsonb_typeof(al.recipients_json) = 'array'
+          AND (elem->>'fallback') = 'true'
+          AND (elem->>'ok') = 'true'`, [monthStart]);
+    return parseInt(rows[0]?.n, 10) || 0;
+  } catch (e) { console.warn('[line-config] นับจำนวนสลับไป Telegram ไม่สำเร็จ:', e.message); return 0; }
+}
+
 module.exports = function lineRoutes(app, pool, { auth, getIP, routeError }) {
+  // คำสั่งยิง endpoint ของตัวเองผ่าน loopback — ไม่ออกเน็ต ไม่ผ่าน Cloudflare
+  const SELF_BASE = `http://127.0.0.1:${env.int('API_PORT')}`;
 
   // ── LINE Config (CRUD) ──────────────────────────────────────
-  app.get('/api/line-config', auth.requireAdminOrAuditor, async (req, res) => {
+  app.get('/api/line-config', auth.requireAdminAuditorOrSiteAdmin, async (req, res) => {
     try {
       const { rows } = await pool.query('SELECT * FROM line_config WHERE id = 1');
       const cfg = rows[0] || { id: 1, channel_access_token: null, recipients: [], enabled: false };
+      // Edge sites the offline-alert can toggle = whatever actually sends heartbeats.
+      const siteRows = (await pool.query(
+        `SELECT es.site_id, COALESCE(s.name, es.site_id) AS name
+           FROM edge_status es LEFT JOIN sites s ON s.code = es.site_id
+          ORDER BY es.site_id`
+      )).rows;
       // Mask token (return เฉพาะ 12 ตัวท้าย)
       const masked = {
         ...cfg,
@@ -40,14 +69,23 @@ module.exports = function lineRoutes(app, pool, { auth, getIP, routeError }) {
         _hasToken: !!cfg.channel_access_token,
         _hasSecret: !!cfg.channel_secret,
         _hasImgbb: !!cfg.imgbb_api_key,
+        _edge_sites: siteRows,
       };
+      // Site Admin ใช้แค่รายชื่อผู้รับไว้เลือกในกฎแจ้งเตือน/ตารางรายงาน (เจ้าของอนุญาต 2026-10-14)
+      // — ไม่ส่ง token/secret แม้แต่แบบปิดบัง และไม่ส่งค่าตั้งของระบบอื่น
+      if (req.user?.role === 'site_admin') {
+        return res.json({
+          enabled: !!cfg.enabled, _hasToken: !!cfg.channel_access_token,
+          recipients: (cfg.recipients || []).map(r => ({ id: r.id, name: r.name, type: r.type, enabled: r.enabled })),
+        });
+      }
       res.json(masked);
     } catch (e) { routeError(res, e, 'GET /api/line-config'); }
   });
 
   app.put('/api/line-config', async (req, res) => {
     try {
-      const { channel_access_token, channel_secret, imgbb_api_key, enabled, recipients, oa_basic_id } = req.body;
+      const { channel_access_token, channel_secret, imgbb_api_key, enabled, recipients, oa_basic_id, edge_alert } = req.body;
       // Build update query (skip masked tokens — ที่ขึ้นต้นด้วย ••)
       const updates = [];
       const values = [];
@@ -64,6 +102,24 @@ module.exports = function lineRoutes(app, pool, { auth, getIP, routeError }) {
       if (enabled !== undefined) { updates.push(`enabled = $${idx++}`); values.push(enabled); }
       if (recipients !== undefined) { updates.push(`recipients = $${idx++}::jsonb`); values.push(JSON.stringify(recipients)); }
       if (oa_basic_id !== undefined) { updates.push(`oa_basic_id = $${idx++}`); values.push(oa_basic_id || null); }
+      if (edge_alert !== undefined) {
+        // Validate as a whole — reject malformed input rather than merge partial garbage.
+        const e = edge_alert || {};
+        const thr = parseInt(e.threshold_sec, 10);
+        const cd  = Number(e.cooldown_hours);
+        if (typeof e.enabled !== 'boolean'
+          || !Number.isFinite(thr) || thr < 60
+          || !Number.isFinite(cd) || cd <= 0
+          || !Array.isArray(e.disabled_sites) || !e.disabled_sites.every(s => typeof s === 'string')
+          || (e.recipient_ids !== null && (!Array.isArray(e.recipient_ids) || !e.recipient_ids.every(s => typeof s === 'string')))) {
+          return res.status(400).json({ error: 'invalid edge_alert (enabled:bool, threshold_sec:int≥60, cooldown_hours:>0, disabled_sites:string[], recipient_ids:null|string[])' });
+        }
+        const clean = {
+          enabled: e.enabled, threshold_sec: thr, cooldown_hours: cd,
+          disabled_sites: e.disabled_sites, recipient_ids: e.recipient_ids ?? null,
+        };
+        updates.push(`edge_alert = $${idx++}::jsonb`); values.push(JSON.stringify(clean));
+      }
       if (updates.length === 0) return res.json({ success: true, message: 'No changes' });
       updates.push('updated_at = NOW()');
 
@@ -91,16 +147,67 @@ module.exports = function lineRoutes(app, pool, { auth, getIP, routeError }) {
     } catch (e) { routeError(res, e, 'PUT /api/line-config'); }
   });
 
-  // LINE message quota
+  // LINE message quota — ตัวเลข consumption ของ LINE ไม่ real-time พอเชื่อได้คนเดียว
+  // (migration 239 / GOTCHAS) จึงแนบผล "monthly limit" จริงของเดือนนี้ + ค่าตั้งของ
+  // ตัวเตือนโควตาไปด้วย ให้หน้า Settings วาดการ์ด/ฟอร์มได้จากคำขอเดียว
   app.get('/api/line-config/quota', auth.requireAuth, async (_req, res) => {
     try {
       const { rows } = await pool.query('SELECT channel_access_token FROM line_config WHERE id = 1');
       const token = rows[0]?.channel_access_token;
-      if (!token) return res.json({ connected: false });
+      const alertSettings = await readAlertSettings(pool);
+      const monthStart = monthStartBkkUtc(new Date());
+      const limitHit = await findLimitHit(pool, monthStart);
+      const alert = {
+        enabled: alertSettings.enabled, threshold: alertSettings.threshold,
+        recipients: alertSettings.recipients, state: alertSettings.state,
+      };
+      // T3: จำนวนครั้งที่สลับไป Telegram สำเร็จเดือนนี้ — นับจาก recipients_json
+      // ของ alert_logs (ทุกแหล่ง: LPR/GuruSquare/alert-engine ต่างเติม
+      // {channel:'telegram', fallback:true} เข้าแถวเดิมแบบเดียวกัน)
+      const fallback_count_this_month = await _countFallbackThisMonth(pool, monthStart);
+      if (!token) return res.json({ connected: false, alert, fallback_count_this_month });
       const quota = await lineSender.getLineQuota(token);
-      if (!quota) return res.json({ connected: false });
-      res.json({ connected: true, ...quota });
+      if (!quota) return res.json({ connected: false, alert, fallback_count_this_month });
+      res.json({
+        connected: true, ...quota,
+        limit_hit_at: limitHit?.at || null,
+        limit_hit_recipient: limitHit?.recipient || null,
+        alert, fallback_count_this_month,
+      });
     } catch (e) { routeError(res, e, 'GET /api/line-config/quota'); }
+  });
+
+  // ตั้งค่าตัวเตือนโควตา LINE (migration 239) — recipients ต้องเป็น id ที่มีอยู่จริง
+  // ใน line_config.recipients เท่านั้น กันพิมพ์ id ผิดแล้วเงียบไปเฉย ๆ ตอนถึงเวลาแจ้งจริง
+  app.put('/api/line-config/quota-alert', auth.requireAdmin, async (req, res) => {
+    try {
+      const { enabled, threshold, recipients } = req.body || {};
+      if (typeof enabled !== 'boolean') {
+        return res.status(400).json({ error: 'enabled ต้องเป็น boolean' });
+      }
+      const thr = parseInt(threshold, 10);
+      if (!Number.isFinite(thr) || thr < 1 || thr > 100000) {
+        return res.status(400).json({ error: 'threshold ต้องเป็นจำนวนเต็ม 1–100000' });
+      }
+      if (!Array.isArray(recipients) || !recipients.every((id) => typeof id === 'string' || typeof id === 'number')) {
+        return res.status(400).json({ error: 'recipients ต้องเป็น array ของ id' });
+      }
+      const { rows: cfgRows } = await pool.query('SELECT recipients FROM line_config WHERE id = 1');
+      const knownIds = new Set((cfgRows[0]?.recipients || []).map((r) => String(r?.id)));
+      const unknown = recipients.map(String).filter((id) => !knownIds.has(id));
+      if (unknown.length) {
+        return res.status(400).json({ error: `recipient id ไม่รู้จัก: ${unknown.join(', ')}` });
+      }
+      await pool.query(
+        `INSERT INTO system_settings (key, value) VALUES
+           ('line_quota_alert_enabled', $1),
+           ('line_quota_alert_threshold', $2),
+           ('line_quota_alert_recipients', $3)
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+        [String(enabled), String(thr), JSON.stringify(recipients.map(String))]
+      );
+      res.json({ success: true });
+    } catch (e) { routeError(res, e, 'PUT /api/line-config/quota-alert'); }
   });
 
   // Test LINE connection
@@ -261,6 +368,7 @@ module.exports = function lineRoutes(app, pool, { auth, getIP, routeError }) {
 
   // ── LINE Webhook (รับ User ID จากคนที่แอด OA + ส่งข้อความ) ──
   // express.json() stores req.rawBody above because HMAC-SHA256 must use raw bytes.
+  // write-guard: public โดยออกแบบ ตรวจลายเซ็น LINE ในตัว
   app.post('/api/line/webhook', async (req, res) => {
     try {
       const rawBody = req.rawBody || (Buffer.isBuffer(req.body) ? req.body : Buffer.from(JSON.stringify(req.body || {})));
@@ -294,7 +402,103 @@ module.exports = function lineRoutes(app, pool, { auth, getIP, routeError }) {
           : sourceType === 'room'
             ? ev.source?.roomId
             : ev.source?.userId;
+        // 🔎 บันทึกรูปร่างของ event ไว้ก่อนตัดสินใจอะไร (log อย่างเดียว ไม่เปลี่ยนพฤติกรรม)
+        // เหตุผล: แผนคำสั่งผ่าน LINE (หยุดแจ้งเตือน / ส่งต่อ) ต้องรู้ให้แน่ว่า **ในกลุ่ม**
+        // LINE ส่ง `source.userId` ของคนพิมพ์มาด้วยหรือไม่ — เอกสารของ LINE ซ่อนหัวข้อนี้
+        // ไว้ในส่วนที่ดึงมาอ่านอัตโนมัติไม่ได้ ⇒ ต้องดูจากของจริง · ไม่ log ตัว id เต็ม
+        console.log(`🔔 [webhook-shape] type=${ev.type} src=${sourceType}`
+          + `${ev.deliveryContext?.isRedelivery ? ' REDELIVERY' : ''}`
+          + ` hasUserId=${!!ev.source?.userId} hasReplyToken=${!!ev.replyToken}`
+          + `${ev.type === 'message' ? ` msg=${ev.message?.type} quoted=${!!ev.message?.quotedMessageId}` : ''}`
+          + `${ev.type === 'postback' ? ` data=${String(ev.postback?.data || '').slice(0, 40)}` : ''}`);
         if (!senderId || !['user', 'group', 'room'].includes(sourceType)) continue;
+
+        // ── คำสั่งผ่าน LINE ──────────────────────────────────────
+        // ทำก่อนงานลงทะเบียนผู้รับ เพราะผู้สั่งคือคนที่ลงทะเบียนไปนานแล้ว
+        // ทางที่ไม่ใช่คำสั่ง (หรือคนนอก) ตกลงไปทำงานเดิมต่อตามปกติ
+        // ⚠️ เฉพาะข้อความของ "ผู้สั่งที่ลงทะเบียนแล้ว" เท่านั้นที่ตัดออกจากเส้นทางเดิม
+        // ข้อความของคนอื่นต้องไหลลงไปทำงานลงทะเบียนผู้รับเหมือนเดิมทุกประการ
+        // (ถ้า continue ทุกข้อความ คนที่ทักบอทมาเพื่อขออนุมัติจะไม่ถูกบันทึกอีกเลย)
+        const _isOperator = (ev.type === 'message' && ev.message?.type === 'text' && ev.source?.userId)
+          ? !!(await loadOperator(pool, ev.source.userId))
+          : false;
+        // 🔴 GOTCHAS #209 ต่อยอด (2026-09-15, ปูม id=272/276): ข้อความที่กำลังคุยกับคน
+        // จริงในห้องเดียวกัน (@แท็กสมาชิกคนอื่น) ดันมีคำเรียกคำสั่งฝังอยู่กลางประโยคพอดี
+        // ("@Unlockk ... กล้องดับหรอ...") ⇒ ชน matchCommand ตรง ๆ ยืนยันจาก
+        // message.mention ของ LINE จริง (probe บน prod 2026-09-15) — ฟิลด์ `isSelf`
+        // บอกตรง ๆ ว่าคนที่ถูกแท็กคือบอทเองหรือเปล่า ⇒ ใช้เป็นสัญญาณกันชนได้แม่นยำ
+        const _mentionsSelf = !!(ev.message?.mention?.mentionees?.some((m) => m.isSelf));
+        const _mentionsOthersOnly = !!(ev.message?.mention?.mentionees?.length) && !_mentionsSelf;
+        // 🔴 decision #289 (2026-09-16): กลับคำตัดสินเดิม "ไม่ต้อง @ บอทก่อนสั่ง"
+        // (2026-09-08, docs/LOGIC_line-commands.md §3) เฉพาะ**แชทกลุ่ม/ห้อง** — เจอซ้ำ
+        // เป็นรอบที่ 3 ที่ผู้สั่งคุยเรื่องอื่นล้วน ๆ ในกลุ่มแล้วบอทเด้งการ์ด "ยังไม่เข้าใจ
+        // คำสั่งนี้" ใส่ (เนื้อหาคุยคนละเรื่องทุกครั้ง ⇒ ไล่แก้ทีละคำสั่งด้วย require_all/
+        // exclude ไม่ทันแล้ว) ต้อง @ บอทเองก่อนถึงจะเข้าทางคำสั่ง · แชท 1:1 คงพฤติกรรม
+        // เดิมไว้ (ไม่ต้อง @) เพราะไม่มีทางเข้าใจผิดว่าใครเป็นคนฟัง
+        const _groupNeedsMention = (sourceType === 'group' || sourceType === 'room') && !_mentionsSelf;
+        if (_isOperator && !_mentionsOthersOnly && !_groupNeedsMention) {
+          // 🔴 LINE ให้เวลาตอบ webhook สั้นมาก (ระดับ 1 วินาที) ถ้าเกินจะถือว่าล้มเหลว
+          // แล้ว **ส่ง event เดิมมาซ้ำ** — คำสั่งจึงรันสองรอบและการ์ดเด้งสองใบ
+          // (เกิดจริง 2026-09-08 22:47 คำขอใช้ 2,200 ms → ได้ event ซ้ำตอน 22:48
+          //  การ์ดสองใบตัวเลขต่างกันเพราะเป็นคนละการรันจริง ๆ)
+          // ⇒ ตัวที่ LINE ส่งซ้ำ ทิ้งทันที และงานที่เหลือไม่ให้ LINE รอ
+          if (ev.deliveryContext?.isRedelivery) {
+            console.log('🔔 [line-cmd] ข้าม event ที่ LINE ส่งซ้ำ');
+            continue;
+          }
+          // ไม่ await โดยตั้งใจ — reply token ใช้ได้ 60 วินาที มีเวลาเหลือเฟือ
+          // ส่วน LINE ได้ 200 กลับไปทันทีตอนจบลูป
+          void (async () => {
+          // reply token ใช้ได้ **ครั้งเดียว** — ถ้าเอาไปใช้กับข้อความ "กำลังค้น" แล้ว
+          // คำตอบจริงต้องไปทาง push · ตัวแปรนี้คือสิ่งที่บอกว่าโทเคนถูกใช้ไปหรือยัง
+          let replyUsed = false;
+          const onAck = async (text) => {
+            if (!cfg.channel_access_token || !text) return;
+            const m = { type: 'text', text: String(text).slice(0, 400) };
+            if (ev.replyToken && !replyUsed) {
+              replyUsed = true;
+              const r0 = await lineSender.replyLineMessage(cfg.channel_access_token, ev.replyToken, [m]);
+              if (!r0?.success) {
+                await lineSender.pushLineMessage(cfg.channel_access_token, senderId, [m]);
+              }
+            } else {
+              await lineSender.pushLineMessage(cfg.channel_access_token, senderId, [m]);
+            }
+          };
+          try {
+            const r = await handleLineText(
+              { pool, auth, baseUrl: SELF_BASE, onAck },
+              { text: ev.message.text, lineUserId: ev.source.userId,
+                sourceType, sourceId: senderId });
+            if (r.action === 'reply' && cfg.channel_access_token) {
+              const msg = r.card
+                ? lineSender.buildAnswerFlex(r.card)
+                : { type: 'text', text: String(r.text || '').slice(0, 4900) };
+              // reply token ใช้ได้ครั้งเดียวและอายุ 60 วินาที — ถ้าหมดอายุ (คำสั่งช้า)
+              // หรือถูกใช้ไปกับข้อความ "กำลังค้น" แล้ว ต้อง push เข้าห้องเดิมแทน
+              // ไม่งั้นคนถามไม่ได้คำตอบโดยไม่รู้ว่าทำไม
+              const sent = (ev.replyToken && !replyUsed)
+                ? await lineSender.replyLineMessage(cfg.channel_access_token, ev.replyToken, [msg])
+                : { success: false };
+              let ok = !!sent?.success;
+              if (!ok) {
+                const pushed = await lineSender.pushLineMessage(cfg.channel_access_token, senderId, [msg]);
+                ok = !!pushed?.success;
+                // 🔴 ต้อง log ให้เห็นเสมอ — คำสั่งรันสำเร็จแล้ว (ปูมขึ้น ok) แต่ส่งไม่ออก
+                // ผู้ใช้เห็นแค่ "ไม่มีอะไรเกิดขึ้น" แล้วไม่มีใครรู้ว่าพังตรงไหน
+                // (เกิดจริง 2026-09-08: การ์ดมีปุ่มลิงก์แบบ path ล้วน LINE ตอบ 400 ทิ้งทั้งใบ)
+                if (!ok) {
+                  console.error('🔔 [line-cmd] ตอบกลับไม่สำเร็จ:',
+                    'reply=' + (sent?.error || '-'), '| push=' + (pushed?.error || '-'));
+                }
+              }
+            }
+          } catch (cmdErr) {
+            console.error('🔔 [line-cmd] ล้มระหว่างประมวลผลคำสั่ง:', cmdErr.message);
+          }
+          })();
+          continue;   // ข้อความของผู้สั่งไม่ต้องไปนับเป็นการลงทะเบียนผู้รับซ้ำ
+        }
 
         if (ev.type === 'message' || ev.type === 'follow' || ev.type === 'join') {
           let profile = null;

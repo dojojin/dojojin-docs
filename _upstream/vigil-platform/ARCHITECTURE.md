@@ -6,7 +6,7 @@
 > live in the linked LOGIC/REF docs.
 >
 > Companion to [CLAUDE.md](CLAUDE.md) · [docs/ARCH_documentation-governance.md](docs/ARCH_documentation-governance.md)
-> Last updated: 2026-06-25
+> Last updated: 2026-09-06
 
 ---
 
@@ -79,8 +79,8 @@ Event-to-operator target: camera event to dashboard/LINE notification in under 2
 
 | Component | Role | Canonical Detail |
 |---|---|---|
-| `src/api-server.js` | Express API, auth gate, WebSocket bridge, health endpoints, static serving | [docs/LOGIC_auth-security.md](docs/LOGIC_auth-security.md), [docs/LOGIC_stats-reports.md](docs/LOGIC_stats-reports.md) |
-| `src/routes/` | Route modules split from api-server.js (factory pattern, S4/MAINT-2T-001 ✅); 19 files: alert-rules, appearances, auth, branding, cameras, categories, eula, events, groups, health, license, line, map, ops, report-schedules, reports, settings, stats, users | Loaded via `require('./routes/<name>')(app, pool, deps)` in api-server.js |
+| `src/api-server.js` | Express API, auth gate, WebSocket bridge, health endpoints, static serving. Static serving has two cache layers: `/dashboard.bundle.js` concatenates the longest run of adjacent local page scripts (1,749 lines on 2026-09-07 after the shell/media split (#275) and the WebSocket/jobs split (#276) — it now wires the app together and owns the auth chain, little else; `theme-init.js` / `i18n.js` deliberately excluded), version = sha1 of the concatenated bytes used as `?v=`, kill switch `DASHBOARD_BUNDLE=0`; every other `.js`/`.css` reference in the served HTML is stamped `?v=<mtime>`. Anything carrying a `?v=` is served `private, max-age=31536000, immutable` — `.html` itself stays `no-cache` (GOTCHAS #34) because it is the only thing holding the current stamps | [docs/LOGIC_auth-security.md](docs/LOGIC_auth-security.md), [docs/LOGIC_stats-reports.md](docs/LOGIC_stats-reports.md) |
+| `src/routes/` | Route modules split from api-server.js (factory pattern, S4/MAINT-2T-001 ✅); 53 files on 2026-09-07 (ไฟล์ใหญ่สุดเหลือ 932 บรรทัด) (that day: `api-server.js` 3,329→2,465 via `static-shell.js` + `media-files.js`; `cameras.js` 2,454→1,168 via `cameras-probe.js` / `cameras-httphost.js` / `cameras-status.js`, registration order unchanged — decision #275) — the named list below is the 2026-08-11 snapshot: alert-rules, appearances, auth, blacklist-sources, branding, cameras, categories, devices, eula, events, face-blacklist, face-push, faces, groups, hcp, health, integrations, license, line, lpr, lpr-alerts, lpr-gates, lpr-query, lpr-watchlist, map, metrics, ops, partner-api, report-schedules, reports, settings, sites, stats, traffic, users (corrected 2026-08-11 — table had drifted to a 19-file list from a much earlier split) | Loaded via `require('./routes/<name>')(app, pool, deps)` in api-server.js |
 | `src/helpers/` | Shared utilities: `routeError.js`, `getSystemSetting.js` (Map cache + invalidate), `normalizeTimeOfDay.js`, `emqxPublish.js` (one-shot EMQX HTTP API publish — login+publish, used for `_config/detect-model`\|`delete-media`\|`scan-nvr` command channels) | Required directly in route files and api-server.js |
 | `src/mqtt-subscriber.js` | Bosch MQTT ingestion + edge snapshot handler (`saveEdgeSnapshot` — Hik/Dahua event_id path + Bosch timestamp path), `pg_notify` event/alert dispatch | [docs/LOGIC_camera-ingesters.md](docs/LOGIC_camera-ingesters.md) |
 | `src/edge/publisher.js` | Edge-only — `publishEdgeEvent()` lazy MQTT singleton to NanoMQ; exports `EDGE_MODE` flag; used by all 4 ingesters | [docs/LOGIC_edge-ingester-divergence.md](docs/LOGIC_edge-ingester-divergence.md) |
@@ -90,7 +90,7 @@ Event-to-operator target: camera event to dashboard/LINE notification in under 2
 | `src/ingesters/dahua-cgi.js` | Dahua CGI event ingestion, clip/snapshot resolver path | [docs/LOGIC_camera-ingesters.md](docs/LOGIC_camera-ingesters.md), [DahuaProblem.MD](DahuaProblem.MD) |
 | `src/media-recorder.js` | Rolling RTSP buffers and pre/post-event clip dump | [docs/LOGIC_camera-ingesters.md](docs/LOGIC_camera-ingesters.md) |
 | `src/alert-worker.js` | Alert engine process — LINE rule matching, cooldown, quiet hours; subscribes `pg_notify('alert_event', 'alert_rules_changed')` | [docs/LOGIC_line-notifications.md](docs/LOGIC_line-notifications.md) |
-| `src/report-worker.js` | Report scheduler loop; HTTP endpoint `127.0.0.1:3001/run/:id` for on-demand triggers | [docs/LOGIC_stats-reports.md](docs/LOGIC_stats-reports.md) |
+| `src/report-worker.js` | Report scheduler loop; HTTP endpoint `127.0.0.1:3001/run/:id` for on-demand triggers. Also `POST /render` (same loopback listener on `REPORT_WORKER_PORT`, default 3001) — authenticated with `X-Internal-Token`, restricted to an allowlist of 6 renderer functions (`renderReportPdf`, `renderReportImage`, `renderFaceReportImage`, `renderFaceReportPdf`, `renderLprReportImage`, `renderLprReportPdf`), request body capped at 2 MB. Manual PDF/PNG downloads from api-server go through `src/helpers/renderViaWorker.js` so Chromium runs only under this process; the helper falls back to rendering in-process if the worker is down, unreachable, or answers non-2xx (120 s timeout), and `REPORT_RENDER_VIA_WORKER=0` is the kill switch | [docs/LOGIC_stats-reports.md](docs/LOGIC_stats-reports.md) |
 | `src/alert-engine.js` | LINE rule matching logic (library module, required by alert-worker) | [docs/LOGIC_line-notifications.md](docs/LOGIC_line-notifications.md) |
 | `src/line-sender.js` | LINE push/reply API, imgbb upload, Flex message builders | [docs/LOGIC_line-notifications.md](docs/LOGIC_line-notifications.md) |
 | `src/report-renderer.js` | Health Report PNG via SVG + `sharp` (`_svgSafeText()` strips emoji; distinct path from Puppeteer analytics reports) | [docs/LOGIC_stats-reports.md](docs/LOGIC_stats-reports.md), [GOTCHAS.md](GOTCHAS.md) #25a |
@@ -105,9 +105,18 @@ Event-to-operator target: camera event to dashboard/LINE notification in under 2
 | `src/singleton.js` | App-wide singleton store — `pool` (pg connection pool), `wss` (WebSocket server), shared refs for cross-process coordination | — |
 | `src/migrate.js` | DB migration runner — scans `db/db_migration_*.sql` on api-server boot; idempotent; failed migration aborts startup (by design, GOTCHAS #81) | [docs/LOGIC_infra-ops.md](docs/LOGIC_infra-ops.md) |
 | `src/stats-summary-route.js` | Standalone route (`GET /api/stats/executive-summary`) — not in `src/routes/`; registered directly in api-server.js; powers Security Morning Briefing page | — |
+| `src/helpers/streamWatchdog.js` | Byte-level dead-stream detector for long-lived `timeout:0` HTTP event streams (Hikvision alertStream, Dahua eventManager) — tears down a stream after `STREAM_STALE_MS` (default 5 min) of total silence, distinct from event-level activity | [GOTCHAS.md](GOTCHAS.md) #152 |
+| `src/traffic-stats-refresher.js` | `start(pool)` called from api-server.js — refreshes `traffic_hourly_stats` every 15 min (last 3 hours), prunes rows older than the retention window; no separate PM2 process | decision #237 |
+| `src/face-embed-worker.js` | Own PM2 process (`face-embed-worker`, 9th app in `ecosystem.config.js`) — drains `face_embed_queue` into `face_embeddings`. Not in the Health page's `TRACKED` service list (that list is 8 names, `src/routes/health.js:33`/`:605`) | [docs/LOGIC_face-capture.md](docs/LOGIC_face-capture.md) |
+| `src/kpi-stats-refresher.js` | `start(pool)` from api-server.js — refreshes the `event_kpi_hourly` pre-aggregate; first run `KPI_STATS_FIRST_RUN_MS` (45 s) after boot, part of the boot stagger that keeps the refreshers off each other | — |
+| `src/category-rollup-refresher.js` | `start(pool)` from api-server.js — refreshes `event_dim_bucket` (30-minute buckets, migration 163); first run `CAT_ROLLUP_FIRST_RUN_MS` (90 s) after boot | — |
+| `src/helpers/noreadCheck.js` | Weekly self-check `lpr.noread_check` — re-runs the no-read anti-join against the `COALESCE(raw_json->>'plate','')=''` predicate and logs any divergence. Sunday 04:30 ICT (deliberately after the ~04:05 backup, never on boot); `NOREAD_CHECK_INTERVAL_MS` is a test-only override | decision #265 |
+| `src/helpers/renderViaWorker.js` | `render(fn, args)` — posts to report-worker `POST /render` over loopback with `X-Internal-Token`; same 6-function allowlist checked on both ends; 120 s timeout; falls back to in-process render on any failure. `REPORT_RENDER_VIA_WORKER=0` (or a missing `INTERNAL_API_SECRET`) skips the round trip entirely | [docs/LOGIC_stats-reports.md](docs/LOGIC_stats-reports.md) |
+| `src/helpers/dashboardBundle.js` | `bundleIndexHtml()` — finds the longest run of adjacent plain `<script src="/x.js">` tags in `dashboard/index.html` and replaces it with one `/dashboard.bundle.js?v=…` tag. `/vendor/…`, `theme-init.js` and `i18n.js` never join; a tag with `defer`/`async`/`type`/`nonce` ends the run, as does any element between two tags | decision #268 |
+| `src/helpers/scrubRawJson.js` | Strips camera IP/MAC out of `raw_json.rawXml` before a non-admin sees it — used by the WebSocket broadcast and by `/api/appearances/search` | [docs/LOGIC_auth-security.md](docs/LOGIC_auth-security.md) |
 | `src/simulator.js` | Dev-only — publishes fake Bosch MQTT events to EMQX for local testing; must not run in production | — |
-| `dashboard/` | Vanilla JS SPA (27 files) — `dashboard.js` core + 19 `page-*.js` page files (S5/MAINT-FE-001 ✅) + `i18n.js` + `design-tokens.js` + `theme-init.js` + report templates | [SKILL.md](SKILL.md), [GOTCHAS.md](GOTCHAS.md), [dev-docs/file-navigator.html](dev-docs/file-navigator.html) |
-| `db/db_migration_*.sql` | Existing-volume schema evolution (81 numbered files + a few legacy-named, latest: 091_camera_model_detect_status) | [docs/LOGIC_infra-ops.md](docs/LOGIC_infra-ops.md) |
+| `dashboard/` | Vanilla JS SPA (48 `.js` files on 2026-09-06) — `dashboard.js` core + 32 `page-*.js` page files (S5/MAINT-FE-001 ✅) + `i18n.js` + `design-tokens.js` + `theme-init.js` + report templates | [SKILL.md](SKILL.md), [GOTCHAS.md](GOTCHAS.md), [dev-docs/file-navigator.html](dev-docs/file-navigator.html) |
+| `db/db_migration_*.sql` | Existing-volume schema evolution (189 numbered files + 17 legacy-named = 206 total on 2026-09-06, latest: 199_events_anpr_noread_index) | [docs/LOGIC_infra-ops.md](docs/LOGIC_infra-ops.md) |
 
 ---
 
@@ -143,6 +152,16 @@ Event-to-operator target: camera event to dashboard/LINE notification in under 2
 
 `api-server.js` listens for `new_event`, reloads the event row, applies display filters where needed, and broadcasts to authenticated WebSocket clients. Event-listing pages should not depend on polling or manual refresh.
 
+A connection is authenticated at `verifyClient` time — an unauthenticated socket never joins the broadcast set. Beyond that, `broadcast()` (`src/api-server.js:1778–1810`) emits **three different payloads for the same event**, chosen per socket:
+
+| Variant | Who gets it | Shape |
+|---|---|---|
+| **lite** | any socket that has not subscribed to the event's topic — the default, since `ws._topics` starts empty (`src/api-server.js:1706`) | `{type, lite: true, event: …}` with only the fields the counters and the map pulse need (≈330 B) — built by `_liteEvent()` (`:1758`) |
+| **full, scrubbed** | subscribed sockets belonging to a non-admin user, when the row actually carries `raw_json.rawXml` | full row with `raw_json` passed through `scrubRawJson()` — camera IP/MAC removed (`:1789`, `:1802`) |
+| **full** | subscribed admin sockets | the row as loaded |
+
+A client opts into the heavy stream by sending `{"type":"subscribe","topics":["lpr","face"]}` (`:1708–1716`); unknown topic names are dropped, and a later `subscribe` replaces the whole set rather than adding to it. Not subscribing means *lite*, not *nothing* — the counters on every page keep working. Both `ws.send` call sites and the receiving handler have to agree on the envelope: GOTCHAS #189.
+
 ### Reports
 
 Stats and Reports share data paths and rendering primitives. Scheduled reports render PNGs for LINE; on-demand exports can render PDF/PNG. Report delivery rules live in [docs/LOGIC_line-notifications.md](docs/LOGIC_line-notifications.md); renderer rules live in [docs/LOGIC_stats-reports.md](docs/LOGIC_stats-reports.md).
@@ -151,18 +170,29 @@ Stats and Reports share data paths and rendering primitives. Scheduled reports r
 
 ## Database Map
 
-Current public schema: 21 base tables.
+**Corrected 2026-08-11** — this section previously claimed "21 base tables," stale since roughly migration ~020. Verified directly against the live `public` schema (`information_schema.tables`), not derived from migration files (some migrations `ALTER`, not `CREATE`):
+
+**`public` schema: 70 physical base tables (counted 2026-08-11)** = ~45 logical tables + `events`' monthly range partitions + `events_default`. The partition count is **not fixed** — it moves with retention as old months are dropped and future months pre-created: **21 on 2026-09-06** (`CODEX/CODEX_MODULAR_PERFORMANCE_AUDIT_2026-09-06.md:483`, not re-measured here), against 24 when the 70 was counted. Re-derive both together before quoting the sum.
+**`blacklist` schema (separate namespace, inbound integrations): 6 tables.**
+**Total application tables: ~51 logical / 76 physical.**
 
 | Group | Tables | Notes |
 |---|---|---|
-| Camera config/runtime | `camera_groups`, `cameras` | Runtime heartbeat/state is DB; configured camera list is JSON config |
-| Events | `events`, `appearances`, `license_plates` | Shared multi-vendor event store |
+| Camera config/runtime | `camera_groups`, `cameras`, `camera_httphost_backups`, `sites`, `user_sites`, `hcp_camera_map`, `ingester_camera_status`, `edge_status` | Runtime heartbeat/state is DB; configured camera list is JSON config. `sites`/`user_sites` = multi-site scoping (Tier 1). `hcp_camera_map` links our `camera_id` to HCP's `cameraIndexCode` (migration 126) |
+| Events | `events` (partitioned — monthly partitions + default; 21 on 2026-09-06, count varies with retention), `appearances`, `license_plates` | Shared multi-vendor event store; `events` partitioned by `event_time`, composite PK `(id, event_time)` |
+| Rollups / pre-aggregates | `event_dim_bucket`, `event_kpi_hourly`, `lpr_dim_daily`, `lpr_hourly_stats`, `traffic_hourly_stats` | Nothing user-facing should scan the 40M-row `events` or the 30M-row `license_plates` for a count. `event_dim_bucket` (migration 163) = events per **30 minutes** by the dimensions the category rules read — deliberately 30 min, not hourly, because the "today"/"yesterday" charts are 30-minute buckets; refreshed by `src/category-rollup-refresher.js` and read by health, facets, suggestions, rule discovery and the image-quality log. `lpr_dim_daily` (migration 171) = daily plate dimensions, read by `GET /api/lpr/brands` (`src/routes/lpr-query.js:485`, `:728`) and by `src/traffic-stats-refresher.js`. `event_kpi_hourly`, `lpr_hourly_stats`, `traffic_hourly_stats` predate these |
+| Traffic Enforcement | `traffic_hourly_stats` | Pre-aggregate of `license_plates` (camera × hour × vehicle_type), refreshed every 15 min by `src/traffic-stats-refresher.js` — 42x faster than querying `license_plates` directly (decision #237); added 2026-08-11. Daily reconcile runs at 05:00, outside the 03:04–04:05 backup window, with a persisted marker so a restart neither repeats nor skips it (decision #267) |
+| Face Recognition | `face_blacklist`, `face_blacklist_groups`, `face_blacklist_hits`, `face_embed_queue`, `face_embeddings`, `face_event_acks`, `face_event_notes` | AuraFace-v1 embedding pipeline + HCP-enrolled blacklist (migrations 129–139) |
+| LPR / ANPR | `lpr_alert_acks`, `lpr_alert_cooldown`, `lpr_alert_hourly`, `lpr_gates`, `lpr_mismatch_dismissals`, `lpr_watchlist`, `lpr_watchlist_groups` | Watch-list alerting on plate matches; `lpr_watchlist` rows can originate from manual entry or the blacklist bridge (`origin` column) |
 | Stats categories | `event_categories`, `event_category_rules` | Query-time all-match category mapping |
 | LINE alerts | `line_config`, `alert_rules`, `alert_logs`, `pending_recipients` | LINE config/rules/logs and admin-approved recipient onboarding |
 | Reports | `report_schedules`, `report_history` | Scheduled delivery config and send history |
 | Camera operations | `camera_status_log`, `camera_offline_alerts` | Heartbeat transition history and offline/recovery alert config |
-| Auth/audit | `users`, `sessions`, `audit_log`, `push_tokens` | Admin/viewer/auditor roles; user/session/camera-targeted audit trail; mobile push device tokens |
-| Settings/migrations | `system_settings`, `schema_migrations` | Key/value settings and migration tracking |
+| Auth/audit | `users`, `sessions`, `audit_log`, `push_tokens` | Admin/viewer/auditor roles; user/session/camera-targeted audit trail (incl. `AFTER UPDATE` trigger on `users.password_hash`, migration 140, GOTCHAS #150); mobile push device tokens |
+| Settings/migrations | `system_settings`, `schema_migrations` | Key/value settings and migration tracking; `system_settings.nav_hidden_pages` (JSON array, migration 141) stores which sidebar menu keys are hidden — hide-list not show-list, `"settings"` can never appear in it (decision #239) |
+| Partner API | `api_consumers`, `api_request_log` | Outbound partner integration — consumer identity/expiry/rate + per-request audit log (migrations 119, 122–123). Privilege enforced by Postgres `GRANT`/`SET LOCAL ROLE` on each consumer's own `db_role`, not by application code — see `docs/REF_partner-api-tunnel.md`, `docs/REF_partner-onboarding.md`, `docs/REF_third-party-integration.md` |
+| Host metrics | `metrics_host` | Per-machine CPU/RAM/disk/network + tunnel/tailscale connectivity time-series (migrations 097, 101) |
+| **`blacklist` schema** | `blacklist.sources`, `blacklist.source_records`, `blacklist.master`, `blacklist.master_links`, `blacklist.overrides`, `blacklist.bridge_rules` | Inbound watch-list import from DSS Pro / GuruSquare / HCP / manual entry (migration 093+) — see `docs/superpowers/specs/2026-07-24-blacklist-central-database-design.md`. `source_records` mirrors the source faithfully; `overrides` holds local corrections (no write access to source systems themselves); `master`/`master_links` dedupe identities across sources; `bridge_rules` selects which records flow into `lpr_watchlist` for live alerting |
 
 Schema evolution rules:
 
@@ -253,4 +283,4 @@ See [docs/ARCH_documentation-governance.md](docs/ARCH_documentation-governance.m
 
 ---
 
-<sub>End of ARCHITECTURE.md · Companion to CLAUDE.md · Updated 2026-06-15</sub>
+<sub>End of ARCHITECTURE.md · Companion to CLAUDE.md · Updated 2026-09-06</sub>

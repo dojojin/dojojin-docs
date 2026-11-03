@@ -1,0 +1,53 @@
+/* ============================================================
+   Vigil Platform — สารบัญรวม demo (/others/)
+   @author    Prakasit Rochanavipart (Dojo-mAn)
+   @copyright (c) 2025-2026 Prakasit Rochanavipart. All Rights Reserved.
+   @license   Proprietary
+   ------------------------------------------------------------
+   ใช้ token ของ design system จาก /index.css เท่านั้น · light theme ตายตัว
+   ============================================================ */
+body { background: var(--surface-base); color: var(--text-primary); margin: 0; }
+.oi-wrap { max-width: 1080px; margin: 0 auto; padding: var(--space-8) var(--space-4) var(--space-8); }
+
+.oi-head { margin-bottom: var(--space-6); }
+.oi-eyebrow { margin: 0; font-size: var(--fs-caption); font-weight: 600; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--accent); }
+.oi-head h1 { margin: var(--space-1) 0; font-size: var(--fs-display); text-wrap: balance; }
+.oi-sub { margin: 0; color: var(--text-secondary); font-size: var(--fs-body); }
+
+section { margin-top: var(--space-8); }
+section h2 { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap;
+  font-size: var(--fs-h2); margin: 0 0 var(--space-3); padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border-hairline); }
+
+.oi-tag { font-size: var(--fs-caption); font-weight: 600; padding: 2px var(--space-2); border-radius: 999px;
+  border: 1px solid var(--border-hairline); color: var(--text-secondary); background: var(--surface-elevated); }
+.oi-tag-live { color: var(--status-ok); border-color: currentColor; }
+
+.oi-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: var(--space-3); }
+.oi-card { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-4);
+  background: var(--surface-elevated); border: 1px solid var(--border-hairline); border-radius: 10px;
+  text-decoration: none; color: inherit; transition: border-color .15s, box-shadow .15s; }
+.oi-card:hover { border-color: var(--accent); box-shadow: 0 2px 10px rgba(0, 0, 0, .06); }
+.oi-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.oi-card-t { font-weight: 600; font-size: var(--fs-body); color: var(--accent); }
+.oi-card-d { color: var(--text-primary); font-size: var(--fs-caption); }
+.oi-card-m { color: var(--text-secondary); font-size: var(--fs-caption); overflow-wrap: anywhere; margin-top: auto; }
+
+.oi-list { list-style: none; margin: 0; padding: 0; background: var(--surface-elevated);
+  border: 1px solid var(--border-hairline); border-radius: 10px; }
+.oi-list li { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-3);
+  padding: var(--space-2) var(--space-4); border-top: 1px solid var(--border-hairline); }
+.oi-list li:first-child { border-top: 0; }
+.oi-list a { color: var(--accent); text-decoration: none; font-weight: 600; }
+.oi-list a:hover { text-decoration: underline; }
+.oi-list a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.oi-list span { color: var(--text-secondary); font-size: var(--fs-caption); text-align: right; overflow-wrap: anywhere; }
+
+@media (max-width: 768px) {
+  .oi-wrap { padding-top: var(--space-6); }
+  .oi-grid { grid-template-columns: 1fr; }
+  .oi-list li { flex-direction: column; gap: 2px; }
+  .oi-list span { text-align: left; }
+}
+@media (prefers-reduced-motion: reduce) { .oi-card { transition: none; } }

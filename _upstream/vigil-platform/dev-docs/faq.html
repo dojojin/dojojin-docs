@@ -72,18 +72,21 @@
   <p class="faq-src">อ้างอิง: <a href="restart-services.html">Restart Services (LNP)</a> · <a href="md-viewer.html?src=../GOTCHAS.md">GOTCHAS #84</a></p>
 </div>
 
-<div class="faq-q">pm2 มี 7 workers ทำอะไรบ้าง?</div>
+<div class="faq-q">pm2 มี 9 workers ทำอะไรบ้าง?</div>
 <div class="faq-a">
+  <p>ชื่อในตารางคือชื่อที่ <code>pm2 list</code> แสดงจริง (ตรงกับ <code>name:</code> ใน <code>ecosystem.config.js</code>) — เรียงตามลำดับในไฟล์</p>
   <table>
     <thead><tr><th>Process</th><th>หน้าที่</th></tr></thead>
     <tbody>
       <tr><td><code>api-server</code></td><td>Express API + WebSocket + static serving</td></tr>
       <tr><td><code>mqtt-subscriber</code></td><td>Bosch BVMS MQTT ingestion</td></tr>
-      <tr><td><code>hikvision-isapi</code></td><td>Hikvision ISAPI Alert Stream</td></tr>
-      <tr><td><code>dahua-cgi</code></td><td>Dahua CGI events</td></tr>
       <tr><td><code>media-recorder</code></td><td>RTSP rolling buffer + clip dump</td></tr>
+      <tr><td><code>hikvision</code></td><td>Hikvision ISAPI Alert Stream (<code>src/ingesters/hikvision-isapi.js</code>)</td></tr>
+      <tr><td><code>dahua</code></td><td>Dahua CGI events (<code>src/ingesters/dahua-cgi.js</code>)</td></tr>
+      <tr><td><code>report-worker</code></td><td>Report scheduler (60s tick) + on-demand <code>POST /render</code> — Chromium อยู่ที่โปรเซสนี้</td></tr>
       <tr><td><code>alert-worker</code></td><td>LINE alert rule matching</td></tr>
-      <tr><td><code>report-worker</code></td><td>Report scheduler</td></tr>
+      <tr><td><code>face-embed-worker</code></td><td>คิว <code>face_embed_queue</code> → สร้าง face embedding (AuraFace-v1) + เทียบ face blacklist</td></tr>
+      <tr><td><code>lpr-receiver</code></td><td>ANPR HTTP push receiver (ITC camera → <code>/lpr</code>, port 3003) — คนละ process จาก api-server</td></tr>
     </tbody>
   </table>
   <p class="faq-src">อ้างอิง: <code>ecosystem.config.js</code> · <a href="restart-services.html">Restart Services</a></p>

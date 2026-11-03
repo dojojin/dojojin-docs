@@ -42,9 +42,11 @@
     sel.setAttribute('aria-hidden', 'true');
 
     const id = sel.id || ('mp' + (++_seq));
-    const unit = root.dataset.mpUnit || T('mp.unit', 'รายการ');
+    // -Key variants resolve via I18N (language-aware); the plain attributes are a
+    // static fallback for callers that don't need translation (e.g. demo pages).
+    const unit = (root.dataset.mpUnitKey && T(root.dataset.mpUnitKey, root.dataset.mpUnit)) || root.dataset.mpUnit || T('mp.unit', 'รายการ');
     const placeholder = root.dataset.mpPlaceholder || T('common.all', 'ทั้งหมด');
-    const searchPh = root.dataset.mpSearch || T('common.search', 'ค้นหา...');
+    const searchPh = (root.dataset.mpSearchKey && T(root.dataset.mpSearchKey, root.dataset.mpSearch)) || root.dataset.mpSearch || T('common.search', 'ค้นหา...');
     const opts = [...sel.options];
     const showSearch = opts.length >= SEARCH_THRESHOLD;
     // single-mode: radio-style. Hidden <select multiple> stays (0 selected = ทั้งหมด);
@@ -63,7 +65,7 @@
     pop.className = 'mp-pop';
     pop.setAttribute('role', 'listbox');
     pop.innerHTML = `
-      <div class="mp-sheet-head"><span class="mp-sheet-title">${esc(root.dataset.mpLabel || placeholder)}</span><button type="button" class="mp-done">${esc(T('common.done', 'เสร็จ'))}</button></div>
+      <div class="mp-sheet-head"><span class="mp-sheet-title">${esc((root.dataset.mpLabelKey && T(root.dataset.mpLabelKey, root.dataset.mpLabel)) || root.dataset.mpLabel || placeholder)}</span><button type="button" class="mp-done">${esc(T('common.done', 'เสร็จ'))}</button></div>
       ${showSearch ? `<div class="mp-search">${SEARCH_SVG}<input type="text" class="mp-search-input" placeholder="${esc(searchPh)}" autocomplete="off"></div>` : ''}
       ${single ? '' : `<div class="mp-actions"><button type="button" class="mp-all">${esc(T('mp.all', 'เลือกทั้งหมด'))}</button><button type="button" class="mp-clear">${esc(T('mp.clear', 'ล้าง'))}</button><span class="mp-count"></span></div>`}
       <div class="mp-list">${opts.map(o => `<label class="mp-row" data-val="${esc(o.value)}" title="${esc(o.textContent)}"><input type="checkbox" ${o.selected ? 'checked' : ''}><span class="mp-box"><svg class="mp-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span><span class="mp-row-lbl">${esc(o.textContent)}</span></label>`).join('')}<div class="mp-empty" hidden>${esc(T('mp.empty', 'ไม่พบรายการที่ค้นหา'))}</div></div>`;

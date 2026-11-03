@@ -1,0 +1,146 @@
+/* ============================================================
+   Vigil Platform — DEMO: Emission Rate (RMUTR-V)
+   @author Prakasit Rochanavipart (Dojo-mAn)
+   @copyright (c) 2025-2026 Prakasit Rochanavipart. All Rights Reserved.
+   @license Proprietary
+   ------------------------------------------------------------
+   demo = light theme เสมอ (convention ของ public/others/demo/)
+   โทนเขียว-น้ำเงินอมเทา: หน้านี้พูดเรื่องคาร์บอน จึงยึดเขียวเป็นสีนำ แต่กด
+   saturation ลงเพื่อไม่ให้ดู "โฆษณา ESG" — ตัวเลขต้องอ่านง่ายก่อนสวย
+============================================================ */
+:root {
+  --bg: #f2f6f4; --panel: #ffffff; --line: #dfe6e3;
+  --text: #17241f; --dim: #61736c;
+  --accent: #1d7a52; --accent-soft: #e6f1ec;
+  --ink-blue: #2563eb; --warn: #b4761a; --warn-soft: #fdf3e3;
+  --bad: #b3261e; --ghost: #9aa6a2;
+}
+* { box-sizing: border-box; margin: 0; }
+body { background: var(--bg); color: var(--text);
+  font-family: 'Noto Sans Thai', 'Segoe UI', sans-serif; font-size: 14px; }
+.wrap { max-width: 1400px; margin: 0 auto; padding: 18px 20px 48px;
+  display: flex; flex-direction: column; gap: 16px; }
+
+/* ── header ── */
+.top { display: flex; justify-content: space-between; align-items: flex-end; gap: 14px; flex-wrap: wrap; }
+h1 { font-size: 21px; letter-spacing: -.2px; }
+.tag { font-size: 10px; background: var(--accent); color: #fff; border-radius: 99px;
+  padding: 3px 10px; vertical-align: 3px; font-weight: 700; letter-spacing: .04em; }
+.sub { font-size: 12px; color: var(--dim); margin-top: 5px; line-height: 1.6; }
+.sub a { color: var(--accent); }
+
+/* ── card ── */
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
+.card-title { font-size: 13px; font-weight: 700; letter-spacing: .02em; }
+.card-sub { font-size: 11.5px; color: var(--dim); margin-top: 3px; line-height: 1.6; }
+.card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;
+  flex-wrap: wrap; margin-bottom: 12px; }
+
+/* ── controls ── */
+.ctl { display: flex; gap: 18px; flex-wrap: wrap; align-items: flex-end; }
+.ctl-item { display: flex; flex-direction: column; gap: 5px; }
+.ctl-lbl { font-size: 10.5px; font-weight: 700; color: var(--dim); letter-spacing: .03em; }
+.seg { display: flex; gap: 5px; flex-wrap: wrap; }
+.seg button { border: 1px solid var(--line); background: var(--panel); border-radius: 99px;
+  padding: 6px 14px; font-size: 12px; cursor: pointer; color: var(--dim); font-family: inherit; }
+.seg button.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.num-in { border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; width: 108px;
+  font-family: inherit; font-size: 13px; color: var(--text); background: var(--panel);
+  font-variant-numeric: tabular-nums; }
+.chk { display: flex; gap: 7px; align-items: center; font-size: 12px; color: var(--text);
+  border: 1px solid var(--line); border-radius: 8px; padding: 7px 12px; cursor: pointer; background: var(--panel); }
+.hint { font-size: 10.5px; color: var(--dim); }
+
+/* ── KPI ── */
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(215px, 1fr)); gap: 12px; }
+.kpi { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--kc, var(--accent));
+  border-radius: 12px; padding: 14px 16px; }
+.kpi-lbl { font-size: 11.5px; color: var(--dim); font-weight: 600; }
+.kpi-val { font-size: 27px; font-weight: 700; letter-spacing: -.6px; margin-top: 3px;
+  font-variant-numeric: tabular-nums; line-height: 1.15; }
+.kpi-val small { font-size: 13px; font-weight: 600; color: var(--dim); margin-left: 4px; letter-spacing: 0; }
+.kpi-note { font-size: 11px; color: var(--dim); margin-top: 5px; line-height: 1.5; }
+
+/* ── table ── */
+.tbl-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { background: #eef4f1; color: #24463a; text-align: right; padding: 9px 11px; font-weight: 700;
+  font-size: 11.5px; white-space: pre-line; border-bottom: 1px solid var(--line); }
+th:first-child, td:first-child { text-align: left; }
+td { border-bottom: 1px solid var(--line); padding: 9px 11px; text-align: right;
+  font-variant-numeric: tabular-nums; }
+tbody tr:hover td { background: #f7faf9; }
+tr.tot td { font-weight: 700; background: var(--accent-soft); border-bottom: none; }
+tr.tot td:first-child { color: #17402e; }
+.vt { display: flex; align-items: center; gap: 8px; }
+.dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.vt-name { font-weight: 600; }
+.vt-en { color: var(--dim); font-weight: 400; font-size: 11.5px; }
+.info-btn { border: 1px solid var(--line); background: var(--panel); color: var(--dim);
+  border-radius: 6px; padding: 3px 9px; font-size: 11px; cursor: pointer; font-family: inherit; }
+.info-btn:hover { border-color: var(--accent); color: var(--accent); }
+.flag { font-size: 10px; background: var(--warn-soft); color: var(--warn); border-radius: 5px;
+  padding: 1px 6px; font-weight: 600; white-space: nowrap; }
+.bar { height: 6px; border-radius: 3px; background: #eaf0ed; overflow: hidden; min-width: 60px; }
+.bar > i { display: block; height: 100%; border-radius: 3px; }
+
+/* ── split ── */
+.cols { display: grid; grid-template-columns: 1.15fr .85fr; gap: 16px; }
+@media (max-width: 900px) { .cols { grid-template-columns: 1fr; } }
+.chart-box { position: relative; height: 260px; }
+
+/* ── equivalence ── */
+.eq { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+.eq-item { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; background: #fbfdfc; }
+.eq-val { font-size: 19px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.eq-lbl { font-size: 11.5px; color: var(--dim); margin-top: 2px; line-height: 1.5; }
+.eq-fx { font-size: 10px; color: var(--ghost); margin-top: 6px; }
+
+/* ── assumptions ── */
+.note-list { display: flex; flex-direction: column; gap: 9px; font-size: 12.5px; color: var(--dim); line-height: 1.65; }
+.note-list b { color: var(--text); }
+.note-list li { margin-left: 16px; }
+.warn-box { border-left: 3px solid var(--warn); background: var(--warn-soft); border-radius: 0 8px 8px 0;
+  padding: 10px 14px; font-size: 12.5px; color: #6b4711; line-height: 1.65; }
+
+/* ── modal ── */
+.mask { position: fixed; inset: 0; background: rgba(15,32,26,.45); display: none;
+  align-items: center; justify-content: center; padding: 20px; z-index: 40; }
+.mask.on { display: flex; }
+.modal { background: var(--panel); border-radius: 14px; max-width: 620px; width: 100%;
+  max-height: 88vh; overflow-y: auto; padding: 20px 22px; }
+.modal h3 { font-size: 17px; display: flex; align-items: center; gap: 9px; }
+.modal-x { float: right; border: none; background: #eef2f0; border-radius: 8px; width: 28px; height: 28px;
+  cursor: pointer; color: var(--dim); font-size: 16px; line-height: 1; font-family: inherit; }
+.m-sec { margin-top: 16px; }
+.m-sec-t { font-size: 11px; font-weight: 700; color: var(--dim); letter-spacing: .04em; margin-bottom: 6px; }
+.formula { background: #f4f8f6; border: 1px solid var(--line); border-radius: 8px; padding: 11px 13px;
+  font-family: 'SFMono-Regular', Consolas, monospace; font-size: 12.5px; line-height: 1.8;
+  color: #24463a; overflow-x: auto; }
+.formula em { color: var(--accent); font-style: normal; font-weight: 700; }
+.m-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.m-cell { border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; }
+.m-cell .l { font-size: 10.5px; color: var(--dim); }
+.m-cell .v { font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 2px; }
+
+/* ── มือถือ ≤768px ──
+   .wrap เป็น flex column ⇒ ลูกได้ min-width:auto โดยปริยาย ตารางกว้าง 699px
+   จึงดันทั้งหน้าให้เลื่อนแนวนอน แม้ .tbl-wrap จะตั้ง overflow-x ไว้แล้ว
+   ต้องปลด min-width ที่ระดับการ์ดและตัว wrap ของตารางด้วย (วัดจริง 390px) */
+.card, .tbl-wrap { min-width: 0; }
+@media (max-width: 768px) {
+  .wrap { padding: 14px 12px 40px; gap: 12px; }
+  h1 { font-size: 18px; }
+  .card { padding: 14px; }
+  .kpis { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .kpi { padding: 12px 13px; }
+  .kpi-val { font-size: 22px; }
+  .ctl { gap: 12px; }
+  .num-in { width: 100%; }
+  .ctl-item { flex: 1 1 140px; }
+  table { font-size: 12px; }
+  th, td { padding: 7px 8px; }
+  .modal { padding: 16px; }
+  .m-grid { grid-template-columns: 1fr; }
+  .chart-box { height: 220px; }
+}

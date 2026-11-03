@@ -11,14 +11,43 @@
 > 2. **3rd-party integration engineers** (Sections 4–7, 9–10) building dashboards or analytics on top of the platform's data.
 >
 > **Status:** Standalone reference — distribute freely to authorized 3rd parties.
-> **Last updated:** 2026-06-08 · Schema baseline: migration 027
-> **Companion document:** [REF_database-schema_EN.md](REF_database-schema_EN.md) — full table-by-table column reference.
+> **Last updated:** 2026-08-07 · Schema baseline: migration 027 → 123
+> **Companion documents:**
+> - [REF_partner-api-tunnel.md](REF_partner-api-tunnel.md) — HTTP API Cloudflare setup
+> - [REF_partner-onboarding.md](REF_partner-onboarding.md) — HTTP API account provisioning (step-by-step)
+> - [REF_database-schema_EN.md](REF_database-schema_EN.md) — full table-by-table column reference (legacy Postgres path)
+
+---
+
+## 0. Two Integration Paths — Choose the Right One
+
+As of August 2026, the platform offers **two distinct paths** for third-party access. The HTTP API is now the **recommended primary path**; direct Postgres connection is retained for legacy compatibility only.
+
+| | **Path A: HTTP API `/v1`** ⭐ Primary | **Path B: Direct Postgres** Legacy |
+|---|---|---|
+| **Partner does** | Call REST + HMAC sign requests | Open TCP connection to Postgres |
+| **Sees Postgres?** | **No** | Yes, constrained by role |
+| **Authentication** | HMAC-SHA256 per request | Database user/password |
+| **Access control** | Column-level GRANT + site scope + time lookback | Column-level GRANT only |
+| **Must be on LAN/VPN?** | No | **Yes** |
+| **Rate limiting & audit** | ✅ Full (built-in) | ❌ None |
+| **Documentation for partner** | `GET /v1/openapi.json` (auto-generated per user's role) | This document (Sections 3–4) |
+| **Setup guide** | [REF_partner-onboarding.md](REF_partner-onboarding.md) | Section 3 of this document |
+| **Full spec** | [SPEC_partner-api_2026-08-07.md](SPEC_partner-api_2026-08-07.md) | This document |
+
+**→ Use Path A (HTTP API)** unless your partner is on the same LAN and explicitly requires raw SQL.
+
+**Sections 3, 4, and 9 (as written below) describe Path B** — if implementing Path A, skip to Section 2 (view catalog), then Section 7 (PDPA), then Section 8 (revised checklist). Path A setup is in the companion documents above.
 
 ---
 
 ## 1. Scope & Architecture
 
-**Supported use case:** 3rd party pulls raw data from PostgreSQL over LAN to build a parallel dashboard, analytical view, or BI report.
+**Supported use case:** 3rd party pulls data from the Vigil Platform to build a parallel dashboard, analytical view, or BI report.
+
+**Path B (Direct Postgres – Legacy):**
+
+3rd parties on the same LAN can connect directly to PostgreSQL over a private network interface, querying read-only views without going through the platform's API layer.
 
 ```
 +--------------------------------------------------------------+
@@ -58,12 +87,12 @@
 
 ## 2. What's Exposed (View Catalog)
 
-All views are prefixed `v_` and suffixed `_public`. They contain the same data volume as the underlying tables, but with a more stable schema contract.
+All views are prefixed `v_` and suffixed `_public`. They contain the same data volume as the underlying tables, but with a more stable schema contract. This catalog applies to **both paths** (API and direct Postgres).
 
 | View | Source table | Excluded columns | Notes |
 |---|---|---|---|
 | `v_camera_groups_public` | `camera_groups` | — | All columns |
-| `v_cameras_public` | `cameras` | `http_user`, `http_password`, `rtsp_url` | The three excluded columns contain camera credentials |
+| `v_cameras_public` | `cameras` | `http_user`, `http_password`, `rtsp_url`, `ip_address`, `http_port`, `mqtt_topic_prefix`, `serial_number`, `firmware`, `enable_*`, `clip_*_sec` (as of migration 120) | Credentials and internal network topology excluded |
 | `v_events_public` | `events` | `raw_json` | Main table — **largest**. Always filter by `event_time` |
 | `v_appearances_public` | `appearances` | — | Person / vehicle attributes |
 | `v_license_plates_public` | `license_plates` | — | **PDPA-protected** — requires Data Sharing Agreement |
@@ -87,6 +116,9 @@ All views are prefixed `v_` and suffixed `_public`. They contain the same data v
 ---
 
 ## 3. Operator Setup — Provisioning a New Partner
+
+> **This section describes Path B (direct Postgres connection).**
+> **For Path A (HTTP API), see [REF_partner-onboarding.md](REF_partner-onboarding.md).**
 
 ### 3.1 Apply Migration
 
@@ -210,6 +242,9 @@ ORDER BY mean_exec_time DESC LIMIT 20;
 
 ## 4. Connection Guide (for the 3rd Party)
 
+> **This section describes Path B (direct Postgres connection).**
+> **For Path A (HTTP API), see [REF_partner-onboarding.md](REF_partner-onboarding.md).**
+
 ### 4.1 Connection Details (Example)
 
 | Parameter | Value |
@@ -290,6 +325,8 @@ WHERE relkind = 'v' AND relname LIKE 'v_%_public';
 
 ## 5. Query Patterns — Do's and Don'ts
 
+These patterns apply to both paths; the examples use direct Postgres syntax.
+
 ### DO
 
 ```sql
@@ -353,7 +390,7 @@ ORDER BY event_time DESC LIMIT 100;
 | Near-real-time dashboard | 5–10 seconds | Incremental (`event_time > last`) |
 | Hourly aggregation | 1 hour | Full window query |
 | Daily report | Once per day | Day range query |
-| Sub-second real-time | — | **Not supported via DB polling** — request WebSocket / LISTEN integration |
+| Sub-second real-time | — | **Not supported via DB polling** — request WebSocket / LISTEN integration or use Path A (HTTP API) with webhooks |
 
 ---
 
@@ -385,7 +422,21 @@ ORDER BY event_time DESC LIMIT 100;
 
 ## 8. Operator Security Checklist
 
-Before rolling out access to the first partner:
+> **Revised August 2026** — reflects that **Path A (HTTP API) is now primary**. Path B (direct Postgres) is legacy.
+
+### 8.1 Before Deploying Path A (HTTP API)
+
+- [ ] **`PARTNER_HOST` environment variable set** (e.g. `meta.dojojin.tech`) — defines the public hostname for the API
+- [ ] **`CAMERA_SECRET_KEY` configured** — required to encrypt partner credentials at rest
+- [ ] **Cloudflare Public Hostname added** — subdomain + domain + URL (`localhost:3000`) with Path blank
+- [ ] **Middleware tested** — verify `/v1/*` is accessible, other routes (e.g. `/login.html`, `/api/branding`) return 404
+- [ ] **API rate limiting implemented** — default 60/min per partner (adjustable on creation)
+- [ ] **Request logging enabled** — audit trail stored in `api_request_log` with 90-day retention
+- [ ] **First partner created** via `node src/partner-admin.js create <slug>` or the dashboard UI
+- [ ] **Partner tested** — confirmed `GET /v1/healthz` returns 200 with valid credentials
+- [ ] **OpenAPI generation verified** — partner fetches `GET /v1/openapi.json` and receives schema matching their column grants
+
+### 8.2 Before Deploying Path B (Direct Postgres – Legacy)
 
 - [ ] Migration 027 applied successfully (`\dv v_*_public` shows all 11 views)
 - [ ] Login user created with a strong password from `openssl rand` — never a memorable password
@@ -399,9 +450,24 @@ Before rolling out access to the first partner:
 - [ ] Internal log records: who, when, why, expiry date (if applicable)
 - [ ] (Optional) `pg_stat_statements` enabled for query auditing
 
+### 8.3 Ongoing Monitoring
+
+**Path A (HTTP API):**
+- Partner credentials approaching expiry (≤14 days) — warn and prepare renewal
+- Unknown API keys attempting access — may indicate integration debugging, but monitor for patterns
+- Partners with unused credentials — revoke or confirm continued need
+- Rate-limit violations — assess whether legitimate growth or misconfiguration
+
+**Path B (Direct Postgres):**
+- Watch `pg_stat_statements` for slow or resource-intensive queries
+- Monitor connections via `pg_stat_activity` — idle or long-running sessions
+- Review `pg_roles` for orphaned role membership
+
 ---
 
 ## 9. Example Queries (for the 3rd Party)
+
+These examples apply to Path B. Path A partners use the HTTP API; examples are in the OpenAPI schema.
 
 ```sql
 -- 9.1 Camera status snapshot
@@ -507,9 +573,24 @@ A: Yes — contact the operator. They will assess which columns are safe to expo
 **Q: Why not use a read replica?**
 A: At the platform's current scale (100–3,000 cameras), the operational overhead of a replica exceeds the benefit. If 3rd-party query load demonstrably impacts the ingester, the operator may revisit this.
 
+**Q: I'm using the HTTP API (Path A) — where is the spec?**
+A: Fetch `GET /v1/openapi.json` with your credentials to get an auto-generated schema tailored to your access level. For full context, see [SPEC_partner-api_2026-08-07.md](SPEC_partner-api_2026-08-07.md).
+
 ---
 
 ## 11. Decommissioning (Removing Access)
+
+### Path A (HTTP API)
+
+```bash
+# Revoke partner immediately
+node src/partner-admin.js revoke <slug>
+
+# Optionally drop the Postgres role (does not affect api_request_log historical records)
+docker exec vigil-postgres psql -U vigil_sql -d vigil_platform -c "DROP ROLE <slug>_ro;"
+```
+
+### Path B (Direct Postgres)
 
 ```sql
 -- Revoke role from a user
@@ -545,4 +626,4 @@ DROP VIEW IF EXISTS
 
 ---
 
-<sub>End of REF_third-party-integration_EN.md · Vigil Platform · 2026-06-08</sub>
+<sub>End of REF_third-party-integration_EN.md · Vigil Platform v1.5.3 · 2026-08-07</sub>

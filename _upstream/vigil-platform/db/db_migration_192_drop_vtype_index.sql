@@ -1,0 +1,17 @@
+-- ============================================================
+-- Vigil Platform — Migration 192: ถอน index ที่สร้างจากการวินิจฉัยผิด
+-- @author Prakasit Rochanavipart (Dojo-mAn)
+-- @copyright (c) 2025-2026 Prakasit Rochanavipart. All Rights Reserved.
+-- @license Proprietary
+-- ------------------------------------------------------------
+-- idx_plates_vtype_time (migration 190, 1.9 GB บน central) ถูกสร้างเมื่อเช้า
+-- 2026-08-31 จากการ reproduce ที่ผิด query — วัดกับ SELECT บน license_plates
+-- เดี่ยว ๆ ขณะที่ endpoint จริง join events · บ่ายวันเดียวกัน /api/lpr ถูกเขียนใหม่
+-- ให้ขับจาก license_plates + มีด่าน probe แบบไม่เรียงลำดับ ซึ่งวัดแล้วว่า:
+--   · เคสหนาแน่น: เดินตาม idx_plates_detected_at ได้เท่ากัน (51ms vs 49ms)
+--   · เคสว่าง/หายาก: probe ใช้ idx_plates_cam_vtype_time (bitmap 0.4ms)
+-- = ไม่มีเส้นทางไหนเหลือที่ต้องใช้ตัวนี้ จึงถอนคืนพื้นที่ 1.9 GB
+-- (idx_plates_cam_vtype_time ยังจำเป็น — ห้ามถอนตาม)
+-- migration 190 ยังอยู่เพื่อประวัติ ไฟล์นี้ถอนสิ่งที่มันสร้างบนเครื่องที่รันมันไปแล้ว
+-- ============================================================
+DROP INDEX IF EXISTS idx_plates_vtype_time;

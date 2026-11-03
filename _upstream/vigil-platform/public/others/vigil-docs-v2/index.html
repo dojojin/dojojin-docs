@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Vigil Platform — Live Docs v1.5.3</title>
+  <title>Vigil Platform — Live Docs v1.5.4</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -17,7 +17,7 @@
 <div class="main">
 <!-- SOURCE: CLAUDE.md §Project Purpose · CHANGELOG.md · ROADMAP.md | Update: version bump or major feature ship | Last sync: 2026-06-07 -->
 <div class="hero">
-  <h1>Vigil Platform v1.5.3</h1>
+  <h1>Vigil Platform v1.5.4</h1>
   <p>ฐานความรู้ด้านเทคนิคและเอกสารสดใจ</p>
 </div>
 
@@ -175,6 +175,11 @@
 <td>2026-06-06</td>
 <td>alert-worker: แยก alert-engine ออกจาก mqtt-subscriber → PM2 7 workers (LINE/push failure ไม่กระทบ MQTT ingest); CSP hardening (390 inline handlers removed, Phase 5-ready); Perf &amp; Sustainability audit: pool sizing, Puppeteer render queue, dead DB index removal, 43-test harness, events partition plan, S3 worker health endpoints, S4 route split; node:test suite; 2026-06-07: CVE audit round 4 + runtime upgrade (Node 22 LTS, EMQX 5.8.9, pg/ws/Puppeteer updates, EMQX port binding resilience)</td>
 </tr>
+<tr>
+<td><strong>v1.5.4</strong></td>
+<td>2026-09-06</td>
+<td>ประสิทธิภาพ + ความปลอดภัย: query บนตาราง events 40 ล้านแถว, cache ไฟล์ static, WebSocket subscribe (รับ event เต็มเฉพาะหัวข้อที่ขอ), ปิดบัง IP/MAC ของกล้องในข้อมูลดิบสำหรับผู้ใช้ที่ไม่ใช่ admin, ตรวจนิยามอัตโนมัติ (LPR no-read self-check)</td>
+</tr>
 </tbody>
 </table>
 
@@ -278,7 +283,7 @@
 </table>
 
 <div class="ref">
-  <p>Vigil Platform v1.5.3 · Self-hosted CCTV Analytics Platform for Asia · Live Docs · ©2025-2026 DojoJin Tech · Proprietary License</p>
+  <p>Vigil Platform v1.5.4 · Self-hosted CCTV Analytics Platform for Asia · Live Docs · ©2025-2026 DojoJin Tech · Proprietary License</p>
 </div>
 </div>
 </div>

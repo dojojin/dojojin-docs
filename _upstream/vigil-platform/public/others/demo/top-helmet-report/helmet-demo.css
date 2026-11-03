@@ -1,0 +1,220 @@
+/* ============================================================
+   Vigil Platform — Live Demo · อันดับไม่สวมหมวกนิรภัย
+   CSP-compliant external stylesheet · light theme fixed (data-theme="light")
+   ทุกสี/ระยะดึงจาก token ของ design system — ไม่ hardcode hex
+   ============================================================ */
+body { overflow: auto; }
+.demo-wrap { max-width: 1240px; margin: 0 auto; padding: 24px 20px 60px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+.demo-banner { background: color-mix(in srgb, var(--warn) 12%, transparent);
+  border: 1px solid var(--warn); color: var(--warn); border-radius: 8px;
+  padding: 9px 14px; font-size: 12px; margin-bottom: 18px; display: flex; gap: 9px;
+  align-items: flex-start; line-height: 1.65; }
+.demo-banner svg { flex: 0 0 auto; margin-top: 2px; }
+
+.page-head { display: flex; align-items: flex-end; justify-content: space-between;
+  gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
+.page-head h1 { font-size: 22px; font-weight: 700; letter-spacing: -.3px; }
+.page-head .sub { font-size: 12px; color: var(--text-secondary); margin-top: 3px; }
+.scope-inline { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+.seg { display: inline-flex; border: 1px solid var(--border-hairline); border-radius: 8px; overflow: hidden; }
+.segbtn { padding: 7px 13px; border: 0; background: var(--surface-elevated);
+  color: var(--text-secondary); font: inherit; font-size: 12.5px; font-weight: 600;
+  cursor: pointer; border-right: 1px solid var(--border-hairline); }
+.segbtn:last-child { border-right: 0; }
+.segbtn:hover { color: var(--text-primary); }
+.segbtn.active { background: var(--accent); color: #fff; }
+
+select, .btn { font: inherit; font-size: 12.5px; color: var(--text-primary);
+  background: var(--surface-elevated); border: 1px solid var(--border-hairline);
+  border-radius: 8px; padding: 7px 11px; cursor: pointer; }
+.btn { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.btn:hover { border-color: var(--accent); color: var(--accent); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.primary:hover { background: var(--accent-muted); border-color: var(--accent-muted); color: #fff; }
+
+/* ── KPI ───────────────────────────────────────────────── */
+.kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+.kpi { background: var(--surface-elevated); border: 1px solid var(--border-hairline);
+  border-radius: 10px; padding: 13px 15px; display: flex; flex-direction: column; gap: 3px; }
+.kpi-label { font-size: 11px; font-weight: 700; color: var(--text-secondary);
+  text-transform: uppercase; letter-spacing: .4px; }
+.kpi-value { font-size: 26px; font-weight: 700; line-height: 1.15;
+  font-variant-numeric: tabular-nums; color: var(--text-primary); }
+.kpi-value.sm { font-size: 15px; line-height: 1.35; }
+.kpi-foot { font-size: 11px; color: var(--text-secondary); }
+
+/* ── card ──────────────────────────────────────────────── */
+.card { background: var(--surface-elevated); border: 1px solid var(--border-hairline);
+  border-radius: 12px; padding: 18px 20px 16px; margin-bottom: 16px; }
+.card-head { display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 14px; margin-bottom: 12px; flex-wrap: wrap; }
+.card-head h2 { font-size: 15px; font-weight: 700; }
+.card-sub { font-size: 11.5px; color: var(--text-secondary); margin-top: 2px; }
+.card-note { font-size: 11.5px; color: var(--text-secondary); margin-top: 10px; line-height: 1.7; }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.grid-2 > .card { margin-bottom: 0; }
+.chart-box { position: relative; height: 300px; }
+.chart-box.sm { height: 240px; }
+
+/* ── ตารางอันดับ ───────────────────────────────────────── */
+.rank-columns, .rank-row {
+  display: grid; grid-template-columns: 62px minmax(160px, 1.05fr) minmax(160px, 2fr) 92px; gap: 14px; }
+.rank-columns { font-size: 11px; font-weight: 700; color: var(--text-secondary);
+  text-transform: uppercase; letter-spacing: .4px; padding: 0 10px 7px;
+  border-bottom: 1px solid var(--border-hairline); }
+.rank-columns span:last-child { text-align: right; }
+.rank-row { align-items: center; min-height: 64px; padding: 9px 10px;
+  border-bottom: 1px solid var(--border-hairline); }
+.rank-row:last-child { border-bottom: 0; }
+.rank-medal { width: 34px; height: 34px; display: inline-grid; place-items: center;
+  border-radius: 8px; font-weight: 700; font-size: 13px;
+  background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--text-primary); }
+/* 3 อันดับแรกเน้นด้วยสีเตือน เพื่อให้กวาดตาเจอทันทีว่าใครหนักสุด */
+.rank-row[data-top="1"] .rank-medal { background: var(--status-bad); color: #fff; }
+.rank-row[data-top="2"] .rank-medal { background: color-mix(in srgb, var(--status-bad) 55%, transparent); color: #fff; }
+.rank-row[data-top="3"] .rank-medal { background: color-mix(in srgb, var(--status-bad) 30%, transparent); }
+
+.plate-wrap { display: flex; gap: 7px; flex-wrap: wrap; align-items: center; }
+/* ป้ายทะเบียนเป็นปุ่ม — กดแล้วเปิด modal เหมือนหน้าค้นหาป้ายทะเบียนของระบบจริง */
+.plate { display: inline-flex; flex-direction: column; justify-content: center;
+  min-width: 104px; min-height: 42px; padding: 4px 10px; text-align: center;
+  border: 1px solid var(--text-primary); border-radius: 5px;
+  background: var(--surface-base); color: var(--text-primary);
+  font: inherit; cursor: pointer; }
+.plate:hover { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent); }
+.plate strong { font-weight: 600; letter-spacing: .4px; font-size: 14px; }
+.plate small { color: var(--text-secondary); font-size: 10.5px; }
+.plate-more { padding: 6px 10px; border-radius: 7px; border: 1px solid var(--border-hairline);
+  background: var(--surface-base); color: var(--text-secondary); font: inherit;
+  font-size: 11.5px; font-weight: 600; cursor: pointer; }
+.plate-more:hover { color: var(--accent); border-color: var(--accent); }
+
+.bar-bg { width: 100%; height: 13px; border-radius: 7px;
+  background: color-mix(in srgb, var(--text-secondary) 14%, transparent); overflow: hidden; }
+.bar { height: 100%; border-radius: inherit; background: var(--warn); }
+.rank-total { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.rank-total strong { font-size: 15px; font-weight: 700; }
+.rank-total span { font-size: 11px; color: var(--text-secondary); margin-left: 3px; }
+
+/* ── รายการกล้อง (แทนกราฟแท่ง — อ่านชื่อสถานที่ได้ ไม่ต้องเอียงคอ) ── */
+.cam-list { display: grid; }
+.cam-row { display: grid; align-items: center;
+  grid-template-columns: 34px minmax(150px, 1.3fr) minmax(120px, 2fr) 78px 96px; gap: 12px;
+  padding: 9px 6px; border-bottom: 1px solid var(--border-hairline); }
+.cam-row:last-child { border-bottom: 0; }
+.cam-rank { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 7px;
+  font-size: 12px; font-weight: 700;
+  background: color-mix(in srgb, var(--text-secondary) 14%, transparent); color: var(--text-secondary); }
+/* 3 จุดแรกเน้นสีเตือน — กวาดตาแล้วรู้ทันทีว่าควรไปไหนก่อน */
+.cam-row.hot .cam-rank { background: var(--status-bad); color: #fff; }
+.cam-row.hot .cam-bar { background: var(--status-bad); }
+.cam-name { min-width: 0; }
+.cam-name b { display: block; font-size: 13px; font-weight: 600; color: var(--text-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cam-name small { font-size: 10.5px; color: var(--text-secondary); }
+.cam-thin { display: inline-block; margin-left: 7px; padding: 1px 6px; border-radius: 4px;
+  font-size: 10px; font-weight: 700; background: color-mix(in srgb, var(--warn) 16%, transparent);
+  color: var(--warn); }
+.cam-bar-bg { width: 100%; height: 12px; border-radius: 6px;
+  background: color-mix(in srgb, var(--text-secondary) 13%, transparent); overflow: hidden; }
+.cam-bar { height: 100%; border-radius: inherit; background: var(--warn); }
+.cam-val, .cam-rate { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cam-val b, .cam-rate b { display: block; font-size: 14px; font-weight: 700; color: var(--text-primary); }
+.cam-val small, .cam-rate small { font-size: 10px; color: var(--text-secondary); }
+
+/* ── modal ─────────────────────────────────────────────── */
+.hm-modal { position: fixed; inset: 0; z-index: 90; display: flex; align-items: center;
+  justify-content: center; padding: 24px 16px;
+  background: color-mix(in srgb, #000 55%, transparent); overflow-y: auto; }
+.hm-modal[hidden] { display: none; }
+.hm-modal-card { position: relative; width: min(880px, 100%); max-height: 92vh; overflow-y: auto;
+  background: var(--surface-overlay); border: 1px solid var(--border-hairline);
+  border-radius: 14px; padding: 22px 24px 18px; }
+.hm-close { position: absolute; top: 14px; right: 14px; width: 30px; height: 30px;
+  display: grid; place-items: center; border-radius: 7px; cursor: pointer;
+  border: 1px solid var(--border-hairline); background: var(--surface-elevated); color: var(--text-secondary); }
+.hm-close:hover { color: var(--text-primary); border-color: var(--accent); }
+
+.hm-modal-top { display: grid; grid-template-columns: 300px 1fr; gap: 14px; margin-bottom: 16px; }
+.hm-col-left { display: flex; flex-direction: column; gap: 12px; }
+.hm-panel { background: var(--surface-elevated); border: 1px solid var(--border-hairline);
+  border-radius: 10px; padding: 12px 14px; }
+.hm-panel-label { font-size: 10.5px; font-weight: 700; color: var(--text-secondary);
+  text-transform: uppercase; letter-spacing: .5px; margin-bottom: 8px; }
+/* ภาพจริงยังไม่มีใน demo — ใช้ placeholder ที่วาดด้วย CSS ไม่ดึงไฟล์ภายนอก */
+.hm-crop { height: 108px; border-radius: 6px; display: grid; place-items: center;
+  background: #111; color: #fff; font-size: 21px; font-weight: 700; letter-spacing: 1px; }
+.hm-plaque-wrap { display: grid; place-items: center; padding: 8px 0 4px; }
+.hm-plaque { min-width: 118px; padding: 8px 14px; text-align: center;
+  border: 1px solid var(--text-primary); border-radius: 6px; background: var(--surface-base); }
+.hm-plaque b { display: block; font-size: 19px; font-weight: 700; letter-spacing: .5px; }
+.hm-plaque small { display: block; font-size: 10.5px; color: var(--text-secondary); }
+.hm-plaque i { display: block; font-size: 19px; font-weight: 700; font-style: normal; letter-spacing: 1px; }
+.hm-snap { height: 268px; border-radius: 8px; display: grid; place-items: center; text-align: center;
+  background: color-mix(in srgb, var(--text-secondary) 12%, transparent);
+  color: var(--text-secondary); font-size: 12px; line-height: 1.8; padding: 12px; }
+
+.hm-facts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px 16px;
+  padding: 14px 2px; margin: 0; border-top: 1px solid var(--border-hairline);
+  border-bottom: 1px solid var(--border-hairline); }
+.hm-facts > div { min-width: 0; }
+.hm-facts dt { font-size: 11px; color: var(--text-secondary); margin-bottom: 2px; }
+.hm-facts dd { margin: 0; font-size: 13px; font-weight: 600; color: var(--text-primary);
+  overflow-wrap: anywhere; }
+.hm-facts dd.bad { color: var(--status-bad); }
+.hm-facts dd.ok { color: var(--status-ok); }
+.hm-swatch { display: inline-block; width: 11px; height: 11px; border-radius: 3px;
+  border: 1px solid var(--border-hairline); background: var(--surface-base);
+  margin-right: 5px; vertical-align: -1px; }
+
+.hm-hist { margin-top: 16px; }
+.hm-hist-title { font-size: 12.5px; font-weight: 700; color: var(--accent); margin-bottom: 8px; }
+.hm-hist-scroll { overflow-x: auto; }
+.hm-hist-table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 560px; }
+.hm-hist-table th { text-align: left; font-weight: 700; color: var(--text-secondary);
+  padding: 6px 8px; border-bottom: 1px solid var(--border-hairline); white-space: nowrap; }
+.hm-hist-table td { padding: 7px 8px; border-bottom: 1px solid var(--border-hairline); white-space: nowrap; }
+.hm-hist-table tr:last-child td { border-bottom: 0; }
+.hm-hist-table td.bad { color: var(--status-bad); font-weight: 600; }
+.hm-hist-table td.ok { color: var(--status-ok); font-weight: 600; }
+.hm-modal-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+
+/* ── responsive ≤768px ─────────────────────────────────── */
+@media (max-width: 900px) {
+  .kpi-row { grid-template-columns: 1fr 1fr; }
+  .grid-2 { grid-template-columns: 1fr; }
+  .grid-2 > .card { margin-bottom: 16px; }
+  .hm-modal-top { grid-template-columns: 1fr; }
+  .hm-facts { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-width: 768px) {
+  .demo-wrap { padding: 16px 12px 44px; }
+  .page-head h1 { font-size: 18px; }
+  .card { padding: 14px 14px 12px; }
+  .chart-box { height: 250px; }
+  .chart-box.sm { height: 220px; }
+  /* ตารางอันดับพับเป็น 3 คอลัมน์ — แถบสัดส่วนลงไปแถวที่สองเต็มความกว้าง */
+  .rank-columns { display: none; }
+  .rank-row { grid-template-columns: 44px 1fr 76px; gap: 8px 10px; padding: 10px 4px; }
+  .rank-row > .plate-wrap { grid-column: 2 / 4; grid-row: 1; }
+  .rank-row > .rank-cell-medal { grid-column: 1; grid-row: 1; }
+  .rank-row > .bar-wrap { grid-column: 2; grid-row: 2; }
+  .rank-row > .rank-total { grid-column: 3; grid-row: 2; }
+  /* กล้อง: มือถือพับเป็น 2 แถว — ชื่อสถานที่อยู่บน แถบกับตัวเลขอยู่ล่าง */
+  .cam-row { grid-template-columns: 30px 1fr 70px 78px; gap: 6px 9px; padding: 10px 2px; }
+  .cam-row > .cam-rank { grid-column: 1; grid-row: 1; }
+  .cam-row > .cam-name { grid-column: 2 / 5; grid-row: 1; }
+  .cam-row > .cam-bar-wrap { grid-column: 1 / 3; grid-row: 2; }
+  .cam-row > .cam-val { grid-column: 3; grid-row: 2; }
+  .cam-row > .cam-rate { grid-column: 4; grid-row: 2; }
+  .hm-modal { padding: 12px 8px; }
+  .hm-modal-card { padding: 18px 14px 14px; }
+  .hm-facts { grid-template-columns: 1fr 1fr; }
+  .hm-snap { height: 200px; }
+}
+@media (max-width: 460px) {
+  .kpi-row { grid-template-columns: 1fr; }
+}

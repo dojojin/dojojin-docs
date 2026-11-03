@@ -11,6 +11,37 @@
 // dispatches through data-action / data-input / data-change (ACTION_MAP).
 // ============================================================
 
+// ── Settings page tabs — Gates / Direction / Display & Storage / Watchlist.
+// Pure show/hide (mirrors switchHealthTab, page-health.js) — every render
+// function below still targets its element by id regardless of which panel
+// is visible, so splitting into tabs needed no change to the functions
+// themselves, only to the HTML shell and this switcher.
+const _LPR_SET_PANELS = { gates: 'lprSetPanelGates', direction: 'lprSetPanelDirection', display: 'lprSetPanelDisplay', watchlist: 'lprSetPanelWatchlist' };
+function _switchLprSetTab(tab) {
+  if (!_LPR_SET_PANELS[tab]) return;
+  document.querySelectorAll('#lprSetTabBar .tab').forEach(b => b.classList.remove('active'));
+  document.querySelector(`#lprSetTabBar .tab[data-tab="${tab}"]`)?.classList.add('active');
+  for (const [k, id] of Object.entries(_LPR_SET_PANELS)) {
+    const el = document.getElementById(id);
+    if (el) el.hidden = (k !== tab);
+  }
+}
+
+// Watchlist's own sub-tabs — "เพิ่ม / จัดการกลุ่ม" vs "รายการทั้งหมด" (asked for
+// explicitly: adding and viewing/editing are different tasks, keep them apart).
+const _WL_SET_PANELS = { add: 'wlSubPanelAdd', list: 'wlSubPanelList' };
+function _switchWlSetTab(tab) {
+  if (!_WL_SET_PANELS[tab]) return;
+  // #wlSubTabBar is .seg (plain <button>, no .tab class) — different selector
+  // than _switchLprSetTab's #lprSetTabBar .tab.
+  document.querySelectorAll('#wlSubTabBar button').forEach(b => b.classList.remove('active'));
+  document.querySelector(`#wlSubTabBar button[data-tab="${tab}"]`)?.classList.add('active');
+  for (const [k, id] of Object.entries(_WL_SET_PANELS)) {
+    const el = document.getElementById(id);
+    if (el) el.hidden = (k !== tab);
+  }
+}
+
 const _LPR_LANES = ['1', '2', '3'];        // real laneNo values (HIK-V_LPR01)
 const _LPR_DIRS  = ['in', 'out', 'none'];
 let _lprGates = [];
@@ -44,15 +75,27 @@ async function loadLprSettings() {
     const st = (stRes && stRes.ok) ? await stRes.json() : {};
     _lprRetCfg = {
       image: parseInt(st.lpr_image_retention_days?.value, 10) || 7,
+      lineImg: parseInt(st.lpr_line_image_expire_hours?.value, 10) || 24,
       meta:  parseInt(st.lpr_retention_days?.value, 10) || 30,
+    };
+    // migration 117 — vehicle box ships opt-out (default on), plate box + full-image
+    // burn-in ship opt-in (default off). Missing key (fresh row not yet migrated) →
+    // fall back to those same defaults, not "off", so a half-migrated central doesn't
+    // silently disable the vehicle box for everyone.
+    window._lprBboxCfg = {
+      vehicle:   st.lpr_bbox_vehicle_enabled    ? st.lpr_bbox_vehicle_enabled.value    === '1' : true,
+      plate:     st.lpr_bbox_plate_enabled      ? st.lpr_bbox_plate_enabled.value      === '1' : false,
+      fullImage: st.lpr_bbox_full_image_enabled ? st.lpr_bbox_full_image_enabled.value === '1' : false,
     };
   } catch {
     _lprGates = []; _lprSettingsCams = window.cameras || []; _lprVtCfg = {};
     _lprSceneCfg = { resolution: '1080p', quality: 80 };
-    _lprRetCfg = { image: 7, meta: 30 };
+    _lprRetCfg = { image: 7, meta: 30, lineImg: 24 };
+    window._lprBboxCfg = window._lprBboxCfg || { vehicle: true, plate: false, fullImage: false };
   }
   _renderLprGates();
   _renderLprVtypes();
+  _renderLprBbox();
   _renderLprScene();
   _renderLprRetention();
   _renderLprDir();
@@ -109,11 +152,25 @@ async function lprGateAdd() {
   } catch (e) { console.error('[lpr-settings] add gate:', e.message); }
 }
 
+// เขียนแล้วถูกปฏิเสธ (403 viewer/auditor · 500) — เดิมหน้าจอแสดงว่าสำเร็จแล้วค่อยกลับค่าเดิมตอนรีเฟรช
+// ตอนนี้: แจ้งผู้ใช้ แล้วโหลดค่าจริงจาก server ทับค่าที่แก้ไว้ล่วงหน้า (GOTCHAS #217)
+async function _lprsWrite(url, init) {
+  const r = await fetch(url, init);
+  if (!r.ok) {
+    showToast({ icon: '!', title: r.status === 403
+      ? _lprsT('lprset.noPermission', 'บัญชีนี้ไม่มีสิทธิ์แก้การตั้งค่านี้')
+      : _lprsT('lprset.saveFailed', 'บันทึกไม่สำเร็จ') });
+    loadLprSettings();
+    throw new Error('HTTP ' + r.status);
+  }
+  return r;
+}
+
 async function lprGateDelete(el) {
   const gid = el.dataset.gid;
   if (!confirm(_lprsT('lprset.delConfirm', 'ลบจุดนี้?'))) return;
   try {
-    await fetch(`${API}/api/lpr/gates/${gid}`, { method: 'DELETE' });
+    await _lprsWrite(`${API}/api/lpr/gates/${gid}`, { method: 'DELETE' });
     _lprGates = _lprGates.filter(g => g.id !== gid);
     _renderLprGates();
   } catch (e) { console.error('[lpr-settings] delete gate:', e.message); }
@@ -125,7 +182,7 @@ async function lprGateRule(el) {
   g.rules = g.rules || {}; g.rules[lane] = v;
   _renderLprGates();   // optimistic — update active state immediately
   try {
-    await fetch(`${API}/api/lpr/gates/${gid}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ rules: g.rules }) });
+    await _lprsWrite(`${API}/api/lpr/gates/${gid}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ rules: g.rules }) });
   } catch (e) { console.error('[lpr-settings] rule:', e.message); }
 }
 
@@ -137,7 +194,7 @@ function lprGateName(el) {
   g.name = el.value;
   clearTimeout(_lprNameTimers[gid]);
   _lprNameTimers[gid] = setTimeout(() => {
-    fetch(`${API}/api/lpr/gates/${gid}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: g.name || _lprsT('lprset.newGate', 'จุดใหม่') }) })
+    _lprsWrite(`${API}/api/lpr/gates/${gid}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: g.name || _lprsT('lprset.newGate', 'จุดใหม่') }) })
       .catch(e => console.error('[lpr-settings] name:', e.message));
   }, 500);
 }
@@ -147,7 +204,7 @@ async function lprGateCamera(el) {
   const g = _lprGates.find(x => x.id === gid); if (!g) return;
   g.camera_id = el.value;
   try {
-    await fetch(`${API}/api/lpr/gates/${gid}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ camera_id: g.camera_id }) });
+    await _lprsWrite(`${API}/api/lpr/gates/${gid}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ camera_id: g.camera_id }) });
   } catch (e) { console.error('[lpr-settings] camera:', e.message); }
 }
 
@@ -161,7 +218,7 @@ const _LPR_VT_PRIMARY = [
   ['pickupTruck',       'รถกระบะ'],
   ['truck',             'รถบรรทุก'],
   ['vehicle',           'รถยนต์'],
-  ['buggy',             'รถเล็ก/บักกี้'],
+  ['buggy',             'รถบรรทุกเล็ก'],
   ['largeBus',          'รถบัส'],
   ['pedestrian',        'คนเดินเท้า'],
 ];
@@ -171,9 +228,10 @@ let _lprVtSaveTimer = null;
 function _renderLprVtypes() {
   const el = document.getElementById('lprVtypeList');
   if (!el) return;
-  el.innerHTML = _LPR_VT_PRIMARY.map(([code, def]) => {
+  el.innerHTML = _LPR_VT_PRIMARY.map(([code, defTh]) => {
     const c = _lprVtCfg[code] || {};
     const on = c.on !== false;   // default on
+    const def = _lprsT('lpr.vtype.' + code, defTh);
     return `
       <div class="lpr-vt-row">
         <label class="lpr-vt-toggle"><input type="checkbox"${on ? ' checked' : ''} data-change="lprVtypeToggle" data-code="${code}"><span>${escapeHtml(def)}</span></label>
@@ -183,7 +241,7 @@ function _renderLprVtypes() {
 }
 
 function _saveLprVtypes() {
-  fetch(`${API}/api/lpr/vehicle-types`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(_lprVtCfg) })
+  _lprsWrite(`${API}/api/lpr/vehicle-types`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(_lprVtCfg) })
     .catch(e => console.error('[lpr-settings] save vtypes:', e.message));
 }
 
@@ -299,6 +357,44 @@ async function lprSetDir(el) {
   } catch (e) { console.error('[lpr-settings] set direction:', e.message); }
 }
 
+// ── migration 117: bounding-box overlay toggles ──────────────────────
+function _renderLprBbox() {
+  const cfg = window._lprBboxCfg || { vehicle: true, plate: false, fullImage: false };
+  const v = document.getElementById('lprBboxVehicle');
+  const p = document.getElementById('lprBboxPlate');
+  const f = document.getElementById('lprBboxFullImage');
+  if (v) v.checked = !!cfg.vehicle;
+  if (p) p.checked = !!cfg.plate;
+  if (f) f.checked = !!cfg.fullImage;
+}
+
+async function lprBboxSave() {
+  const vehicle   = !!document.getElementById('lprBboxVehicle')?.checked;
+  const plate     = !!document.getElementById('lprBboxPlate')?.checked;
+  const fullImage = !!document.getElementById('lprBboxFullImage')?.checked;
+  const msg = document.getElementById('lprBboxMsg');
+  try {
+    for (const [key, on] of [
+      ['lpr_bbox_vehicle_enabled', vehicle],
+      ['lpr_bbox_plate_enabled', plate],
+      ['lpr_bbox_full_image_enabled', fullImage],
+    ]) {
+      const r = await fetch(`${API}/api/settings/${key}`, {
+        method: 'PUT', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ value: on ? '1' : '0' }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'save failed');
+    }
+    // Update the shared cache in place — a LPR modal opened without a full page
+    // reload picks up the new values on its next open, no reload required.
+    window._lprBboxCfg = { vehicle, plate, fullImage };
+    if (msg) msg.textContent = _lprsT('lprset.bboxSaved', 'บันทึกแล้ว');
+  } catch (e) {
+    console.error('[lpr-settings] save bbox:', e.message);
+    if (msg) msg.textContent = _lprsT('common.saveError', 'บันทึกไม่สำเร็จ');
+  }
+}
+
 // ── RF-IMG: scene-image downscale settings ──────────────────────────
 function _renderLprScene() {
   const sel = document.getElementById('lprSceneRes');
@@ -312,27 +408,37 @@ function _renderLprScene() {
 function _renderLprRetention() {
   const img = document.getElementById('lprRetImg');
   const meta = document.getElementById('lprRetMeta');
+  const lineImg = document.getElementById('lprRetLineImg');
   if (img)  img.value  = _lprRetCfg.image;
   if (meta) meta.value = _lprRetCfg.meta;
+  if (lineImg) lineImg.value = _lprRetCfg.lineImg;
 }
 
 async function lprRetentionSave() {
   const img  = parseInt(document.getElementById('lprRetImg')?.value, 10);
   const meta = parseInt(document.getElementById('lprRetMeta')?.value, 10);
+  const lineImg = parseInt(document.getElementById('lprRetLineImg')?.value, 10);
   const msg  = document.getElementById('lprRetMsg');
   if (!(img >= 1 && img <= 730) || !(meta >= 1 && meta <= 730)) {
     if (msg) msg.textContent = _lprsT('lprset.retRange', 'ค่าต้องอยู่ระหว่าง 1-730 วัน');
     return;
   }
+  // Its own range and its own message — hours, not days, and saying "1-730 วัน"
+  // for a field capped at 720 hours is how someone spends a minute confused.
+  if (!(lineImg >= 1 && lineImg <= 720)) {
+    if (msg) msg.textContent = _lprsT('lprset.retLineImgRange', 'อายุรูป LINE ต้องอยู่ระหว่าง 1-720 ชม.');
+    return;
+  }
   try {
-    for (const [key, value] of [['lpr_image_retention_days', img], ['lpr_retention_days', meta]]) {
+    for (const [key, value] of [['lpr_image_retention_days', img], ['lpr_retention_days', meta],
+                                ['lpr_line_image_expire_hours', lineImg]]) {
       const r = await fetch(`${API}/api/settings/${key}`, {
         method: 'PUT', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ value: String(value) }),
       });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'save failed');
     }
-    _lprRetCfg = { image: img, meta: meta };
+    _lprRetCfg = { image: img, meta: meta, lineImg };
     _renderLprRetention();
     if (msg) msg.textContent = img > meta
       ? _lprsT('lprset.retCapped', 'บันทึกแล้ว · อายุรูปจะถูกลดให้ไม่เกินอายุข้อมูลตอนลบจริง')

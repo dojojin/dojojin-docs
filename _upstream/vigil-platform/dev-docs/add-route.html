@@ -218,6 +218,12 @@ return res.status(404).json({ error: 'Not found' });</pre>
 // ============================================================</pre>
 
 <div class="ref">
+  <h2>อย่าลืมเอกสาร API — pre-commit hook บังคับ</h2>
+  <p>ทุก route ใหม่/ที่ลบต้องปรากฏใน <code>docs/REF_api-reference.md</code> (ภาคผนวก A + ตัวเลขท้ายไฟล์).
+  ตั้งแต่ 2026-09-07 hook ที่ติดตั้งด้วย <code>npm run hooks:install</code> จะรัน
+  <code>scripts/check-api-reference.js</code> เมื่อ commit แตะไฟล์ route — ไม่ตรง = commit ถูกปฏิเสธ.
+  สร้างภาคผนวกใหม่ด้วย <code>npm run check:api -- --list</code> แล้ววางระหว่าง marker
+  <code>BEGIN/END route-index</code>.</p>
   <p><a href="index.html">← กลับ Navigator</a> · อ้างอิง: <code>docs/REF_api-reference.md</code> · <code>docs/LOGIC_auth-security.md</code></p>
 </div>
 </div>

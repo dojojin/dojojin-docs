@@ -69,7 +69,12 @@
     const { prefix, number } = parsePlate(plate);
     const s = plateColorStyle(opts.plateColor);
     const brd = s.border ? `;border-color:${s.border};border-width:2px` : '';
-    const sty = `background:${s.bg};color:${s.ink}${brd}`;
+    // opts.ink — optional text-colour override. Thai DLT distinguishes plates by
+    // background AND text colour (white/black = รถยนต์ส่วนบุคคล vs white/green =
+    // รถบรรทุกส่วนบุคคล), which a single background token can't express. Sources
+    // that report both (e.g. GuruSquare's "normal-white-green") pass ink here.
+    // Omitted => unchanged behaviour for every existing caller.
+    const sty = `background:${s.bg};color:${opts.ink || s.ink}${brd}`;
     const moto = isMoto(opts.vehicleType);
     const withProv = !!(opts.showProv && opts.region && opts.region !== 'ไม่ทราบ');
     const cls = `lpr-plaque${moto ? ' moto' : ''}${opts.feed ? ' feed' : ''}${opts.big ? ' big' : ''}${withProv ? ' withprov' : ''}`;

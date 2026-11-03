@@ -46,8 +46,7 @@ module.exports = function groupsRoutes(app, pool, { auth, getIP, loadGroups, sav
 
       let allowedCameraIds = new Set();
       if (allowedSites.length) {
-        const camRows = await pool.query('SELECT id FROM cameras WHERE site_id = ANY($1)', [allowedSites]);
-        allowedCameraIds = new Set(camRows.rows.map(r => r.id));
+        allowedCameraIds = await auth.scopedCameraIds(allowedSites, pool);   // รวมแกนกล้อง (GOTCHAS #166)
       }
       const scoped = allGroups
         .map(g => ({ ...g, cameraIds: (g.cameraIds || []).filter(id => allowedCameraIds.has(id)) }))

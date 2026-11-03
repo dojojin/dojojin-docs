@@ -30,7 +30,8 @@
     <li><strong>หาเจ้าของโค้ดชัดขึ้น</strong> — "หน้า Stats มีปัญหา" → เปิด <code>page-stats.js</code> ได้เลย</li>
     <li><strong>browser dev cache</strong> — แก้ <code>page-events.js</code> → browser invalidate แค่ไฟล์นั้น ไม่ทั้ง 10k บรรทัด</li>
     <li><strong>แก้ไม่กระทบส่วนอื่น</strong> — แก้ executive summary ไม่มีทางพลาดแตะ nav bindings หรือ health check</li>
-    <li><strong>Runtime / bundle size ไม่เปลี่ยน</strong> — classic <code>&lt;script&gt;</code> multi-file บน HTTP/2 แทบไม่ต่าง; globals ยังแชร์ผ่าน window เหมือนเดิม</li>
+    <li><strong>Runtime / bundle size ไม่เปลี่ยน</strong> — globals ยังแชร์ผ่าน window เหมือนเดิม<br>
+      <strong>อัปเดต 2026-09-06:</strong> ตอนนี้ api-server รวม <code>&lt;script src&gt;</code> ทุกตัวที่ <code>dashboard/index.html</code> เรียก เป็นไฟล์เดียว <code>/dashboard.bundle.js</code> ตั้งแต่ตอน boot (เรียงตามลำดับใน index.html ไม่ใช่ตามชื่อไฟล์) — first load เหลือ 9 คำขอจาก 47 · การเพิ่มหน้าใหม่ยัง<strong>ทำเหมือนเดิมทุกอย่าง</strong> คือใส่แท็ก <code>&lt;script&gt;</code> ใน index.html แล้ว bundle จะรวมให้เอง ไม่มี build step · ปิดด้วย <code>DASHBOARD_BUNDLE=0</code> เมื่อต้องการ debug ไฟล์แยกทีละตัว (<code>src/helpers/dashboardBundle.js</code>)</li>
   </ul>
 </div>
 
@@ -191,8 +192,36 @@ const res = await fetch(`${API}/api/endpoint`, {
 
 // ไม่มี apiFetch() helper ใน codebase — ใช้ fetch() ตรงๆ เสมอ</pre>
 
+<h3>ถ้าหน้าโชว์ modal ของ event/ใบหน้า — reuse appearance chips อย่าเขียนใหม่ (เพิ่ม 2026-08-11)</h3>
+
+<p>ถ้า modal ของหน้าใหม่มี event id และอยากโชว์ "ลักษณะที่ตรวจพบ" (เสื้อ/กางเกง/ผม/แว่น/กระเป๋า/หมวก
+จากตาราง <code>appearances</code>) <strong>อย่าเขียน render function ใหม่</strong> — มีชุดสำเร็จรูปใน
+<code>page-snapshots.js</code> อยู่แล้ว 3 ที่ใช้ pattern เดียวกันนี้แล้ว
+(<code>page-snapshots.js</code> เอง, <code>page-face-matches.js</code>, <code>page-hcp-face-search.js</code>
+— decision #241):</p>
+
+<pre>// 1) render modal ปกติก่อน (sync) พร้อม placeholder ว่างๆ ไว้ก่อน
+document.getElementById('yourModalBody').innerHTML = `
+  ...
+  &lt;div id="yourAppearanceSection" data-eid="${ev.id}"&gt;&lt;/div&gt;`;
+
+// 2) lazy fetch ทีหลัง — ไม่บล็อกการเปิด modal, ไม่โชว์อะไรถ้าไม่มีข้อมูลจริง
+fetch(`${API}/api/events/${ev.id}/appearance`)
+  .then(r =&gt; r.ok ? r.json() : null)
+  .then(ap =&gt; {
+    if (!ap) return;                      // ไม่มีแถว appearances สำหรับ event นี้ — ปล่อยว่างไว้ ไม่ใช่บั๊ก
+    const sec = document.getElementById('yourAppearanceSection');
+    if (!sec || sec.dataset.eid !== String(ev.id)) return;  // กัน race ถ้าผู้ใช้เปลี่ยน modal ระหว่างรอ
+    sec.innerHTML = _renderAppearanceSection(ap);           // ใช้ _renderAppearanceChips(ap) ถ้าอยากได้แบบ compact ไม่มี header
+  })
+  .catch(() =&gt; {});</pre>
+
+<p><code>GET /api/events/:id/appearance</code> join ด้วย <code>event_id</code> ตรงๆ เท่านั้น (ไม่มี
+fallback เดาด้วยช่วงเวลา) — ถ้าหน้าใหม่ของคุณไม่มี event id ของเราเองตรงๆ (เช่น ผลลัพธ์จากระบบภายนอก
+ที่ยังไม่ได้ยืนยันว่าตรงกับ event ไหนของเรา) ให้ปล่อยว่างไว้ ไม่ต้องพยายาม join แบบเดา</p>
+
 <div class="ref">
-  <p><a href="index.html">← กลับ Navigator</a> · อ้างอิง: <code>DESIGN.md</code> · DECISIONS.md #1, #142–145, #173 · GOTCHAS #29–#31, #35, #42</p>
+  <p><a href="index.html">← กลับ Navigator</a> · อ้างอิง: <code>DESIGN.md</code> · DECISIONS.md #1, #142–145, #173, #241 · GOTCHAS #29–#31, #35, #42</p>
 </div>
 </div>
 </div>

@@ -70,7 +70,8 @@
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**7 PM2 processes run on the edge node:**
+**8 PM2 processes are defined in `ecosystem.edge.config.js`** (the list below is generated from
+that file — if they ever disagree, the file wins):
 
 | # | Name | Script | Role |
 |---|---|---|---|
@@ -78,9 +79,14 @@
 | 2 | `hikvision` | `src/ingesters/hikvision-isapi.js` | Polls Hik cameras via ISAPI |
 | 3 | `dahua` | `src/ingesters/dahua-cgi.js` | Polls Dahua cameras via CGI |
 | 4 | `lpr-receiver` | `src/lpr-receiver.js` | HTTP push receiver for LPR / face |
-| 5 | `edge-config-agent` | `src/edge-config-agent.js` | Syncs cameras-config.json from central |
-| 6 | `edge-bridge` | `src/helpers/edge-bridge.js` | Forwards MQTT from NanoMQ → central EMQX |
-| 7 | `cloudflared` | `scripts/edge-cloudflared.sh` | Cloudflare tunnel (LPR ingress + MQTT WSS) |
+| 5 | `hcp-face-matches` | `src/ingesters/hcp-face-matches.js` | Pulls face-match records from HikCentral Professional (`--live`, 60s poll) |
+| 6 | `edge-config-agent` | `src/edge-config-agent.js` | Syncs cameras-config.json from central |
+| 7 | `edge-bridge` | `src/edge/bridge.js` | Forwards MQTT from NanoMQ → central EMQX |
+| 8 | `cloudflared` | `scripts/edge-cloudflared.sh` | Cloudflare tunnel (LPR ingress + MQTT WSS) |
+
+> Not every site runs all eight. A site with no Dahua cameras leaves `dahua` stopped (GOTCHAS
+> #100), and only sites wired to HikCentral Professional run `hcp-face-matches` — that one also
+> refuses to start without `BLACKLIST_SECRET_KEY`, by design.
 
 ---
 
@@ -98,6 +104,23 @@
   **Must be identical to the key on central** (`src/.env` → `CAMERA_SECRET_KEY`)
 - `EDGE_SITE_ID` — site code (e.g. `vss`)
 
+### Known edge sites
+
+| Site code | Edge node name | Admin access |
+|---|---|---|
+| `hkt` | `sshhkt` (`sshhkt.dojojin.tech`) | Cloudflare Access SSH — `ssh sshhkt` |
+| `hdy` | `sshhdy` (`sshhdy.dojojin.tech`) | Cloudflare Access SSH — `ssh sshhdy` |
+| `vss` | `sshvss` (`sshvss.dojojin.tech`) | Cloudflare Access SSH — `ssh sshvss` |
+| `rmutr-v` | `sshvss3` (`sshvss3.dojojin.tech`) | Cloudflare Access SSH — `ssh sshvss3` |
+
+> `rmutr-v` and `vss3` are the same edge node (site code: `rmutr-v`, ssh alias: `sshvss3`, Linux user: `vss3`).
+> To enable SSH on a new edge site, see Step 5.5 below.
+
+> `hkt` (Phuket) is new — previously this site only had push-only cameras reaching
+> central directly (HKT01/HKT02 face push via `POST /face-push/:token`, see
+> ROADMAP.md IM3-R), no edge node of its own. This is the first real edge box for
+> that site.
+
 ### Software versions (tested)
 | Software | Version |
 |---|---|
@@ -113,7 +136,8 @@
 ## Step-by-Step Installation
 
 > Examples below use user `vigil` / `/home/vigil`. Substitute your actual box user/home
-> (e.g. the vss box uses `vss-edge` / `/home/vss-edge`).
+> The real ones follow no single pattern — `phuket-edge`, `hdy-edge`, `vss2`, `vss3`.
+> Read them off `~/.ssh/config` on central rather than guessing from the site code.
 
 ### Step 1 — Install Linux Mint 22
 
@@ -148,6 +172,12 @@ pm2 --version
 ```
 
 > **Alternative (no sudo):** `npm install --prefix ~/.local pm2` and add `~/.local/bin` to `PATH`
+>
+> ⚠️ **Do not install PM2 through nvm.** Every working site has PM2 in a system path
+> (`/usr/bin/pm2` or `/usr/local/bin/pm2`). A PM2 that lives under `~/.nvm/versions/node/vXX/bin`
+> drags that version-pinned path into the systemd unit at `pm2 startup` time — see the warning in
+> Step 12. If you already did, fix it before enabling autostart:
+> `sudo npm install -g pm2 && npm uninstall -g pm2 && command -v pm2   # must be /usr/bin/pm2`
 
 ### Step 4 — Install NanoMQ (no-sudo, user-local)
 
@@ -238,6 +268,121 @@ chmod +x ~/.local/bin/cloudflared
 cloudflared --version
 ```
 
+### Step 5.5 — Remote SSH access (Cloudflare Access)
+
+SSH access to an edge node requires **three independent layers**, each with its own failure mode.
+Set them up in order and verify each before moving to the next.
+
+#### Layer 1: Tunnel Public Hostname (SSH type)
+
+In Cloudflare Zero Trust:
+1. Navigate to **Tunnels** → (your tunnel name)
+2. Click **Public Hostnames** → **Add a public hostname**
+3. Configure:
+   - **Subdomain:** `ssh<site>` (e.g., `sshhkt`, `sshhdy`, `sshvss`, `sshvss3`)
+   - **Domain:** `dojojin.tech`
+   - **Type:** `SSH` (not HTTP)
+   - **URL:** `localhost:22`
+4. **Save hostname**
+
+**Verify Layer 1:** Run `cloudflared access ssh --hostname sshhkt.dojojin.tech` on central — it should
+connect to the tunnel (authentication comes next; it will not let you in yet).
+Use the tunnel hostname, **not** `ssh sshhkt.dojojin.tech` — plain SSH to that name bypasses the
+`ProxyCommand` entirely and just times out against a port that was never exposed to the internet,
+which looks identical to a missing hostname and sends you chasing the wrong layer.
+
+#### Layer 2: Access Policy (Service Auth)
+
+Back in Cloudflare Zero Trust:
+1. Navigate to **Access** → **Applications** → find the SSH hostname you just created
+   (it should be auto-registered; if not, create it manually with type "SSH")
+2. Click to open the application, then **Policies** tab
+3. If no policy exists, **Add a policy**:
+   - **Policy name:** `SSH-<site>`
+   - **Action:** `Service Auth` (⚠️ **NOT** `Allow` — this is the most common mistake; see gotcha below)
+   - **Rules:** Add a rule with selector `Service Token` → `matches` → select the service token for this site
+   - **Save**
+
+**Verify Layer 2:** Run `ssh -v sshhkt` on central (the alias, so the `ProxyCommand` is used) — if policy is set to `Service Auth` and token is correct, cloudflared should silently forward to step 3. If policy is `Allow` instead → ssh will hang then drop you into a browser login flow (confusing because the token is actually valid — the wrong Action type forces browser auth even for service tokens).
+
+#### Layer 3: SSH authorized_keys on the edge
+
+On the edge box, append the **public key** of central's SSH user to `~/.ssh/authorized_keys`:
+
+```bash
+# On the edge box:
+mkdir -p ~/.ssh
+# Append central's public key — on central: cat ~/.ssh/id_ed25519.pub
+echo "ssh-ed25519 AAAA... vigil-central" >> ~/.ssh/authorized_keys
+chmod 600 ~/.ssh/authorized_keys
+chmod 700 ~/.ssh
+```
+
+> ⚠️ **Gotcha:** If the edge has `PasswordAuthentication no` in `/etc/ssh/sshd_config` (which it should —
+> it's the correct security setting), you **cannot use `ssh-copy-id`** because it needs to log in with a password
+> first to install the key. This is a chicken-and-egg problem. Instead, someone with access to the edge
+> (via console, RDP, or an existing SSH session) must manually append the key to `~/.ssh/authorized_keys`
+> and set permissions. Once the key is in place, future SSH logins work without a password.
+
+**Verify Layer 3:** Run `ssh sshhkt 'hostname && whoami'` on central — if all three layers are set up correctly, this returns the edge hostname and username without prompting for anything or showing a URL.
+
+#### Troubleshooting SSH connection failures
+
+If `ssh sshhkt` fails, diagnose by layer:
+
+1. **DNS doesn't resolve or times out → Layer 1 problem**
+   - Verify the Public Hostname exists in Cloudflare Zero Trust
+   - Verify type is `SSH`, not HTTP
+   - Verify URL points to `localhost:22`
+
+2. **Connection closes immediately or shows browser URL → Layer 2 problem**
+   - Open the SSH application in Cloudflare Zero Trust
+   - Check the policy Action: must be `Service Auth`, NOT `Allow`
+   - Verify the service token is selected in the rule
+   - If using the wrong token (e.g., token for site `vss` when connecting to `hkt`), connection will hang then fail
+
+3. **`Permission denied (publickey)` → Layer 3 problem**
+   - Verify the public key is in `~/.ssh/authorized_keys` on the edge (correct permissions: 600 file, 700 dir)
+   - Double-check the key is complete and on one line (`ssh-ed25519 AAAA...`)
+   - Verify you're connecting with the correct username (`phuket-edge` / `hdy-edge` / `vss2` / `vss3` — they do not follow one pattern)
+
+#### Reference: SSH config on central
+
+Add these aliases to `~/.ssh/config` on central for convenience:
+
+```
+Host sshhkt
+    HostName sshhkt.dojojin.tech
+    ProxyCommand bash -c 'source ~/.cloudflared/vigil-service-token.env && exec cloudflared access ssh --hostname %h'
+    User phuket-edge
+    StrictHostKeyChecking no
+
+Host sshhdy
+    HostName sshhdy.dojojin.tech
+    ProxyCommand bash -c 'source ~/.cloudflared/vigil-service-token.env && exec cloudflared access ssh --hostname %h'
+    User hdy-edge
+    StrictHostKeyChecking no
+
+Host sshvss
+    HostName sshvss.dojojin.tech
+    ProxyCommand bash -c 'source ~/.cloudflared/vigil-service-token.env && exec cloudflared access ssh --hostname %h'
+    User vss2
+    StrictHostKeyChecking no
+
+Host sshvss3
+    HostName sshvss3.dojojin.tech
+    ProxyCommand bash -c 'source ~/.cloudflared/vigil-service-token.env && exec cloudflared access ssh --hostname %h'
+    User vss3
+    StrictHostKeyChecking no
+```
+
+The `vigil-service-token.env` file contains the Cloudflare service token environment variables
+(`TunnelServiceToken*`). **One token serves every edge** — the block above is byte-identical across
+sites except for `HostName` and `User`. So if a new box won't connect, the fault is never in this
+file; walk Layers 1–3 in order instead.
+
+---
+
 ### Step 6 — Clone the Vigil Repository
 
 ```bash
@@ -276,6 +421,9 @@ EDGE_SITE_CODE=vss
 
 # ── Bridge → Central EMQX ─────────────────────────────────
 BRIDGE_BROKER_URL=wss://dashboard.dojojin.tech/mqtt
+# หลายเส้นทาง เรียงตามลำดับ (src/edge/bridgePaths.js · GOTCHAS #229): Tailscale → SSH -R → Cloudflare
+# ต้องมี: edge ติด tag:edge ใน tailnet · central มี pm2 mqtt-tunnel-<site> (เพิ่มชื่อ host ใน MQTT_TUNNEL_HOSTS ของ ecosystem.config.js)
+# BRIDGE_BROKER_URLS=mqtt://100.89.1.29:1883,mqtt://127.0.0.1:18830,wss://dashboard.dojojin.tech/mqtt
 BRIDGE_USERNAME=edge-vss                # from central EMQX admin
 BRIDGE_PASSWORD=REPLACE_WITH_REAL_PW   # from central EMQX admin
 
@@ -309,6 +457,31 @@ API_PORT=3000
 # ── Secrets ───────────────────────────────────────────────
 SESSION_SECRET=REPLACE_WITH_64_HEX_CHARS
 INTERNAL_API_SECRET=REPLACE_WITH_64_HEX_CHARS
+# CRITICAL: both of these must be identical to central's src/.env, not new values
+SNAPSHOT_PROXY_SECRET=REPLACE_WITH_CENTRAL_KEY   # missing = every central→edge request (httphost-*, event-broker-*, snapshot proxy) gets 401
+BLACKLIST_SECRET_KEY=REPLACE_WITH_CENTRAL_KEY    # missing = hcp-face-matches worker crashes on boot
+
+# ── Edge networking (needed if cameras push face events to this edge) ─
+EDGE_MQTT_BROKER=mqtt://127.0.0.1:1883   # local NanoMQ, rarely needs changing
+LPR_PUSH_HOST=REPLACE_WITH_THIS_EDGE_LAN_IP   # e.g. 172.29.51.52 — this file is gitignored, so a full OS reinstall or manual .env rebuild loses it silently; re-set it every time you (re)provision a box
+# FACE_PUSH_HOST — ⚠️ two call sites in lpr-receiver.js want different shapes
+# (unresolved as of 2026-08-18, see GOTCHAS): the Hikvision ISAPI IP check wants
+# a bare IP ("172.29.51.52"); the Bosch ONVIF AddEventBroker wants "host:port"
+# ("172.29.51.52:1883"). A site using BOTH vendors for face push cannot satisfy
+# both today — set it for whichever this site actually uses.
+FACE_PUSH_HOST=REPLACE_WITH_THIS_EDGE_LAN_IP_OR_IP_PORT
+
+# ── ONVIF metadata crop — tuning only (Bosch) ─────────────
+# The on/off switch is NOT here: it is per camera in the dashboard
+# (Camera Settings → "ครอปภาพตามวัตถุ", column cameras.meta_crop, migration
+# 164) and arrives on the same config push as snapshot_mode, so a toggle
+# takes effect without touching this file or restarting anything. When on,
+# the edge subscribes to that camera's ONVIF metadata track over RTSP —
+# metadata only, the video track is never requested — and crops each event
+# snapshot to the object that triggered it. ~2.5 KB/s and ~0.2% of one core
+# per enabled camera. These two only change how the crop is framed:
+# META_CROP_PAD=0.12     # padding around the box, as a fraction of its size
+# META_CROP_MINPX=40     # skip the crop when either side lands below this
 
 # ── Cloudflare Tunnel ─────────────────────────────────────
 TUNNEL_TOKEN=eyJ...   # from Cloudflare Zero Trust → Tunnels
@@ -487,6 +660,22 @@ pm2 startup systemd -u vigil --hp /home/vigil
 pm2 save
 ```
 
+> ⚠️ **The line pm2 prints contains a literal `$PATH` — do not paste it as-is if this box has
+> nvm installed.** `pm2 startup` snapshots whatever `$PATH` your shell has, and a shell whose
+> `.bashrc` prepends nvm produces a unit pinned to `~/.nvm/versions/node/vXX.Y.Z/bin`. The day
+> nvm drops that exact version, boot-time autostart breaks with nothing to warn you.
+> Every working site has a unit with **no nvm in its PATH** — keep it that way by writing the
+> PATH out literally instead of letting the shell expand it:
+> ```bash
+> env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+>        HOME=$HOME USER=$USER /usr/bin/pm2 startup systemd -u <user> --hp $HOME
+> # then run the sudo line it prints (that one is safe — PATH is already literal)
+> grep -c nvm /etc/systemd/system/pm2-<user>.service    # must print 0
+> ```
+> Found the hard way at site `nrw` (2026-08-30): the first reboot came up with no unit at all
+> because the regenerate step had failed, and PM2 never started — caught only because the site
+> had no cameras yet. **Always reboot once and verify autostart while a new site is still empty.**
+
 On pure Linux this works cleanly. The systemd unit starts PM2 on boot which starts all saved processes.
 
 > **WSL2 note (POC only):** On WSL2, `pm2 startup` generates a systemd unit but WSL2 doesn't use systemd by default. On WSL2 you need `loginctl enable-linger $USER` and a Windows Task Scheduler entry to start WSL2 on boot. Pure Linux avoids all of this.
@@ -563,7 +752,19 @@ Bosch cameras support MQTT natively (ONVIF Profile M). Configure each camera to 
 
 **Topic format:** Bosch publishes to `{camera_id}/onvif-ej/{category}/{type}/...`
 - No `projects/vss/` prefix (unlike Hikvision/Dahua)
-- `edge-bridge.js` subscribes to `+/onvif-ej/#` to capture these and forwards them to central EMQX
+- `src/edge/bridge.js` subscribes to `+/onvif-ej/#` to capture these and forwards them to central EMQX
+
+> ⚠️ **Central EMQX ACL does not cover this topic automatically.** `scripts/provision-site.js`
+> grants the edge user `projects/<code>/#` only, so a Bosch camera's `<camera_id>/onvif-ej/#`
+> publish is denied by the `no_match=deny` policy — **silently**, because the bridge's *subscribe*
+> succeeds and nothing errors at start-up. Add one rule per camera on central when you add a
+> Bosch camera that has ONVIF metadata enabled (site `hdy` already carries three such rules):
+> ```
+> POST /authorization/sources/built_in_database/rules/users/edge-<code>
+> { "topic": "<camera_id>/onvif-ej/#", "action": "publish", "permission": "allow" }
+> ```
+> Verify afterwards with
+> `GET /authorization/sources/built_in_database/rules/users/edge-<code>`.
 
 > **Pure Linux advantage:** On pure Linux, the edge box LAN IP is stable and directly reachable.
 > On WSL2, you need `netsh interface portproxy` on Windows PowerShell (Admin) to forward
@@ -738,7 +939,7 @@ grep -n "insecureHTTPParser" src/ingesters/hikvision-isapi.js
 
 **Verify fix is in edge-bridge.js:**
 ```bash
-grep "BOSCH_FILTER\|onvif-ej" src/helpers/edge-bridge.js
+grep "BOSCH_FILTER\|onvif-ej" src/edge/bridge.js
 # Should show: const BOSCH_FILTER = '+/onvif-ej/#';
 ```
 

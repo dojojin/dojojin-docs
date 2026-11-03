@@ -34,7 +34,7 @@ const NAV_ITEMS = [
   { href: '../vendor-comparison.html', label: '↗ Vendor Comparison', target: '_blank' },
 ];
 
-const NAV_LOGO = '<div class="nav-logo"><h1>Vigil Platform</h1><p>Live Docs v1.5.1</p></div>';
+const NAV_LOGO = '<div class="nav-logo"><h1>Vigil Platform</h1><p>Live Docs v1.5.4</p></div>';
 
 function buildNav() {
   const navEl = document.getElementById('nav');

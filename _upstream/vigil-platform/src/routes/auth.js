@@ -35,6 +35,7 @@ module.exports = function authRoutes(app, pool, { auth, getIP, getSessionToken }
     }
   }, 5 * 60 * 1000);
 
+  // write-guard: public โดยออกแบบ (ล็อกอิน)
   app.post('/api/auth/login', async (req, res) => {
     try {
       const { username, password } = req.body || {};
@@ -91,6 +92,7 @@ module.exports = function authRoutes(app, pool, { auth, getIP, getSessionToken }
     } catch (e) { routeError(res, e, 'POST /api/auth/login'); }
   });
 
+  // write-guard: ออกจากระบบของตัวเอง
   app.post('/api/auth/logout', async (req, res) => {
     try {
       const token = getSessionToken(req);

@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="th" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>อันดับไม่สวมหมวกนิรภัย — Live Demo</title>
+
+<!-- LIVE DEMO — ข้อมูลบนหน้านี้เป็น mock ทั้งหมด ไม่ได้ query ของจริง
+     รูปทรงของข้อมูลถอดมาจากของจริงที่วัดได้ 2026-08-15 (ดู helmet-data.js)
+     Served at: /others/demo/top-helmet-report/   (auth-gated)
+     data-theme="light" ตายตัว ไม่โหลด /theme-init.js — หน้า demo ใช้ light เสมอ
+     CSP: script-src 'self' — ห้าม inline <script> / inline handler ทุกกรณี -->
+<link rel="stylesheet" href="/vendor/fonts/fonts.css">
+<script src="/vendor/chartjs/chart-4.4.1.umd.min.js"></script>
+<link rel="stylesheet" href="/index.css">
+<link rel="stylesheet" href="./helmet-demo.css?v=h1">
+</head>
+<body>
+<div class="demo-wrap">
+
+  <div class="demo-banner">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+    <span><b>LIVE DEMO — ตัวเลขทั้งหมดเป็น mock</b> ·
+    ยังไม่ต่อข้อมูลจริง แต่ชื่อกล้อง จุดติดตั้ง และรูปทรงของอัตราฝ่าฝืน
+    <b>ถอดมาจากข้อมูลจริงของระบบ</b> (Without_Helmet 16,279 ครั้งใน 20 วัน)
+    เพื่อให้ประเมินหน้าตาและการใช้งานได้ตรงกับของจริง</span>
+  </div>
+
+  <div class="page-head">
+    <div>
+      <h1>อันดับไม่สวมหมวกนิรภัย · Helmet Enforcement</h1>
+      <div class="sub">เฉพาะรถจักรยานยนต์ · กดที่ป้ายทะเบียนเพื่อดูรายละเอียดรถคันนั้น</div>
+    </div>
+    <div class="scope-inline">
+      <div class="seg" id="hmPeriodSeg">
+        <button class="segbtn active" data-action="hmPeriod" data-period="day">รายวัน</button>
+        <button class="segbtn" data-action="hmPeriod" data-period="week">รายสัปดาห์</button>
+        <button class="segbtn" data-action="hmPeriod" data-period="month">รายเดือน</button>
+      </div>
+      <select id="hmTopN" aria-label="จำนวนอันดับที่แสดง">
+        <option value="5">Top 5</option>
+        <option value="10" selected>Top 10</option>
+        <option value="20">Top 20</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- ───────── สรุปตัวเลขหลัก ───────── -->
+  <div class="kpi-row">
+    <div class="kpi">
+      <span class="kpi-label">ตรวจพบไม่สวมหมวก</span>
+      <b class="kpi-value" id="hmKpiTotal">—</b>
+      <span class="kpi-foot">ครั้ง · ช่วงที่เลือก</span>
+    </div>
+    <div class="kpi">
+      <span class="kpi-label">อัตราต่อมอเตอร์ไซค์ที่ผ่าน</span>
+      <b class="kpi-value" id="hmKpiRate">—</b>
+      <span class="kpi-foot">เฉลี่ยทุกกล้อง</span>
+    </div>
+    <div class="kpi">
+      <span class="kpi-label">ป้ายทะเบียนที่พบซ้ำ</span>
+      <b class="kpi-value" id="hmKpiRepeat">—</b>
+      <span class="kpi-foot">ตั้งแต่ 2 ครั้งขึ้นไป</span>
+    </div>
+    <div class="kpi">
+      <span class="kpi-label">จุดที่หนักที่สุด</span>
+      <b class="kpi-value sm" id="hmKpiWorst">—</b>
+      <span class="kpi-foot" id="hmKpiWorstFoot">—</span>
+    </div>
+  </div>
+
+  <!-- ───────── อันดับป้ายทะเบียน ───────── -->
+  <section class="card">
+    <div class="card-head">
+      <div>
+        <h2>อันดับป้ายทะเบียนที่ตรวจพบบ่อยที่สุด</h2>
+        <div class="card-sub" id="hmRange">—</div>
+      </div>
+      <button class="btn primary" data-action="hmReport">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 15h6M9 11h3"/></svg>
+        จัดทำรายงาน (PDF)
+      </button>
+    </div>
+    <div class="rank-columns" aria-hidden="true">
+      <span>อันดับ</span><span>ป้ายทะเบียน</span><span>สัดส่วนการตรวจพบ</span><span>จำนวนครั้ง</span>
+    </div>
+    <div class="rank-list" id="hmList"></div>
+    <p class="card-note">กรณีจำนวนครั้งเท่ากัน จะแสดงทุกป้ายไว้ในอันดับเดียวกัน
+      และจำนวนแถวยึดตาม “จำนวนอันดับ” ที่เลือก</p>
+  </section>
+
+  <!-- ───────── กล้อง ───────── -->
+  <section class="card">
+    <div class="card-head">
+      <div>
+        <h2>กล้องที่ตรวจพบไม่สวมหมวกสูงสุด</h2>
+        <div class="card-sub">เรียงจากจุดที่ตรวจพบมากที่สุด</div>
+      </div>
+    </div>
+    <div class="cam-list" id="hmCamList"></div>
+    <p class="card-note" id="hmCamNote">—</p>
+  </section>
+
+  <div class="grid-2">
+    <!-- ───────── ช่วงเวลา ───────── -->
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>ช่วงเวลาที่พบมากที่สุด</h2>
+          <div class="card-sub">ใช้เลือกเวลาตั้งด่านให้ตรงกับที่คนฝ่าฝืนจริง</div>
+        </div>
+      </div>
+      <div class="chart-box sm"><canvas id="hmHourChart"></canvas></div>
+      <p class="card-note" id="hmHourNote">—</p>
+    </section>
+
+    <!-- ───────── ผู้ทำผิดซ้ำ ───────── -->
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>ป้ายทะเบียนที่ทำผิดซ้ำ</h2>
+          <div class="card-sub">แยกตามจำนวนครั้งที่ถูกตรวจพบใน 14 วัน</div>
+        </div>
+      </div>
+      <div class="chart-box sm"><canvas id="hmRepeatChart"></canvas></div>
+      <p class="card-note" id="hmRepeatNote">—</p>
+    </section>
+  </div>
+
+  <!-- กราฟ "แนวโน้มรายวัน 14 วัน (ก่อน-หลังตั้งจุดกวดขัน)" ถอดออกตามที่เจ้าของสั่ง
+       2026-08-15 — เก็บเป็นไอเดียของแผนถัดไป ดู ROADMAP.md -->
+
+</div>
+
+<!-- ───────── Modal รายละเอียดรถ ───────── -->
+<div class="hm-modal" id="hmModal" hidden>
+  <div class="hm-modal-card" role="dialog" aria-modal="true" aria-labelledby="hmModalTitle">
+    <button class="hm-close" data-action="hmClose" aria-label="ปิด">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+    <h3 class="sr-only" id="hmModalTitle">รายละเอียดป้ายทะเบียน</h3>
+
+    <div class="hm-modal-top">
+      <div class="hm-col-left">
+        <div class="hm-panel">
+          <div class="hm-panel-label">ป้ายจริง (CROP จากกล้อง)</div>
+          <div class="hm-crop" id="hmCrop"></div>
+        </div>
+        <div class="hm-panel">
+          <div class="hm-panel-label">ระบบอ่านได้</div>
+          <div class="hm-plaque-wrap"><div class="hm-plaque" id="hmPlaque"></div></div>
+        </div>
+      </div>
+      <div class="hm-panel hm-col-right">
+        <div class="hm-panel-label">SNAPSHOT ภาพเต็ม</div>
+        <div class="hm-snap" id="hmSnap"></div>
+      </div>
+    </div>
+
+    <dl class="hm-facts" id="hmFacts"></dl>
+
+    <div class="hm-hist">
+      <div class="hm-hist-title">ป้ายนี้ผ่านซ้ำใน 24 ชม. ที่ผ่านมา</div>
+      <div class="hm-hist-scroll">
+        <table class="hm-hist-table">
+          <thead><tr><th>เวลา</th><th>ประเภทรถ</th><th>สีรถ</th><th>ยี่ห้อ</th><th>หมวกกันน็อค</th><th>กล้อง</th></tr></thead>
+          <tbody id="hmHistBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="hm-modal-foot">
+      <button class="btn sm" data-action="hmNoop">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+        ย้อนหลัง 24 ชม.
+      </button>
+      <button class="btn sm" data-action="hmNoop">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+        บันทึกรูป
+      </button>
+    </div>
+  </div>
+</div>
+
+<script src="./helmet-data.js?v=h1"></script>
+<script src="./helmet-demo.js?v=h1"></script>
+</body>
+</html>

@@ -652,44 +652,62 @@ routes/lpr.js → lpr-core.js
 | XML Field | ความหมาย | ค่าที่เป็นไปได้ | เก็บใน DB | ค่าจริงใน DB |
 |---|---|---|---|---|
 | `speedLimit` | ความเร็วสูงสุดที่ **ตั้งในกล้อง** (ไม่ใช่ความเร็วรถ) | integer km/h | ❌ ไม่เก็บ | 70 คงที่ทุก event |
-| `illegalCode` | รหัสการฝ่าฝืน | 0=ปกติ, ≠0=มีความผิด | ❌ ยังไม่เก็บ | 0 ทุก event (76,333 records) — กล้องยังไม่ถูก config violation detection |
-| `illegalName` | ชื่อการฝ่าฝืน | "Normal" / "Speeding" / "RedLight" | ❌ ยังไม่เก็บ | "Normal" ทุก event |
+| `illegalCode` | รหัสการฝ่าฝืน | 0=ปกติ · **151002=Without_Helmet · 1240=Seatbelt_Unbuckled** | ❌ ยังไม่เก็บ | **⚠️ ไม่ใช่ 0 ทุก event อีกแล้ว — ดู §15.1** (76,333 records) — กล้องยังไม่ถูก config violation detection |
+| `illegalName` | ชื่อการฝ่าฝืน | `Normal` · `Without_Helmet` · `Seatbelt_Unbuckled` | ❌ ยังไม่เก็บ | **⚠️ เปลี่ยนแล้ว — ดู §15.1** |
 | `illegalDescription` | คำอธิบาย (มักว่าง) | string | ❌ ไม่เก็บ | ว่างทุก event |
 
 #### กลุ่ม 5 — พฤติกรรมผู้ขับขี่
 
-> ⚠️ **กล้องส่องหลังรถ** — มุมมองไม่เห็นคนขับในห้องโดยสาร
-> field กลุ่มนี้ส่วนใหญ่ `unknown` ยกเว้น `helmet` และ `nonMotorManned` ที่เห็นจากด้านหลังมอเตอร์ไซค์ได้
+> **แก้ความเข้าใจ 2026-08-07:** เดิมเขียนว่า "field กลุ่มนี้ส่วนใหญ่ `unknown` เพราะมุมกล้อง"
+> — จริงเพียงบางส่วน · ตัวกำหนดหลักคือ**สวิตช์ใน `carFeatureParam`** ซึ่งอ่าน/เขียนได้จากระบบเรา
+> พิสูจน์แล้ว: เปิด `helmetEnabled` เพิ่ม 8 กล้อง → ตรวจจับได้ทันที **100%** จากที่เคยเป็น 0 มาตลอด
 
-| XML Field | ความหมาย | ค่าที่เป็นไปได้ | เก็บใน DB | ค่าจริงใน DB |
+| XML Field | ความหมาย | **สวิตช์ที่คุม** | เก็บใน DB | สถานะจริง 2026-08-07 |
 |---|---|---|---|---|
-| `helmet` | ผู้ขับมอเตอร์ไซค์ใส่หมวกกันน็อคไหม | yes/no/unknown | ✅ `raw_json.helmet` | **no=3,967** / yes=9,802 / unknown=รถยนต์ |
-| `nonMotorManned` | มีคนซ้อนท้ายมอเตอร์ไซค์ไหม | yes/no/unknown | ✅ `raw_json.nonMotorManned` | **yes=2,751** / no=11,018 / unknown=รถยนต์ |
-| `uphone` | คนขับใช้โทรศัพท์ | yes/no/unknown | ✅ `raw_json.uphone` | yes=0 / no=13,864 / unknown=มอเตอร์ไซค์ — ไม่เคย fire เพราะมุมกล้อง |
-| `pilotsafebelt` | คนขับคาดเข็มขัดนิรภัย | on/off/unknown | ✅ `license_plates.no_seatbelt` (boolean) | Parsed at ingest (src/lpr-core.js, migration 073); `belt=no` filter uses this column |
-| `vicepilotsafebelt` | ผู้โดยสารด้านหน้าคาดเข็มขัด | on/off/unknown | ✅ `license_plates.no_seatbelt` (boolean) | Parsed at ingest; combined with `pilotsafebelt` |
-| `smoking` | คนขับสูบบุหรี่ | yes/no/unknown | ❌ ไม่เก็บ | **unknown ทุก event** |
-| `playMobilePhone` | คนขับเล่นโทรศัพท์ | yes/no/unknown | ❌ ไม่เก็บ | **unknown ทุก event** |
-| `pilotsunvisor` | คนขับดึงบังแดด | yes/no/unknown | ❌ ไม่เก็บ | **unknown ทุก event** |
-| `vicepilotsunvisor` | ผู้โดยสารดึงบังแดด | yes/no/unknown | ❌ ไม่เก็บ | **unknown ทุก event** |
-| `nonMotorMask` | คนขับมอเตอร์ไซค์ใส่หน้ากาก | yes/no/unknown | ❌ ไม่เก็บ | unknown (ไม่ reliable จากมุมหลัง) |
-| `pilotmask` | คนขับรถยนต์ใส่หน้ากาก | yes/no/unknown | ❌ ไม่เก็บ | **unknown ทุก event** |
-| `vicepilotMask` | ผู้โดยสารด้านหน้าใส่หน้ากาก | yes/no/unknown | ❌ ไม่เก็บ | **unknown ทุก event** |
-| `frontChild` | มีเด็กนั่งที่นั่งหน้า | yes/no/unknown | ❌ ไม่เก็บ | **unknown ทุก event** |
-| `nonMotorShedUmbrella` | คนขับมอเตอร์ไซค์กางร่ม | yes/no/unknown | ❌ ไม่เก็บ | unknown |
+| `helmet` | ผู้ขับมอเตอร์ไซค์สวมหมวกกันน็อก | `helmetEnabled` | ✅ `license_plates.no_helmet` | **เปิดครบ 16/16 กล้อง** · `unknown`=0 · อัตราไม่สวม 17–50% |
+| `nonMotorManned` | มีคนซ้อนท้ายมอเตอร์ไซค์ | `twoWheelVehicleEnabled` | ✅ `raw_json.nonMotorManned` | เปิดอยู่ |
+| `pilotsafebelt` | คนขับไม่คาดเข็มขัด | `safetyBeltEnabled` + `safeBeltSensitivity` | ✅ `license_plates.no_seatbelt` | **ใช้งานได้จริงแค่ 2 กล้อง** — `C4-CHL-SB-01` 99.7% · `C32-THL-SB-14` 50% |
+| `vicepilotsafebelt` | ผู้โดยสารหน้าไม่คาดเข็มขัด | เดียวกับข้างบน | ✅ รวมกับ `no_seatbelt` | เดียวกัน |
+| `uphone` | คนขับใช้โทรศัพท์ | `uphoneEnabled` | ✅ `raw_json.uphone` | เปิดเกือบทุกกล้อง · ยังไม่เคยพบ `yes` |
+| `smoking` | คนขับสูบบุหรี่ | `smokingEnabled` | ❌ ไม่เก็บ | เปิด 1 กล้อง (`C18-KAR-SB-09`) · **พบจริง 19 เคส/9 วัน** |
+| `playMobilePhone` | คนขับเล่นโทรศัพท์ | `playMobilePhone` | ❌ ไม่เก็บ | เปิด 4 กล้อง · ยังไม่พบ `yes` |
+| `pilotmask` / `vicepilotMask` / `nonMotorMask` / `pedestrianMask` | สวมหน้ากาก | — | ❌ ไม่เก็บ | `unknown` ทุก event |
+
+> ⚠️ **เข็มขัดยังหาเงื่อนไขไม่เจอ** — 2 กล้องที่ทำงานกับอีก 14 ตัว **รุ่นเดียวกัน (`iDS-2CD9396-HIS`) ·
+> config เหมือนกันทุกฟิลด์ · algorithm ชุดเดียวกัน · ขนาดรถในเฟรมไม่ใช่คำตอบ (ตัวที่รถใหญ่สุดได้ 0%) ·
+> reboot ไม่ช่วย · กลางวันไม่ช่วย** — เหลือแต่ตัวแปรหน้างาน (ระยะ · องศาก้ม · zoom · ความสูงเสา)
 
 #### กลุ่ม 6 — ของในรถ / ป้ายรถ
 
-| XML Field | ความหมาย | ค่าที่เป็นไปได้ | เก็บใน DB | หมายเหตุ |
+> **แก้ความเข้าใจ 2026-08-07:** เดิมเขียนว่า "มองจากหลังไม่เห็น" — **ไม่ใช่สาเหตุหลัก**
+> ทุกฟิลด์ในกลุ่มนี้มี**สวิตช์เปิด/ปิดของตัวเอง** ใน `/ISAPI/ITC/carFeatureParam` และ**ปิดอยู่ทุกตัว**
+> ค่าจึงเป็น `unknown` ไม่ว่ามุมกล้องจะเป็นอย่างไร · วัดจาก 59,406 event (3 ชม., 16 กล้อง) = `unknown` 100%
+
+| XML Field | ความหมาย | **สวิตช์ที่คุม** | ค่าปัจจุบัน | เก็บใน DB |
 |---|---|---|---|---|
-| `dangmark` | ป้ายสินค้าอันตราย (hazmat) | yes/no/unknown | ❌ ไม่เก็บ | unknown ทุก event ที่ probe |
-| `envprosign` | ป้ายมาตรฐานไอเสีย | yes/no/unknown | ❌ ไม่เก็บ | unknown ทุก event |
-| `pendant` | ของห้อยหน้ากระจก | yes/no/unknown | ❌ ไม่เก็บ | มองจากหลังไม่เห็น |
-| `tissueBox` | กล่องทิชชู่ | yes/no/unknown | ❌ ไม่เก็บ | มองจากหลังไม่เห็น |
-| `perfumeBox` | น้ำหอมในรถ | yes/no/unknown | ❌ ไม่เก็บ | มองจากหลังไม่เห็น |
-| `decoration` | ของตกแต่งในรถ | yes/no/unknown | ❌ ไม่เก็บ | มองจากหลังไม่เห็น |
-| `label` | สติกเกอร์บนรถ | yes/no/unknown | ❌ ไม่เก็บ | unknown ทุก event |
-| `pdvs` | Passenger display system | yes/no/unknown | ❌ ไม่เก็บ | unknown ทุก event |
+| `dangmark` | ป้ายวัตถุอันตราย (รถขนสารเคมี/แก๊ส) | `dangerousVehicleEnabled` | false | ❌ |
+| `envprosign` | ป้ายมาตรฐานไอเสีย | `highPollutVehicleEnabled` *(อนุมาน)* | false | ❌ |
+| `decoration` | ของตกแต่งในรถ | `decorationEnable` | false | ❌ |
+| `label` | สติกเกอร์บนรถ | `labelEnable` | false | ❌ |
+| `pendant` | ของห้อยหน้ากระจก | `pendantEnabled` + `pendantSensitivity` | false | ❌ |
+| `tissueBox` | กล่องทิชชู่ | `tissueBoxEnable` | false | ❌ |
+| `perfumeBox` | น้ำหอมในรถ | **ไม่พบสวิตช์ที่ตรงกัน** — น่าจะรวมกับ decoration | — | ❌ |
+| `frontChild` | เด็กนั่งเบาะหน้า | `frontChildEnable` | false | ❌ |
+| `pdvs` | **ไม่มีเอกสารรองรับที่ใดเลย** — ค้นทั้งเอกสารทางการ Hikvision และชุมชนนักพัฒนา 2026-08-15 ไม่พบ · `unknown` 100% ⇒ ถือว่าไม่มีผล | ไม่พบสวิตช์ | — | ❌ |
+| `pilotsunvisor` / `vicepilotsunvisor` | ดึงบังแดด | `sunVisorEnabled` | false | ❌ |
+| `nonMotorShedUmbrella` | มอเตอร์ไซค์กางร่ม | `isSupportShed` | false — รุ่นนี้ไม่รองรับ | ❌ |
+
+#### กลุ่ม 6b — สวิตช์ที่ยังไม่มีฟิลด์คู่ใน XML (เพราะไม่เคยเปิด)
+
+พบใน `carFeatureParam` ครบ 37 สวิตช์ · กลุ่มนี้เปลี่ยน**สิ่งที่กล้องส่งออกมา** ไม่ใช่แค่ค่า yes/no
+
+| สวิตช์ | ทำอะไร | สถานะ |
+|---|---|---|
+| `CarBodyFeature.enabled` · `faceDetectEnabled` · `hostFaceEnabled` · `viceFaceEnabled` · `nonMotorFaceEnabled` | **ตัดภาพใบหน้าคนขับ / ผู้โดยสารหน้า / คนขี่มอเตอร์ไซค์ ออกมาเป็นภาพแยก** | ปิดทั้งหมด — กล้อง ANPR รุ่นนี้ทำ face capture ได้ในตัว |
+| `tempPlateEnable` · `passCardEnable` · `carCardEnable` · `vehicleUseEnable` | อ่านป้าย/บัตรที่ติดกระจกหน้า | ปิด |
+| `reflectiveStripeEnabled` | ตรวจเสื้อสะท้อนแสง | ปิด |
+| `vehicleSubBrandEnabled` | รุ่นย่อยของยี่ห้อรถ | **เปิดอยู่** — แต่เรายังไม่เก็บค่า |
+| กลุ่ม `faceMask*` (6 สวิตช์) | เบลอ/ปิดบังใบหน้าในภาพที่ส่งออก | ปิด — เกี่ยว PDPA โดยตรงถ้าเปิด face capture |
 
 #### กลุ่ม 7 — Metadata event
 
@@ -710,8 +728,10 @@ routes/lpr.js → lpr-core.js
 | Field | เหตุผล | ขนาดงาน |
 |---|---|---|
 | `plateCharBelieve` | มีค่าจริงทุก event — min-char < 60 = skip → ลด false plate | เล็ก — เพิ่ม filter ใน `lpr-core.js` |
-| `illegalCode` / `illegalName` | ตอนนี้ 0 ทั้งหมด แต่ถ้า config violation จะได้ค่าทันที | เล็ก — เพิ่ม column + เก็บใน raw_json |
-| `smoking` / `playMobilePhone` / `pilotmask` ฯลฯ | **ไม่คุ้ม** — unknown ทุก event เพราะกล้องส่องหลังรถ | — |
+| `illegalCode` / `illegalName` | **มีค่าจริงแล้วตั้งแต่ 2026-07-29 (ดู §15.1)** — ไม่ต้อง config อะไรเพิ่ม | เล็ก — เพิ่ม column + เก็บใน raw_json |
+| `smoking` / `playMobilePhone` | **แก้ 2026-08-07** — ไม่ใช่ "unknown เพราะมุมกล้อง" แต่เพราะ `smokingEnabled`/`playMobilePhone` ปิดอยู่ · เปิดแล้ว `C18-KAR-SB-09` พบสูบบุหรี่จริง **19 เคส/9 วัน** (0.025% ของรถที่ผ่าน) · `playMobilePhone` เปิด 4 กล้อง ยังไม่พบเคส | ค่ามีใน `rawXml` แล้ว — กู้ย้อนหลังได้ · **ยังไม่คุ้มที่จะเพิ่มคอลัมน์** เพราะ ~2 เคส/วัน |
+| `pilotmask` / `vicepilotMask` ฯลฯ | ปิดอยู่ทุกกล้อง | — |
+| **face capture ในตัวกล้อง** | `CarBodyFeature`/`hostFaceEnabled` ตัดภาพใบหน้าคนขับได้ — ปิดอยู่ | เกี่ยวกับงาน driver face capture ที่พักไว้ · เปิดผ่าน ISAPI ได้ |
 
 ---
 
@@ -720,6 +740,283 @@ routes/lpr.js → lpr-core.js
 The `/api/lpr` search endpoint uses **keyset pagination** (decision #211) with `before_time` + `before_id` cursors for stable cursor-based navigation (no OFFSET). The LPR overview dashboard includes two new Top-10 charts:
 - `pcolor[]` — license plate color distribution
 - `brand[]` — vehicle brand Top-10 (vehicle_brand codes from ingester parsing)
+
+---
+
+### 15.1 Violation detection เปิดใช้งานแล้ว (สำรวจซ้ำ 2026-08-15)
+
+> §15 probe ไว้ 2026-06-24 ตอนมี 76,333 event · สำรวจซ้ำวันนี้ที่ **5,928,188 event**
+> พบว่าข้อมูล 1 จุดล้าสมัย และมีฟีเจอร์ที่กล้องส่งมาแล้วแต่ระบบไม่เคยอ่าน
+
+**🔴 มีคนเปิด violation detection บนกล้องเมื่อ 29–30 ก.ค. 2026 — เราไม่เคยอ่านผลเลย**
+
+| รหัส | `illegalName` | จำนวน (20 วัน) | เริ่มส่ง |
+|---|---|---|---|
+| `151002` | `Without_Helmet` | 16,279 | 2026-07-29 16:36 |
+| `1240` | `Seatbelt_Unbuckled` | 171 | 2026-07-30 05:00 |
+
+**ความสัมพันธ์กับชั้นตรวจจับ (ตรวจแล้ว ไม่ใช่การอนุมาน):**
+
+| เรื่อง | ชั้นตรวจจับ | ชั้นตัดสินความผิด | สัดส่วน |
+|---|---|---|---|
+| หมวกกันน็อค (`helmet=no`) | 366,328 | 6,793 | 1.9% |
+| เข็มขัดนิรภัย (`pilotsafebelt=no`) | 11,095 | 171 | 1.5% |
+
+⇒ **`Without_Helmet` เป็นส่วนย่อยของ `helmet=no` ทั้งหมด ไม่มีเคสไหนเกินออกมา** — ชั้นที่สอง
+ไม่เพิ่มจำนวนการตรวจจับ แต่เป็นการคัดของกล้องเองว่าเคสไหนมั่นใจพอจะเรียกว่า "ความผิด"
+· **เกณฑ์ที่กล้องใช้คัดยังไม่ทราบ** — เจ้าของยืนยัน 2026-08-15 ว่าเคส `helmet=no` ที่สุ่มดู
+เป็นของจริง ไม่ใช่ตรวจผิด จึงยังสรุปไม่ได้ว่าอีก 98% ต่างจาก 1.9% ตรงไหน (งานรอบถัดไป)
+
+**เข็มขัดนิรภัย — แยกคนขับกับผู้โดยสารได้จริง**
+
+| ฟิลด์ | หมายถึง | ตรวจพบ "ไม่คาด" (20 วัน) |
+|---|---|---|
+| `pilotsafebelt` | คนขับ | 11,095 |
+| `vicepilotsafebelt` | ผู้โดยสารเบาะหน้า | 2,722 |
+
+โค้ดปัจจุบันรวมสองค่านี้เป็น `no_seatbelt` ค่าเดียว (`lpr-core.js:234`) ⇒ **แยกไม่ออกว่าใครไม่คาด
+ทั้งที่กล้องแยกให้แล้ว**
+
+**หมวกกันน็อค — แยกคนขี่กับคนซ้อนไม่ได้** · มีแท็ก `helmet` ตัวเดียว ไม่มีของคนซ้อนแยก ·
+อนุมานทางอ้อมได้จาก `nonMotorManned` เฉพาะกรณีขี่คนเดียว · (`riderCount` ที่นับคนซ้อนได้เป็นของ
+Dahua ITC431 ไม่มีในกล้องตัวนี้)
+
+**ความพร้อมใช้ของฟิลด์ (วัดจาก 5,000 event · 38 ฟิลด์ที่สนใจ)**
+
+| กลุ่ม | จำนวน | ตัวอย่าง |
+|---|---|---|
+| มีค่าเกือบทุก event | 16 | `illegalCode` `direction` `line` `plateType` `vehicleType` `confidenceLevel` |
+| มีค่าบางส่วน | 6 | `helmet` 47% · `uphone` 49% · `nonMotorManned` 47% · `pilotsafebelt` 3.9% |
+| `unknown` ทุก event (สวิตช์ปิด) | 16 | `pendant` `tissueBox` `perfumeBox` `decoration` `frontChild` `pilotmask` ฯลฯ |
+
+**กลุ่ม "อ่านป้ายไม่ออก" 2.2%** — `confidenceLevel=0` + `plateColor=unknown` + `country=0` +
+`licenseBright=0` เกิดพร้อมกันในเคสเดียวกัน · ตรงกับที่ชุมชนภายนอกเตือนว่า `confidence=0`
+หมายถึง "อ่านไม่ได้" ไม่ใช่ "มั่นใจน้อย"
+
+**ใบหน้าคนขับ** — กล้องอัป `pilotPicture.jpg` มาจริง แต่ `classifyImage()` (`lpr-core.js:106`)
+รู้จักแค่ scene/plate/composite → ตกเป็น unknown แล้วถูกทิ้ง **โดยไม่มี log บอกด้วยซ้ำ**
+(ดู ROADMAP "Driver Face Capture" · DEFERRED 2026-07-01)
+
+**วิธีสำรวจซ้ำ (method)** — รายงานเต็มอยู่ที่ `docs/reports/rawxml-anpr-survey-2026-08-15.*`
+(HTML/PDF/DOCX · local เท่านั้น ไม่ commit) · หลักการ 3 ขั้น: regex หา leaf tag ทุกตัวจาก
+`raw_json.rawXml` → วัดสัดส่วนค่าที่ไม่ใช่ `unknown` → diff กับเอกสารนี้
+> ⚠️ **บทเรียน:** เหตุการณ์ที่เกิดน้อยกว่า 1 ใน 1,000 **ต้องค้นทั้งชุด ห้ามสุ่ม** — รอบแรกสุ่ม
+> 5,000 event แล้วสรุปผิดว่า `pilotsafebelt` ไม่เคยรายงาน `no` (ความจริง 11,095 ครั้ง)
+
+#### 15.1.1 Probe สดทั้ง 16 กล้อง ANPR (2026-08-15) — ละเมิดจราจร + face
+
+อ่านอย่างเดียว (GET ผ่าน `helpers/digestAuth`) จาก edge hkt · **ตอบครบ 16/16**
+
+**ก) กล้องรองรับการตรวจจับละเมิด 13 ชนิด — เราใช้อยู่ 2**
+
+`GET /ISAPI/Traffic/channels/1/illegalEventNotification` (คืน JSON แม้ header บอก xml)
+· `TrafficCap.isSupportIllegalEventNotification` = `true` · **เหมือนกันทั้ง 16 กล้อง**
+
+| `illegalType` | ความหมาย | สถานะ |
+|---|---|---|
+| `helmet` | ไม่สวมหมวกกันน็อก | ✅ **ใช้อยู่** — `helmetEnabled` เปิด 16/16 |
+| `safeBelt` | ไม่คาดเข็มขัด | ✅ **ใช้อยู่** — `safetyBeltEnabled` เปิดแค่ 3/16 (C10-KAR-SB-04 · C4-CHL-SB-01 · C32-THL-SB-14) |
+| `reverse` | **ขับย้อนศร** | ⬜ รองรับ แต่ไม่ได้เปิด |
+| `banSign` | ฝ่าฝืนป้าย/เครื่องหมายห้าม | ⬜ รองรับ แต่ไม่ได้เปิด — **ใกล้เคียง "จอดในที่ห้ามจอด" ที่สุด** |
+| `emergencyLane` | วิ่งไหล่ทาง/ช่องฉุกเฉิน | ⬜ |
+| `busWay` | วิ่งช่องทางรถประจำทาง | ⬜ |
+| `changeLane` | เปลี่ยนเลนผิดกฎ | ⬜ |
+| `driveLine` | คร่อม/ทับเส้น | ⬜ |
+| `overSpeed` / `lowSpeed` | เร็ว/ช้าเกินกำหนด | ⬜ |
+| `twoWheelPassenger` | ซ้อนท้ายมอเตอร์ไซค์ | ⬜ (`twoWheelVehicleEnabled` เปิดอยู่แต่เป็นคนละชั้น) |
+| `uphone` | ใช้โทรศัพท์ | ⬜ `uphoneEnabled` เปิด 3/16 · ยังไม่เคยพบ `yes` |
+| `post` | ผ่านจุดตรวจ (ไม่ใช่ความผิด) | — |
+
+> 🔵 **ไม่มี "จอดในที่ห้ามจอด" ตรง ๆ ในรายการ** — illegal parking ของ Hikvision เป็น IVS rule
+> คนละตัว (กล้องจอดรถ/checkpoint) ไม่ใช่ ANPR ที่เรามี · ที่ใกล้ที่สุดคือ `banSign`
+>
+> ⚠️ `reverse` / `banSign` / `emergencyLane` ฯลฯ **ต้องตีเส้น/วางโซนหน้างานก่อน** ไม่ใช่แค่กดเปิดสวิตช์
+> — งาน site survey ไม่ใช่งาน config อย่างเดียว · `notificationMethod` ว่างทั้ง 13 ชนิด
+> (รวม `helmet`/`safeBelt` ที่ใช้งานได้อยู่) ⇒ ฟิลด์นี้**ไม่ได้บอกว่าเปิด/ปิด** ตัวจริงคือสวิตช์ใน `carFeatureParam`
+
+**ข) `C32-THL-SB-14` เปิด face capture อยู่ — กล้องเดียวจาก 16**
+
+| สวิตช์ | ความหมาย | C32-THL-SB-14 | อีก 15 ตัว |
+|---|---|---|---|
+| `hostFaceEnabled` | ตัดภาพใบหน้า**คนขับ** | ✅ true | false |
+| `viceFaceEnabled` | ตัดภาพใบหน้า**ผู้โดยสารหน้า** | ✅ true | false |
+| `faceDetectEnabled` | ตรวจจับใบหน้า | ✅ true | false |
+| `nonMotorFaceEnabled` · `CarBodyFeature` | คนขี่มอเตอร์ไซค์ · body | false | false |
+
+⇒ **`classifyImage()` (`lpr-core.js:106`) รู้จักแค่ scene/plate/composite → ภาพใบหน้าจาก C32
+ตกเป็น `unknown` แล้วถูกทิ้งเงียบ ๆ ไม่มี log** · กล้องรุ่นนี้มีสวิตช์ face รวม **13 ตัว**
+(รวมกลุ่มตรวจหน้ากาก `driverFaceMask*` / `passengerFaceMask*`) ปิดหมดทุกตัวที่เหลือ
+
+> 🟡 **ยังพิสูจน์ไม่ได้ว่า C32 ส่งภาพใบหน้ามาจริงหรือไม่** — สวิตช์เปิดอยู่ (🔵) และโค้ดไม่มีทางรับ (🔵)
+> แต่ไม่มี log ชื่อไฟล์ของ part ที่ถูกทิ้ง จึงยืนยันไม่ได้ · **ต้องเพิ่ม log 1 บรรทัดใน `classifyImage()`
+> ก่อนถึงจะตอบได้** (log อย่างเดียว ไม่แตะ control flow — แต่อยู่บน ingest path ต้องขออนุมัติ)
+>
+> เกี่ยวโดยตรงกับงาน **Driver Face Capture** ที่ DEFERRED ไว้ 2026-07-01 (เหตุผลเดิม: ภาพหน้าฝนใช้ไม่ได้)
+> — ตอนนี้มีกล้องที่เปิดอยู่แล้วให้ทดสอบ **ไม่ต้องไปแตะกล้องเพิ่ม**
+
+#### 🔑 `faceImgOutputMode` — เงื่อนไขที่ขาด (พบ 2026-08-15)
+
+เปิด `faceDetectEnabled` + `nonMotorFaceEnabled` + `CarBodyFeature` แล้ว **ไม่มีภาพออกมาเลย**
+ต้นเหตุอยู่ที่ฟิลด์นี้ใน `carFeatureParam` › `OutputCtrl`:
+
+| ค่า | ความหมาย | กล้อง | ผลจริง |
+|---|---|---|---|
+| `alarmUpload` | ส่งภาพใบหน้าเป็น **ไฟล์แยก** มากับ alarm | **C32-THL-SB-14 (1 ตัว)** | ✅ ได้ `pilotPicture.jpg` / `copilotPicture.jpg` 4,000+ ใบ/วัน |
+| `overPic` | **วาดทับลงบนภาพ scene** ไม่ส่งไฟล์แยก | อีก 15 ตัว | ❌ 0 ใบ แม้เปิดสวิตช์ครบ |
+
+⇒ ความสัมพันธ์ตรง 16/16 — **แต่ยังสรุปไม่ได้ว่าเป็นเหตุ** (ดูย่อหน้าถัดไป)
+
+> 🔴 **ข้อสรุปนี้ถูก confound — อย่าเชื่อว่า `faceImgOutputMode` คือคำตอบเดียว**
+> ตรวจซ้ำ (GET สดทั้ง 16 ตัว 2026-08-15) พบว่า **C32 ต่างจากอีก 15 ตัวถึง 8 ฟิลด์พร้อมกัน**
+> และทุกตัวต่างแบบล็อกกัน 15/15: `hostFaceEnabled` · `viceFaceEnabled` · `faceImgOutputMode` ·
+> `featureFaceOverlayEnabled` · `faceImgScale` (3 vs 1) · `faceImgRatio` (2 vs 1) ·
+> `faceImgBrightenEnhenceEnabled` · `faceImgBrightenEnhenceLevel` (50 vs 0)
+> ⇒ **n=1 แยกไม่ออกว่าตัวไหนคือเหตุ** · ผู้ต้องสงสัยอันดับต้นอาจเป็น
+> `hostFaceEnabled`/`viceFaceEnabled` ด้วยซ้ำ (capabilities เรียกว่า `isSupportPilotFace`/
+> `isSupportCopilotFace`) — ถ้าสองตัวนี้ false กล้องอาจไม่ผลิตภาพตั้งแต่ต้นทาง
+> ไม่ว่า output mode จะเป็นอะไร
+>
+> **ตัดออกได้แล้ว** (เหมือนกันทั้ง 16): firmware `V5.3.1 build 260424` · `separatData=false` ·
+> `faceDetectEnabled`/`nonMotorFaceEnabled`/`CarBodyFeature.enabled=true` · `DrawFaceRectEnabled=false`
+
+**ค่าที่รองรับจริงมี 4 ไม่ใช่ 2** — `carFeatureParam/capabilities` ประกาศ
+`<faceImgOutput opt="none,overPic,alarmUpload,overPicAndAlarmUpload">`
+· `overPicAndAlarmUpload` = ทำทั้งสองอย่าง ⇒ **ปลอดภัยกว่าสำหรับ migration** เพราะเปลี่ยนเป็น
+`alarmUpload` เฉย ๆ จะทำให้ overlay บนภาพ scene หายไป (`faceImgOutputMode2/3` รองรับแค่ `none,overPic`)
+
+#### ✅ ผลการทดลองแยกตัวแปร (2026-08-15) — ต้องมี **ทั้งสองอย่าง**
+
+| กล้อง | `faceImgOutputMode` | `hostFace`/`viceFace` | ผล |
+|---|---|---|---|
+| C4-CHL-SB-01 | `overPic` | ✅ true | **0 ใบ** |
+| C40-THL-SB-18 | `overPicAndAlarmUpload` | ✅ true | **47 ใบ ใน ~5 นาที** |
+| C40 (รอบ 1) | `overPicAndAlarmUpload` | ❌ false | **0 ใบ ใน 6 นาที** (ขณะกล้องยังส่ง event ทุก 30 วิ) |
+| C32-THL-SB-14 | `alarmUpload` | ✅ true | 5,785 ใบ/วัน |
+
+⇒ **สูตรที่ถูกต้อง = `hostFaceEnabled`/`viceFaceEnabled` (ตัวผลิต) + `faceImgOutputMode` ที่มี
+`alarmUpload` อยู่ในค่า (ตัวส่งออกเป็นไฟล์แยก)** · ขาดตัวใดตัวหนึ่ง = ไม่มีภาพ
+· `overPic` = วาดทับบนภาพ scene เท่านั้น ไม่ส่งไฟล์ ยืนยันด้วย C4-CHL ที่เปิด host/vice แล้วยังได้ 0
+
+> 🔵 **ทั้งสองสมมติฐานถูกครึ่งเดียว** — `faceImgOutputMode` จำเป็นแต่ไม่พอ ·
+> `hostFace`/`viceFace` ก็จำเป็นแต่ไม่พอ · ต้องมีคู่กัน
+
+#### ⚠️ คุณภาพครอปยังไม่ได้ — ต้องตั้ง 2 ฟิลด์เพิ่ม
+
+ภาพจาก C40 ออกมาจริงแต่ **ครอปผิดที่และเล็กมาก** (3–7 KB · สุ่มดูได้หญ้า/ไฟหน้ารถ ไม่ใช่หน้าคน)
+เทียบกับ C32 ที่ได้หน้าคนชัด (สูงสุด 13 KB) — ต่างกันที่:
+
+| ฟิลด์ | C32 (ใช้ได้) | C40 (ครอปเพี้ยน) |
+|---|---|---|
+| `faceImgScale` | **3** | 1 |
+| `faceImgRatio` | **2** | 1 |
+| `faceImgBrightenEnhenceLevel` | **50** | 0 |
+| `featureFaceOverlayEnabled` | **true** | false |
+
+ทดลองแล้ว: ตั้งครบทั้ง 5 ฟิลด์ให้ตรง C32 บน C40 → **ครอปยังผิดที่เหมือนเดิม** (ได้หญ้า/ไฟหน้ารถ)
+· ตัวคุมเวลาเดียวกัน (18:19 น.) C32 ยังได้หน้าคนชัด ⇒ **ไม่ใช่เรื่องแสง ไม่ใช่เรื่องค่าตั้ง
+แต่เป็นมุมกล้อง/ฉากของแต่ละจุด** — ต้องประเมินรายกล้อง เปิดหว่านไม่ได้
+
+#### 🔴 หน้าคนขี่มอเตอร์ไซค์ — ส่งเป็นไฟล์แยกไม่ได้บนรุ่นนี้
+
+วัดจาก 800 event (ตอนเปิดแค่ 2 กล้อง) และวัดซ้ำหลัง **rollout สูตรเต็มครบ 15 กล้อง**:
+
+| รอบวัด | ชนิดรถ | event | มีภาพใบหน้ามาด้วย |
+|---|---|---|---|
+| ก่อน rollout | **มอเตอร์ไซค์** | 300 | **0** |
+| ก่อน rollout | รถอื่น | 500 | 29 (5.8%) |
+| **หลัง rollout 15 กล้อง** | **มอเตอร์ไซค์** | 276 | **1 (0.4%)** |
+| **หลัง rollout 15 กล้อง** | รถอื่น | 424 | **35 (8.3%)** |
+
+⇒ **เปิดครบทุกกล้องแล้วยืนยันผลเดิม — ต่างกัน ~10–20 เท่า** ไม่ใช่เรื่องกล้องตัวใดตัวหนึ่ง
+
+> ⚠️ **แก้ถ้อยคำ (19:20 น.):** ที่เขียนไว้ตอนแรกว่า "ส่งหน้าคนขี่เป็นไฟล์ไม่ได้" **แรงเกินไป**
+> วัดซ้ำหลัง rollout ได้ **1.4%** (74 event → 1 ใบ) และเมื่อกรองเก็บเฉพาะ `twoWheelVehicle`
+> ได้จริง **24 ใบใน ~15 นาที ตอนกลางคืน** จาก 6 กล้อง ⇒ **มาจริงแต่หายาก ไม่ใช่ศูนย์**
+> ประเมินคร่าว ๆ ทั้งวันน่าจะได้ระดับ ~2,000 ใบ ซึ่งพอเป็นชุดข้อมูลได้
+> · ยังไม่ทราบว่าอัตราต่ำเพราะข้อจำกัดของรุ่น หรือเพราะตรวจจับหน้าคนสวมหมวกกันน็อกยาก
+
+**เหตุผลที่น่าจะเป็น** — capabilities ประกาศช่อง output ของภาพใบหน้าไว้ 3 ช่อง:
+
+| ช่อง | ค่าที่รองรับ | ส่งเป็นไฟล์แยกได้ไหม |
+|---|---|---|
+| `faceImgOutput` (หลัก) | `none,overPic,alarmUpload,overPicAndAlarmUpload` | ✅ ได้ — ใช้กับ pilot/copilot |
+| `faceImgOutputMode2` | `none,overPic` | ❌ **วาดทับได้อย่างเดียว** |
+| `faceImgOutputMode3` | `none,overPic` | ❌ **วาดทับได้อย่างเดียว** |
+
+⇒ 🟡 **สมมติฐาน (ยังไม่พิสูจน์):** ช่อง 2/3 คือช่องของใบหน้ากลุ่มอื่นรวมถึงคนขี่มอเตอร์ไซค์
+ซึ่ง**ไม่มี `alarmUpload` ให้เลือก** ⇒ หน้าคนขี่ถูกวาดลงบนภาพ scene ได้อย่างเดียว
+ส่งเป็นไฟล์แยกไม่ได้ · สอดคล้องกับ `isSupportNonmotorface=true` (ตรวจจับได้)
+คู่กับ `isSupportNonmotorFaceSelect=false` และผลวัด 300→0
+
+> **ทางออกที่เหลือถ้าต้องการหน้าคนขี่:** เราเก็บภาพ scene เต็มเฟรมอยู่แล้ว (~1 MB/ใบ)
+> และ edge มี `face-engine` รันอยู่แล้วใน pm2 ⇒ **ตรวจจับใบหน้าเองจากภาพ scene**
+> เฉพาะ event ที่ `vehicleType=twoWheelVehicle` น่าจะตรงเป้ากว่าการรอฟีเจอร์กล้อง
+
+#### 🔴 `vehicleSubBrandEnabled` — สวิตช์รับค่าได้ แต่ฮาร์ดแวร์ไม่รองรับ
+
+`carFeatureParam/capabilities` ประกาศตรง ๆ ว่า **`<isSupportVehicleSubBrand>false</...>`**
+ทั้งที่เราเปิด `vehicleSubBrandEnabled=true` ครบ 16 ตัวเมื่อ 2026-08-15 (PUT 200 + อ่านกลับ true ทุกตัว)
+
+> ⚠️ **บทเรียน: PUT 200 + อ่านกลับ `true` พิสูจน์แค่ว่า "สวิตช์เก็บค่าได้" ไม่ได้พิสูจน์ว่า
+> "ฟีเจอร์ทำงาน"** — ตรงกับที่วัดได้: `vehileSubLogoRecog` = `0` ครบ 7,543 ตัวอย่าง
+> · อาการเดียวกับ `faceDetectEnabled` ที่เปิดอยู่แต่เงียบ
+> ⇒ **ก่อนจะบอกว่าเปิดฟีเจอร์สำเร็จ ต้องเช็ค `isSupport*` ใน capabilities ก่อนเสมอ**
+> แล้วยืนยันด้วยข้อมูลจริงที่ไหลออกมา ไม่ใช่ด้วยค่าที่อ่านกลับ
+
+**ค) `vehicleSubBrandEnabled` เปิดอยู่ 12/16 (ก่อนหน้าเรา)** ⇒ `vehicleSublogo` (รุ่นย่อยรถ) ที่เดิมเขียนว่า
+"ยังสรุปไม่ได้" **กล้องส่งมาจริง** แต่เราไม่ได้อ่าน — อยู่เลยจุดตัด 2,000 ตัวอักษรเช่นกัน
+
+#### เทียบกับเอกสารทางการ Hikvision (ค้นภายนอก 2026-08-15)
+
+แหล่งสาธารณะที่ใกล้เคียงที่สุดคือ [`XML_Metadata_ANPR`](http://enpinfo.hikvision.com/unzip/20201110210551_77443_doc/GUID-9A02D489-BED3-4F11-BE4E-BFF5233AB959.html)
+· ISAPI ฉบับเต็มต้องเซ็น Material License Agreement กับผู้ผลิตก่อนถึงจะได้
+
+**🔵 ผลเทียบ:** เอกสารทางการระบุไว้ **12 ฟิลด์** · จาก 54 แท็กที่กล้องเราส่งจริง
+**48 ตัวไม่มีอยู่ในเอกสารทางการเลย** — รวมถึงกลุ่มพฤติกรรมผู้ขับทั้งหมด
+(`helmet` `pilotsafebelt` `uphone` `smoking` `illegalCode` ฯลฯ)
+⇒ **§15/§15.1 คือเอกสารชุดเดียวที่เรามีสำหรับฟิลด์เหล่านั้น** — ห้ามลบ ห้ามย่อ
+
+#### 🔴 `raw_json.rawXml` ที่เก็บไว้เป็นแค่ 2,000 ตัวอักษรแรก — ไม่ใช่ XML ฉบับเต็ม
+
+`lpr-core.js:435` เก็บ `xmlStr.slice(0, 2000)` · วัดจาก 5,000 event ล่าสุด:
+**ยาว 2,000 เป๊ะทุกใบ (100%) และลงท้ายกลางแท็ก** (`…<detectType>2</detectType>\r<barrierGat`)
+
+⇒ **54 แท็กที่สำรวจได้คือเท่าที่มองเห็นในหน้าต่าง 2,000 ตัวอักษร ไม่ใช่ทั้งหมดที่กล้องส่ง**
+
+**หลักฐานตรง ๆ:** มี 4 แท็กที่ `parseHikXml()` อ่านจาก `xmlStr` (ฉบับเต็ม ก่อนถูกตัด) ได้สำเร็จ
+และมีข้อมูลใน DB จริง แต่**ไม่ปรากฏในหน้าต่างที่เก็บไว้เลยสักครั้งใน 5,000 event**:
+
+| แท็ก | โค้ดที่อ่าน | ปลายทาง | ข้อมูลจริง (30 วัน, `iDS-2CD9396-HIS`) |
+|---|---|---|---|
+| `color` | `lpr-core.js:217` | `license_plates.vehicle_color` | **3,447,597 แถว** (58%) |
+| `vehicleLogoRecog` | `lpr-core.js:218` → `resolveHikBrand()` | `license_plates.vehicle_brand` | **3,447,597 แถว** — Toyota 2.6M · Honda 876k · Isuzu 512k (ทั้งระบบ) |
+| `laneNo` | `lpr-core.js` | — | อยู่เลยจุดตัด |
+| `provinceName` | `lpr-core.js` | — | อยู่เลยจุดตัด |
+
+> ⚠️ **บทเรียนต่อยอด:** สำรวจ `rawXml` แล้วสรุปว่า "กล้องไม่ส่งฟิลด์นี้" **ทำไม่ได้** —
+> ต้องอ่านว่า "ไม่อยู่ใน 2,000 ตัวอักษรแรก" เท่านั้น · เกือบสรุปผิดในรายงาน 2026-08-15 ว่า
+> `vehicleColor`/`vehicleLogo` เป็นฟีเจอร์ที่ขาด ทั้งที่ใช้งานอยู่แล้ว 3.4M แถว
+>
+> **ผลกระทบจริง:** ฟีเจอร์ที่อยู่ปลาย XML **ขุดย้อนหลังไม่ได้เลย** (ต่างจาก `illegalCode`
+> ที่อยู่ต้น ๆ จึงกู้ย้อนหลังได้) · ถ้าจะสำรวจว่ามีอะไรอีก **ต้อง log XML ฉบับเต็มสัก 1 ใบก่อน**
+> — อยู่บนเส้นทาง ingest จริง ต้องขออนุมัติก่อนทำ (WA#3 ข้อ 4)
+
+**ฟิลด์ตามเอกสารทางการที่ยังสรุปไม่ได้** — `directionIndex`, `vehicleConfidence`
+ไม่พบในหน้าต่าง 2,000 ตัวอักษร แต่**พิสูจน์ไม่ได้ว่าไม่มี** ด้วยเหตุผลข้างบน
+(`vehicleSublogo` ตัดออกจากรายการนี้แล้ว — probe 2026-08-15 พบ `vehicleSubBrandEnabled`
+เปิดอยู่ 12/16 กล้อง ⇒ **กล้องส่งมาจริง** ดู §15.1.1 ข้อ ค)
+(`vehicleColor`/`vehicleLogo` = มีอยู่แล้ว ดูตาราง) · `confidence` ในเอกสารทางการ
+**สันนิษฐาน**ว่าคือ `confidenceLevel` ที่เราใช้อยู่ ยังไม่ได้ยืนยัน
+
+**สิ่งที่ค้นแล้วไม่พบ** (บันทึกไว้กันค้นซ้ำ):
+- `pdvs` — ไม่มีทั้งในเอกสารผู้ผลิตและกระทู้ชุมชน ⇒ ปิดเรื่อง
+- **ตารางแปล `plateType` ฉบับผู้ผลิต** — เอกสารทางการเขียนแค่ "string, license plate types"
+  และตัวอย่างเป็นข้อความ (`arm`) แต่กล้องเราส่ง**เลข** (probe พบ 1, 3, 6, 12, 21, 32, 34) ·
+  ไม่มีตารางแปลเผยแพร่ที่ไหน ⇒ **ตารางใน §15 บรรทัด `plateType` เป็นของที่เราถอดเอง
+  ไม่มีแหล่งอ้างอิงภายนอกยืนยัน** — ใช้ได้แต่อย่าอ้างว่าเป็นสเปกผู้ผลิต
+  · หมายเหตุ: สัดส่วนใน §15 (1→41%, 12→17%) **เก่าแล้ว** — probe 2026-08-15 ได้
+  12→47.2%, 1→25.3% (มอเตอร์ไซค์แซงรถยนต์)
+- `tailandStateID` (รหัสจังหวัด) และ code ยี่ห้อรถ — ไม่มีเอกสารสาธารณะเช่นกัน
 
 ---
 

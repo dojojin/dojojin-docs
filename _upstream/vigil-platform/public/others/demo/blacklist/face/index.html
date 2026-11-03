@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Blacklist Database (ใบหน้า) — Draft Demo</title>
+
+<!-- DRAFT/DEMO ONLY — links real production assets so the preview is pixel-faithful.
+     CSP-compliant (external css/js, no inline script, no inline event handlers).
+     Served at: /others/demo/blacklist/face/  (auth-gated — log in to dashboard first).
+     ALL data on this page is 100% synthetic mock data:
+       - National ID / passport numbers shown are deliberately malformed fakes
+         (never a structurally-valid Thai national ID / real passport format).
+       - Names, case references, case notes, sources are fictional.
+       - Avatars are generic silhouette icons, not real or synthetic faces.
+     Nothing here reflects a real person, a real case, or real source data.
+     See docs/superpowers/specs/2026-07-24-blacklist-central-database-design.md -->
+<script src="/theme-init.js"></script>
+<link rel="stylesheet" href="/vendor/fonts/fonts.css">
+<script src="/vendor/chartjs/chart-4.4.1.umd.min.js"></script>
+<link rel="stylesheet" href="/index.css">
+<link rel="stylesheet" href="../blacklist-demo.css">
+</head>
+<body>
+<div class="demo-wrap">
+
+  <div class="demo-banner">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+    <span>DRAFT — demo ออกแบบฐานข้อมูล Blacklist (ใบหน้า) ยังไม่เชื่อมต่อฐานข้อมูลจริง · ข้อมูลทั้งหมดในหน้านี้เป็น mock 100% —
+    เลขบัตรประชาชน/passport ที่เห็นเป็นเลขปลอมที่จงใจทำให้ผิดรูปแบบ ไม่ใช่เลขจริงหรือเลขที่ถูกต้องตามหลัก checksum ·
+    ชื่อ/คดี/แหล่งข้อมูลทั้งหมดเป็นเรื่องสมมติ · avatar เป็นไอคอนทั่วไป ไม่ใช่ใบหน้าจริงหรือสังเคราะห์</span>
+  </div>
+  <div class="demo-toolbar">
+    <button class="btn btn-secondary" id="btnTheme">สลับ Light / Dark</button>
+  </div>
+
+  <div class="page-head">
+    <div>
+      <h1>ฐานข้อมูล Blacklist · ใบหน้า (Face)</h1>
+      <div class="sub">รวมรายชื่อจากหลายแหล่งข้อมูลเป็นถังกลาง (reservoir) — ยังไม่ผูกกับระบบแจ้งเตือนจริง</div>
+    </div>
+    <div class="tabs" id="tabBar">
+      <button class="tab active" data-tab="overview">ภาพรวม</button>
+      <button class="tab" data-tab="master">รายชื่อ Master</button>
+      <button class="tab" data-tab="buckets">ถังข้อมูลตาม Source</button>
+      <button class="tab" data-tab="settings">ตั้งค่า &amp; เชื่อมต่อ</button>
+    </div>
+  </div>
+
+  <!-- ===================== TAB: OVERVIEW ===================== -->
+  <section id="tab-overview">
+    <div class="kpi-grid" id="kpiGrid"></div>
+
+    <div class="chart-grid cols-2">
+      <div class="card">
+        <div class="card-title">จำนวน Record ต่อ Source</div>
+        <div class="chart-box"><canvas id="chSource"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">นำเข้าล่าสุด</div>
+        <div id="importFeed" style="display:flex;flex-direction:column;gap:8px;max-height:200px;overflow-y:auto"></div>
+      </div>
+    </div>
+
+    <div class="card-title" style="margin-top:4px">สถานะ Source ที่เชื่อมต่อ</div>
+    <div class="src-grid" id="srcGrid"></div>
+  </section>
+
+  <!-- ===================== TAB: MASTER LIST ===================== -->
+  <section id="tab-master" style="display:none">
+    <div class="bl-toolbar">
+      <input class="form-input" id="blSearch" placeholder="ค้นหาชื่อ / เลขบัตร (มาสก์) / source...">
+      <select class="form-input" id="blFilterSrc" style="max-width:180px">
+        <option value="">ทุก Source</option>
+        <option value="gurusquare">GuruSquare</option>
+        <option value="hcp_phuket">HCP — Site ภูเก็ต</option>
+      </select>
+    </div>
+    <div class="bl-list" id="blList"></div>
+  </section>
+
+  <!-- ===================== TAB: SOURCE BUCKETS ===================== -->
+  <section id="tab-buckets" style="display:none">
+    <div class="seg" id="bucketSeg">
+      <button data-b="gurusquare" class="active">GuruSquare</button>
+      <button data-b="hcp_phuket">HCP — Site ภูเก็ต</button>
+    </div>
+    <div style="height:12px"></div>
+    <div class="card">
+      <div class="card-title" id="bucketTitle">ถังข้อมูลดิบ — GuruSquare</div>
+      <div class="bucket-scroll">
+        <table class="bucket-table" id="bucketTable">
+          <thead><tr><th>External ID</th><th>ชื่อ (mock)</th><th>Case Ref</th><th>นำเข้าเมื่อ</th><th>เชื่อมกับ Master</th></tr></thead>
+          <tbody id="bucketBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== TAB: SETTINGS ===================== -->
+  <section id="tab-settings" style="display:none">
+    <div class="card-title">Source ที่เชื่อมต่อ (นำเข้าเท่านั้น)</div>
+    <div class="conn-card">
+      <div class="conn-head">
+        <div class="conn-title"><span class="src-dot ok"></span>GuruSquare</div>
+        <span class="chip chip-src-gurusquare">openapi_pull</span>
+      </div>
+      <div class="conn-field"><span class="k">Endpoint</span><span class="v">https://api.gurusquare.example/•••••</span></div>
+      <div class="conn-field"><span class="k">API Key</span><span class="v">gsq_live_••••••••••••3f2a</span></div>
+      <div class="conn-field"><span class="k">รอบ sync</span><span class="v">ทุก 15 นาที</span></div>
+      <div class="conn-field"><span class="k">Sync ล่าสุด</span><span class="v">2 นาทีที่แล้ว — สำเร็จ</span></div>
+    </div>
+    <div class="conn-card">
+      <div class="conn-head">
+        <div class="conn-title"><span class="src-dot ok"></span>HCP — Site ภูเก็ต</div>
+        <span class="chip chip-src-hcp">openapi_pull</span>
+      </div>
+      <div class="conn-field"><span class="k">Gateway</span><span class="v">artemis.hcp-phuket.example:443</span></div>
+      <div class="conn-field"><span class="k">AppKey</span><span class="v">••••••••••••e91c</span></div>
+      <div class="conn-field"><span class="k">รอบ sync</span><span class="v">ทุก 30 นาที</span></div>
+      <div class="conn-field"><span class="k">Sync ล่าสุด</span><span class="v">18 นาทีที่แล้ว — สำเร็จ</span></div>
+    </div>
+    <div class="conn-card" style="opacity:.6">
+      <div class="conn-head">
+        <div class="conn-title"><span class="src-dot off"></span>HCP — Site อื่น (อนาคต)</div>
+        <span class="chip chip-case">ยังไม่ได้ตั้งค่า</span>
+      </div>
+      <div class="conn-field"><span class="k">สถานะ</span><span class="v">รอ AppKey / gateway จากไซต์ใหม่</span></div>
+    </div>
+
+    <div class="card-title" style="margin-top:20px">ส่งออก / เปิดให้ดึงข้อมูล (Gated)</div>
+    <div class="gate-card">
+      <div class="gate-head">
+        <div class="gate-title">ส่ง diff กลับไปยัง Source (push-back)</div>
+        <span class="lock-badge">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+          รอสิทธิ์ทางกฎหมาย
+        </span>
+      </div>
+      <div class="gate-note">การส่งข้อมูลคดีของ source หนึ่งไปให้อีก source เป็นคำถามเรื่องอำนาจทางกฎหมาย ไม่ใช่แค่เทคนิค — ยัง gate ไว้ตาม spec §6.1 รอเจ้าของยืนยันสิทธิ์ก่อนเปิดใช้งาน</div>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:10px">
+        <div class="toggle-fake disabled"></div><span style="font-size:12px;color:var(--text-secondary)">ปิดใช้งานอยู่</span>
+      </div>
+    </div>
+    <div class="gate-card">
+      <div class="gate-head">
+        <div class="gate-title">เปิด OpenAPI ของเราเองให้บุคคลภายนอกดึงข้อมูล</div>
+        <span class="lock-badge">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+          รอสิทธิ์ทางกฎหมาย
+        </span>
+      </div>
+      <div class="gate-note">เป็น surface ที่เสี่ยงที่สุดในระบบนี้ — เปิดข้อมูลคดีให้ผู้บริโภคภายนอกดึง ต้องมีทั้งสิทธิ์ทางกฎหมายและออกแบบ auth/PII-exposure แยกต่างหาก (spec §6.3) ยังไม่เริ่มจนกว่า gate ข้างบนจะผ่าน</div>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:10px">
+        <div class="toggle-fake disabled"></div><span style="font-size:12px;color:var(--text-secondary)">ปิดใช้งานอยู่</span>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<!-- ===================== MASTER DETAIL MODAL ===================== -->
+<div class="modal-bg hidden" id="blModal">
+  <div class="modal lg">
+    <div class="modal-header">
+      <h2>รายละเอียด Master Identity</h2>
+      <button class="modal-close" id="blModalX">&times;</button>
+    </div>
+    <div class="modal-body" id="blModalBody"></div>
+  </div>
+</div>
+
+<script src="face-blacklist-demo.js"></script>
+</body>
+</html>

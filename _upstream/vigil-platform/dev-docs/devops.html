@@ -67,7 +67,8 @@
   <td>Alert &amp; Report Workers</td>
   <td>Node.js</td>
   <td>—</td>
-  <td>PM2 <code>alert-worker</code>, <code>report-worker</code></td>
+  <td>PM2 <code>alert-worker</code>, <code>report-worker</code>, <code>face-embed-worker</code><br>
+      <small>report-worker ทำสองหน้าที่: scheduler รายงานตามตาราง (60s tick) + <code>POST /render</code> สำหรับปุ่มดาวน์โหลด PDF/PNG ด้วยมือ — Chromium ถูกย้ายมาอยู่ที่นี่ที่เดียว api-server เหลือเป็นแค่ fallback ตอน worker ล่ม</small></td>
 </tr>
 <tr>
   <td>Public HTTPS</td>
@@ -194,7 +195,13 @@ du -sh backups/
 
 # ตรวจ memory
 pm2 status   # ดู memory column
-top -pid $(pm2 id api-server | head -1)</pre>
+top -pid $(pm2 id api-server | head -1)
+
+# หน้าเว็บช้า / SQL ช้า — สองด่านนี้ log ของช้าไว้ให้แล้ว
+grep '\[slow-req\]' ~/.pm2/logs/api-server-error.log | tail -50   # HTTP request > SLOW_REQ_LOG_MS (default 2000ms)
+docker logs vigil-postgres | grep duration:                       # SQL > log_min_duration_statement (2s, ตั้งถาวรผ่าน ALTER SYSTEM)</pre>
+
+<p>มี <code>[slow-req]</code> แต่ไม่มี <code>duration:</code> คู่กัน = ช้าฝั่ง Node ไม่ใช่ query · มีทั้งคู่ = ช้าที่ query จริง ไปต่อที่ <code>EXPLAIN (ANALYZE, BUFFERS)</code> · มี <code>duration:</code> ลอย ๆ ไม่มี <code>[slow-req]</code> = มาจาก worker หรืองาน background ไม่ใช่คำขอของผู้ใช้ — รายละเอียดที่ <a href="troubleshoot.html">Troubleshoot → หน้าเว็บช้า / SQL ช้า</a></p>
 
 <h2>Security Checklist</h2>
 
