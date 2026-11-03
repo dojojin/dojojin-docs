@@ -170,7 +170,7 @@ Service management controls allow administrators to restart individual services 
 
 ## Key Benefits
 
-**Full data ownership.** All camera events, snapshots, face images, and reports are stored on the customer's own server. No data leaves the premises without explicit configuration.
+**Images stay at the site.** Snapshots and face crops are held on the hardware at the site itself and are fetched only when someone opens them. What travels is the record of the event, not the footage behind it.
 
 **No vendor lock-in.** Cameras from multiple manufacturers coexist on a single dashboard. Changing or adding camera hardware does not require replacing the analytics platform.
 
@@ -178,7 +178,7 @@ Service management controls allow administrators to restart individual services 
 
 **Bilingual interface.** The dashboard and reports are fully bilingual (Thai and English) with instant switching.
 
-**Deployment flexibility.** Vigil runs on Docker Compose on customer-owned Linux hardware. A Cloudflare Tunnel is used for remote access without opening inbound firewall ports.
+**Nothing to open on the customer's firewall.** The site connects outward to reach the platform, over whichever of its available paths is healthy at the time, and falls back on its own when one degrades. No inbound port is opened, and a site that loses its link keeps recording and sends what it buffered once the link returns.
 
 ---
 
@@ -262,7 +262,7 @@ The license system uses Ed25519 asymmetric cryptography. A license key cannot be
 
 Vigil Platform is designed for compliance with Thailand's Personal Data Protection Act:
 
-- **Data residency** — all personal data is stored on the customer's own server. No cross-border data transfer occurs without explicit customer configuration.
+- **Data residency** — the personal data that weighs most, the snapshots and face crops, is held on the hardware at the site and is fetched only when someone opens it. Where the rest is held follows the deployment: on the customer's own server in an on-premise install. Confirm the arrangement in writing for any other deployment before relying on it.
 - **Automated data purge** — three background jobs run nightly to delete events, snapshots, and video clips beyond the configured retention period.
 - **Consent for LINE notifications** — a LINE user must actively follow the system's official account and be approved by an administrator before receiving any notifications.
 - **On-demand deletion of biometric data** — face images can be deleted individually or in bulk through the admin interface.
