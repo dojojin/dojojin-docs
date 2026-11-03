@@ -172,10 +172,6 @@ Service management controls ให้ admin restart service แต่ละต�
 
 **ไม่ผูกติดกับยี่ห้อ** กล้องหลายยี่ห้ออยู่ร่วมบน dashboard เดียว การเปลี่ยนหรือเพิ่มกล้องไม่ต้องเปลี่ยน analytics platform
 
-**ค่าใช้จ่ายแบบ one-time** Vigil ขายเป็น perpetual license (tier G1–G5 แยกตามจำนวนกล้อง) พร้อม annual maintenance ไม่มีค่า subscription รายเดือนต่อกล้อง
-
-**เข้าถึง source code** ลูกค้าได้รับ source code ทั้งหมดภายใต้ license สามารถ customize, extend, หรือ audit ภายในได้
-
 **White-label ready** logo, สี, และชื่อแบรนด์ตั้งค่าได้ต่อ deployment system integrator และ reseller สามารถส่งมอบ Vigil ภายใต้ชื่อแบรนด์ตัวเองได้
 
 **Interface สองภาษา** dashboard และ report รองรับทั้งภาษาไทยและอังกฤษ สลับได้ทันที

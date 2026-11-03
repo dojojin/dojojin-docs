@@ -174,10 +174,6 @@ Service management controls allow administrators to restart individual services 
 
 **No vendor lock-in.** Cameras from multiple manufacturers coexist on a single dashboard. Changing or adding camera hardware does not require replacing the analytics platform.
 
-**One-time licensing model.** Vigil is purchased as a perpetual license (G1 through G5 tiers by camera count) with annual maintenance. There is no per-camera monthly subscription.
-
-**Source code access.** Customers receive the full source code under license. The platform can be customized, extended, or audited internally.
-
 **White-label ready.** Logo, colors, and brand name are configurable per deployment. System integrators and resellers can deliver Vigil under their own brand name.
 
 **Bilingual interface.** The dashboard and reports are fully bilingual (Thai and English) with instant switching.
