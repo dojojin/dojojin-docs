@@ -1,11 +1,11 @@
 ---
 title: Vigil Platform
-description: Self-hosted CCTV analytics platform — multi-vendor event ingestion, real-time monitoring, LINE notifications, and PDPA-compliant data management. On-premise. No vendor lock-in.
+description: CCTV analytics platform — multi-vendor event ingestion, real-time monitoring, LINE and Telegram notifications, and PDPA-compliant data management. Footage stays at the site. No vendor lock-in.
 ---
 
 # Vigil Platform
 
-Vigil Platform is a self-hosted CCTV analytics system built for organizations that need more than a conventional NVR — intelligent alerting, multi-vendor camera consolidation, and full data ownership under a single dashboard.
+Vigil Platform is a CCTV analytics system built for organizations that need more than a conventional NVR: intelligent alerting, cameras from different manufacturers consolidated under one dashboard, and footage that stays on the hardware at each site while the record of what happened travels.
 
 The name comes from the English word *vigil* — a period of watchful wakefulness. That is what the platform does: monitor every camera around the clock, detect events, notify the right people, and record everything automatically, without requiring a human to watch at all times.
 
